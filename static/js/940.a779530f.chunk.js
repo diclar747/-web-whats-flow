@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkwhatsflow_enterprise=self.webpackChunkwhatsflow_enterprise||[]).push([[940],{76940:(e,s,t)=>{t.r(s),t.d(s,{default:()=>i});var a=t(65043),l=t(96446),n=t(85865),r=t(70579);const i=e=>{let{sessionId:s}=e;const[t,i]=(0,a.useState)(!0),[u,h]=(0,a.useState)(null);return(0,r.jsxs)(l.A,{sx:{p:3},children:[(0,r.jsx)(n.A,{variant:"h4",children:"Analytics Module"}),(0,r.jsx)(n.A,{variant:"body1",children:"This module is temporarily unavailable."})]})}}}]);
+//# sourceMappingURL=940.a779530f.chunk.js.map

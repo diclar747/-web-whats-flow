@@ -1,0 +1,76 @@
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import { ThemeProvider as MuiThemeProvider, CssBaseline } from '@mui/material';
+import { modernLightTheme, modernDarkTheme } from '../theme/modernTheme';
+
+type ThemeContextType = {
+  theme: 'light' | 'dark';
+  isDarkMode: boolean;
+  toggleTheme: () => void;
+};
+
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+function useTheme(): ThemeContextType {
+  const context = useContext(ThemeContext);
+  if (!context) {
+    throw new Error('useTheme must be used within a ThemeProvider');
+  }
+  return {
+    ...context,
+    isDarkMode: context.theme === 'dark'
+  };
+}
+
+type ThemeProviderProps = {
+  children: React.ReactNode;
+};
+
+function ThemeProvider({ children }: ThemeProviderProps) {
+  // Cargar preferencia guardada o detectar del sistema
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('whatsflow-theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+    
+    // Detectar preferencia del sistema
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+    return 'light';
+  });
+
+  const toggleTheme = () => {
+    setTheme(prev => {
+      const newTheme = prev === 'light' ? 'dark' : 'light';
+      localStorage.setItem('whatsflow-theme', newTheme);
+      return newTheme;
+    });
+  };
+
+  // Aplicar tema moderno de MUI según el modo
+  const muiTheme = useMemo(() => {
+    return theme === 'dark' ? modernDarkTheme : modernLightTheme;
+  }, [theme]);
+
+  // Actualizar clase en body para estilos globales
+  useEffect(() => {
+    document.body.classList.remove('theme-light', 'theme-dark');
+    document.body.classList.add(`theme-${theme}`);
+  }, [theme]);
+
+  const value = {
+    theme,
+    isDarkMode: theme === 'dark',
+    toggleTheme
+  };
+
+  return (
+    <ThemeContext.Provider value={value}>
+      <MuiThemeProvider theme={muiTheme}>
+        <CssBaseline />
+        {children}
+      </MuiThemeProvider>
+    </ThemeContext.Provider>
+  );
+}
+
+export { ThemeContext, useTheme, ThemeProvider };

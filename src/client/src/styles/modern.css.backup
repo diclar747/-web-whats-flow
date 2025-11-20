@@ -1,0 +1,1283 @@
+/* 🎨 Estilos Modernos Globales - WhatsFlow */
+
+/* Variables CSS para temas */
+:root {
+  --whatsapp-green: #25D366;
+  --whatsapp-teal: #128C7E;
+  --transition-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --border-radius: 12px;
+  --border-radius-lg: 16px;
+}
+
+/* Tema claro */
+.theme-light {
+  --bg-primary: #F0F2F5;
+  --bg-secondary: #FFFFFF;
+  --bg-chat: #E5DDD5;
+  --bg-glass: rgba(255, 255, 255, 0.85);
+  --bubble-out: #D9FDD3;
+  --bubble-in: #FFFFFF;
+  --text-primary: #111B21;
+  --text-secondary: #667781;
+}
+
+/* Tema oscuro */
+.theme-dark {
+  --bg-primary: #111B21;
+  --bg-secondary: #202C33;
+  --bg-chat: #0B141A;
+  --bg-glass: rgba(32, 44, 51, 0.85);
+  --bubble-out: #005C4B;
+  --bubble-in: #202C33;
+  --text-primary: #E9EDEF;
+  --text-secondary: #8696A0;
+}
+
+/* Reset y configuración base */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Aplicar estilos modernos a TODOS los componentes MUI globalmente */
+.MuiPaper-root {
+  border-radius: 16px !important;
+  backdrop-filter: blur(20px) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiCard-root {
+  border-radius: 16px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiCard-root:hover {
+  transform: translateY(-4px) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12) !important;
+}
+
+.MuiButton-root {
+  border-radius: 12px !important;
+  text-transform: none !important;
+  font-weight: 500 !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiButton-root:hover {
+  transform: translateY(-2px) !important;
+}
+
+.MuiButton-contained {
+  background: linear-gradient(135deg, #25D366 0%, #128C7E 100%) !important;
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3) !important;
+}
+
+.MuiButton-contained:hover {
+  filter: brightness(1.1) !important;
+  box-shadow: 0 6px 16px rgba(37, 211, 102, 0.4) !important;
+}
+
+.MuiChip-root {
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiChip-root:hover {
+  transform: scale(1.05) !important;
+}
+
+.MuiAvatar-root {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiAvatar-root:hover {
+  transform: scale(1.1) !important;
+  box-shadow: 0 0 0 4px rgba(37, 211, 102, 0.2) !important;
+}
+
+.MuiListItemButton-root {
+  border-radius: 12px !important;
+  margin-bottom: 4px !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiListItemButton-root:hover {
+  transform: translateX(4px) !important;
+}
+
+.MuiListItemButton-root.Mui-selected {
+  border-left: 4px solid #25D366 !important;
+}
+
+.MuiTextField-root .MuiOutlinedInput-root {
+  border-radius: 12px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiTextField-root .MuiOutlinedInput-root:hover {
+  transform: translateY(-1px) !important;
+}
+
+.MuiTextField-root .MuiOutlinedInput-root.Mui-focused {
+  box-shadow: 0 4px 12px rgba(37, 211, 102, 0.2) !important;
+}
+
+.MuiTableContainer-root {
+  border-radius: 16px !important;
+  overflow: hidden !important;
+}
+
+.MuiTableRow-root {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiTableRow-root:hover {
+  transform: scale(1.001) !important;
+}
+
+.MuiDialog-paper {
+  border-radius: 20px !important;
+  backdrop-filter: blur(20px) !important;
+}
+
+.MuiBadge-badge {
+  animation: pulse 2s ease-in-out infinite !important;
+  font-weight: 600 !important;
+}
+
+.MuiTab-root {
+  border-radius: 12px !important;
+  text-transform: none !important;
+  font-weight: 500 !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiTab-root.Mui-selected {
+  color: #25D366 !important;
+  font-weight: 600 !important;
+}
+
+.MuiTabs-indicator {
+  height: 3px !important;
+  border-radius: 3px !important;
+  background: linear-gradient(135deg, #25D366, #128C7E) !important;
+}
+
+.MuiIconButton-root {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiIconButton-root:hover {
+  transform: scale(1.1) !important;
+}
+
+.MuiAccordion-root {
+  border-radius: 12px !important;
+  margin-bottom: 8px !important;
+}
+
+.MuiAccordion-root:before {
+  display: none !important;
+}
+
+/* Animaciones */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* Clases de utilidad para animaciones */
+.fade-in {
+  animation: fadeIn 0.3s var(--transition-smooth);
+}
+
+.slide-in {
+  animation: slideIn 0.3s var(--transition-smooth);
+}
+
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Glassmorphism */
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Burbujas de chat modernizadas */
+.chat-bubble {
+  border-radius: var(--border-radius);
+  padding: 8px 12px;
+  max-width: 65%;
+  word-wrap: break-word;
+  transition: all 0.2s var(--transition-smooth);
+  position: relative;
+}
+
+.chat-bubble:hover {
+  transform: scale(1.02);
+  box-shadow: var(--shadow-md);
+}
+
+.chat-bubble-outgoing {
+  background: var(--bubble-out);
+  border-radius: 12px 12px 4px 12px;
+  margin-left: auto;
+}
+
+.chat-bubble-incoming {
+  background: var(--bubble-in);
+  border-radius: 12px 12px 12px 4px;
+  margin-right: auto;
+}
+
+/* Efectos hover mejorados */
+.hover-lift {
+  transition: all 0.3s var(--transition-smooth);
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.hover-scale {
+  transition: transform 0.2s var(--transition-smooth);
+}
+
+.hover-scale:hover {
+  transform: scale(1.05);
+}
+
+/* Smooth transitions */
+.smooth-transition {
+  transition: all 0.3s var(--transition-smooth);
+}
+
+/* Scrollbar moderna */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.theme-dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.theme-dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Avatar con anillo animado */
+.avatar-ring {
+  position: relative;
+  display: inline-block;
+}
+
+.avatar-ring::before {
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  bottom: -3px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--whatsapp-green), var(--whatsapp-teal));
+  opacity: 0;
+  transition: opacity 0.3s var(--transition-smooth);
+}
+
+.avatar-ring:hover::before {
+  opacity: 1;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Cards modernizadas */
+.modern-card {
+  background: var(--bg-secondary);
+  border-radius: var(--border-radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s var(--transition-smooth);
+}
+
+.modern-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Badge de notificación pulsante */
+.notification-badge {
+  animation: pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.7);
+}
+
+/* Loading skeleton con shimmer */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0.1) 100%
+  );
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite;
+  border-radius: var(--border-radius);
+}
+
+/* Gradiente de texto WhatsApp */
+.text-gradient {
+  background: linear-gradient(135deg, var(--whatsapp-green), var(--whatsapp-teal));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Botón flotante con sombra */
+.fab-button {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--whatsapp-green), var(--whatsapp-teal));
+  box-shadow: 0 4px 16px rgba(37, 211, 102, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s var(--transition-smooth);
+  z-index: 1000;
+}
+
+.fab-button:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(37, 211, 102, 0.6);
+}
+
+.fab-button:active {
+  transform: translateY(-2px);
+}
+
+/* Overlay modal con blur */
+.modal-overlay {
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Input moderno con focus effect */
+.modern-input:focus {
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.2);
+  border-color: var(--whatsapp-green);
+}
+
+/* Divider con gradiente */
+.gradient-divider {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--whatsapp-green),
+    transparent
+  );
+  margin: 16px 0;
+}
+
+/* Status indicator */
+.status-online {
+  width: 10px;
+  height: 10px;
+  background: var(--whatsapp-green);
+  border-radius: 50%;
+  border: 2px solid var(--bg-secondary);
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Responsive utilities */
+@media (max-width: 768px) {
+  .chat-bubble {
+    max-width: 85%;
+  }
+  
+  .modern-card {
+    padding: 16px;
+  }
+}
+
+/* ============================================
+   ESTILOS ESPECÍFICOS PARA MÓDULOS
+   ============================================ */
+
+/* Módulo de Chat */
+.chat-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-list-item {
+  border-radius: 12px;
+  margin-bottom: 4px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chat-list-item:hover {
+  transform: translateX(4px);
+  background-color: rgba(37, 211, 102, 0.08);
+}
+
+/* Módulo de Campañas */
+.campaign-card {
+  border-radius: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.campaign-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+/* Módulo de Calendario */
+.calendar-event {
+  border-radius: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.calendar-event:hover {
+  transform: scale(1.02);
+}
+
+/* Módulo de Analytics */
+.stats-card {
+  border-radius: 16px;
+  backdrop-filter: blur(20px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.stats-card:hover {
+  transform: translateY(-4px);
+}
+
+/* Módulo de Chatbot */
+.chatbot-item {
+  border-radius: 12px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chatbot-item:hover {
+  transform: translateX(4px);
+}
+
+/* Módulo de Historial */
+.history-item {
+  border-radius: 12px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.history-item:hover {
+  background-color: rgba(37, 211, 102, 0.05);
+}
+
+/* Módulo de Contactos */
+.contact-card {
+  border-radius: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.contact-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Módulo de Settings */
+.settings-section {
+  border-radius: 16px;
+  margin-bottom: 16px;
+}
+
+/* Animación de entrada para módulos */
+.module-container {
+  animation: fadeInModule 0.3s ease-out;
+}
+
+@keyframes fadeInModule {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Contenedores principales de módulos */
+main > div,
+.module-wrapper,
+[class*="Module"] {
+  animation: fadeInModule 0.3s ease-out;
+}
+
+/* Grid de cards modernizado */
+.MuiGrid-container {
+  gap: 16px !important;
+}
+
+.MuiGrid-item {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+/* Tooltips modernos */
+.MuiTooltip-tooltip {
+  border-radius: 8px !important;
+  backdrop-filter: blur(10px) !important;
+  font-size: 0.875rem !important;
+}
+
+/* Select modernizado */
+.MuiSelect-select {
+  border-radius: 12px !important;
+}
+
+/* Switch modernizado */
+.MuiSwitch-root .MuiSwitch-track {
+  border-radius: 12px !important;
+}
+
+.MuiSwitch-root .Mui-checked + .MuiSwitch-track {
+  background-color: #25D366 !important;
+}
+
+/* Dividers modernos */
+.MuiDivider-root {
+  margin: 16px 0 !important;
+}
+
+/* Menús modernos */
+.MuiMenu-paper {
+  border-radius: 12px !important;
+  backdrop-filter: blur(20px) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12) !important;
+}
+
+.MuiMenuItem-root {
+  border-radius: 8px !important;
+  margin: 4px 8px !important;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiMenuItem-root:hover {
+  transform: translateX(4px) !important;
+  background-color: rgba(37, 211, 102, 0.08) !important;
+}
+
+/* Snackbars modernos */
+.MuiSnackbar-root .MuiAlert-root {
+  border-radius: 12px !important;
+  backdrop-filter: blur(20px) !important;
+}
+
+/* Progress bars modernos */
+.MuiLinearProgress-root {
+  border-radius: 8px !important;
+  height: 8px !important;
+}
+
+.MuiLinearProgress-bar {
+  border-radius: 8px !important;
+  background: linear-gradient(135deg, #25D366, #128C7E) !important;
+}
+
+/* Stepper modernizado */
+.MuiStepLabel-label {
+  font-weight: 500 !important;
+}
+
+.MuiStepIcon-root.Mui-active {
+  color: #25D366 !important;
+}
+
+.MuiStepIcon-root.Mui-completed {
+  color: #25D366 !important;
+}
+
+/* Breadcrumbs modernizados */
+.MuiBreadcrumbs-root {
+  font-weight: 500 !important;
+}
+
+.MuiBreadcrumbs-separator {
+  margin: 0 8px !important;
+}
+
+/* Pagination modernizada */
+.MuiPaginationItem-root {
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+}
+
+.MuiPaginationItem-root.Mui-selected {
+  background: linear-gradient(135deg, #25D366, #128C7E) !important;
+  color: white !important;
+}
+
+/* Rating modernizado */
+.MuiRating-icon {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiRating-icon:hover {
+  transform: scale(1.2) !important;
+}
+
+/* Timeline modernizada */
+.MuiTimelineItem-root {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.MuiTimelineItem-root:hover {
+  transform: translateX(4px) !important;
+}
+
+/* Skeleton loading modernizado */
+.MuiSkeleton-root {
+  border-radius: 12px !important;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(255, 255, 255, 0.1) 100%
+  ) !important;
+  background-size: 1000px 100% !important;
+  animation: shimmer 2s infinite !important;
+}
+
+/* DataGrid modernizado */
+.MuiDataGrid-root {
+  border-radius: 16px !important;
+  border: none !important;
+}
+
+.MuiDataGrid-columnHeaders {
+  background: rgba(37, 211, 102, 0.08) !important;
+  border-radius: 16px 16px 0 0 !important;
+}
+
+.MuiDataGrid-row:hover {
+  background-color: rgba(37, 211, 102, 0.05) !important;
+}
+
+/* ============================================
+   MODO OSCURO FORZADO GLOBALMENTE
+   ============================================ */
+
+/* Forzar colores de modo oscuro */
+.theme-dark,
+.theme-dark * {
+  color-scheme: dark;
+}
+
+.theme-dark {
+  background-color: #111B21 !important;
+  color: #E9EDEF !important;
+}
+
+/* Backgrounds oscuros */
+.theme-dark .MuiPaper-root {
+  background-color: #202C33 !important;
+  color: #E9EDEF !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.theme-dark .MuiCard-root {
+  background-color: #202C33 !important;
+  color: #E9EDEF !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.theme-dark .MuiDialog-paper {
+  background-color: #202C33 !important;
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiDrawer-paper {
+  background-color: #202C33 !important;
+  color: #E9EDEF !important;
+}
+
+/* Inputs oscuros */
+.theme-dark .MuiTextField-root .MuiOutlinedInput-root {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiTextField-root .MuiOutlinedInput-notchedOutline {
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.theme-dark .MuiTextField-root .MuiInputLabel-root {
+  color: #8696A0 !important;
+}
+
+.theme-dark .MuiTextField-root .MuiInputBase-input {
+  color: #E9EDEF !important;
+}
+
+/* Select oscuro */
+.theme-dark .MuiSelect-select {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiSelect-icon {
+  color: #8696A0 !important;
+}
+
+/* Tablas oscuras */
+.theme-dark .MuiTableContainer-root {
+  background-color: #202C33 !important;
+}
+
+.theme-dark .MuiTable-root {
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiTableCell-root {
+  color: #E9EDEF !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.theme-dark .MuiTableHead-root .MuiTableCell-root {
+  background-color: rgba(37, 211, 102, 0.15) !important;
+}
+
+.theme-dark .MuiTableRow-root:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Listas oscuras */
+.theme-dark .MuiList-root {
+  background-color: transparent !important;
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiListItem-root {
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiListItemText-primary {
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiListItemText-secondary {
+  color: #8696A0 !important;
+}
+
+.theme-dark .MuiListItemButton-root:hover {
+  background-color: rgba(37, 211, 102, 0.1) !important;
+}
+
+/* Menús oscuros */
+.theme-dark .MuiMenu-paper {
+  background-color: #202C33 !important;
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiMenuItem-root {
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiMenuItem-root:hover {
+  background-color: rgba(37, 211, 102, 0.1) !important;
+}
+
+/* Tabs oscuras */
+.theme-dark .MuiTab-root {
+  color: #8696A0 !important;
+}
+
+.theme-dark .MuiTab-root.Mui-selected {
+  color: #25D366 !important;
+}
+
+/* Dividers oscuros */
+.theme-dark .MuiDivider-root {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Chips oscuros */
+.theme-dark .MuiChip-root {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: #E9EDEF !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Tooltips oscuros */
+.theme-dark .MuiTooltip-tooltip {
+  background-color: #202C33 !important;
+  color: #E9EDEF !important;
+}
+
+/* Accordions oscuros */
+.theme-dark .MuiAccordion-root {
+  background-color: #202C33 !important;
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiAccordionSummary-root {
+  color: #E9EDEF !important;
+}
+
+/* Breadcrumbs oscuros */
+.theme-dark .MuiBreadcrumbs-root {
+  color: #8696A0 !important;
+}
+
+.theme-dark .MuiBreadcrumbs-separator {
+  color: #8696A0 !important;
+}
+
+/* Pagination oscura */
+.theme-dark .MuiPaginationItem-root {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  color: #E9EDEF !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Stepper oscuro */
+.theme-dark .MuiStepLabel-label {
+  color: #8696A0 !important;
+}
+
+.theme-dark .MuiStepLabel-label.Mui-active {
+  color: #E9EDEF !important;
+}
+
+/* Typography oscura */
+.theme-dark .MuiTypography-root {
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiTypography-colorTextSecondary {
+  color: #8696A0 !important;
+}
+
+/* Iconos oscuros */
+.theme-dark .MuiSvgIcon-root {
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiIconButton-root {
+  color: #E9EDEF !important;
+}
+
+/* Checkbox y Radio oscuros */
+.theme-dark .MuiCheckbox-root {
+  color: #8696A0 !important;
+}
+
+.theme-dark .MuiCheckbox-root.Mui-checked {
+  color: #25D366 !important;
+}
+
+.theme-dark .MuiRadio-root {
+  color: #8696A0 !important;
+}
+
+.theme-dark .MuiRadio-root.Mui-checked {
+  color: #25D366 !important;
+}
+
+/* Switch oscuro */
+.theme-dark .MuiSwitch-track {
+  background-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.theme-dark .MuiSwitch-thumb {
+  background-color: #E9EDEF !important;
+}
+
+/* Alert oscuro */
+.theme-dark .MuiAlert-root {
+  background-color: #202C33 !important;
+  color: #E9EDEF !important;
+}
+
+/* DataGrid oscuro */
+.theme-dark .MuiDataGrid-root {
+  background-color: #202C33 !important;
+  color: #E9EDEF !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.theme-dark .MuiDataGrid-cell {
+  color: #E9EDEF !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.theme-dark .MuiDataGrid-columnHeaders {
+  background-color: rgba(37, 211, 102, 0.15) !important;
+  color: #E9EDEF !important;
+}
+
+/* Skeleton oscuro */
+.theme-dark .MuiSkeleton-root {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* LinearProgress oscuro */
+.theme-dark .MuiLinearProgress-root {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* CircularProgress oscuro */
+.theme-dark .MuiCircularProgress-root {
+  color: #25D366 !important;
+}
+
+/* Forzar texto oscuro en elementos específicos */
+.theme-dark h1,
+.theme-dark h2,
+.theme-dark h3,
+.theme-dark h4,
+.theme-dark h5,
+.theme-dark h6,
+.theme-dark p,
+.theme-dark span,
+.theme-dark div,
+.theme-dark label,
+.theme-dark a {
+  color: #E9EDEF !important;
+}
+
+.theme-dark small,
+.theme-dark .text-secondary {
+  color: #8696A0 !important;
+}
+
+/* Contenedores principales oscuros */
+.theme-dark main,
+.theme-dark section,
+.theme-dark article {
+  background-color: #111B21 !important;
+  color: #E9EDEF !important;
+}
+
+/* Backdrop oscuro */
+.theme-dark .MuiBackdrop-root {
+  background-color: rgba(0, 0, 0, 0.7) !important;
+}
+
+/* Timeline oscuro */
+.theme-dark .MuiTimelineItem-root {
+  color: #E9EDEF !important;
+}
+
+.theme-dark .MuiTimelineDot-root {
+  background-color: #25D366 !important;
+}
+
+.theme-dark .MuiTimelineConnector-root {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Rating oscuro */
+.theme-dark .MuiRating-icon {
+  color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.theme-dark .MuiRating-iconFilled {
+  color: #25D366 !important;
+}
+
+/* Snackbar oscuro */
+.theme-dark .MuiSnackbar-root .MuiPaper-root {
+  background-color: #202C33 !important;
+  color: #E9EDEF !important;
+}
+
+/* ============================================
+   MODO CLARO FORZADO GLOBALMENTE
+   ============================================ */
+
+.theme-light {
+  background-color: #F0F2F5 !important;
+  color: #111B21 !important;
+}
+
+/* Backgrounds claros */
+.theme-light .MuiPaper-root {
+  background-color: #FFFFFF !important;
+  color: #111B21 !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+.theme-light .MuiCard-root {
+  background-color: #FFFFFF !important;
+  color: #111B21 !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+}
+
+.theme-light .MuiDialog-paper {
+  background-color: #FFFFFF !important;
+  color: #111B21 !important;
+}
+
+.theme-light .MuiDrawer-paper {
+  background-color: #FFFFFF !important;
+  color: #111B21 !important;
+}
+
+/* Inputs claros */
+.theme-light .MuiTextField-root .MuiOutlinedInput-root {
+  background-color: #FFFFFF !important;
+  color: #111B21 !important;
+}
+
+.theme-light .MuiTextField-root .MuiOutlinedInput-notchedOutline {
+  border-color: rgba(0, 0, 0, 0.23) !important;
+}
+
+.theme-light .MuiTextField-root .MuiInputLabel-root {
+  color: #667781 !important;
+}
+
+.theme-light .MuiTextField-root .MuiInputBase-input {
+  color: #111B21 !important;
+}
+
+/* Select claro */
+.theme-light .MuiSelect-select {
+  background-color: #FFFFFF !important;
+  color: #111B21 !important;
+}
+
+.theme-light .MuiSelect-icon {
+  color: #667781 !important;
+}
+
+/* Tablas claras */
+.theme-light .MuiTableContainer-root {
+  background-color: #FFFFFF !important;
+}
+
+.theme-light .MuiTable-root {
+  color: #111B21 !important;
+}
+
+.theme-light .MuiTableCell-root {
+  color: #111B21 !important;
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+.theme-light .MuiTableHead-root .MuiTableCell-root {
+  background-color: rgba(37, 211, 102, 0.08) !important;
+}
+
+.theme-light .MuiTableRow-root:hover {
+  background-color: rgba(0, 0, 0, 0.02) !important;
+}
+
+/* Listas claras */
+.theme-light .MuiList-root {
+  background-color: transparent !important;
+  color: #111B21 !important;
+}
+
+.theme-light .MuiListItem-root {
+  color: #111B21 !important;
+}
+
+.theme-light .MuiListItemText-primary {
+  color: #111B21 !important;
+}
+
+.theme-light .MuiListItemText-secondary {
+  color: #667781 !important;
+}
+
+.theme-light .MuiListItemButton-root:hover {
+  background-color: rgba(37, 211, 102, 0.08) !important;
+}
+
+/* Menús claros */
+.theme-light .MuiMenu-paper {
+  background-color: #FFFFFF !important;
+  color: #111B21 !important;
+}
+
+.theme-light .MuiMenuItem-root {
+  color: #111B21 !important;
+}
+
+.theme-light .MuiMenuItem-root:hover {
+  background-color: rgba(37, 211, 102, 0.08) !important;
+}
+
+/* Tabs claras */
+.theme-light .MuiTab-root {
+  color: #667781 !important;
+}
+
+.theme-light .MuiTab-root.Mui-selected {
+  color: #25D366 !important;
+}
+
+/* Dividers claros */
+.theme-light .MuiDivider-root {
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Chips claros */
+.theme-light .MuiChip-root {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+  color: #111B21 !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Tooltips claros */
+.theme-light .MuiTooltip-tooltip {
+  background-color: rgba(0, 0, 0, 0.87) !important;
+  color: #FFFFFF !important;
+}
+
+/* Typography clara */
+.theme-light .MuiTypography-root {
+  color: #111B21 !important;
+}
+
+.theme-light .MuiTypography-colorTextSecondary {
+  color: #667781 !important;
+}
+
+/* Iconos claros */
+.theme-light .MuiSvgIcon-root {
+  color: #111B21 !important;
+}
+
+.theme-light .MuiIconButton-root {
+  color: #111B21 !important;
+}
+
+/* Forzar texto claro en elementos específicos */
+.theme-light h1,
+.theme-light h2,
+.theme-light h3,
+.theme-light h4,
+.theme-light h5,
+.theme-light h6,
+.theme-light p,
+.theme-light span,
+.theme-light div,
+.theme-light label,
+.theme-light a {
+  color: #111B21 !important;
+}
+
+.theme-light small,
+.theme-light .text-secondary {
+  color: #667781 !important;
+}
+
+/* Contenedores principales claros */
+.theme-light main,
+.theme-light section,
+.theme-light article {
+  background-color: #F0F2F5 !important;
+  color: #111B21 !important;
+}
+
+/* DataGrid claro */
+.theme-light .MuiDataGrid-root {
+  background-color: #FFFFFF !important;
+  color: #111B21 !important;
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+.theme-light .MuiDataGrid-cell {
+  color: #111B21 !important;
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}

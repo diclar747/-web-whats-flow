@@ -1,0 +1,781 @@
+import React, { useState, useEffect } from 'react';
+import { getAPIBaseURL } from '../utils/socketConfig';
+import {
+  Box,
+  Grid,
+  Card,
+  CardContent,
+  Typography,
+  Button,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControlLabel,
+  Checkbox,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Alert,
+  IconButton,
+  Chip,
+  Stack,
+  Paper,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  Tabs,
+  Tab,
+  Tooltip
+} from '@mui/material';
+import {
+  Add,
+  Edit,
+  Delete,
+  Event,
+  AccessTime,
+  Person,
+  Phone,
+  Business,
+  Description,
+  Send,
+  EmojiEmotions,
+  NotificationsActive,
+  Save,
+  Close
+} from '@mui/icons-material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import EmojiPicker, { Theme, EmojiClickData } from 'emoji-picker-react';
+import dayjs, { Dayjs } from 'dayjs';
+import 'dayjs/locale/es';
+
+interface CalendarModuleProps {
+  sessionId: string;
+}
+
+interface Appointment {
+  id: number;
+  patient_name: string;
+  patient_phone: string;
+  doctor_name?: string;
+  company_name?: string;
+  description?: string;
+  appointment_date: string;
+  appointment_time: string;
+  status: 'scheduled' | 'confirmed' | 'cancelled' | 'completed';
+  notes?: string;
+}
+
+interface Template {
+  id: number;
+  name: string;
+  message_text: string;
+  variables: string[];
+}
+
+interface ReminderConfig {
+  id?: number;
+  timeBeforeHours: number;
+  templateId?: number;
+  isEnabled: boolean;
+}
+
+const CalendarModule: React.FC<CalendarModuleProps> = ({ sessionId }) => {
+  // Estados
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [reminders, setReminders] = useState<ReminderConfig[]>([]);
+
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+  const [showReminderDialog, setShowReminderDialog] = useState(false);
+
+  const [selectedTab, setSelectedTab] = useState(0); // 0: Calendar, 1: Templates, 2: Settings
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // Formulario de cita
+  const [newAppointment, setNewAppointment] = useState({
+    patientName: '',
+    patientPhone: '',
+    doctorName: '',
+    companyName: '',
+    description: '',
+    appointmentDate: dayjs(),
+    appointmentTime: dayjs(),
+    notes: '',
+    reminders: {
+      hour1: false,
+      hour2: false,
+      hour4: false,
+      hour24: false
+    }
+  });
+
+  // Formulario de plantilla
+  const [newTemplate, setNewTemplate] = useState({
+    name: '',
+    messageText: '',
+    variables: ['patient_name', 'doctor_name', 'company_name', 'date', 'time']
+  });
+
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [cursorPosition, setCursorPosition] = useState(0);
+
+  // Cargar datos
+  useEffect(() => {
+    loadAppointments();
+    loadTemplates();
+    loadReminderConfig();
+  }, [sessionId]);
+
+  const loadAppointments = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${getAPIBaseURL()}/api/appointments/${sessionId}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setAppointments(data.appointments);
+      }
+    } catch (error) {
+      console.error('Error cargando citas:', error);
+      setError('Error al cargar las citas');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadTemplates = async () => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/appointment-templates/${sessionId}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setTemplates(data.templates);
+      }
+    } catch (error) {
+      console.error('Error cargando plantillas:', error);
+    }
+  };
+
+  const loadReminderConfig = async () => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/appointment-reminders/config/${sessionId}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setReminders(data.reminders);
+      }
+    } catch (error) {
+      console.error('Error cargando configuración:', error);
+    }
+  };
+
+  const createAppointment = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const appointmentData = {
+        sessionId,
+        patientName: newAppointment.patientName,
+        patientPhone: newAppointment.patientPhone,
+        doctorName: newAppointment.doctorName,
+        companyName: newAppointment.companyName,
+        description: newAppointment.description,
+        appointmentDate: newAppointment.appointmentDate.format('YYYY-MM-DD'),
+        appointmentTime: newAppointment.appointmentTime.format('HH:mm:ss'),
+        notes: newAppointment.notes
+      };
+
+      const response = await fetch(`${getAPIBaseURL()}/api/appointments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(appointmentData)
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess('✅ Cita creada exitosamente');
+        setShowCreateDialog(false);
+        loadAppointments();
+        resetForm();
+      } else {
+        setError('Error al crear la cita');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      setError('Error al crear la cita');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteAppointment = async (id: number) => {
+    if (!window.confirm('¿Eliminar esta cita?')) return;
+
+    try {
+      await fetch(`${getAPIBaseURL()}/api/appointments/${id}`, {
+        method: 'DELETE'
+      });
+
+      setSuccess('✅ Cita eliminada');
+      loadAppointments();
+    } catch (error) {
+      setError('Error al eliminar la cita');
+    }
+  };
+
+  const createTemplate = async () => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/appointment-templates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          name: newTemplate.name,
+          messageText: newTemplate.messageText,
+          variables: newTemplate.variables
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess('✅ Plantilla creada');
+        setShowTemplateDialog(false);
+        loadTemplates();
+        setNewTemplate({ name: '', messageText: '', variables: [] });
+      }
+    } catch (error) {
+      setError('Error al crear plantilla');
+    }
+  };
+
+  const saveReminderConfig = async () => {
+    try {
+      const remindersToSave = [];
+
+      if (newAppointment.reminders.hour1) {
+        remindersToSave.push({ timeBeforeHours: 1, templateId: null, isEnabled: true });
+      }
+      if (newAppointment.reminders.hour2) {
+        remindersToSave.push({ timeBeforeHours: 2, templateId: null, isEnabled: true });
+      }
+      if (newAppointment.reminders.hour4) {
+        remindersToSave.push({ timeBeforeHours: 4, templateId: null, isEnabled: true });
+      }
+      if (newAppointment.reminders.hour24) {
+        remindersToSave.push({ timeBeforeHours: 24, templateId: null, isEnabled: true });
+      }
+
+      const response = await fetch(`${getAPIBaseURL()}/api/appointment-reminders/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          reminders: remindersToSave
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess('✅ Recordatorios configurados');
+        loadReminderConfig();
+      }
+    } catch (error) {
+      setError('Error al configurar recordatorios');
+    }
+  };
+
+  const insertVariable = (variable: string) => {
+    const textarea = document.getElementById('template-message') as HTMLTextAreaElement;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = newTemplate.messageText;
+    const before = text.substring(0, start);
+    const after = text.substring(end);
+
+    setNewTemplate({
+      ...newTemplate,
+      messageText: before + `{${variable}}` + after
+    });
+
+    setTimeout(() => {
+      textarea.selectionStart = textarea.selectionEnd = start + variable.length + 2;
+      textarea.focus();
+    }, 10);
+  };
+
+  const insertEmoji = (emojiData: EmojiClickData) => {
+    const textarea = document.getElementById('template-message') as HTMLTextAreaElement;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = newTemplate.messageText;
+    const before = text.substring(0, start);
+    const after = text.substring(end);
+
+    setNewTemplate({
+      ...newTemplate,
+      messageText: before + emojiData.emoji + after
+    });
+
+    setShowEmojiPicker(false);
+
+    setTimeout(() => {
+      textarea.selectionStart = textarea.selectionEnd = start + emojiData.emoji.length;
+      textarea.focus();
+    }, 10);
+  };
+
+  const resetForm = () => {
+    setNewAppointment({
+      patientName: '',
+      patientPhone: '',
+      doctorName: '',
+      companyName: '',
+      description: '',
+      appointmentDate: dayjs(),
+      appointmentTime: dayjs(),
+      notes: '',
+      reminders: {
+        hour1: false,
+        hour2: false,
+        hour4: false,
+        hour24: false
+      }
+    });
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'scheduled': return 'primary';
+      case 'confirmed': return 'success';
+      case 'cancelled': return 'error';
+      case 'completed': return 'default';
+      default: return 'default';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'scheduled': return 'Programada';
+      case 'confirmed': return 'Confirmada';
+      case 'cancelled': return 'Cancelada';
+      case 'completed': return 'Completada';
+      default: return status;
+    }
+  };
+
+  return (
+    <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="es">
+      <Box sx={{ p: 3 }}>
+        {/* Header */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h4" sx={{ fontWeight: 600 }}>
+            📅 Agenda y Citas
+          </Typography>
+          <Stack direction="row" spacing={2}>
+            <Button
+              variant="contained"
+              startIcon={<Add />}
+              onClick={() => setShowCreateDialog(true)}
+            >
+              Nueva Cita
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<Description />}
+              onClick={() => setShowTemplateDialog(true)}
+            >
+              Plantillas
+            </Button>
+          </Stack>
+        </Box>
+
+        {/* Alerts */}
+        {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
+        {success && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>{success}</Alert>}
+
+        {/* Tabs */}
+        <Paper sx={{ mb: 3 }}>
+          <Tabs value={selectedTab} onChange={(_, v) => setSelectedTab(v)}>
+            <Tab label={`📅 Citas (${appointments.length})`} />
+            <Tab label={`📝 Plantillas (${templates.length})`} />
+            <Tab label="⚙️ Configuración" />
+          </Tabs>
+        </Paper>
+
+        {/* Tab 0: Citas */}
+        {selectedTab === 0 && (
+          <Grid container spacing={2}>
+            {appointments.length === 0 ? (
+              <Grid item xs={12}>
+                <Paper sx={{ p: 8, textAlign: 'center' }}>
+                  <Event sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                  <Typography variant="h6" color="text.secondary" gutterBottom>
+                    No hay citas agendadas
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                    Crea tu primera cita para comenzar
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={<Add />}
+                    onClick={() => setShowCreateDialog(true)}
+                  >
+                    Crear Primera Cita
+                  </Button>
+                </Paper>
+              </Grid>
+            ) : (
+              appointments.map((apt) => (
+                <Grid item xs={12} md={6} lg={4} key={apt.id}>
+                  <Card>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                        <Chip
+                          label={getStatusLabel(apt.status)}
+                          color={getStatusColor(apt.status)}
+                          size="small"
+                        />
+                        <IconButton size="small" onClick={() => deleteAppointment(apt.id)}>
+                          <Delete fontSize="small" />
+                        </IconButton>
+                      </Box>
+
+                      <Stack spacing={1}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Person fontSize="small" color="action" />
+                          <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                            {apt.patient_name}
+                          </Typography>
+                        </Box>
+
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Phone fontSize="small" color="action" />
+                          <Typography variant="body2" color="text.secondary">
+                            {apt.patient_phone}
+                          </Typography>
+                        </Box>
+
+                        {apt.doctor_name && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Business fontSize="small" color="action" />
+                            <Typography variant="body2" color="text.secondary">
+                              {apt.doctor_name}
+                            </Typography>
+                          </Box>
+                        )}
+
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Event fontSize="small" color="action" />
+                          <Typography variant="body2" color="text.secondary">
+                            {dayjs(apt.appointment_date).format('DD/MM/YYYY')}
+                          </Typography>
+                        </Box>
+
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <AccessTime fontSize="small" color="action" />
+                          <Typography variant="body2" color="text.secondary">
+                            {apt.appointment_time}
+                          </Typography>
+                        </Box>
+
+                        {apt.description && (
+                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                            {apt.description}
+                          </Typography>
+                        )}
+                      </Stack>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))
+            )}
+          </Grid>
+        )}
+
+        {/* Tab 1: Plantillas */}
+        {selectedTab === 1 && (
+          <Grid container spacing={2}>
+            {templates.map((template) => (
+              <Grid item xs={12} md={6} key={template.id}>
+                <Card>
+                  <CardContent>
+                    <Typography variant="h6" gutterBottom>
+                      {template.name}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{
+                        whiteSpace: 'pre-wrap',
+                        bgcolor: '#f5f5f5',
+                        p: 2,
+                        borderRadius: 1,
+                        fontFamily: 'monospace'
+                      }}
+                    >
+                      {template.message_text}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+            {templates.length === 0 && (
+              <Grid item xs={12}>
+                <Paper sx={{ p: 8, textAlign: 'center' }}>
+                  <Description sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                  <Typography variant="h6" color="text.secondary" gutterBottom>
+                    No hay plantillas creadas
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={<Add />}
+                    onClick={() => setShowTemplateDialog(true)}
+                    sx={{ mt: 2 }}
+                  >
+                    Crear Plantilla
+                  </Button>
+                </Paper>
+              </Grid>
+            )}
+          </Grid>
+        )}
+
+        {/* Tab 2: Configuración */}
+        {selectedTab === 2 && (
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              ⚙️ Configuración de Recordatorios
+            </Typography>
+            <Alert severity="info" sx={{ mb: 3 }}>
+              Los recordatorios se enviarán automáticamente por WhatsApp a los números configurados en cada cita.
+            </Alert>
+
+            <Stack spacing={2}>
+              <FormControlLabel
+                control={<Checkbox checked={newAppointment.reminders.hour1} onChange={(e) => setNewAppointment({ ...newAppointment, reminders: { ...newAppointment.reminders, hour1: e.target.checked } })} />}
+                label="Enviar recordatorio 1 hora antes"
+              />
+              <FormControlLabel
+                control={<Checkbox checked={newAppointment.reminders.hour2} onChange={(e) => setNewAppointment({ ...newAppointment, reminders: { ...newAppointment.reminders, hour2: e.target.checked } })} />}
+                label="Enviar recordatorio 2 horas antes"
+              />
+              <FormControlLabel
+                control={<Checkbox checked={newAppointment.reminders.hour4} onChange={(e) => setNewAppointment({ ...newAppointment, reminders: { ...newAppointment.reminders, hour4: e.target.checked } })} />}
+                label="Enviar recordatorio 4 horas antes"
+              />
+              <FormControlLabel
+                control={<Checkbox checked={newAppointment.reminders.hour24} onChange={(e) => setNewAppointment({ ...newAppointment, reminders: { ...newAppointment.reminders, hour24: e.target.checked } })} />}
+                label="Enviar recordatorio 24 horas (1 día) antes"
+              />
+
+              <Button
+                variant="contained"
+                startIcon={<Save />}
+                onClick={saveReminderConfig}
+                sx={{ mt: 2, alignSelf: 'flex-start' }}
+              >
+                Guardar Configuración
+              </Button>
+            </Stack>
+          </Paper>
+        )}
+
+        {/* Dialog: Nueva Cita */}
+        <Dialog open={showCreateDialog} onClose={() => setShowCreateDialog(false)} maxWidth="md" fullWidth>
+          <DialogTitle>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              📅 Nueva Cita
+              <IconButton onClick={() => setShowCreateDialog(false)}>
+                <Close />
+              </IconButton>
+            </Box>
+          </DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ mt: 2 }}>
+              <TextField
+                fullWidth
+                label="Nombre del Paciente"
+                value={newAppointment.patientName}
+                onChange={(e) => setNewAppointment({ ...newAppointment, patientName: e.target.value })}
+                required
+              />
+
+              <TextField
+                fullWidth
+                label="Teléfono"
+                placeholder="595985768793"
+                value={newAppointment.patientPhone}
+                onChange={(e) => setNewAppointment({ ...newAppointment, patientPhone: e.target.value })}
+                helperText="Formato automático con código 595"
+                required
+              />
+
+              <TextField
+                fullWidth
+                label="Doctor/Médico"
+                value={newAppointment.doctorName}
+                onChange={(e) => setNewAppointment({ ...newAppointment, doctorName: e.target.value })}
+              />
+
+              <TextField
+                fullWidth
+                label="Empresa/Clínica"
+                value={newAppointment.companyName}
+                onChange={(e) => setNewAppointment({ ...newAppointment, companyName: e.target.value })}
+              />
+
+              <TextField
+                fullWidth
+                multiline
+                rows={3}
+                label="Descripción"
+                value={newAppointment.description}
+                onChange={(e) => setNewAppointment({ ...newAppointment, description: e.target.value })}
+              />
+
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6}>
+                  <DatePicker
+                    label="Fecha de la Cita"
+                    value={newAppointment.appointmentDate}
+                    onChange={(date) => setNewAppointment({ ...newAppointment, appointmentDate: date || dayjs() })}
+                    slotProps={{ textField: { fullWidth: true } }}
+                  />
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <TimePicker
+                    label="Hora"
+                    value={newAppointment.appointmentTime}
+                    onChange={(time) => setNewAppointment({ ...newAppointment, appointmentTime: time || dayjs() })}
+                    slotProps={{ textField: { fullWidth: true } }}
+                  />
+                </Grid>
+              </Grid>
+
+              <TextField
+                fullWidth
+                multiline
+                rows={2}
+                label="Notas Adicionales"
+                value={newAppointment.notes}
+                onChange={(e) => setNewAppointment({ ...newAppointment, notes: e.target.value })}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShowCreateDialog(false)}>Cancelar</Button>
+            <Button
+              variant="contained"
+              onClick={createAppointment}
+              disabled={!newAppointment.patientName || !newAppointment.patientPhone}
+            >
+              Crear Cita
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Dialog: Nueva Plantilla */}
+        <Dialog open={showTemplateDialog} onClose={() => setShowTemplateDialog(false)} maxWidth="md" fullWidth>
+          <DialogTitle>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              📝 Crear Plantilla de Mensaje
+              <IconButton onClick={() => setShowTemplateDialog(false)}>
+                <Close />
+              </IconButton>
+            </Box>
+          </DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ mt: 2 }}>
+              <TextField
+                fullWidth
+                label="Nombre de la Plantilla"
+                placeholder="Ej: Recordatorio Consulta Médica"
+                value={newTemplate.name}
+                onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
+              />
+
+              <Typography variant="subtitle2" sx={{ mt: 2 }}>
+                Variables disponibles (insertar en el mensaje):
+              </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap">
+                <Button size="small" onClick={() => insertVariable('patient_name')}>
+                  {'{patient_name}'}
+                </Button>
+                <Button size="small" onClick={() => insertVariable('doctor_name')}>
+                  {'{doctor_name}'}
+                </Button>
+                <Button size="small" onClick={() => insertVariable('company_name')}>
+                  {'{company_name}'}
+                </Button>
+                <Button size="small" onClick={() => insertVariable('date')}>
+                  {'{date}'}
+                </Button>
+                <Button size="small" onClick={() => insertVariable('time')}>
+                  {'{time}'}
+                </Button>
+              </Stack>
+
+              <TextField
+                id="template-message"
+                fullWidth
+                multiline
+                rows={10}
+                label="Mensaje"
+                placeholder="🏥 Recordatorio de Cita&#10;&#10;Hola {patient_name} 👋&#10;&#10;Te recordamos tu cita con {doctor_name} de {company_name}&#10;&#10;📅 Fecha: {date}&#10;⏰ Hora: {time}&#10;&#10;¡Te esperamos! 😊"
+                value={newTemplate.messageText}
+                onChange={(e) => setNewTemplate({ ...newTemplate, messageText: e.target.value })}
+              />
+
+              <Box sx={{ position: 'relative' }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<EmojiEmotions />}
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                >
+                  Insertar Emoji
+                </Button>
+
+                {showEmojiPicker && (
+                  <Box sx={{ position: 'absolute', zIndex: 1000, mt: 1 }}>
+                    <EmojiPicker onEmojiClick={insertEmoji} theme={Theme.AUTO} />
+                  </Box>
+                )}
+              </Box>
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShowTemplateDialog(false)}>Cancelar</Button>
+            <Button
+              variant="contained"
+              onClick={createTemplate}
+              disabled={!newTemplate.name || !newTemplate.messageText}
+            >
+              Crear Plantilla
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Box>
+    </LocalizationProvider>
+  );
+};
+
+export default CalendarModule;

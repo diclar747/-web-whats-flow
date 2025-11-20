@@ -1,0 +1,497 @@
+const express = require('express');
+const router = express.Router();
+const mysql = require('mysql2/promise');
+require('dotenv').config();
+
+const dbConfig = {
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME || 'whatsflow'
+};
+
+// Mantener Maps en memoria para stats y interacciones en tiempo real
+const chatbotStats = new Map();
+const chatbotInteractions = new Map();
+const chatbotFlows = new Map();
+const chatbotSettings = new Map();
+
+// GET - Obtener flujos de un session desde BD
+router.get('/flows/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const connection = await mysql.createConnection(dbConfig);
+    
+    const [flows] = await connection.query(
+      'SELECT * FROM chatbot_flows WHERE session_id = ? ORDER BY created_at DESC',
+      [sessionId]
+    );
+    
+    await connection.end();
+    
+    // Parsear triggers y adaptar al formato del frontend
+    const parsedFlows = flows.map(flow => ({
+      id: flow.id,
+      name: flow.name,
+      description: flow.description,
+      active: Boolean(flow.active),
+      triggers: JSON.parse(flow.triggers || '[]'),
+      responses: [{
+        id: '1',
+        type: flow.response_type || 'text',
+        content: flow.response_text || '',
+        mediaUrl: flow.response_media || ''
+      }],
+      kanbanBoardId: flow.kanban_board_id || null,
+      createdAt: flow.created_at,
+      stats: {
+        totalTriggers: flow.stats_total_triggers || 0,
+        successRate: flow.stats_success_rate || 100,
+        lastTriggered: flow.stats_last_triggered
+      }
+    }));
+    
+    res.json({ success: true, flows: parsedFlows });
+  } catch (error) {
+    console.error('Error obteniendo flujos:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST - Crear nuevo flujo en BD
+router.post('/flows/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const flowData = req.body;
+    
+    const flowId = Date.now().toString();
+    const connection = await mysql.createConnection(dbConfig);
+    
+    // Extraer la primera respuesta del array de respuestas
+    const firstResponse = flowData.responses && flowData.responses.length > 0 
+      ? flowData.responses[0] 
+      : null;
+    
+    const responseType = firstResponse?.type || flowData.responseType || 'text';
+    const responseText = firstResponse?.content || flowData.responseText || '';
+    const responseMedia = firstResponse?.mediaUrl || flowData.responseMedia || '';
+    
+    await connection.query(
+      `INSERT INTO chatbot_flows (
+        id, session_id, name, description, triggers, 
+        response_type, response_text, response_media, kanban_board_id, active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        flowId,
+        sessionId,
+        flowData.name,
+        flowData.description || '',
+        JSON.stringify(flowData.triggers || []),
+        responseType,
+        responseText,
+        responseMedia,
+        flowData.kanbanBoardId || null,
+        flowData.active !== false
+      ]
+    );
+    
+    await connection.end();
+    
+    const newFlow = {
+      id: flowId,
+      ...flowData,
+      createdAt: new Date().toISOString(),
+      stats: {
+        totalTriggers: 0,
+        successRate: 100,
+        lastTriggered: null
+      }
+    };
+    
+    console.log(`[CHATBOT] ✅ Flujo creado en BD: ${newFlow.name} (${flowData.triggers?.length} triggers)`);
+    
+    res.json({ success: true, flow: newFlow });
+  } catch (error) {
+    console.error('Error creando flujo:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PUT - Actualizar flujo en BD
+router.put('/flows/:sessionId/:flowId', async (req, res) => {
+  try {
+    const { sessionId, flowId } = req.params;
+    const updatedFlow = req.body;
+    
+    const connection = await mysql.createConnection(dbConfig);
+    
+    // Extraer la primera respuesta del array de respuestas
+    const firstResponse = updatedFlow.responses && updatedFlow.responses.length > 0 
+      ? updatedFlow.responses[0] 
+      : null;
+    
+    const responseType = firstResponse?.type || updatedFlow.responseType || 'text';
+    const responseText = firstResponse?.content || updatedFlow.responseText || '';
+    const responseMedia = firstResponse?.mediaUrl || updatedFlow.responseMedia || '';
+    
+    const [result] = await connection.query(
+      `UPDATE chatbot_flows SET 
+        name = ?, description = ?, triggers = ?, 
+        response_type = ?, response_text = ?, response_media = ?, kanban_board_id = ?, active = ?
+      WHERE id = ? AND session_id = ?`,
+      [
+        updatedFlow.name,
+        updatedFlow.description || '',
+        JSON.stringify(updatedFlow.triggers || []),
+        responseType,
+        responseText,
+        responseMedia,
+        updatedFlow.kanbanBoardId || null,
+        updatedFlow.active !== false,
+        flowId,
+        sessionId
+      ]
+    );
+    
+    await connection.end();
+    
+    if (result.affectedRows > 0) {
+      console.log(`[CHATBOT] ✏️ Flujo actualizado en BD: ${updatedFlow.name}`);
+      res.json({ success: true, flow: updatedFlow });
+    } else {
+      res.status(404).json({ success: false, error: 'Flujo no encontrado' });
+    }
+  } catch (error) {
+    console.error('Error actualizando flujo:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE - Eliminar flujo
+router.delete('/flows/:sessionId/:flowId', async (req, res) => {
+  try {
+    const { sessionId, flowId } = req.params;
+    
+    const connection = await mysql.createConnection(dbConfig);
+    
+    await connection.query(
+      'DELETE FROM chatbot_flows WHERE id = ? AND session_id = ?',
+      [flowId, sessionId]
+    );
+    
+    await connection.end();
+    
+    console.log(`[CHATBOT] 🗑️ Flujo eliminado de BD: ${flowId}`);
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error eliminando flujo:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PATCH - Toggle activo/inactivo
+router.patch('/flows/:sessionId/:flowId/toggle', async (req, res) => {
+  try {
+    const { sessionId, flowId } = req.params;
+    const { active } = req.body;
+    
+    const connection = await mysql.createConnection(dbConfig);
+    
+    await connection.query(
+      'UPDATE chatbot_flows SET active = ? WHERE id = ? AND session_id = ?',
+      [active ? 1 : 0, flowId, sessionId]
+    );
+    
+    const [flows] = await connection.query(
+      'SELECT * FROM chatbot_flows WHERE id = ? AND session_id = ?',
+      [flowId, sessionId]
+    );
+    
+    await connection.end();
+    
+    if (flows.length > 0) {
+      console.log(`[CHATBOT] ${active ? '▶️' : '⏸️'} Flujo ${active ? 'activado' : 'pausado'}: ${flows[0].name}`);
+      res.json({ success: true, flow: flows[0] });
+    } else {
+      res.status(404).json({ success: false, error: 'Flujo no encontrado' });
+    }
+  } catch (error) {
+    console.error('Error cambiando estado del flujo:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET - Obtener configuración
+router.get('/settings/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const settings = chatbotSettings.get(sessionId) || {
+      enabled: false,
+      workingHours: {
+        enabled: false,
+        start: '09:00',
+        end: '18:00',
+        days: [1, 2, 3, 4, 5]
+      },
+      fallbackMessage: 'Lo siento, no entiendo tu mensaje. ¿Puedo ayudarte con algo más?',
+      transferToAgent: true,
+      aiEnabled: false,
+      responseDelay: 1000
+    };
+    
+    res.json({ success: true, settings });
+  } catch (error) {
+    console.error('Error obteniendo configuración:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PUT - Actualizar configuración
+router.put('/settings/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const settings = req.body;
+    
+    chatbotSettings.set(sessionId, settings);
+    
+    console.log(`[CHATBOT] ⚙️ Configuración actualizada para sesión: ${sessionId}`);
+    console.log(`[CHATBOT] - Bot ${settings.enabled ? 'ACTIVO' : 'PAUSADO'}`);
+    console.log(`[CHATBOT] - Horario: ${settings.workingHours.enabled ? 'SI' : 'NO'}`);
+    
+    res.json({ success: true, settings });
+  } catch (error) {
+    console.error('Error actualizando configuración:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET - Obtener estadísticas
+router.get('/stats/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const stats = chatbotStats.get(sessionId) || {
+      totalInteractions: 0,
+      successfulResponses: 0,
+      transferredToAgent: 0,
+      avgResponseTime: 0
+    };
+    
+    res.json({ success: true, stats });
+  } catch (error) {
+    console.error('Error obteniendo estadísticas:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET - Obtener analíticas de todos los chatbots
+// POST - Procesar mensaje entrante (para el bot)
+router.post('/process-message/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { message, from } = req.body;
+    
+    const connection = await mysql.createConnection(dbConfig);
+    
+    // Obtener configuración del chatbot desde BD
+    const [settingsRows] = await connection.query(
+      'SELECT * FROM chatbot_settings WHERE session_id = ?',
+      [sessionId]
+    );
+    
+    // Si no hay configuración, usar valores por defecto (bot HABILITADO)
+    let settings = null;
+    if (settingsRows.length === 0) {
+      settings = {
+        enabled: true,
+        working_hours_enabled: false
+      };
+      console.log(`[CHATBOT] ℹ️ No hay configuración para ${sessionId}, usando valores por defecto (HABILITADO)`);
+    } else {
+      settings = settingsRows[0];
+      if (!settings.enabled) {
+        await connection.end();
+        return res.json({ success: false, botResponse: null, reason: 'Bot desactivado' });
+      }
+    }
+    
+    // Verificar horario de atención (si existe en BD)
+    if (settings.working_hours_enabled) {
+      const now = new Date();
+      const currentDay = now.getDay();
+      const currentTime = now.toTimeString().slice(0, 5);
+      
+      const workingDays = JSON.parse(settings.working_days || '[]');
+      
+      if (!workingDays.includes(currentDay) ||
+          currentTime < settings.working_hours_start ||
+          currentTime > settings.working_hours_end) {
+        await connection.end();
+        return res.json({
+          success: true,
+          botResponse: null,
+          reason: 'Fuera de horario'
+        });
+      }
+    }
+    
+    // Buscar flujos activos desde BD
+    const [flows] = await connection.query(
+      'SELECT * FROM chatbot_flows WHERE session_id = ? AND active = 1',
+      [sessionId]
+    );
+    
+    await connection.end();
+    
+    const messageLower = message.toLowerCase().trim();
+    let matchedFlow = null;
+    
+    for (const flow of flows) {
+      const triggers = JSON.parse(flow.triggers || '[]');
+      const matched = triggers.some(trigger => {
+        const triggerLower = trigger.toLowerCase().trim();
+        return messageLower === triggerLower || 
+               messageLower.includes(' ' + triggerLower + ' ') ||
+               messageLower.startsWith(triggerLower + ' ') ||
+               messageLower.endsWith(' ' + triggerLower) ||
+               messageLower.includes(triggerLower);
+      });
+      
+      if (matched) {
+        matchedFlow = flow;
+        
+        // Actualizar stats en BD
+        const connection2 = await mysql.createConnection(dbConfig);
+        await connection2.query(
+          'UPDATE chatbot_flows SET stats_total_triggers = stats_total_triggers + 1, stats_last_triggered = NOW() WHERE id = ?',
+          [flow.id]
+        );
+        await connection2.end();
+        
+        // Actualizar stats globales
+        const stats = chatbotStats.get(sessionId) || {
+          totalInteractions: 0,
+          successfulResponses: 0,
+          transferredToAgent: 0,
+          avgResponseTime: 0
+        };
+        stats.totalInteractions++;
+        stats.successfulResponses++;
+        chatbotStats.set(sessionId, stats);
+        
+        break;
+      }
+    }
+    
+    if (matchedFlow) {
+      console.log(`[CHATBOT] 🎯 Flujo activado: ${matchedFlow.name} por mensaje de ${from}`);
+      
+      // Si el flujo tiene un kanban asociado, agregar el contacto al kanban
+      if (matchedFlow.kanban_board_id) {
+        try {
+          const connection2 = await mysql.createConnection(dbConfig);
+          
+          // Verificar si el contacto ya existe en ese kanban
+          const [existingContact] = await connection2.query(
+            'SELECT id FROM kanban_contacts WHERE board_id = ? AND contact_jid = ?',
+            [matchedFlow.kanban_board_id, from]
+          );
+          
+          if (existingContact.length === 0) {
+            // Agregar el contacto al kanban
+            await connection2.query(
+              'INSERT INTO kanban_contacts (board_id, contact_jid, notes) VALUES (?, ?, ?)',
+              [matchedFlow.kanban_board_id, from, `Agregado automáticamente por chatbot: ${matchedFlow.name}`]
+            );
+            console.log(`[CHATBOT] 📋 Contacto ${from} agregado al kanban ${matchedFlow.kanban_board_id}`);
+          } else {
+            console.log(`[CHATBOT] 📋 Contacto ${from} ya existe en kanban ${matchedFlow.kanban_board_id}`);
+          }
+          
+          await connection2.end();
+        } catch (kanbanError) {
+          console.error('[CHATBOT] Error agregando contacto al kanban:', kanbanError);
+          // No fallar la respuesta del bot si falla el kanban
+        }
+      }
+      
+      const responses = [{
+        id: '1',
+        type: matchedFlow.response_type || 'text',
+        content: matchedFlow.response_text || '',
+        mediaUrl: matchedFlow.response_media || ''
+      }];
+      
+      res.json({
+        success: true,
+        botResponse: responses,
+        flow: {
+          id: matchedFlow.id,
+          name: matchedFlow.name
+        }
+      });
+    } else {
+      console.log(`[CHATBOT] ❌ No se encontró flujo para: "${message}"`);
+      
+      // NO enviar mensaje de fallback - solo ignorar el mensaje
+      res.json({
+        success: false,
+        botResponse: null,
+        reason: 'No matching flow',
+        flow: null
+      });
+    }
+  } catch (error) {
+    console.error('Error procesando mensaje:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET - Obtener analíticas de chatbots para el dashboard
+router.get('/analytics/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const connection = await mysql.createConnection(dbConfig);
+    
+    // Obtener todos los flujos del usuario
+    const [flows] = await connection.query(
+      'SELECT * FROM chatbot_flows WHERE session_id = ? ORDER BY created_at DESC',
+      [sessionId]
+    );
+    
+    await connection.end();
+    
+    // Formatear analíticas para el dashboard
+    const analytics = flows.map(flow => {
+      const triggers = JSON.parse(flow.triggers || '[]');
+      
+      return {
+        id: flow.id,
+        name: flow.name,
+        status: flow.active ? 'active' : 'inactive',
+        totalInteractions: flow.stats_total_triggers || 0,
+        successfulResponses: flow.stats_total_triggers || 0,
+        failedResponses: 0,
+        avgResponseTime: '< 1s',
+        deliveryRate: 100,
+        responseRate: flow.stats_success_rate || 100,
+        lastActivity: flow.stats_last_triggered || flow.created_at,
+        keywords: triggers,
+        color: flow.active ? '#00a884' : '#94a3b8'
+      };
+    });
+    
+    console.log(`[CHATBOT-ANALYTICS] Enviando ${analytics.length} chatbots para ${sessionId}`);
+    
+    res.json({
+      success: true,
+      analytics: analytics,
+      total: analytics.length
+    });
+  } catch (error) {
+    console.error('Error obteniendo analíticas:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+module.exports = router;

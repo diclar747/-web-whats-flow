@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp API Documentation</title>
+    <style>
+        :root {
+            --primary-color: #25D366;
+            --secondary-color: #128C7E;
+            --dark-color: #075E54;
+            --light-color: #DCF8C6;
+            --code-bg: #f6f8fa;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .endpoint {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .endpoint h2 {
+            color: var(--secondary-color);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .method {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .get {
+            background-color: #61affe;
+            color: white;
+        }
+
+        .post {
+            background-color: #49cc90;
+            color: white;
+        }
+
+        .endpoint p {
+            margin-bottom: 1rem;
+        }
+
+        .code-block {
+            background-color: var(--code-bg);
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', Courier, monospace;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+
+        .response {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #eee;
+        }
+
+        .response h3 {
+            color: var(--dark-color);
+            margin-bottom: 0.5rem;
+        }
+
+        .websocket-events {
+            background-color: var(--light-color);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+
+        .websocket-events h2 {
+            color: var(--dark-color);
+        }
+
+        .event {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: white;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>WhatsApp API Documentation</h1>
+            <p>API completa de WhatsApp usando Baileys con respuestas en formato JSON</p>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Estado de la Conexión -->
+        <div class="endpoint">
+            <h2><span class="method get">GET</span> /api/status</h2>
+            <p>Obtiene el estado actual de la conexión y toda la información disponible</p>
+            
+            <h3>Ejemplo de uso:</h3>
+            <div class="code-block">
+GET http://localhost:3001/api/status
+            </div>
+
+            <div class="response">
+                <h3>Respuesta exitosa:</h3>
+                <div class="code-block">
+{
+    "phoneNumber": "5511999999999",
+    "pushName": "Usuario",
+    "platform": "android",
+    "connected": true,
+    "lastSeen": "2024-01-01T12:00:00.000Z",
+    "groups": [
+        {
+            "id": "123456789@g.us",
+            "subject": "Nombre del Grupo",
+            "participants": 50,
+            "creation": 1234567890
+        }
+    ],
+    "contacts": [],
+    "qr": null,
+    "status": "connected",
+    "timestamp": "2024-01-01T12:00:00.000Z"
+}
+                </div>
+            </div>
+        </div>
+
+        <!-- QR Code Endpoint -->
+        <div class="endpoint">
+            <h2><span class="method get">GET</span> /api/qr</h2>
+            <p>Obtiene el código QR para la autenticación de WhatsApp Web</p>
+            
+            <h3>Ejemplo de uso:</h3>
+            <div class="code-block">
+GET http://localhost:3001/api/qr
+            </div>
+
+            <div class="response">
+                <h3>Respuesta exitosa:</h3>
+                <div class="code-block">
+{
+    "status": "success",
+    "qr": "data:image/png;base64,...",
+    "timestamp": "2024-01-01T12:00:00.000Z"
+}
+                </div>
+            </div>
+        </div>
+
+        <!-- Send Message Endpoint -->
+        <div class="endpoint">
+            <h2><span class="method post">POST</span> /api/send-message</h2>
+            <p>Envía un mensaje de WhatsApp a un número específico</p>
+
+            <h3>Cuerpo de la petición:</h3>
+            <div class="code-block">
+{
+    "number": "5511999999999",
+    "message": "¡Hola! Este es un mensaje de prueba"
+}
+            </div>
+
+            <div class="response">
+                <h3>Respuesta exitosa:</h3>
+                <div class="code-block">
+{
+    "status": "success",
+    "message": "Mensaje enviado exitosamente",
+    "timestamp": "2024-01-01T12:00:00.000Z",
+    "details": {
+        "to": "5511999999999",
+        "messageContent": "¡Hola! Este es un mensaje de prueba"
+    }
+}
+                </div>
+            </div>
+
+            <h3>Ejemplo con curl:</h3>
+            <div class="code-block">
+curl -X POST http://localhost:3001/api/send-message \
+    -H "Content-Type: application/json" \
+    -d '{"number":"5511999999999","message":"¡Hola mundo!"}'
+            </div>
+        </div>
+
+        <!-- Get Groups Endpoint -->
+        <div class="endpoint">
+            <h2><span class="method get">GET</span> /api/groups</h2>
+            <p>Obtiene la lista de todos los grupos en los que participa el número</p>
+
+            <h3>Ejemplo de uso:</h3>
+            <div class="code-block">
+GET http://localhost:3001/api/groups
+            </div>
+
+            <div class="response">
+                <h3>Respuesta exitosa:</h3>
+                <div class="code-block">
+{
+    "status": "success",
+    "timestamp": "2024-01-01T12:00:00.000Z",
+    "groups": [
+        {
+            "id": "123456789@g.us",
+            "subject": "Nombre del Grupo",
+            "participants": 50,
+            "creation": 1234567890
+        }
+    ]
+}
+                </div>
+            </div>
+        </div>
+
+        <!-- Get Group Members Endpoint -->
+        <div class="endpoint">
+            <h2><span class="method get">GET</span> /api/group/:groupId/members</h2>
+            <p>Obtiene la lista de participantes de un grupo específico</p>
+
+            <h3>Ejemplo de uso:</h3>
+            <div class="code-block">
+GET http://localhost:3001/api/group/123456789@g.us/members
+            </div>
+
+            <div class="response">
+                <h3>Respuesta exitosa:</h3>
+                <div class="code-block">
+{
+    "status": "success",
+    "timestamp": "2024-01-01T12:00:00.000Z",
+    "groupId": "123456789@g.us",
+    "participants": [
+        {
+            "id": "5511999999999@s.whatsapp.net",
+            "admin": "superadmin"
+        }
+    ]
+}
+                </div>
+            </div>
+        </div>
+
+        <!-- WebSocket Events -->
+        <div class="websocket-events">
+            <h2>Eventos WebSocket</h2>
+            <p>La API utiliza Socket.IO para comunicación en tiempo real</p>
+
+            <div class="event">
+                <h3>'connection-info'</h3>
+                <p>Emitido cuando hay cambios en el estado de la conexión</p>
+                <div class="code-block">
+socket.on('connection-info', (info) => {
+    console.log('Estado de conexión:', info);
+    // info contiene toda la información del estado actual
+});
+                </div>
+            </div>
+
+            <div class="event">
+                <h3>'message'</h3>
+                <p>Emitido cuando se recibe un nuevo mensaje</p>
+                <div class="code-block">
+socket.on('message', (message) => {
+    console.log('Nuevo mensaje:', {
+        from: message.from,
+        content: message.content,
+        timestamp: message.timestamp,
+        type: message.type
+    });
+});
+                </div>
+            </div>
+        </div>
+
+        <!-- Connection Example -->
+        <div class="endpoint">
+            <h2>Ejemplo de Conexión con Socket.IO</h2>
+            <div class="code-block">
+const socket = io('http://localhost:3001');
+
+// Escuchar eventos
+socket.on('connect', () => {
+    console.log('Conectado al servidor');
+});
+
+socket.on('connection-info', (info) => {
+    // Manejar actualizaciones de estado
+    console.log('Estado actual:', info);
+});
+
+socket.on('message', (message) => {
+    // Manejar mensajes entrantes
+    console.log('Mensaje recibido:', message);
+});
+            </div>
+        </div>
+    </div>
+</body>
+</html> 

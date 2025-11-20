@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Widget Example</title>
+    <!-- Incluir el script del widget -->
+    <script src="https://api.whats-flow.com/whatsapp-widget.js"></script>
+</head>
+<body>
+    <!-- Contenedor para el widget -->
+    <div id="whatsapp-container"></div>
+
+    <script>
+        // Inicializar el widget cuando la página cargue
+        document.addEventListener('DOMContentLoaded', () => {
+            // Crear una instancia del widget
+            const whatsapp = new WhatsAppWidget('whatsapp-container');
+
+            // Escuchar eventos (opcional)
+            whatsapp.container.addEventListener('qrGenerated', (event) => {
+                console.log('QR generado:', event.detail.sessionId);
+            });
+
+            whatsapp.container.addEventListener('whatsappConnected', (event) => {
+                console.log('WhatsApp conectado:', event.detail.sessionId);
+                
+                // Ejemplo de cómo enviar un mensaje una vez conectado
+                whatsapp.sendMessage('1234567890', '¡Hola! Este es un mensaje de prueba.')
+                    .then(response => console.log('Mensaje enviado:', response))
+                    .catch(error => console.error('Error al enviar mensaje:', error));
+            });
+        });
+    </script>
+</body>
+</html> 

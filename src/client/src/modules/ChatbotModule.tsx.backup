@@ -1,0 +1,1456 @@
+import React, { useState, useEffect } from 'react';
+import { getAPIBaseURL } from '../utils/socketConfig';
+import {
+  Box,
+  Grid,
+  Card,
+  CardContent,
+  Typography,
+  Button,
+  TextField,
+  Avatar,
+  Chip,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Paper,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Stack,
+  Tooltip,
+  CircularProgress,
+  Tabs,
+  Tab,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemAvatar,
+  ListItemIcon,
+  LinearProgress,
+  InputAdornment,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Divider,
+  Switch,
+  FormControlLabel,
+  ToggleButtonGroup,
+  ToggleButton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Badge,
+  Stepper,
+  Step,
+  StepLabel,
+  StepContent,
+  Menu,
+  Checkbox,
+  Alert,
+  Slider,
+  Radio,
+  RadioGroup,
+  FormGroup
+} from '@mui/material';
+import {
+  SmartToy,
+  Psychology,
+  AutoAwesome,
+  Autorenew,
+  Settings,
+  Analytics,
+  Timeline,
+  TrendingUp,
+  TrendingDown,
+  Add,
+  Edit,
+  Delete,
+  Save,
+  Refresh,
+  PlayArrow,
+  Pause,
+  Stop,
+  Send,
+  Message,
+  Chat,
+  QuestionAnswer,
+  HelpOutline,
+  School,
+  ModelTraining,
+  Science,
+  Lightbulb,
+  Insights,
+  Speed,
+  Tune,
+  FilterList,
+  Search,
+  MoreVert,
+  Visibility,
+  Code,
+  Language,
+  Translate,
+  VolumeUp,
+  Mic,
+  Image,
+  AttachFile,
+  Link,
+  Category,
+  Label,
+  Tag,
+  Flag,
+  Star,
+  CheckCircle,
+  Cancel,
+  Warning,
+  Info,
+  Schedule,
+  History,
+  Assessment,
+  BarChart,
+  PieChart,
+  ShowChart,
+  DataUsage,
+  Memory,
+  CloudUpload,
+  CloudDownload,
+  Backup,
+  Restore,
+  Download,
+  Upload,
+  Share,
+  ContentCopy,
+  ExpandMore,
+  KeyboardArrowRight,
+  KeyboardArrowDown,
+  Launch,
+  OpenInNew,
+  Transform,
+  Psychology as AIIcon,
+  AutoFixHigh,
+  BrushIcon
+} from '@mui/icons-material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs, { Dayjs } from 'dayjs';
+
+interface ChatbotModuleProps {
+  sessionId: string;
+}
+
+interface Intent {
+  id: string;
+  name: string;
+  description: string;
+  examples: string[];
+  responses: string[];
+  entities: string[];
+  confidence: number;
+  isActive: boolean;
+  category: string;
+  priority: 'high' | 'medium' | 'low';
+  createdAt: string;
+  updatedAt: string;
+  usage: number;
+  successRate: number;
+}
+
+interface Entity {
+  id: string;
+  name: string;
+  type: 'system' | 'custom';
+  values: EntityValue[];
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface EntityValue {
+  value: string;
+  synonyms: string[];
+  examples: string[];
+}
+
+interface ConversationFlow {
+  id: string;
+  name: string;
+  description: string;
+  nodes: FlowNode[];
+  connections: FlowConnection[];
+  isActive: boolean;
+  category: string;
+  version: string;
+  createdAt: string;
+  updatedAt: string;
+  usage: number;
+  completionRate: number;
+}
+
+interface FlowNode {
+  id: string;
+  type: 'message' | 'question' | 'condition' | 'action' | 'webhook' | 'handoff';
+  position: { x: number; y: number };
+  data: {
+    title: string;
+    content?: string;
+    options?: string[];
+    condition?: string;
+    actionType?: string;
+    webhookUrl?: string;
+    department?: string;
+  };
+}
+
+interface FlowConnection {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  condition?: string;
+  label?: string;
+}
+
+interface TrainingData {
+  id: string;
+  text: string;
+  intent: string;
+  entities: TrainingEntity[];
+  confidence?: number;
+  isValidated: boolean;
+  source: 'manual' | 'conversation' | 'import';
+  createdAt: string;
+}
+
+interface TrainingEntity {
+  entity: string;
+  value: string;
+  start: number;
+  end: number;
+}
+
+interface BotConversation {
+  id: string;
+  userId: string;
+  userName: string;
+  startTime: string;
+  endTime?: string;
+  messages: BotMessage[];
+  status: 'active' | 'completed' | 'escalated' | 'failed';
+  satisfaction?: number;
+  resolvedByBot: boolean;
+  escalationReason?: string;
+  metadata: Record<string, any>;
+}
+
+interface BotMessage {
+  id: string;
+  type: 'user' | 'bot';
+  content: string;
+  timestamp: string;
+  intent?: string;
+  confidence?: number;
+  entities?: TrainingEntity[];
+  flowNodeId?: string;
+  wasHandled: boolean;
+}
+
+interface BotAnalytics {
+  totalConversations: number;
+  activeConversations: number;
+  completedConversations: number;
+  escalatedConversations: number;
+  averageSessionDuration: number;
+  botResolutionRate: number;
+  averageConfidence: number;
+  topIntents: {
+    intent: string;
+    count: number;
+    successRate: number;
+  }[];
+  failurePoints: {
+    step: string;
+    failures: number;
+    reason: string;
+  }[];
+  userSatisfaction: {
+    rating: number;
+    count: number;
+  }[];
+  conversationTrends: {
+    date: string;
+    conversations: number;
+    escalations: number;
+    satisfaction: number;
+  }[];
+  languageDistribution: {
+    language: string;
+    count: number;
+    percentage: number;
+  }[];
+}
+
+interface BotSettings {
+  enabled: boolean;
+  confidence_threshold: number;
+  fallback_message: string;
+  max_retry_attempts: number;
+  handoff_department: string;
+  languages: string[];
+  personality: {
+    tone: 'formal' | 'casual' | 'friendly' | 'professional';
+    style: 'concise' | 'detailed' | 'conversational';
+    emoji_usage: boolean;
+  };
+  features: {
+    sentiment_analysis: boolean;
+    entity_recognition: boolean;
+    context_awareness: boolean;
+    multi_language: boolean;
+    voice_synthesis: boolean;
+    image_recognition: boolean;
+  };
+  integrations: {
+    nlp_provider: 'openai' | 'dialogflow' | 'wit' | 'rasa';
+    translation_service: 'google' | 'azure' | 'aws';
+    analytics_tracking: boolean;
+  };
+}
+
+const ChatbotModule: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
+  const [intents, setIntents] = useState<Intent[]>([]);
+  const [entities, setEntities] = useState<Entity[]>([]);
+  const [flows, setFlows] = useState<ConversationFlow[]>([]);
+  const [trainingData, setTrainingData] = useState<TrainingData[]>([]);
+  const [conversations, setConversations] = useState<BotConversation[]>([]);
+  const [analytics, setAnalytics] = useState<BotAnalytics | null>(null);
+  const [settings, setSettings] = useState<BotSettings | null>(null);
+  const [selectedTab, setSelectedTab] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showIntentDialog, setShowIntentDialog] = useState(false);
+  const [showEntityDialog, setShowEntityDialog] = useState(false);
+  const [showFlowDialog, setShowFlowDialog] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [showTrainingDialog, setShowTrainingDialog] = useState(false);
+  const [selectedIntent, setSelectedIntent] = useState<Intent | null>(null);
+  const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
+  const [selectedFlow, setSelectedFlow] = useState<ConversationFlow | null>(null);
+  const [isTraining, setIsTraining] = useState(false);
+  const [trainingProgress, setTrainingProgress] = useState(0);
+  const [testMessage, setTestMessage] = useState('');
+  const [testResult, setTestResult] = useState<any>(null);
+
+  useEffect(() => {
+    loadChatbotData();
+  }, [sessionId]);
+
+  const loadChatbotData = async () => {
+    try {
+      setLoading(true);
+
+      // Mock data para chatbot empresarial
+      const mockIntents: Intent[] = [
+        {
+          id: 'greeting',
+          name: 'Saludo',
+          description: 'Usuario saluda al bot',
+          examples: [
+            'Hola',
+            'Buenos días',
+            'Buenas tardes',
+            'Hola, necesito ayuda',
+            'Saludos',
+            'Hey'
+          ],
+          responses: [
+            '¡Hola! 👋 Soy el asistente virtual de WhatsFlow. ¿En qué puedo ayudarte hoy?',
+            '¡Buenos días! Estoy aquí para ayudarte con cualquier pregunta sobre nuestros servicios.',
+            '¡Hola! Bienvenido/a. ¿Qué necesitas saber sobre WhatsFlow?'
+          ],
+          entities: [],
+          confidence: 0.95,
+          isActive: true,
+          category: 'general',
+          priority: 'high',
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-20T10:00:00Z',
+          usage: 1247,
+          successRate: 98.5
+        },
+        {
+          id: 'pricing_inquiry',
+          name: 'Consulta de Precios',
+          description: 'Usuario pregunta sobre precios y planes',
+          examples: [
+            '¿Cuánto cuesta?',
+            'Información sobre precios',
+            'Quiero saber los planes',
+            '¿Cuáles son las tarifas?',
+            'Precio de la suscripción',
+            'Planes de pago'
+          ],
+          responses: [
+            'Tenemos varios planes para adaptarse a tus necesidades:\n\n💎 **Plan Basic** - 1 canal, 1 agente\n🚀 **Plan Professional** - 5 canales, 10 agentes\n⭐ **Plan Enterprise** - 15 canales, 25 agentes\n\n¿Te gustaría que te conecte con un asesor para información detallada?',
+            'Nuestros planes van desde el Basic hasta Enterprise. ¿Prefieres que te envíe información completa por WhatsApp o quieres hablar con un especialista?'
+          ],
+          entities: ['plan_type'],
+          confidence: 0.87,
+          isActive: true,
+          category: 'sales',
+          priority: 'high',
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-18T14:30:00Z',
+          usage: 892,
+          successRate: 89.2
+        },
+        {
+          id: 'technical_support',
+          name: 'Soporte Técnico',
+          description: 'Usuario necesita ayuda técnica',
+          examples: [
+            'Tengo un problema técnico',
+            'No funciona la aplicación',
+            'Error en el sistema',
+            'No puedo enviar mensajes',
+            'Ayuda técnica',
+            'Bug en la plataforma'
+          ],
+          responses: [
+            'Entiendo que tienes un problema técnico. Para ayudarte mejor, ¿podrías describirme exactamente qué error estás experimentando?',
+            'Te voy a conectar con nuestro equipo de soporte técnico especializado. Mientras tanto, ¿has intentado refrescar la página o reiniciar la aplicación?'
+          ],
+          entities: ['issue_type', 'severity'],
+          confidence: 0.91,
+          isActive: true,
+          category: 'support',
+          priority: 'high',
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-19T09:15:00Z',
+          usage: 634,
+          successRate: 92.8
+        },
+        {
+          id: 'feature_inquiry',
+          name: 'Consulta de Características',
+          description: 'Usuario pregunta sobre funcionalidades',
+          examples: [
+            '¿Qué funciones tiene?',
+            'Características de la plataforma',
+            '¿Qué puede hacer?',
+            'Funcionalidades disponibles',
+            'Features del sistema',
+            'Capacidades del software'
+          ],
+          responses: [
+            'WhatsFlow Enterprise incluye muchas funcionalidades potentes:\n\n📊 Dashboard analítico en tiempo real\n💬 Chat multiagente\n📢 Campañas masivas\n🤖 Chatbot con IA\n📈 CRM integrado\n📅 Calendario y programación\n\n¿Hay alguna funcionalidad específica que te interese conocer más?'
+          ],
+          entities: ['feature_type'],
+          confidence: 0.83,
+          isActive: true,
+          category: 'product',
+          priority: 'medium',
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-17T16:45:00Z',
+          usage: 456,
+          successRate: 85.4
+        }
+      ];
+
+      const mockEntities: Entity[] = [
+        {
+          id: 'plan_type',
+          name: 'Tipo de Plan',
+          type: 'custom',
+          values: [
+            {
+              value: 'basic',
+              synonyms: ['básico', 'inicio', 'starter', 'simple'],
+              examples: ['plan basic', 'suscripción básica']
+            },
+            {
+              value: 'professional',
+              synonyms: ['pro', 'profesional', 'business', 'negocio'],
+              examples: ['plan profesional', 'versión pro']
+            },
+            {
+              value: 'enterprise',
+              synonyms: ['empresarial', 'corporativo', 'avanzado'],
+              examples: ['plan enterprise', 'versión empresarial']
+            }
+          ],
+          description: 'Tipos de planes de suscripción disponibles',
+          isActive: true,
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-15T12:00:00Z'
+        },
+        {
+          id: 'issue_type',
+          name: 'Tipo de Problema',
+          type: 'custom',
+          values: [
+            {
+              value: 'login',
+              synonyms: ['acceso', 'iniciar sesión', 'login', 'entrar'],
+              examples: ['no puedo iniciar sesión', 'problema de acceso']
+            },
+            {
+              value: 'messaging',
+              synonyms: ['mensajes', 'envío', 'chat', 'comunicación'],
+              examples: ['no envía mensajes', 'error en chat']
+            },
+            {
+              value: 'integration',
+              synonyms: ['integración', 'conexión', 'API', 'webhook'],
+              examples: ['problema de integración', 'API no responde']
+            }
+          ],
+          description: 'Categorías de problemas técnicos comunes',
+          isActive: true,
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-12T10:30:00Z'
+        }
+      ];
+
+      const mockFlows: ConversationFlow[] = [
+        {
+          id: 'onboarding',
+          name: 'Bienvenida y Onboarding',
+          description: 'Flujo de bienvenida para nuevos usuarios',
+          nodes: [
+            {
+              id: 'start',
+              type: 'message',
+              position: { x: 100, y: 100 },
+              data: {
+                title: 'Mensaje de Bienvenida',
+                content: '¡Bienvenido a WhatsFlow! 🎉 Soy tu asistente virtual y estoy aquí para ayudarte.'
+              }
+            },
+            {
+              id: 'ask_need',
+              type: 'question',
+              position: { x: 300, y: 100 },
+              data: {
+                title: '¿Qué necesitas?',
+                content: '¿En qué puedo ayudarte hoy?',
+                options: ['Información sobre planes', 'Soporte técnico', 'Demo de la plataforma', 'Hablar con un agente']
+              }
+            },
+            {
+              id: 'route_sales',
+              type: 'action',
+              position: { x: 500, y: 50 },
+              data: {
+                title: 'Ruta a Ventas',
+                actionType: 'transfer_department',
+                department: 'sales'
+              }
+            },
+            {
+              id: 'route_support',
+              type: 'action',
+              position: { x: 500, y: 150 },
+              data: {
+                title: 'Ruta a Soporte',
+                actionType: 'transfer_department',
+                department: 'support'
+              }
+            }
+          ],
+          connections: [
+            { id: 'conn1', sourceId: 'start', targetId: 'ask_need' },
+            { id: 'conn2', sourceId: 'ask_need', targetId: 'route_sales', condition: 'planes|demo', label: 'Ventas' },
+            { id: 'conn3', sourceId: 'ask_need', targetId: 'route_support', condition: 'soporte|problema', label: 'Soporte' }
+          ],
+          isActive: true,
+          category: 'onboarding',
+          version: '1.2',
+          createdAt: '2024-01-01T00:00:00Z',
+          updatedAt: '2024-01-20T11:00:00Z',
+          usage: 2340,
+          completionRate: 87.3
+        }
+      ];
+
+      const mockTrainingData: TrainingData[] = [
+        {
+          id: 'train1',
+          text: 'Hola, quiero información sobre sus planes de precios',
+          intent: 'pricing_inquiry',
+          entities: [
+            { entity: 'plan_type', value: 'general', start: 38, end: 44 }
+          ],
+          confidence: 0.92,
+          isValidated: true,
+          source: 'manual',
+          createdAt: '2024-01-15T10:00:00Z'
+        },
+        {
+          id: 'train2',
+          text: 'Buenos días, necesito soporte técnico urgente',
+          intent: 'technical_support',
+          entities: [
+            { entity: 'severity', value: 'urgente', start: 38, end: 45 }
+          ],
+          confidence: 0.89,
+          isValidated: true,
+          source: 'conversation',
+          createdAt: '2024-01-16T14:30:00Z'
+        }
+      ];
+
+      const mockConversations: BotConversation[] = [
+        {
+          id: 'conv1',
+          userId: 'user123',
+          userName: 'Juan Pérez',
+          startTime: '2024-01-20T09:00:00Z',
+          endTime: '2024-01-20T09:15:00Z',
+          messages: [
+            {
+              id: 'msg1',
+              type: 'user',
+              content: 'Hola, necesito información sobre precios',
+              timestamp: '2024-01-20T09:00:00Z',
+              intent: 'pricing_inquiry',
+              confidence: 0.87,
+              entities: [],
+              wasHandled: true
+            },
+            {
+              id: 'msg2',
+              type: 'bot',
+              content: 'Tenemos varios planes disponibles. ¿Te gustaría conocer nuestro plan Professional?',
+              timestamp: '2024-01-20T09:00:30Z',
+              flowNodeId: 'pricing_info',
+              wasHandled: true
+            }
+          ],
+          status: 'completed',
+          satisfaction: 4.5,
+          resolvedByBot: true,
+          metadata: { source: 'website', language: 'es' }
+        }
+      ];
+
+      const mockAnalytics: BotAnalytics = {
+        totalConversations: 15647,
+        activeConversations: 234,
+        completedConversations: 14892,
+        escalatedConversations: 521,
+        averageSessionDuration: 8.5,
+        botResolutionRate: 78.4,
+        averageConfidence: 0.84,
+        topIntents: [
+          { intent: 'Saludo', count: 4521, successRate: 98.5 },
+          { intent: 'Consulta de Precios', count: 3892, successRate: 89.2 },
+          { intent: 'Soporte Técnico', count: 2634, successRate: 82.7 },
+          { intent: 'Información de Producto', count: 1876, successRate: 91.3 }
+        ],
+        failurePoints: [
+          { step: 'Reconocimiento de Intent', failures: 892, reason: 'Baja confianza' },
+          { step: 'Extracción de Entidades', failures: 456, reason: 'Entidades no reconocidas' },
+          { step: 'Generación de Respuesta', failures: 234, reason: 'Respuesta no disponible' }
+        ],
+        userSatisfaction: [
+          { rating: 5, count: 8234 },
+          { rating: 4, count: 4521 },
+          { rating: 3, count: 1876 },
+          { rating: 2, count: 567 },
+          { rating: 1, count: 294 }
+        ],
+        conversationTrends: [
+          { date: '2024-01-20', conversations: 567, escalations: 23, satisfaction: 4.2 },
+          { date: '2024-01-19', conversations: 612, escalations: 31, satisfaction: 4.1 },
+          { date: '2024-01-18', conversations: 543, escalations: 18, satisfaction: 4.4 }
+        ],
+        languageDistribution: [
+          { language: 'es', count: 12456, percentage: 79.6 },
+          { language: 'en', count: 2134, percentage: 13.6 },
+          { language: 'pt', count: 892, percentage: 5.7 },
+          { language: 'fr', count: 165, percentage: 1.1 }
+        ]
+      };
+
+      const mockSettings: BotSettings = {
+        enabled: true,
+        confidence_threshold: 0.75,
+        fallback_message: 'Lo siento, no he entendido tu consulta. ¿Podrías reformularla o prefieres hablar con un agente humano?',
+        max_retry_attempts: 3,
+        handoff_department: 'general',
+        languages: ['es', 'en', 'pt'],
+        personality: {
+          tone: 'friendly',
+          style: 'conversational',
+          emoji_usage: true
+        },
+        features: {
+          sentiment_analysis: true,
+          entity_recognition: true,
+          context_awareness: true,
+          multi_language: true,
+          voice_synthesis: false,
+          image_recognition: false
+        },
+        integrations: {
+          nlp_provider: 'openai',
+          translation_service: 'google',
+          analytics_tracking: true
+        }
+      };
+
+      setIntents(mockIntents);
+      setEntities(mockEntities);
+      setFlows(mockFlows);
+      setTrainingData(mockTrainingData);
+      setConversations(mockConversations);
+      setAnalytics(mockAnalytics);
+      setSettings(mockSettings);
+    } catch (error) {
+      console.error('Error loading chatbot data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTrainModel = async () => {
+    setIsTraining(true);
+    setTrainingProgress(0);
+
+    // Simular entrenamiento
+    const interval = setInterval(() => {
+      setTrainingProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          setIsTraining(false);
+          return 100;
+        }
+        return prev + 10;
+      });
+    }, 500);
+  };
+
+  const handleTestMessage = async () => {
+    if (!testMessage.trim()) return;
+
+    // Simular procesamiento del mensaje
+    const mockResult = {
+      intent: 'pricing_inquiry',
+      confidence: 0.87,
+      entities: [
+        { entity: 'plan_type', value: 'professional', confidence: 0.92 }
+      ],
+      response: 'Te puedo ayudar con información sobre nuestros planes. El plan Professional incluye 10 agentes y múltiples funcionalidades avanzadas.'
+    };
+
+    setTestResult(mockResult);
+  };
+
+  const getConfidenceColor = (confidence: number) => {
+    if (confidence >= 0.8) return '#4caf50';
+    if (confidence >= 0.6) return '#ff9800';
+    return '#f44336';
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'high': return '#f44336';
+      case 'medium': return '#ff9800';
+      case 'low': return '#4caf50';
+      default: return '#9e9e9e';
+    }
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+        <CircularProgress size={60} sx={{ color: '#9c27b0' }} />
+      </Box>
+    );
+  }
+
+  return (
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      <Box sx={{ p: 3 }}>
+        {/* Header */}
+        <Box sx={{ 
+          mb: 4, 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          background: 'linear-gradient(135deg, #9c27b0 0%, #673ab7 100%)',
+          borderRadius: 3,
+          p: 3,
+          color: 'white'
+        }}>
+          <Box>
+            <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>
+              🤖 Chatbot IA Avanzado
+            </Typography>
+            <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>
+              NLP • Machine Learning • Flujos Conversacionales • Analytics • Entrenamiento Continuo
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              variant="contained"
+              startIcon={isTraining ? <CircularProgress size={16} sx={{ color: 'white' }} /> : <ModelTraining />}
+              onClick={handleTrainModel}
+              disabled={isTraining}
+              sx={{
+                bgcolor: 'rgba(255,255,255,0.2)',
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }
+              }}
+            >
+              {isTraining ? 'Entrenando...' : 'Entrenar Modelo'}
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<Settings />}
+              onClick={() => setShowSettingsDialog(true)}
+              sx={{
+                bgcolor: 'rgba(255,255,255,0.2)',
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }
+              }}
+            >
+              Configuración
+            </Button>
+          </Box>
+        </Box>
+
+        {/* Métricas principales del bot */}
+        {analytics && (
+          <Grid container spacing={3} sx={{ mb: 4 }}>
+            <Grid item xs={12} sm={6} md={3}>
+              <Card elevation={3} sx={{ 
+                borderRadius: 3,
+                background: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)',
+                color: 'white'
+              }}>
+                <CardContent sx={{ textAlign: 'center' }}>
+                  <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
+                    {analytics.botResolutionRate}%
+                  </Typography>
+                  <Typography variant="body1" sx={{ opacity: 0.9 }}>
+                    Resolución por Bot
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 1 }}>
+                    <TrendingUp sx={{ fontSize: 16, mr: 0.5 }} />
+                    <Typography variant="caption">+5.2% vs mes anterior</Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Card elevation={3} sx={{ 
+                borderRadius: 3,
+                background: 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)',
+                color: 'white'
+              }}>
+                <CardContent sx={{ textAlign: 'center' }}>
+                  <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
+                    {analytics.totalConversations.toLocaleString()}
+                  </Typography>
+                  <Typography variant="body1" sx={{ opacity: 0.9 }}>
+                    Conversaciones Totales
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 1 }}>
+                    <TrendingUp sx={{ fontSize: 16, mr: 0.5 }} />
+                    <Typography variant="caption">+12.8% vs mes anterior</Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Card elevation={3} sx={{ 
+                borderRadius: 3,
+                background: 'linear-gradient(135deg, #ff9800 0%, #f57c00 100%)',
+                color: 'white'
+              }}>
+                <CardContent sx={{ textAlign: 'center' }}>
+                  <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
+                    {(analytics.averageConfidence * 100).toFixed(0)}%
+                  </Typography>
+                  <Typography variant="body1" sx={{ opacity: 0.9 }}>
+                    Confianza Promedio
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 1 }}>
+                    <TrendingUp sx={{ fontSize: 16, mr: 0.5 }} />
+                    <Typography variant="caption">+2.1% vs mes anterior</Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Card elevation={3} sx={{ 
+                borderRadius: 3,
+                background: 'linear-gradient(135deg, #e91e63 0%, #ad1457 100%)',
+                color: 'white'
+              }}>
+                <CardContent sx={{ textAlign: 'center' }}>
+                  <Typography variant="h4" sx={{ fontWeight: 700, mb: 1 }}>
+                    {analytics.averageSessionDuration}min
+                  </Typography>
+                  <Typography variant="body1" sx={{ opacity: 0.9 }}>
+                    Duración Promedio
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 1 }}>
+                    <TrendingDown sx={{ fontSize: 16, mr: 0.5 }} />
+                    <Typography variant="caption">-1.3min vs mes anterior</Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        )}
+
+        {/* Progreso de entrenamiento */}
+        {isTraining && (
+          <Alert 
+            severity="info" 
+            sx={{ mb: 3 }}
+            action={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="caption">{trainingProgress}%</Typography>
+                <LinearProgress 
+                  variant="determinate" 
+                  value={trainingProgress} 
+                  sx={{ width: 100 }}
+                />
+              </Box>
+            }
+          >
+            Entrenando modelo de IA con {trainingData.length} ejemplos de entrenamiento...
+          </Alert>
+        )}
+
+        {/* Bot de prueba */}
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>🧪 Probar Bot en Tiempo Real</Typography>
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={12} md={8}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Escribe un mensaje para probar el bot..."
+                  value={testMessage}
+                  onChange={(e) => setTestMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleTestMessage()}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SmartToy sx={{ color: '#9c27b0' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Button
+                  fullWidth
+                  variant="contained"
+                  onClick={handleTestMessage}
+                  disabled={!testMessage.trim()}
+                  sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
+                >
+                  Probar Bot
+                </Button>
+              </Grid>
+              {testResult && (
+                <Grid item xs={12}>
+                  <Paper sx={{ p: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <Typography variant="subtitle2" gutterBottom>Resultado del Análisis:</Typography>
+                    <Grid container spacing={2}>
+                      <Grid item xs={12} md={6}>
+                        <Box sx={{ mb: 2 }}>
+                          <Typography variant="caption" sx={{ fontWeight: 600 }}>Intent Detectado:</Typography>
+                          <Chip 
+                            label={testResult.intent} 
+                            size="small" 
+                            sx={{ ml: 1, bgcolor: getConfidenceColor(testResult.confidence), color: 'white' }}
+                          />
+                          <Typography variant="caption" sx={{ ml: 1 }}>
+                            (Confianza: {(testResult.confidence * 100).toFixed(1)}%)
+                          </Typography>
+                        </Box>
+                        {testResult.entities.length > 0 && (
+                          <Box sx={{ mb: 2 }}>
+                            <Typography variant="caption" sx={{ fontWeight: 600 }}>Entidades:</Typography>
+                            {testResult.entities.map((entity: any, index: number) => (
+                              <Chip 
+                                key={index}
+                                label={`${entity.entity}: ${entity.value}`}
+                                size="small"
+                                variant="outlined"
+                                sx={{ ml: 1, mb: 0.5 }}
+                              />
+                            ))}
+                          </Box>
+                        )}
+                      </Grid>
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="caption" sx={{ fontWeight: 600 }}>Respuesta del Bot:</Typography>
+                        <Paper sx={{ p: 1.5, mt: 1, bgcolor: '#9c27b020', borderLeft: '3px solid #9c27b0' }}>
+                          <Typography variant="body2">{testResult.response}</Typography>
+                        </Paper>
+                      </Grid>
+                    </Grid>
+                  </Paper>
+                </Grid>
+              )}
+            </Grid>
+          </CardContent>
+        </Card>
+
+        {/* Tabs principales */}
+        <Paper sx={{ mb: 3 }}>
+          <Tabs value={selectedTab} onChange={(_, newValue) => setSelectedTab(newValue)}>
+            <Tab label={`Intents (${intents.length})`} />
+            <Tab label={`Entidades (${entities.length})`} />
+            <Tab label={`Flujos (${flows.length})`} />
+            <Tab label={`Entrenamiento (${trainingData.length})`} />
+            <Tab label="Conversaciones" />
+            <Tab label="Analytics" />
+          </Tabs>
+        </Paper>
+
+        {/* Contenido de las tabs */}
+        {selectedTab === 0 && (
+          <Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <TextField
+                size="small"
+                placeholder="Buscar intents..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Search sx={{ color: '#64748b' }} />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{ width: 300 }}
+              />
+              <Button
+                variant="contained"
+                startIcon={<Add />}
+                onClick={() => setShowIntentDialog(true)}
+                sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
+              >
+                Nuevo Intent
+              </Button>
+            </Box>
+
+            <Grid container spacing={3}>
+              {intents
+                .filter(intent => 
+                  intent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  intent.description.toLowerCase().includes(searchTerm.toLowerCase())
+                )
+                .map((intent) => (
+                <Grid item xs={12} md={6} lg={4} key={intent.id}>
+                  <Card elevation={3} sx={{ 
+                    borderRadius: 3,
+                    transition: 'all 0.3s ease',
+                    border: intent.isActive ? '2px solid #4caf5020' : '2px solid #f4433620',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.12)'
+                    }
+                  }}>
+                    <CardContent sx={{ p: 3 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                            {intent.name}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>
+                            {intent.description}
+                          </Typography>
+                          <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                            <Chip 
+                              label={intent.category}
+                              size="small"
+                              variant="outlined"
+                            />
+                            <Chip 
+                              label={intent.priority}
+                              size="small"
+                              sx={{ 
+                                bgcolor: `${getPriorityColor(intent.priority)}20`,
+                                color: getPriorityColor(intent.priority)
+                              }}
+                            />
+                            <Chip 
+                              label={intent.isActive ? 'Activo' : 'Inactivo'}
+                              size="small"
+                              sx={{ 
+                                bgcolor: intent.isActive ? '#4caf5020' : '#f4433620',
+                                color: intent.isActive ? '#4caf50' : '#f44336'
+                              }}
+                            />
+                          </Box>
+                        </Box>
+                        <IconButton size="small">
+                          <MoreVert />
+                        </IconButton>
+                      </Box>
+
+                      <Grid container spacing={2} sx={{ mb: 2 }}>
+                        <Grid item xs={6}>
+                          <Box sx={{ textAlign: 'center', p: 1, borderRadius: 2, bgcolor: '#f8fafc' }}>
+                            <Typography variant="h6" sx={{ fontWeight: 700, color: getConfidenceColor(intent.confidence) }}>
+                              {(intent.confidence * 100).toFixed(0)}%
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#64748b' }}>
+                              Confianza
+                            </Typography>
+                          </Box>
+                        </Grid>
+                        <Grid item xs={6}>
+                          <Box sx={{ textAlign: 'center', p: 1, borderRadius: 2, bgcolor: '#f8fafc' }}>
+                            <Typography variant="h6" sx={{ fontWeight: 700, color: '#2196f3' }}>
+                              {intent.usage}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#64748b' }}>
+                              Usos
+                            </Typography>
+                          </Box>
+                        </Grid>
+                      </Grid>
+
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="caption" sx={{ fontWeight: 600, color: '#64748b' }}>
+                          Ejemplos ({intent.examples.length}):
+                        </Typography>
+                        <Box sx={{ mt: 0.5, maxHeight: '60px', overflow: 'hidden' }}>
+                          {intent.examples.slice(0, 2).map((example, index) => (
+                            <Typography key={index} variant="caption" sx={{ display: 'block', color: '#94a3b8' }}>
+                              "  {example}  "
+                            </Typography>
+                          ))}
+                          {intent.examples.length > 2 && (
+                            <Typography variant="caption" sx={{ color: '#64748b', fontStyle: 'italic' }}>
+                              +{intent.examples.length - 2} ejemplos más...
+                            </Typography>
+                          )}
+                        </Box>
+                      </Box>
+
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<Edit />}
+                          sx={{ flex: 1 }}
+                          onClick={() => {
+                            setSelectedIntent(intent);
+                            setShowIntentDialog(true);
+                          }}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<Visibility />}
+                          sx={{ flex: 1 }}
+                        >
+                          Ver Detalles
+                        </Button>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+        )}
+
+        {selectedTab === 1 && (
+          <Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <TextField
+                size="small"
+                placeholder="Buscar entidades..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Search sx={{ color: '#64748b' }} />
+                    </InputAdornment>
+                  ),
+                }}
+                sx={{ width: 300 }}
+              />
+              <Button
+                variant="contained"
+                startIcon={<Add />}
+                onClick={() => setShowEntityDialog(true)}
+                sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
+              >
+                Nueva Entidad
+              </Button>
+            </Box>
+
+            <Grid container spacing={3}>
+              {entities
+                .filter(entity => 
+                  entity.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  entity.description.toLowerCase().includes(searchTerm.toLowerCase())
+                )
+                .map((entity) => (
+                <Grid item xs={12} md={6} key={entity.id}>
+                  <Card elevation={3} sx={{ borderRadius: 3 }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                        <Box>
+                          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                            {entity.name}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>
+                            {entity.description}
+                          </Typography>
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Chip 
+                              label={entity.type}
+                              size="small"
+                              sx={{ 
+                                bgcolor: entity.type === 'system' ? '#2196f320' : '#9c27b020',
+                                color: entity.type === 'system' ? '#2196f3' : '#9c27b0'
+                              }}
+                            />
+                            <Chip 
+                              label={entity.isActive ? 'Activa' : 'Inactiva'}
+                              size="small"
+                              sx={{ 
+                                bgcolor: entity.isActive ? '#4caf5020' : '#f4433620',
+                                color: entity.isActive ? '#4caf50' : '#f44336'
+                              }}
+                            />
+                          </Box>
+                        </Box>
+                        <IconButton size="small">
+                          <MoreVert />
+                        </IconButton>
+                      </Box>
+
+                      <Typography variant="caption" sx={{ fontWeight: 600, color: '#64748b', mb: 1, display: 'block' }}>
+                        Valores ({entity.values.length}):
+                      </Typography>
+                      <Box sx={{ mb: 2 }}>
+                        {entity.values.slice(0, 3).map((value, index) => (
+                          <Chip
+                            key={index}
+                            label={value.value}
+                            size="small"
+                            variant="outlined"
+                            sx={{ mr: 0.5, mb: 0.5 }}
+                          />
+                        ))}
+                        {entity.values.length > 3 && (
+                          <Chip
+                            label={`+${entity.values.length - 3} más`}
+                            size="small"
+                            variant="outlined"
+                            sx={{ mr: 0.5, mb: 0.5 }}
+                          />
+                        )}
+                      </Box>
+
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<Edit />}
+                          sx={{ flex: 1 }}
+                          onClick={() => {
+                            setSelectedEntity(entity);
+                            setShowEntityDialog(true);
+                          }}
+                        >
+                          Editar
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<Visibility />}
+                          sx={{ flex: 1 }}
+                        >
+                          Ver Detalles
+                        </Button>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+        )}
+
+        {selectedTab === 5 && analytics && (
+          <Grid container spacing={3}>
+            {/* Intents más utilizados */}
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>🎯 Top Intents</Typography>
+                  {analytics.topIntents.map((intent, index) => (
+                    <Box key={intent.intent} sx={{ mb: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {intent.intent}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          {intent.count} usos ({intent.successRate}% éxito)
+                        </Typography>
+                      </Box>
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={(intent.count / analytics.topIntents[0].count) * 100}
+                        sx={{ 
+                          height: 8, 
+                          borderRadius: 4,
+                          bgcolor: '#f0f0f0',
+                          '& .MuiLinearProgress-bar': {
+                            bgcolor: index === 0 ? '#4caf50' : '#2196f3'
+                          }
+                        }}
+                      />
+                    </Box>
+                  ))}
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Satisfacción del usuario */}
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>⭐ Satisfacción del Usuario</Typography>
+                  {analytics.userSatisfaction.reverse().map((rating) => (
+                    <Box key={rating.rating} sx={{ mb: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          {[...Array(5)].map((_, i) => (
+                            <Star 
+                              key={i} 
+                              sx={{ 
+                                fontSize: 16, 
+                                color: i < rating.rating ? '#ffc107' : '#e0e0e0',
+                                mr: 0.25
+                              }} 
+                            />
+                          ))}
+                          <Typography variant="body2" sx={{ ml: 1 }}>
+                            {rating.rating} estrellas
+                          </Typography>
+                        </Box>
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          {rating.count.toLocaleString()}
+                        </Typography>
+                      </Box>
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={(rating.count / Math.max(...analytics.userSatisfaction.map(r => r.count))) * 100}
+                        sx={{ 
+                          height: 6, 
+                          borderRadius: 3,
+                          bgcolor: '#f0f0f0',
+                          '& .MuiLinearProgress-bar': {
+                            bgcolor: rating.rating >= 4 ? '#4caf50' : rating.rating >= 3 ? '#ff9800' : '#f44336'
+                          }
+                        }}
+                      />
+                    </Box>
+                  ))}
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Distribución de idiomas */}
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>🌐 Distribución de Idiomas</Typography>
+                  {analytics.languageDistribution.map((lang) => (
+                    <Box key={lang.language} sx={{ mb: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {lang.language.toUpperCase()}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
+                          {lang.count.toLocaleString()} ({lang.percentage}%)
+                        </Typography>
+                      </Box>
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={lang.percentage}
+                        sx={{ 
+                          height: 8, 
+                          borderRadius: 4,
+                          bgcolor: '#f0f0f0',
+                          '& .MuiLinearProgress-bar': {
+                            bgcolor: '#2196f3'
+                          }
+                        }}
+                      />
+                    </Box>
+                  ))}
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Puntos de fallo */}
+            <Grid item xs={12} md={6}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>⚠️ Puntos de Fallo</Typography>
+                  {analytics.failurePoints.map((failure, index) => (
+                    <Box key={index} sx={{ mb: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {failure.step}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#f44336' }}>
+                          {failure.failures} fallos
+                        </Typography>
+                      </Box>
+                      <Typography variant="caption" sx={{ color: '#64748b', mb: 1, display: 'block' }}>
+                        {failure.reason}
+                      </Typography>
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={(failure.failures / Math.max(...analytics.failurePoints.map(f => f.failures))) * 100}
+                        sx={{ 
+                          height: 6, 
+                          borderRadius: 3,
+                          bgcolor: '#f0f0f0',
+                          '& .MuiLinearProgress-bar': {
+                            bgcolor: '#f44336'
+                          }
+                        }}
+                      />
+                    </Box>
+                  ))}
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        )}
+      </Box>
+    </LocalizationProvider>
+  );
+};
+
+export default ChatbotModule; 

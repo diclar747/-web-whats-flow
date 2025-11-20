@@ -1,0 +1,870 @@
+import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
+import { useWhatsApp } from '../context/WhatsAppContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { getAPIBaseURL } from '../utils/socketConfig';
+import {
+  Box,
+  TextField,
+  IconButton,
+  Avatar,
+  Typography,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemAvatar,
+  ListItemText,
+  Badge,
+  Chip,
+  CircularProgress,
+  Button,
+  InputAdornment,
+  Paper,
+  Tabs,
+  Tab,
+  Menu,
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  Stack,
+  Alert
+} from '@mui/material';
+import {
+  Search as SearchIcon,
+  Send as SendIcon,
+  AttachFile as AttachIcon,
+  MoreVert as MoreIcon,
+  Refresh as RefreshIcon,
+  WhatsApp,
+  InsertEmoticon as EmojiIcon,
+  DoneAll as DoneAllIcon,
+  Done as DoneIcon,
+  AccessTime,
+  Error as ErrorIcon,
+  Group,
+  TransferWithinAStation as TransferIcon,
+  Person,
+  Category as CategoryIcon,
+  Close as CloseIcon,
+  Reply as ReplyIcon,
+  Forward as ForwardIcon
+} from '@mui/icons-material';
+
+interface OptimizedChatModuleProps {
+  sessionId: string;
+}
+
+// Memoizar componente de mensaje individual para evitar re-renders innecesarios
+const MessageBubble = memo(({ 
+  message, 
+  isDarkMode, 
+  onReply,
+  onForward,
+  getContactName 
+}: any) => {
+  const getStatusIcon = () => {
+    if (!message.isFromMe) return null;
+    switch (message.status) {
+      case 'sending': return <CircularProgress size={14} />;
+      case 'sent': return <DoneIcon sx={{ fontSize: 14, color: '#667781' }} />;
+      case 'delivered': return <DoneAllIcon sx={{ fontSize: 14, color: '#667781' }} />;
+      case 'read': return <DoneAllIcon sx={{ fontSize: 14, color: '#25D366' }} />;
+      case 'failed': return <ErrorIcon sx={{ fontSize: 14, color: '#f44336' }} />;
+      default: return <DoneIcon sx={{ fontSize: 14, color: '#667781' }} />;
+    }
+  };
+
+  const getMediaUrl = (url: string) => {
+    if (!url) return '';
+    return url.startsWith('data:') || url.startsWith('http') 
+      ? url 
+      : `${getAPIBaseURL()}${url}`;
+  };
+
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        justifyContent: message.isFromMe ? 'flex-end' : 'flex-start',
+        mb: 1,
+        maxWidth: '90%',
+        marginLeft: message.isFromMe ? 'auto' : '10px',
+        marginRight: !message.isFromMe ? 'auto' : '10px'
+      }}
+    >
+      <Paper
+        elevation={1}
+        sx={{
+          p: 1.5,
+          maxWidth: '75%',
+          borderRadius: '7.5px',
+          bgcolor: message.isFromMe
+            ? (isDarkMode ? '#005c4b' : '#d9fdd3')
+            : (isDarkMode ? '#2a3942' : '#ffffff'),
+          color: isDarkMode ? '#e9edef' : '#111b21'
+        }}
+      >
+        {!message.isFromMe && (
+          <Typography variant="caption" sx={{ fontWeight: 500, color: '#00a884', mb: 0.5, display: 'block' }}>
+            {getContactName(message)}
+          </Typography>
+        )}
+
+        {/* Quoted message */}
+        {message.contextInfo && (
+          <Paper
+            elevation={0}
+            sx={{
+              bgcolor: isDarkMode ? '#1a262f' : '#e0e0e0',
+              p: 1,
+              mb: 1,
+              borderRadius: '5px',
+              borderLeft: `4px solid ${message.isFromMe ? '#25d366' : '#007bff'}`
+            }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 'bold', color: message.isFromMe ? '#25d366' : '#007bff' }}>
+              {message.contextInfo.quotedMessageSender || 'Desconocido'}
+            </Typography>
+            <Typography variant="body2" noWrap>
+              {message.contextInfo.quotedMessageText}
+            </Typography>
+          </Paper>
+        )}
+
+        {/* Media content */}
+        {message.type === 'image' && message.mediaUrl && (
+          <img
+            src={getMediaUrl(message.mediaUrl)}
+            alt="Imagen"
+            loading="lazy"
+            style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '8px', display: 'block' }}
+          />
+        )}
+
+        {message.type === 'video' && message.mediaUrl && (
+          <video
+            controls
+            style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '8px' }}
+          >
+            <source src={getMediaUrl(message.mediaUrl)} type={message.mediaMimeType || 'video/mp4'} />
+          </video>
+        )}
+
+        {message.type === 'audio' && message.mediaUrl && (
+          <audio controls style={{ width: '100%' }}>
+            <source src={getMediaUrl(message.mediaUrl)} type={message.mediaMimeType || 'audio/mpeg'} />
+          </audio>
+        )}
+
+        {/* Text content */}
+        {message.message && (
+          <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {message.message}
+          </Typography>
+        )}
+
+        {/* Timestamp and status */}
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+          <Typography variant="caption" sx={{ color: isDarkMode ? '#aebac1' : '#667781', fontSize: '0.65rem' }}>
+            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </Typography>
+          {getStatusIcon()}
+        </Box>
+      </Paper>
+    </Box>
+  );
+}, (prevProps, nextProps) => {
+  // Solo re-renderizar si cambian datos relevantes
+  return prevProps.message.id === nextProps.message.id &&
+         prevProps.message.status === nextProps.message.status &&
+         prevProps.isDarkMode === nextProps.isDarkMode;
+});
+
+MessageBubble.displayName = 'MessageBubble';
+
+// Memoizar item de chat en la lista
+const ChatListItem = memo(({ 
+  chat, 
+  isActive, 
+  isDarkMode, 
+  onClick,
+  onTransfer,
+  onKanban
+}: any) => (
+  <ListItemButton
+    selected={isActive}
+    onClick={onClick}
+    sx={{
+      bgcolor: isActive ? (isDarkMode ? '#2a3942' : '#f5f6f6') : 'transparent',
+      '&:hover': { bgcolor: isDarkMode ? '#202c33' : '#f0f2f5' }
+    }}
+  >
+    <ListItemAvatar>
+      <Badge
+        badgeContent={chat.unreadCount || 0}
+        color="error"
+        invisible={!chat.unreadCount}
+        sx={{
+          '& .MuiBadge-badge': {
+            backgroundColor: '#25D366',
+            color: 'white',
+            fontWeight: 'bold'
+          }
+        }}
+      >
+        <Avatar
+          src={chat.avatar}
+          sx={{
+            bgcolor: chat.isGroup ? '#9c27b0' : '#00a884',
+            width: 48,
+            height: 48
+          }}
+        >
+          {chat.name.charAt(0).toUpperCase()}
+        </Avatar>
+      </Badge>
+    </ListItemAvatar>
+    <ListItemText
+      primary={
+        <Typography variant="body1" noWrap sx={{ fontWeight: chat.unreadCount ? 600 : 400 }}>
+          {chat.name}
+        </Typography>
+      }
+      secondary={
+        <Typography variant="body2" noWrap sx={{ color: isDarkMode ? '#aebac1' : '#667781' }}>
+          {chat.lastMessage}
+        </Typography>
+      }
+    />
+    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+      <Typography variant="caption" sx={{ color: isDarkMode ? '#aebac1' : '#667781' }}>
+        {chat.timestamp ? new Date(chat.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 0.5 }}>
+        <IconButton
+          size="small"
+          onClick={(e) => {
+            e.stopPropagation();
+            onKanban(chat);
+          }}
+          sx={{ padding: '2px' }}
+        >
+          <CategoryIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+        <IconButton
+          size="small"
+          onClick={(e) => {
+            e.stopPropagation();
+            onTransfer(chat);
+          }}
+          sx={{ padding: '2px' }}
+        >
+          <TransferIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      </Box>
+    </Box>
+  </ListItemButton>
+), (prevProps, nextProps) => {
+  return prevProps.chat.id === nextProps.chat.id &&
+         prevProps.isActive === nextProps.isActive &&
+         prevProps.chat.unreadCount === nextProps.chat.unreadCount &&
+         prevProps.chat.lastMessage === nextProps.chat.lastMessage &&
+         prevProps.isDarkMode === nextProps.isDarkMode;
+});
+
+ChatListItem.displayName = 'ChatListItem';
+
+const OptimizedChatModule: React.FC<OptimizedChatModuleProps> = ({ sessionId }) => {
+  const { isDarkMode } = useTheme();
+  const {
+    chats,
+    activeChat,
+    messages,
+    isLoading,
+    loadChats,
+    loadMessages,
+    sendMessage,
+    setActiveChat,
+    replyMessage,
+    setReplyMessage,
+    markChatAsRead
+  } = useWhatsApp();
+
+  const [newMessage, setNewMessage] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState<'all' | 'unread' | 'groups' | 'contacts'>('all');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [selectedChatForTransfer, setSelectedChatForTransfer] = useState<any>(null);
+  const [onlineAgents, setOnlineAgents] = useState<any[]>([]);
+  const [kanbanBoards, setKanbanBoards] = useState<any[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState('');
+  const [selectedBoard, setSelectedBoard] = useState('');
+  const [transferType, setTransferType] = useState<'agent' | 'kanban'>('agent');
+  const [transferSuccess, setTransferSuccess] = useState<string | null>(null);
+  const [transferError, setTransferError] = useState<string | null>(null);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const chatListRef = useRef<HTMLUListElement>(null);
+
+  // Scroll optimizado con debounce
+  const scrollToBottom = useCallback(() => {
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }, []);
+
+  // Efecto para cargar chats una sola vez
+  useEffect(() => {
+    if (sessionId) {
+      loadChats(sessionId);
+    }
+  }, [sessionId]); // Solo cuando cambia sessionId
+
+  // Efecto para cargar mensajes cuando cambia el chat activo
+  useEffect(() => {
+    if (activeChat) {
+      loadMessages(activeChat.id);
+      markChatAsRead(activeChat.id);
+    }
+  }, [activeChat?.id]); // Solo cuando cambia el ID del chat activo
+
+  // Scroll cuando cambian mensajes
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollToBottom();
+    }
+  }, [messages.length, scrollToBottom]);
+
+  // Filtrado memoizado de chats
+  const filteredChats = useMemo(() => {
+    return chats.filter(chat => {
+      const matchesSearch = searchTerm === '' || 
+        chat.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        chat.lastMessage?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesFilter = 
+        filterType === 'all' ||
+        (filterType === 'unread' && chat.unreadCount && chat.unreadCount > 0) ||
+        (filterType === 'groups' && chat.isGroup) ||
+        (filterType === 'contacts' && !chat.isGroup);
+
+      return matchesSearch && matchesFilter;
+    });
+  }, [chats, searchTerm, filterType]);
+
+  // Estadísticas memoizadas
+  const chatStats = useMemo(() => ({
+    total: chats.length,
+    unread: chats.filter(c => c.unreadCount && c.unreadCount > 0).length,
+    groups: chats.filter(c => c.isGroup).length,
+    contacts: chats.filter(c => !c.isGroup).length
+  }), [chats]);
+
+  const handleSendMessage = useCallback(async () => {
+    if (!activeChat || (!newMessage.trim() && !selectedFile)) return;
+
+    if (selectedFile) {
+      await handleSendFile();
+    } else {
+      const contextInfo = replyMessage ? {
+        quotedMessageId: replyMessage.id,
+        quotedMessageText: replyMessage.message,
+        quotedMessageSender: replyMessage.from
+      } : undefined;
+
+      const success = await sendMessage(activeChat.id, newMessage, contextInfo);
+      
+      if (success) {
+        setNewMessage('');
+        setReplyMessage(null);
+        scrollToBottom();
+      }
+    }
+  }, [activeChat, newMessage, selectedFile, replyMessage, sendMessage, setReplyMessage]);
+
+  const handleSendFile = async () => {
+    if (!selectedFile || !activeChat) return;
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64Data = e.target?.result as string;
+        const base64Content = base64Data.split(',')[1];
+
+        let endpoint = '';
+        const formData: any = {
+          sessionId,
+          number: activeChat.id
+        };
+
+        if (selectedFile.type.startsWith('image/')) {
+          endpoint = '/api/send/image';
+          formData.url = `data:${selectedFile.type};base64,${base64Content}`;
+          formData.caption = newMessage || '';
+        } else if (selectedFile.type.startsWith('video/')) {
+          endpoint = '/api/send/video';
+          formData.url = `data:${selectedFile.type};base64,${base64Content}`;
+          formData.caption = newMessage || '';
+        } else if (selectedFile.type.startsWith('audio/')) {
+          endpoint = '/api/send/audio';
+          formData.url = `data:${selectedFile.type};base64,${base64Content}`;
+        } else {
+          endpoint = '/api/send/document';
+          formData.url = `data:${selectedFile.type};base64,${base64Content}`;
+          formData.fileName = selectedFile.name;
+        }
+
+        const response = await fetch(`${getAPIBaseURL()}${endpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData)
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          setNewMessage('');
+          setSelectedFile(null);
+          setFilePreview(null);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          loadMessages(activeChat.id);
+        }
+      };
+      reader.readAsDataURL(selectedFile);
+    } catch (error) {
+      console.error('Error sending file:', error);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSelectedFile(file);
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => setFilePreview(e.target?.result as string);
+      reader.readAsDataURL(file);
+    } else {
+      setFilePreview(null);
+    }
+  };
+
+  const handleChatClick = useCallback((chat: any) => {
+    setActiveChat(chat);
+  }, [setActiveChat]);
+
+  const handleTransferClick = (chat: any) => {
+    setSelectedChatForTransfer(chat);
+    setTransferDialogOpen(true);
+    loadOnlineAgents();
+    loadKanbanBoards();
+  };
+
+  const handleKanbanClick = async (chat: any) => {
+    await loadKanbanBoards();
+    // Quick Kanban dialog logic here
+  };
+
+  const loadOnlineAgents = async () => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/agents/online`);
+      const data = await response.json();
+      if (data.success) {
+        setOnlineAgents(data.agents.filter((a: any) => a.role === 'agent' || a.role === 'supervisor'));
+      }
+    } catch (error) {
+      console.error('Error loading agents:', error);
+    }
+  };
+
+  const loadKanbanBoards = async () => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
+      const data = await response.json();
+      if (data.success) {
+        setKanbanBoards(data.data.boards || []);
+      }
+    } catch (error) {
+      console.error('Error loading kanban boards:', error);
+    }
+  };
+
+  const handleTransferSubmit = async () => {
+    if (!selectedChatForTransfer) return;
+
+    if (transferType === 'agent' && selectedAgent) {
+      try {
+        const response = await fetch(`${getAPIBaseURL()}/api/chats/transfer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chatId: selectedChatForTransfer.id,
+            toAgentId: selectedAgent,
+            sessionId
+          })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          setTransferSuccess('Chat transferido exitosamente');
+          setTimeout(() => {
+            setTransferDialogOpen(false);
+            setTransferSuccess(null);
+          }, 2000);
+        }
+      } catch (error) {
+        setTransferError('Error al transferir chat');
+      }
+    } else if (transferType === 'kanban' && selectedBoard) {
+      try {
+        const phone = selectedChatForTransfer.id.replace('@c.us', '').replace('@g.us', '');
+        const response = await fetch(`${getAPIBaseURL()}/api/contacts/categorize`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            contactId: phone,
+            category: selectedBoard
+          })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          setTransferSuccess('Contacto movido a Kanban exitosamente');
+          setTimeout(() => {
+            setTransferDialogOpen(false);
+            setTransferSuccess(null);
+          }, 2000);
+        }
+      } catch (error) {
+        setTransferError('Error al mover a Kanban');
+      }
+    }
+  };
+
+  const getContactName = useCallback((message: any) => {
+    const chat = chats.find(c => c.id === message.from || c.id === message.chatJid);
+    return chat?.name || message.from?.split('@')[0] || 'Desconocido';
+  }, [chats]);
+
+  return (
+    <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)', bgcolor: isDarkMode ? '#0c1317' : '#f0f2f5' }}>
+      {/* Chat List Sidebar */}
+      <Box
+        sx={{
+          width: '30%',
+          minWidth: '300px',
+          borderRight: `1px solid ${isDarkMode ? '#303d45' : '#e9edef'}`,
+          bgcolor: isDarkMode ? '#111b21' : '#fff',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
+        {/* Header */}
+        <Box sx={{ p: 2, borderBottom: `1px solid ${isDarkMode ? '#303d45' : '#e9edef'}` }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Buscar chats..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon />
+                  </InputAdornment>
+                ),
+                sx: { bgcolor: isDarkMode ? '#2a3942' : '#f0f2f5', borderRadius: '8px' }
+              }}
+            />
+            <IconButton onClick={() => loadChats(sessionId)} size="small">
+              <RefreshIcon />
+            </IconButton>
+          </Box>
+
+          {/* Filter Tabs */}
+          <Tabs
+            value={filterType}
+            onChange={(_, v) => setFilterType(v)}
+            variant="fullWidth"
+            sx={{ minHeight: '36px' }}
+          >
+            <Tab value="all" label={`Todos (${chatStats.total})`} sx={{ minHeight: '36px', py: 0.5 }} />
+            <Tab value="unread" label={`No leídos (${chatStats.unread})`} sx={{ minHeight: '36px', py: 0.5 }} />
+            <Tab value="groups" label={`Grupos (${chatStats.groups})`} sx={{ minHeight: '36px', py: 0.5 }} />
+            <Tab value="contacts" label={`Contactos (${chatStats.contacts})`} sx={{ minHeight: '36px', py: 0.5 }} />
+          </Tabs>
+        </Box>
+
+        {/* Chat List */}
+        <List
+          ref={chatListRef}
+          sx={{ flex: 1, overflowY: 'auto', p: 0 }}
+        >
+          {isLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : filteredChats.length === 0 ? (
+            <Box sx={{ p: 4, textAlign: 'center' }}>
+              <Typography color="text.secondary">No hay chats disponibles</Typography>
+              <Button startIcon={<RefreshIcon />} onClick={() => loadChats(sessionId)} sx={{ mt: 2 }}>
+                Recargar
+              </Button>
+            </Box>
+          ) : (
+            filteredChats.map((chat) => (
+              <ChatListItem
+                key={chat.id}
+                chat={chat}
+                isActive={activeChat?.id === chat.id}
+                isDarkMode={isDarkMode}
+                onClick={() => handleChatClick(chat)}
+                onTransfer={() => handleTransferClick(chat)}
+                onKanban={() => handleKanbanClick(chat)}
+              />
+            ))
+          )}
+        </List>
+      </Box>
+
+      {/* Chat Area */}
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', bgcolor: isDarkMode ? '#0b141a' : '#e5ddd5' }}>
+        {activeChat ? (
+          <>
+            {/* Chat Header */}
+            <Box
+              sx={{
+                p: 2,
+                bgcolor: isDarkMode ? '#202c33' : '#f0f2f5',
+                borderBottom: `1px solid ${isDarkMode ? '#303d45' : '#e9edef'}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 2
+              }}
+            >
+              <Avatar
+                src={activeChat.avatar}
+                sx={{ bgcolor: activeChat.isGroup ? '#9c27b0' : '#00a884', width: 40, height: 40 }}
+              >
+                {activeChat.name.charAt(0).toUpperCase()}
+              </Avatar>
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  {activeChat.name}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {activeChat.isOnline ? 'En línea' : 'Desconectado'}
+                </Typography>
+              </Box>
+            </Box>
+
+            {/* Messages Area */}
+            <Box sx={{ flex: 1, overflowY: 'auto', p: 2 }}>
+              {isLoading && messages.length === 0 ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                  <CircularProgress />
+                </Box>
+              ) : messages.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <Typography color="text.secondary">No hay mensajes</Typography>
+                </Box>
+              ) : (
+                messages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    isDarkMode={isDarkMode}
+                    onReply={setReplyMessage}
+                    onForward={() => {}}
+                    getContactName={getContactName}
+                  />
+                ))
+              )}
+              <div ref={messagesEndRef} />
+            </Box>
+
+            {/* Input Area */}
+            <Box sx={{ p: 2, bgcolor: isDarkMode ? '#202c33' : '#f0f2f5', borderTop: `1px solid ${isDarkMode ? '#303d45' : '#e9edef'}` }}>
+              {replyMessage && (
+                <Paper
+                  elevation={0}
+                  sx={{
+                    bgcolor: isDarkMode ? '#2a3942' : '#e0e0e0',
+                    p: 1,
+                    mb: 1,
+                    borderRadius: '8px',
+                    borderLeft: `4px solid #25d366`,
+                    display: 'flex',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <Box>
+                    <Typography variant="caption" sx={{ fontWeight: 'bold', color: '#25d366' }}>
+                      {replyMessage.from}
+                    </Typography>
+                    <Typography variant="body2" noWrap>
+                      {replyMessage.message}
+                    </Typography>
+                  </Box>
+                  <IconButton size="small" onClick={() => setReplyMessage(null)}>
+                    <CloseIcon />
+                  </IconButton>
+                </Paper>
+              )}
+
+              {filePreview && (
+                <Paper elevation={2} sx={{ p: 2, mb: 2, bgcolor: isDarkMode ? '#2a3942' : '#f5f5f5' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography variant="subtitle2">Vista previa</Typography>
+                    <IconButton size="small" onClick={() => {
+                      setSelectedFile(null);
+                      setFilePreview(null);
+                    }}>
+                      <CloseIcon />
+                    </IconButton>
+                  </Box>
+                  <img src={filePreview} alt="Preview" style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '8px' }} />
+                </Paper>
+              )}
+
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <IconButton size="small">
+                  <EmojiIcon />
+                </IconButton>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  hidden
+                  accept="image/*,video/*,audio/*,application/pdf,.doc,.docx"
+                  onChange={handleFileSelect}
+                />
+                <IconButton size="small" onClick={() => fileInputRef.current?.click()}>
+                  <AttachIcon />
+                </IconButton>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Escribe un mensaje..."
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
+                  multiline
+                  maxRows={3}
+                  sx={{
+                    bgcolor: isDarkMode ? '#2a3942' : '#fff',
+                    borderRadius: '8px',
+                    '& .MuiOutlinedInput-root': { borderRadius: '8px' }
+                  }}
+                />
+                <IconButton
+                  color="primary"
+                  onClick={handleSendMessage}
+                  disabled={!newMessage.trim() && !selectedFile}
+                  sx={{
+                    bgcolor: (newMessage.trim() || selectedFile) ? '#00a884' : 'transparent',
+                    color: (newMessage.trim() || selectedFile) ? 'white' : 'inherit',
+                    '&:hover': {
+                      bgcolor: (newMessage.trim() || selectedFile) ? '#008f7a' : 'transparent'
+                    }
+                  }}
+                >
+                  <SendIcon />
+                </IconButton>
+              </Box>
+            </Box>
+          </>
+        ) : (
+          <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Box sx={{ textAlign: 'center' }}>
+              <WhatsApp sx={{ fontSize: 80, color: isDarkMode ? '#2a3942' : '#d1d7db' }} />
+              <Typography variant="h5" sx={{ mt: 2 }}>
+                WhatsFlow Web
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Selecciona un chat para comenzar
+              </Typography>
+            </Box>
+          </Box>
+        )}
+      </Box>
+
+      {/* Transfer Dialog */}
+      <Dialog open={transferDialogOpen} onClose={() => setTransferDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Transferir Chat</DialogTitle>
+        <DialogContent>
+          {transferSuccess && <Alert severity="success" sx={{ mb: 2 }}>{transferSuccess}</Alert>}
+          {transferError && <Alert severity="error" sx={{ mb: 2 }}>{transferError}</Alert>}
+
+          <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+            <Button
+              fullWidth
+              variant={transferType === 'agent' ? 'contained' : 'outlined'}
+              onClick={() => setTransferType('agent')}
+              startIcon={<Person />}
+            >
+              A Agente
+            </Button>
+            <Button
+              fullWidth
+              variant={transferType === 'kanban' ? 'contained' : 'outlined'}
+              onClick={() => setTransferType('kanban')}
+              startIcon={<CategoryIcon />}
+            >
+              A Kanban
+            </Button>
+          </Stack>
+
+          {transferType === 'agent' && (
+            <FormControl fullWidth>
+              <InputLabel>Agente</InputLabel>
+              <Select value={selectedAgent} onChange={(e) => setSelectedAgent(e.target.value)} label="Agente">
+                {onlineAgents.map((agent) => (
+                  <MenuItem key={agent.userId} value={agent.userId}>
+                    {agent.userName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+
+          {transferType === 'kanban' && (
+            <FormControl fullWidth>
+              <InputLabel>Tablero Kanban</InputLabel>
+              <Select value={selectedBoard} onChange={(e) => setSelectedBoard(e.target.value)} label="Tablero Kanban">
+                {kanbanBoards.map((board) => (
+                  <MenuItem key={board.id} value={board.id}>
+                    {board.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTransferDialogOpen(false)}>Cancelar</Button>
+          <Button
+            onClick={handleTransferSubmit}
+            variant="contained"
+            disabled={
+              (transferType === 'agent' && !selectedAgent) ||
+              (transferType === 'kanban' && !selectedBoard)
+            }
+          >
+            Transferir
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default OptimizedChatModule;

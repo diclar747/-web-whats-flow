@@ -1,0 +1,75 @@
+# Node modules
+node_modules/
+src/client/node_modules/
+src/server/node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Database
+db/*.db
+db/*.sqlite
+db/*.sqlite3
+
+# Authentication data
+auth_info/
+auth_info_multi/
+
+# Media files
+media/
+uploads/
+
+# SSL certificates
+ssl/*.key
+ssl/*.pem
+
+# Build artifacts
+src/client/build/
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# PM2
+.pm2/
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentos temporales de correcciones
+*FIX*.md
+*FIXES*.md
+*LEEME*.md
+*README_*.md
+*RESUMEN*.md
+*CORRECCIONES*.md
+*SOLUCION*.md
+*.sh
+ARCHIVOS_CREADOS.txt
+CAMBIOS_SUMMARY*.md
+CHAT_REALTIME_FIX.md
+COMANDOS_*.md
+COMPREHENSIVE_*.md
+EMPEZAR_AQUI.md
+MANUAL_*.md
+apply_fixes_automatically.py
+clean_database.sh
+test_system.sh
+

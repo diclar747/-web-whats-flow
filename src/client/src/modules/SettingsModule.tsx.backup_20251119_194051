@@ -1,0 +1,2123 @@
+import React, { useState, useEffect } from 'react';
+import { getAPIBaseURL } from '../utils/socketConfig';
+import AdminSubscriptionPanel from '../components/AdminSubscriptionPanel';
+import APIRestSettings from '../components/APIRestSettings';
+import {
+  Box,
+  Grid,
+  Card,
+  CardContent,
+  Typography,
+  Button,
+  TextField,
+  Avatar,
+  Chip,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Paper,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Stack,
+  Tooltip,
+  CircularProgress,
+  Tabs,
+  Tab,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemAvatar,
+  ListItemIcon,
+  LinearProgress,
+  InputAdornment,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Divider,
+  Switch,
+  FormControlLabel,
+  ToggleButtonGroup,
+  ToggleButton,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Badge,
+  Menu,
+  Checkbox,
+  Alert,
+  Slider,
+  Radio,
+  RadioGroup,
+  FormGroup,
+  Stepper,
+  Step,
+  StepLabel,
+  StepContent,
+  Snackbar
+} from '@mui/material';
+import {
+  Settings,
+  Security,
+  People,
+  Business,
+  Notifications,
+  Language,
+  Palette,
+  Code,
+  CloudUpload,
+  CloudDownload,
+  VpnKey,
+  Lock,
+  Shield,
+  AdminPanelSettings,
+  SupervisorAccount,
+  PersonAdd,
+  Group,
+  Edit,
+  Delete,
+  Visibility,
+  VisibilityOff,
+  Save,
+  Cancel,
+  Refresh,
+  Download,
+  Upload,
+  Share,
+  Link,
+  Computer,
+  Smartphone,
+  Tablet,
+  Storage,
+  Memory,
+  Speed,
+  NetworkCheck,
+  Wifi,
+  Bluetooth,
+  LocationOn,
+  AccessTime,
+  Schedule,
+  CalendarToday,
+  NotificationImportant,
+  Email,
+  Sms,
+  WhatsApp,
+  Telegram,
+  Facebook,
+  Twitter,
+  Instagram,
+  LinkedIn,
+  YouTube,
+  GitHub,
+  Google,
+  Microsoft,
+  Apple,
+  Amazon,
+  Slack,
+  Discord,
+  Zoom,
+  Teams,
+  Dropbox,
+  OneDrive,
+  GoogleDrive,
+  PayPal,
+  Stripe,
+  CreditCard,
+  Payment,
+  Receipt,
+  AttachMoney,
+  TrendingUp,
+  Analytics,
+  Assessment,
+  Dashboard,
+  Report,
+  FileDownload,
+  FileUpload,
+  FolderOpen,
+  Archive,
+  Backup,
+  Restore,
+  History,
+  Update,
+  Build,
+  BugReport,
+  Feedback,
+  HelpOutline,
+  Support,
+  ContactSupport,
+  LiveHelp,
+  Phone,
+  MoreVert,
+  ExpandMore,
+  Add,
+  Remove,
+  Check,
+  Close,
+  Warning,
+  Error as ErrorIcon,
+  Info,
+  Star,
+  Flag,
+  Label,
+  Category,
+  Tag,
+  LocalOffer,
+  Discount,
+  Loyalty,
+  CardGiftcard,
+  Campaign,
+  AutoAwesome,
+  Psychology,
+  SmartToy,
+  Api,
+  Extension,
+  Plugin,
+  IntegrationInstructions,
+  Webhook,
+  Transform,
+  DataUsage,
+  Insights,
+  Tune,
+  FilterList,
+  Sort,
+  Search,
+  FindReplace,
+  Compare,
+  SwapHoriz,
+  ImportExport,
+  SyncAlt,
+  Loop,
+  PlayArrow,
+  Pause,
+  Stop,
+  Replay,
+  SkipNext,
+  SkipPrevious,
+  FastForward,
+  FastRewind,
+  VolumeUp,
+  VolumeDown,
+  VolumeMute,
+  Brightness4,
+  Brightness7,
+  DarkMode,
+  LightMode,
+  Contrast,
+  InvertColors,
+  FormatColorFill,
+  ColorLens,
+  Image,
+  PhotoCamera,
+  Videocam,
+  Mic,
+  MicOff,
+  RecordVoiceOver,
+  GraphicEq,
+  Equalizer,
+  QueueMusic,
+  MusicNote,
+  Album,
+  LibraryMusic,
+  Headset,
+  Speaker,
+  SurroundSound,
+  HighQuality,
+  Hd,
+  FourK,
+  VideoSettings,
+  CameraEnhance,
+  FlashOn,
+  FlashOff,
+  Timer,
+  TimerOff,
+  Alarm,
+  AlarmOn,
+  AlarmOff,
+  Event,
+  EventNote,
+  Today,
+  DateRange,
+  Timeline,
+  Gantt
+} from '@mui/icons-material';
+
+interface SettingsModuleProps {
+  sessionId: string;
+}
+
+interface UserAccount {
+  id: string;
+  name: string;
+  email: string;
+  role: 'admin' | 'manager' | 'agent' | 'viewer';
+  department: string;
+  status: 'active' | 'inactive' | 'pending';
+  avatar?: string;
+  permissions: string[];
+  lastLogin: string;
+  createdAt: string;
+  isOnline: boolean;
+  preferences: {
+    theme: 'light' | 'dark' | 'auto';
+    language: string;
+    timezone: string;
+    notifications: {
+      email: boolean;
+      push: boolean;
+      sms: boolean;
+      whatsapp: boolean;
+    };
+  };
+}
+
+interface SecuritySettings {
+  twoFactorAuth: boolean;
+  sessionTimeout: number;
+  passwordPolicy: {
+    minLength: number;
+    requireUppercase: boolean;
+    requireLowercase: boolean;
+    requireNumbers: boolean;
+    requireSpecialChars: boolean;
+    expirationDays: number;
+  };
+  ipWhitelist: string[];
+  apiRateLimit: {
+    enabled: boolean;
+    requestsPerMinute: number;
+    requestsPerHour: number;
+  };
+  auditLog: boolean;
+  encryptionLevel: 'standard' | 'enhanced' | 'maximum';
+  backupFrequency: 'daily' | 'weekly' | 'monthly';
+}
+
+interface Integration {
+  id: string;
+  name: string;
+  type: 'crm' | 'payment' | 'analytics' | 'social' | 'storage' | 'communication' | 'automation';
+  status: 'connected' | 'disconnected' | 'error';
+  provider: string;
+  description: string;
+  icon: string;
+  features: string[];
+  config: Record<string, any>;
+  isActive: boolean;
+  lastSync?: string;
+  errorMessage?: string;
+}
+
+interface SystemPreferences {
+  general: {
+    companyName: string;
+    companyLogo?: string;
+    timezone: string;
+    dateFormat: string;
+    timeFormat: '12h' | '24h';
+    currency: string;
+    language: string;
+  };
+  whatsapp: {
+    autoReply: boolean;
+    businessHours: {
+      enabled: boolean;
+      timezone: string;
+      schedule: {
+        monday: { start: string; end: string; enabled: boolean };
+        tuesday: { start: string; end: string; enabled: boolean };
+        wednesday: { start: string; end: string; enabled: boolean };
+        thursday: { start: string; end: string; enabled: boolean };
+        friday: { start: string; end: string; enabled: boolean };
+        saturday: { start: string; end: string; enabled: boolean };
+        sunday: { start: string; end: string; enabled: boolean };
+      };
+    };
+    templates: {
+      welcomeMessage: string;
+      awayMessage: string;
+      businessHoursMessage: string;
+    };
+  };
+  notifications: {
+    email: {
+      enabled: boolean;
+      smtp: {
+        host: string;
+        port: number;
+        username: string;
+        password: string;
+        encryption: 'none' | 'tls' | 'ssl';
+      };
+    };
+    webhook: {
+      enabled: boolean;
+      url: string;
+      events: string[];
+      retryAttempts: number;
+    };
+  };
+  performance: {
+    maxConcurrentChats: number;
+    messageRetentionDays: number;
+    autoDeleteInactiveChats: boolean;
+    compressionLevel: 'low' | 'medium' | 'high';
+    cacheDuration: number;
+  };
+}
+
+interface BillingInfo {
+  plan: 'basic' | 'professional' | 'enterprise';
+  status: 'active' | 'cancelled' | 'past_due' | 'trial';
+  nextBillingDate: string;
+  amount: number;
+  currency: string;
+  paymentMethod: string;
+  usage: {
+    messages: number;
+    users: number;
+    storage: number;
+    apiCalls: number;
+  };
+  limits: {
+    messages: number;
+    users: number;
+    storage: number;
+    apiCalls: number;
+  };
+}
+
+const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
+  const [selectedTab, setSelectedTab] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState<UserAccount[]>([]);
+  const [securitySettings, setSecuritySettings] = useState<SecuritySettings | null>(null);
+  const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [systemPreferences, setSystemPreferences] = useState<SystemPreferences | null>(null);
+  const [billingInfo, setBillingInfo] = useState<BillingInfo | null>(null);
+  const [showUserDialog, setShowUserDialog] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserAccount | null>(null);
+  const [showIntegrationDialog, setShowIntegrationDialog] = useState(false);
+  const [selectedIntegration, setSelectedIntegration] = useState<Integration | null>(null);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [mySubscription, setMySubscription] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [syncPreference, setSyncPreference] = useState<any>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncHistoryOnConnect, setSyncHistoryOnConnect] = useState(() => {
+    const saved = localStorage.getItem('whatsflow_sync_history');
+    return saved === 'true';
+  });
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success' as 'success' | 'error' | 'warning' | 'info'
+  });
+  const [syncConfirmDialog, setSyncConfirmDialog] = useState(false);
+  const [deleteUserDialog, setDeleteUserDialog] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<UserAccount | null>(null);
+
+  // Estados para formulario de usuario
+  const [userForm, setUserForm] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'agent',
+    department: '',
+    phone: ''
+  });
+
+  useEffect(() => {
+    loadSettingsData();
+  }, [sessionId]);
+
+  const loadSettingsData = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token');
+
+      // Cargar suscripción actual del usuario
+      try {
+        const subResponse = await fetch(`${getAPIBaseURL()}/api/subscriptions/my-subscription?phone=${sessionId}`);
+        const subData = await subResponse.json();
+        
+        if (subData.success) {
+          setMySubscription(subData.subscription);
+          setIsAdmin(subData.subscription.is_admin || sessionId.startsWith('595994854167'));
+        }
+      } catch (error) {
+        console.error('Error loading subscription:', error);
+      }
+
+      // Cargar preferencia de sincronización
+      try {
+        const syncResponse = await fetch(`${getAPIBaseURL()}/api/sync/preference/${sessionId}`);
+        const syncData = await syncResponse.json();
+        
+        if (syncData.success) {
+          console.log('[SYNC-LOAD] Preferencia cargada desde BD:', syncData);
+          console.log('[SYNC-LOAD] auto_sync valor:', syncData.auto_sync);
+          setSyncPreference(syncData);
+        } else {
+          console.log('[SYNC-LOAD] No se pudo cargar preferencia:', syncData);
+        }
+      } catch (error) {
+        console.error('[SYNC-LOAD] Error loading sync preference:', error);
+      }
+
+      // Cargar usuarios reales desde la API
+      try {
+        const headers: any = {
+          'Content-Type': 'application/json'
+        };
+        
+        const actualSessionId = sessionId || sessionStorage.getItem('whatsflow_session') || sessionStorage.getItem('sessionId');
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        } else if (actualSessionId) {
+          headers['X-Session-Id'] = actualSessionId;
+        }
+        
+        const usersResponse = await fetch(`${getAPIBaseURL()}/api/users${actualSessionId ? `?sessionId=${actualSessionId}` : ''}`, {
+          headers
+        });
+        const usersData = await usersResponse.json();
+        
+        if (usersData.success && usersData.users) {
+          // Mapear usuarios de la BD al formato del frontend
+          const mappedUsers: UserAccount[] = usersData.users.map((user: any) => ({
+            id: user.id.toString(),
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            department: user.department || 'Sin asignar',
+            status: user.status,
+            avatar: user.avatar_url,
+            permissions: [],
+            lastLogin: user.last_login,
+            createdAt: user.created_at,
+            isOnline: false,
+            preferences: {
+              theme: 'auto',
+              language: 'es',
+              timezone: 'America/Asuncion',
+              notifications: {
+                email: true,
+                push: true,
+                sms: false,
+                whatsapp: true
+              }
+            }
+          }));
+          setUsers(mappedUsers);
+        } else {
+          setUsers([]);
+        }
+      } catch (error) {
+        console.error('Error loading users:', error);
+        setUsers([]);
+      }
+
+      // Mock Security Settings
+      const mockSecuritySettings: SecuritySettings = {
+        twoFactorAuth: true,
+        sessionTimeout: 8,
+        passwordPolicy: {
+          minLength: 8,
+          requireUppercase: true,
+          requireLowercase: true,
+          requireNumbers: true,
+          requireSpecialChars: true,
+          expirationDays: 90
+        },
+        ipWhitelist: ['192.168.1.0/24', '10.0.0.0/8'],
+        apiRateLimit: {
+          enabled: true,
+          requestsPerMinute: 100,
+          requestsPerHour: 5000
+        },
+        auditLog: true,
+        encryptionLevel: 'enhanced',
+        backupFrequency: 'daily'
+      };
+
+      // Mock Integrations
+      const mockIntegrations: Integration[] = [
+        {
+          id: 'hubspot_integration',
+          name: 'HubSpot CRM',
+          type: 'crm',
+          status: 'connected',
+          provider: 'HubSpot',
+          description: 'Sincroniza contactos y deals automáticamente',
+          icon: '🔗',
+          features: ['Contactos', 'Deals', 'Notas', 'Actividades'],
+          config: {
+            apiKey: 'hs_***************',
+            syncInterval: 15,
+            autoCreateContacts: true
+          },
+          isActive: true,
+          lastSync: '2024-01-20T14:25:00Z'
+        },
+        {
+          id: 'stripe_integration',
+          name: 'Stripe Payments',
+          type: 'payment',
+          status: 'connected',
+          provider: 'Stripe',
+          description: 'Procesa pagos y gestiona suscripciones',
+          icon: '💳',
+          features: ['Pagos', 'Suscripciones', 'Facturas', 'Webhooks'],
+          config: {
+            publishableKey: 'pk_***************',
+            webhookUrl: 'https://api.whatsflow.com/webhooks/stripe'
+          },
+          isActive: true,
+          lastSync: '2024-01-20T14:20:00Z'
+        },
+        {
+          id: 'zapier_integration',
+          name: 'Zapier Automation',
+          type: 'automation',
+          status: 'connected',
+          provider: 'Zapier',
+          description: 'Automatiza workflows con 5000+ aplicaciones',
+          icon: '⚡',
+          features: ['Triggers', 'Actions', 'Filters', 'Delays'],
+          config: {
+            webhookUrl: 'https://hooks.zapier.com/hooks/catch/***'
+          },
+          isActive: true,
+          lastSync: '2024-01-20T14:15:00Z'
+        },
+        {
+          id: 'slack_integration',
+          name: 'Slack',
+          type: 'communication',
+          status: 'disconnected',
+          provider: 'Slack',
+          description: 'Recibe notificaciones en tu workspace',
+          icon: '💬',
+          features: ['Notificaciones', 'Comandos', 'Bot'],
+          config: {},
+          isActive: false
+        },
+        {
+          id: 'google_analytics',
+          name: 'Google Analytics',
+          type: 'analytics',
+          status: 'error',
+          provider: 'Google',
+          description: 'Tracking avanzado de conversiones',
+          icon: '📊',
+          features: ['Events', 'Goals', 'Ecommerce', 'Custom Dimensions'],
+          config: {
+            trackingId: 'GA-***************'
+          },
+          isActive: false,
+          errorMessage: 'API key expirada'
+        }
+      ];
+
+      // Mock System Preferences
+      const mockSystemPreferences: SystemPreferences = {
+        general: {
+          companyName: 'Tu Empresa',
+          timezone: 'America/Asuncion',
+          dateFormat: 'DD/MM/YYYY',
+          timeFormat: '24h',
+          currency: 'PYG',
+          language: 'es'
+        },
+        whatsapp: {
+          autoReply: true,
+          businessHours: {
+            enabled: true,
+            timezone: 'America/Asuncion',
+            schedule: {
+              monday: { start: '08:00', end: '17:00', enabled: true },
+              tuesday: { start: '08:00', end: '17:00', enabled: true },
+              wednesday: { start: '08:00', end: '17:00', enabled: true },
+              thursday: { start: '08:00', end: '17:00', enabled: true },
+              friday: { start: '08:00', end: '17:00', enabled: true },
+              saturday: { start: '08:00', end: '12:00', enabled: false },
+              sunday: { start: '08:00', end: '12:00', enabled: false }
+            }
+          },
+          templates: {
+            welcomeMessage: '¡Hola! Gracias por contactarnos. ¿En qué podemos ayudarte?',
+            awayMessage: 'Actualmente no estamos disponibles. Te responderemos lo antes posible.',
+            businessHoursMessage: 'Nuestro horario de atención es de lunes a viernes de 9:00 a 18:00.'
+          }
+        },
+        notifications: {
+          email: {
+            enabled: true,
+            smtp: {
+              host: 'smtp.gmail.com',
+              port: 587,
+              username: 'notifications@whatsflow.com',
+              password: '************',
+              encryption: 'tls'
+            }
+          },
+          webhook: {
+            enabled: true,
+            url: 'https://api.yourapp.com/webhooks/whatsflow',
+            events: ['message.received', 'conversation.started', 'conversation.ended'],
+            retryAttempts: 3
+          }
+        },
+        performance: {
+          maxConcurrentChats: 100,
+          messageRetentionDays: 365,
+          autoDeleteInactiveChats: false,
+          compressionLevel: 'medium',
+          cacheDuration: 3600
+        }
+      };
+
+      // Mock Billing Info
+      const mockBillingInfo: BillingInfo = {
+        plan: 'enterprise',
+        status: 'active',
+        nextBillingDate: '2024-02-20',
+        amount: 299,
+        currency: 'EUR',
+        paymentMethod: 'Visa **** 4242',
+        usage: {
+          messages: 245678,
+          users: 45,
+          storage: 25.6,
+          apiCalls: 145000
+        },
+        limits: {
+          messages: 500000,
+          users: 100,
+          storage: 100,
+          apiCalls: 250000
+        }
+      };
+
+      // Los usuarios ya fueron cargados arriba, no necesitamos setUsers(mockUsers)
+      setSecuritySettings(mockSecuritySettings);
+      setIntegrations(mockIntegrations);
+      setSystemPreferences(mockSystemPreferences);
+      setBillingInfo(mockBillingInfo);
+    } catch (error) {
+      console.error('Error loading settings data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============== FUNCIONES CRUD DE USUARIOS ==============
+  
+  const handleOpenUserDialog = (user?: UserAccount) => {
+    if (user) {
+      setSelectedUser(user);
+      setUserForm({
+        name: user.name,
+        email: user.email,
+        password: '',
+        role: user.role,
+        department: user.department || '',
+        phone: ''
+      });
+    } else {
+      setSelectedUser(null);
+      setUserForm({
+        name: '',
+        email: '',
+        password: '',
+        role: 'agent',
+        department: '',
+        phone: ''
+      });
+    }
+    setShowUserDialog(true);
+  };
+
+  const handleSaveUser = async () => {
+    try {
+      setSaveStatus('saving');
+      const token = localStorage.getItem('token');
+
+      if (selectedUser) {
+        // Editar usuario existente
+        const response = await fetch(`${getAPIBaseURL()}/api/users/${selectedUser.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(userForm)
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          setSaveStatus('saved');
+          setShowUserDialog(false);
+          loadSettingsData(); // Recargar lista
+          setTimeout(() => setSaveStatus('idle'), 2000);
+        } else {
+          throw new Error(data.error || 'Error al actualizar usuario');
+        }
+      } else {
+        // Crear nuevo usuario
+        if (!userForm.password) {
+          alert('La contraseña es requerida para nuevos usuarios');
+          setSaveStatus('idle');
+          return;
+        }
+
+        const headers: any = {
+          'Content-Type': 'application/json'
+        };
+        
+        const actualSessionId = sessionId || sessionStorage.getItem('whatsflow_session') || sessionStorage.getItem('sessionId');
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        } else if (actualSessionId) {
+          headers['X-Session-Id'] = actualSessionId;
+        }
+        
+        const response = await fetch(`${getAPIBaseURL()}/api/users`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            ...userForm,
+            sessionId: actualSessionId
+          })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          setSaveStatus('saved');
+          setShowUserDialog(false);
+          loadSettingsData(); // Recargar lista
+          setTimeout(() => setSaveStatus('idle'), 2000);
+        } else {
+          throw new Error(data.error || 'Error al crear usuario');
+        }
+      }
+    } catch (error) {
+      console.error('Error saving user:', error);
+      alert((error as Error).message || 'Error al guardar usuario');
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    }
+  };
+
+  const openDeleteUserConfirmation = (user: UserAccount) => {
+    setUserToDelete(user);
+    setDeleteUserDialog(true);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const headers: any = {};
+      
+      const actualSessionId = sessionId || sessionStorage.getItem('whatsflow_session') || sessionStorage.getItem('sessionId');
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      } else if (actualSessionId) {
+        headers['X-Session-Id'] = actualSessionId;
+      }
+      
+      const response = await fetch(`${getAPIBaseURL()}/api/users/${userToDelete.id}${actualSessionId ? `?sessionId=${actualSessionId}` : ''}`, {
+        method: 'DELETE',
+        headers
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setSnackbar({
+          open: true,
+          message: 'Usuario eliminado exitosamente',
+          severity: 'success'
+        });
+        setDeleteUserDialog(false);
+        setUserToDelete(null);
+        loadSettingsData(); // Recargar lista
+      } else {
+        throw new Error(data.error || 'Error al eliminar usuario');
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert((error as Error).message || 'Error al eliminar usuario');
+    }
+  };
+
+  const getRoleIcon = (role: string) => {
+    switch (role) {
+      case 'admin': return <AdminPanelSettings sx={{ color: '#f44336' }} />;
+      case 'manager': return <SupervisorAccount sx={{ color: '#ff9800' }} />;
+      case 'agent': return <People sx={{ color: '#2196f3' }} />;
+      case 'viewer': return <Visibility sx={{ color: '#9e9e9e' }} />;
+      default: return <People />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return '#4caf50';
+      case 'inactive': return '#9e9e9e';
+      case 'pending': return '#ff9800';
+      case 'connected': return '#4caf50';
+      case 'disconnected': return '#9e9e9e';
+      case 'error': return '#f44336';
+      default: return '#9e9e9e';
+    }
+  };
+
+  const getIntegrationIcon = (type: string) => {
+    switch (type) {
+      case 'crm': return <Business />;
+      case 'payment': return <Payment />;
+      case 'analytics': return <Analytics />;
+      case 'social': return <Share />;
+      case 'storage': return <Storage />;
+      case 'communication': return <Email />;
+      case 'automation': return <AutoAwesome />;
+      default: return <Extension />;
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    setSaveStatus('saving');
+    try {
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (error) {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+  };
+
+  const handleToggleSyncHistory = (enabled: boolean) => {
+    setSyncHistoryOnConnect(enabled);
+    localStorage.setItem('whatsflow_sync_history', enabled.toString());
+  };
+
+  const handleToggleAutoSync = async (enabled: boolean) => {
+    try {
+      setSyncLoading(true);
+      
+      console.log(`[SYNC] Cambiando auto_sync a: ${enabled}`);
+      
+      const response = await fetch(`${getAPIBaseURL()}/api/sync/preference/${sessionId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ auto_sync: enabled })
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        // Actualizar el estado inmediatamente con el valor que devuelve el servidor
+        const newPreference = { 
+          ...syncPreference, 
+          auto_sync: data.auto_sync !== undefined ? data.auto_sync : enabled 
+        };
+        setSyncPreference(newPreference);
+        
+        console.log(`[SYNC] Estado actualizado en frontend:`, newPreference);
+        console.log(`[SYNC] auto_sync guardado en BD:`, data.auto_sync);
+        
+        setSnackbar({
+          open: true,
+          message: data.message || (enabled 
+            ? '✅ Sincronización automática activada. Descargando datos...' 
+            : 'Sincronización automática desactivada'),
+          severity: 'success'
+        });
+        
+        // Si se activa, iniciar sincronización inmediata
+        if (enabled) {
+          console.log('[AUTO-SYNC] Iniciando sincronización automática inmediata...');
+          // Esperar 1 segundo para que el snackbar se muestre
+          setTimeout(() => {
+            handleForceSync(true);
+          }, 1000);
+        }
+      } else {
+        setSnackbar({
+          open: true,
+          message: 'Error al actualizar preferencia: ' + data.error,
+          severity: 'error'
+        });
+      }
+    } catch (error) {
+      console.error('Error toggling auto sync:', error);
+      setSnackbar({
+        open: true,
+        message: 'Error al actualizar preferencia',
+        severity: 'error'
+      });
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const handleForceSync = async (silent: boolean = false) => {
+    // Cerrar dialog si estaba abierto
+    setSyncConfirmDialog(false);
+    
+    try {
+      setSyncLoading(true);
+      
+      console.log('[FORCE-SYNC] Iniciando sincronización forzada...');
+      console.log('[FORCE-SYNC] SessionId:', sessionId);
+      console.log('[FORCE-SYNC] Silent:', silent);
+      
+      if (!silent) {
+        setSnackbar({
+          open: true,
+          message: '🔄 Iniciando sincronización completa...',
+          severity: 'info'
+        });
+      }
+      
+      const url = `${getAPIBaseURL()}/api/sync/force/${sessionId}`;
+      console.log('[FORCE-SYNC] URL:', url);
+      
+      const response = await fetch(url, {
+        method: 'POST'
+      });
+
+      console.log('[FORCE-SYNC] Response status:', response.status);
+      const data = await response.json();
+      console.log('[FORCE-SYNC] Response data:', data);
+      
+      if (data.success) {
+        // Actualizar solo sync_completed y last_sync_date, NO tocar auto_sync
+        setSyncPreference((prev: any) => ({ 
+          ...prev, 
+          sync_completed: true, 
+          last_sync_date: new Date().toISOString() 
+        }));
+        
+        const totalSynced = (data.stats.chats || 0) + (data.stats.contacts || 0) + (data.stats.groups || 0);
+        
+        setSnackbar({
+          open: true,
+          message: `🎉 ¡Sincronización completa! Se descargaron ${data.stats.chats || 0} chats, ${data.stats.contacts || 0} contactos y ${data.stats.groups || 0} grupos (Total: ${totalSynced})`,
+          severity: 'success'
+        });
+      } else {
+        console.error('[FORCE-SYNC] Error:', data.error);
+        setSnackbar({
+          open: true,
+          message: 'Error al sincronizar: ' + data.error,
+          severity: 'error'
+        });
+      }
+    } catch (error) {
+      console.error('[FORCE-SYNC] Exception:', error);
+      setSnackbar({
+        open: true,
+        message: 'Error al sincronizar. Verifica que WhatsApp esté conectado.',
+        severity: 'error'
+      });
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
+        <CircularProgress size={60} sx={{ color: '#795548' }} />
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ p: 3 }}>
+      {/* Header */}
+      <Box sx={{ 
+        mb: 4, 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        background: 'linear-gradient(135deg, #795548 0%, #5d4037 100%)',
+        borderRadius: 3,
+        p: 3,
+        color: 'white'
+      }}>
+        <Box>
+          <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>
+            ⚙️ Configuración Enterprise
+          </Typography>
+          <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>
+            Usuarios • Seguridad • WhatsApp • Mi Plan • API REST
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="contained"
+            startIcon={saveStatus === 'saving' ? <CircularProgress size={16} /> : <Save />}
+            onClick={handleSaveSettings}
+            disabled={saveStatus === 'saving'}
+            sx={{
+              bgcolor: saveStatus === 'saved' ? '#4caf50' : saveStatus === 'error' ? '#f44336' : 'rgba(255,255,255,0.2)',
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }
+            }}
+          >
+            {saveStatus === 'saved' ? 'Guardado' : saveStatus === 'error' ? 'Error' : 'Guardar Cambios'}
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<Backup />}
+            sx={{
+              bgcolor: 'rgba(255,255,255,0.2)',
+              '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }
+            }}
+          >
+            Backup
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Tabs principales */}
+      <Paper sx={{ mb: 3 }}>
+        <Tabs value={selectedTab} onChange={(_, newValue) => setSelectedTab(newValue)}>
+          <Tab label="General" />
+          <Tab label={`Usuarios (${users.length})`} />
+          <Tab label="Seguridad" />
+          <Tab label="WhatsApp" />
+          <Tab label="Mi Plan" />
+          <Tab label="🔌 API REST" />
+          {isAdmin && <Tab label="🔐 Panel Admin" />}
+        </Tabs>
+      </Paper>
+
+      {/* Contenido de las tabs */}
+      {selectedTab === 0 && systemPreferences && (
+        <Grid container spacing={3}>
+          {/* Configuración general */}
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>🏢 Información de la Empresa</Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Nombre de la Empresa"
+                      value={systemPreferences.general.companyName}
+                      variant="outlined"
+                      size="small"
+                      placeholder="Ej: Mi Empresa SRL"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Dirección"
+                      variant="outlined"
+                      size="small"
+                      placeholder="Ej: Av. Mariscal López 1234, Asunción"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Teléfono"
+                      variant="outlined"
+                      size="small"
+                      placeholder="Ej: +595 21 123456"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Email"
+                      variant="outlined"
+                      size="small"
+                      placeholder="Ej: contacto@miempresa.com.py"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      label="Ciudad"
+                      variant="outlined"
+                      size="small"
+                      value="Asunción"
+                      placeholder="Asunción"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Zona Horaria</InputLabel>
+                      <Select
+                        value={systemPreferences.general.timezone}
+                        label="Zona Horaria"
+                        disabled
+                      >
+                        <MenuItem value="America/Asuncion">América/Asunción (Paraguay)</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Moneda</InputLabel>
+                      <Select
+                        value={systemPreferences.general.currency}
+                        label="Moneda"
+                        disabled
+                      >
+                        <MenuItem value="PYG">Guaraní (₲)</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Idioma</InputLabel>
+                      <Select
+                        value={systemPreferences.general.language}
+                        label="Idioma"
+                        disabled
+                      >
+                        <MenuItem value="es">Español</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Configuración de notificaciones */}
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>🔔 Notificaciones</Typography>
+                <Box sx={{ mb: 2 }}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={systemPreferences.notifications.email.enabled}
+                        color="primary"
+                      />
+                    }
+                    label="Notificaciones por Email"
+                  />
+                </Box>
+                <Box sx={{ mb: 2 }}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={systemPreferences.notifications.webhook.enabled}
+                        color="primary"
+                      />
+                    }
+                    label="Webhooks"
+                  />
+                </Box>
+                {systemPreferences.notifications.webhook.enabled && (
+                  <TextField
+                    fullWidth
+                    label="URL del Webhook"
+                    value={systemPreferences.notifications.webhook.url}
+                    variant="outlined"
+                    size="small"
+                    sx={{ mb: 2 }}
+                  />
+                )}
+                <Typography variant="subtitle2" gutterBottom>Eventos del Webhook:</Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {systemPreferences.notifications.webhook.events.map((event) => (
+                    <Chip key={event} label={event} size="small" variant="outlined" />
+                  ))}
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Configuración de Sincronización */}
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>🔄 Sincronización de WhatsApp</Typography>
+                <Typography variant="body2" sx={{ color: '#64748b', mb: 3 }}>
+                  Controla cuándo sincronizar tus chats, contactos y grupos de WhatsApp.
+                </Typography>
+
+                <Alert severity="success" sx={{ mb: 3 }}>
+                  <Typography variant="body1" sx={{ fontWeight: 600, mb: 1 }}>
+                    ✅ Sincronización Automática SIEMPRE Activa
+                  </Typography>
+                  <Typography variant="body2">
+                    Al conectar WhatsApp (escanear QR), el sistema descargará automáticamente:
+                  </Typography>
+                  <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2 }}>
+                    <li>📱 Todos los chats individuales</li>
+                    <li>👥 Todos los grupos</li>
+                    <li>📞 Todos los contactos</li>
+                    <li>💬 Historial de mensajes recientes</li>
+                  </Box>
+                  <Typography variant="caption" sx={{ mt: 1, display: 'block', fontStyle: 'italic' }}>
+                    No necesitas hacer nada, la descarga inicia automáticamente.
+                  </Typography>
+                </Alert>
+
+
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Configuración de rendimiento */}
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>⚡ Rendimiento del Sistema</Typography>
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={3}>
+                    <TextField
+                      fullWidth
+                      label="Chats Concurrentes Máximos"
+                      type="number"
+                      value={systemPreferences.performance.maxConcurrentChats}
+                      variant="outlined"
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <TextField
+                      fullWidth
+                      label="Retención de Mensajes (días)"
+                      type="number"
+                      value={systemPreferences.performance.messageRetentionDays}
+                      variant="outlined"
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Nivel de Compresión</InputLabel>
+                      <Select
+                        value={systemPreferences.performance.compressionLevel}
+                        label="Nivel de Compresión"
+                      >
+                        <MenuItem value="low">Bajo</MenuItem>
+                        <MenuItem value="medium">Medio</MenuItem>
+                        <MenuItem value="high">Alto</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <TextField
+                      fullWidth
+                      label="Duración de Caché (seg)"
+                      type="number"
+                      value={systemPreferences.performance.cacheDuration}
+                      variant="outlined"
+                      size="small"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={systemPreferences.performance.autoDeleteInactiveChats}
+                          color="primary"
+                        />
+                      }
+                      label="Eliminar automáticamente chats inactivos"
+                    />
+                  </Grid>
+                </Grid>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      )}
+
+      {selectedTab === 1 && (
+        <Grid container spacing={3}>
+          {/* Lista de usuarios */}
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                  <Typography variant="h6">👥 Gestión de Usuarios</Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={<PersonAdd />}
+                    onClick={() => handleOpenUserDialog()}
+                  >
+                    Añadir Usuario
+                  </Button>
+                </Box>
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Usuario</TableCell>
+                        <TableCell>Rol</TableCell>
+                        <TableCell>Departamento</TableCell>
+                        <TableCell>Estado</TableCell>
+                        <TableCell>Último Acceso</TableCell>
+                        <TableCell>Acciones</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {users.map((user) => (
+                        <TableRow key={user.id} hover>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              <Avatar sx={{ mr: 2, bgcolor: user.isOnline ? '#4caf50' : '#9e9e9e' }}>
+                                {user.name.charAt(0)}
+                              </Avatar>
+                              <Box>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                  {user.name}
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: '#64748b' }}>
+                                  {user.email}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              {getRoleIcon(user.role)}
+                              <Typography variant="body2" sx={{ ml: 1, textTransform: 'capitalize' }}>
+                                {user.role}
+                              </Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell>{user.department}</TableCell>
+                          <TableCell>
+                            <Chip
+                              label={user.status}
+                              size="small"
+                              sx={{
+                                bgcolor: `${getStatusColor(user.status)}20`,
+                                color: getStatusColor(user.status),
+                                textTransform: 'capitalize'
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {new Date(user.lastLogin).toLocaleDateString()}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#64748b' }}>
+                              {new Date(user.lastLogin).toLocaleTimeString()}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Tooltip title="Editar">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleOpenUserDialog(user)}
+                                >
+                                  <Edit />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Gestionar Privilegios">
+                                <IconButton
+                                  size="small"
+                                  color="primary"
+                                  onClick={() => {
+                                    window.location.href = '/dashboard/permissions';
+                                  }}
+                                >
+                                  <Shield />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Cambiar contraseña">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => {
+                                    setSelectedUser(user);
+                                    setPasswordDialogOpen(true);
+                                  }}
+                                >
+                                  <VpnKey />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Eliminar">
+                                <IconButton 
+                                  size="small" 
+                                  color="error"
+                                  onClick={() => openDeleteUserConfirmation(user)}
+                                >
+                                  <Delete />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      )}
+
+      {selectedTab === 2 && securitySettings && (
+        <Grid container spacing={3}>
+          {/* Configuración de seguridad */}
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>🔐 Autenticación y Acceso</Typography>
+                <Box sx={{ mb: 3 }}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={securitySettings.twoFactorAuth}
+                        color="primary"
+                      />
+                    }
+                    label="Autenticación de dos factores obligatoria"
+                  />
+                </Box>
+                <TextField
+                  fullWidth
+                  label="Timeout de sesión (horas)"
+                  type="number"
+                  value={securitySettings.sessionTimeout}
+                  variant="outlined"
+                  size="small"
+                  sx={{ mb: 2 }}
+                />
+                <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                  <InputLabel>Nivel de Encriptación</InputLabel>
+                  <Select
+                    value={securitySettings.encryptionLevel}
+                    label="Nivel de Encriptación"
+                  >
+                    <MenuItem value="standard">Estándar</MenuItem>
+                    <MenuItem value="enhanced">Mejorado</MenuItem>
+                    <MenuItem value="maximum">Máximo</MenuItem>
+                  </Select>
+                </FormControl>
+                <Box sx={{ mb: 2 }}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={securitySettings.auditLog}
+                        color="primary"
+                      />
+                    }
+                    label="Registro de auditoría"
+                  />
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Política de contraseñas */}
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>🔑 Política de Contraseñas</Typography>
+                <TextField
+                  fullWidth
+                  label="Longitud mínima"
+                  type="number"
+                  value={securitySettings.passwordPolicy.minLength}
+                  variant="outlined"
+                  size="small"
+                  sx={{ mb: 2 }}
+                />
+                <Box sx={{ mb: 2 }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={securitySettings.passwordPolicy.requireUppercase}
+                      />
+                    }
+                    label="Requiere mayúsculas"
+                  />
+                </Box>
+                <Box sx={{ mb: 2 }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={securitySettings.passwordPolicy.requireLowercase}
+                      />
+                    }
+                    label="Requiere minúsculas"
+                  />
+                </Box>
+                <Box sx={{ mb: 2 }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={securitySettings.passwordPolicy.requireNumbers}
+                      />
+                    }
+                    label="Requiere números"
+                  />
+                </Box>
+                <Box sx={{ mb: 2 }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={securitySettings.passwordPolicy.requireSpecialChars}
+                      />
+                    }
+                    label="Requiere caracteres especiales"
+                  />
+                </Box>
+                <TextField
+                  fullWidth
+                  label="Expiración (días)"
+                  type="number"
+                  value={securitySettings.passwordPolicy.expirationDays}
+                  variant="outlined"
+                  size="small"
+                />
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Rate limiting y whitelist */}
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>🛡️ Protección y Límites</Typography>
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={4}>
+                    <Box sx={{ mb: 2 }}>
+                      <FormControlLabel
+                        control={
+                          <Switch
+                            checked={securitySettings.apiRateLimit.enabled}
+                            color="primary"
+                          />
+                        }
+                        label="Límite de velocidad API"
+                      />
+                    </Box>
+                    {securitySettings.apiRateLimit.enabled && (
+                      <>
+                        <TextField
+                          fullWidth
+                          label="Requests por minuto"
+                          type="number"
+                          value={securitySettings.apiRateLimit.requestsPerMinute}
+                          variant="outlined"
+                          size="small"
+                          sx={{ mb: 2 }}
+                        />
+                        <TextField
+                          fullWidth
+                          label="Requests por hora"
+                          type="number"
+                          value={securitySettings.apiRateLimit.requestsPerHour}
+                          variant="outlined"
+                          size="small"
+                        />
+                      </>
+                    )}
+                  </Grid>
+                  <Grid item xs={12} md={8}>
+                    <Typography variant="subtitle2" gutterBottom>Lista Blanca de IPs</Typography>
+                    {securitySettings.ipWhitelist.map((ip, index) => (
+                      <Chip
+                        key={index}
+                        label={ip}
+                        onDelete={() => {}}
+                        sx={{ mr: 1, mb: 1 }}
+                      />
+                    ))}
+                    <TextField
+                      fullWidth
+                      label="Añadir IP o rango CIDR"
+                      variant="outlined"
+                      size="small"
+                      sx={{ mt: 2 }}
+                      InputProps={{
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <IconButton size="small">
+                              <Add />
+                            </IconButton>
+                          </InputAdornment>
+                        ),
+                      }}
+                    />
+                  </Grid>
+                </Grid>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      )}
+
+      {/* Tab 3: WhatsApp - Configuración Avanzada */}
+      {selectedTab === 3 && (
+        <Grid container spacing={3}>
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>📱 Configuración Avanzada de WhatsApp</Typography>
+                <Typography variant="body2" sx={{ color: '#64748b', mb: 3 }}>
+                  Gestiona la configuración avanzada de tu conexión de WhatsApp.
+                </Typography>
+                
+                <Alert severity="info">
+                  <Typography variant="body2">
+                    Las configuraciones avanzadas de WhatsApp se encuentran en la pestaña <strong>General</strong>.
+                  </Typography>
+                </Alert>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      )}
+
+
+      {/* Tab 4: Mi Plan - ajustado de índice 5 a 4 */}
+      {selectedTab === 4 && mySubscription && (
+        <Grid container spacing={3}>
+          {/* Plan actual */}
+          <Grid item xs={12} md={6}>
+            <Card sx={{
+              background: mySubscription.subscription_status === 'active' || mySubscription.subscription_status === 'trial'
+                ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                : 'linear-gradient(135deg, #f44336 0%, #e91e63 100%)',
+              color: 'white'
+            }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>💎 Tu Plan Actual</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="h4" sx={{ fontWeight: 700, textTransform: 'capitalize' }}>
+                    {mySubscription.plan_details?.plan_display_name || mySubscription.subscription_plan}
+                  </Typography>
+                  <Chip
+                    label={mySubscription.subscription_status.toUpperCase()}
+                    size="small"
+                    sx={{
+                      ml: 2,
+                      bgcolor: 'rgba(255,255,255,0.3)',
+                      color: 'white',
+                      fontWeight: 600
+                    }}
+                  />
+                </Box>
+                <Typography variant="h5" sx={{ fontWeight: 600, mb: 1 }}>
+                  ${mySubscription.plan_details?.price || 0}
+                </Typography>
+                {mySubscription.subscription_end_date && (
+                  <>
+                    <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                      Fecha de inicio: {new Date(mySubscription.subscription_start_date).toLocaleDateString()}
+                    </Typography>
+                    <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                      Vencimiento: {new Date(mySubscription.subscription_end_date).toLocaleDateString()}
+                    </Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 700, mt: 2 }}>
+                      {mySubscription.days_remaining > 0 
+                        ? `${mySubscription.days_remaining} días restantes`
+                        : 'Plan expirado'
+                      }
+                    </Typography>
+                  </>
+                )}
+                {!isAdmin && (
+                  <Alert severity="info" sx={{ mt: 2, bgcolor: 'rgba(255,255,255,0.2)' }}>
+                    <Typography variant="body2" sx={{ color: 'white' }}>
+                      Para renovar tu plan, contacta al administrador
+                    </Typography>
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Características del plan */}
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>📊 Características de tu Plan</Typography>
+                {mySubscription.plan_details && (
+                  <Box>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2" color="textSecondary" gutterBottom>
+                        Usuarios permitidos:
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        {mySubscription.plan_details.max_users === 999999 ? 'Ilimitado' : mySubscription.plan_details.max_users}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2" color="textSecondary" gutterBottom>
+                        Mensajes por mes:
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        {mySubscription.plan_details.max_messages_per_month === 999999 
+                          ? 'Ilimitado' 
+                          : mySubscription.plan_details.max_messages_per_month.toLocaleString()}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2" color="textSecondary" gutterBottom>
+                        Campañas:
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        {mySubscription.plan_details.max_campaigns === 999999 
+                          ? 'Ilimitadas' 
+                          : mySubscription.plan_details.max_campaigns}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2" color="textSecondary" gutterBottom>
+                        Contactos:
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                        {mySubscription.plan_details.max_contacts === 999999 
+                          ? 'Ilimitados' 
+                          : mySubscription.plan_details.max_contacts.toLocaleString()}
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Información adicional */}
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>ℹ️ Información Importante</Typography>
+                <Typography variant="body2" paragraph>
+                  Tu plan {mySubscription.plan_details?.plan_display_name} incluye todas las características necesarias 
+                  para gestionar tu comunicación por WhatsApp de manera profesional.
+                </Typography>
+                {mySubscription.subscription_status === 'expired' && (
+                  <Alert severity="error">
+                    Tu plan ha expirado. Por favor, contacta al administrador para renovar tu suscripción y seguir 
+                    utilizando el sistema.
+                  </Alert>
+                )}
+                {mySubscription.subscription_status === 'trial' && (
+                  <Alert severity="info">
+                    Estás en período de prueba. Asegúrate de activar tu suscripción antes del vencimiento.
+                  </Alert>
+                )}
+                {mySubscription.days_remaining > 0 && mySubscription.days_remaining < 7 && (
+                  <Alert severity="warning">
+                    Tu plan vence en {mySubscription.days_remaining} días. Contacta al administrador para renovarlo.
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      )}
+
+      {/* Tab 6: API REST */}
+      {/* Tab 5: API REST - ajustado de índice 6 a 5 */}
+      {selectedTab === 5 && (
+        <APIRestSettings sessionId={sessionId} />
+      )}
+
+      {/* Tab 8: Panel de Administrador (solo para admin) */}
+      {/* Tab 6: Panel Admin - ajustado de índice 8 a 6 */}
+      {isAdmin && selectedTab === 6 && (
+        <AdminSubscriptionPanel sessionId={sessionId} userPhone={sessionId} />
+      )}
+
+      {/* Dialogs */}
+      {/* Dialog de usuario */}
+      <Dialog open={showUserDialog} onClose={() => setShowUserDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {selectedUser ? 'Editar Usuario' : 'Nuevo Usuario'}
+        </DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Nombre completo"
+                value={userForm.name}
+                onChange={(e) => setUserForm({ ...userForm, name: e.target.value })}
+                variant="outlined"
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Email"
+                type="email"
+                value={userForm.email}
+                onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+                variant="outlined"
+              />
+            </Grid>
+            {!selectedUser && (
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Contraseña"
+                  type="password"
+                  value={userForm.password}
+                  onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                  variant="outlined"
+                  required
+                  helperText="Requerida para nuevos usuarios"
+                />
+              </Grid>
+            )}
+            <Grid item xs={6}>
+              <FormControl fullWidth>
+                <InputLabel>Rol</InputLabel>
+                <Select
+                  value={userForm.role}
+                  onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
+                  label="Rol"
+                >
+                  <MenuItem value="admin">Administrador</MenuItem>
+                  <MenuItem value="supervisor">Supervisor</MenuItem>
+                  <MenuItem value="agent">Agente</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                label="Departamento"
+                value={userForm.department}
+                onChange={(e) => setUserForm({ ...userForm, department: e.target.value })}
+                variant="outlined"
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Teléfono (opcional)"
+                value={userForm.phone}
+                onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })}
+                variant="outlined"
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowUserDialog(false)}>Cancelar</Button>
+          <Button 
+            variant="contained" 
+            onClick={handleSaveUser}
+            disabled={saveStatus === 'saving'}
+          >
+            {saveStatus === 'saving' ? 'Guardando...' : (selectedUser ? 'Actualizar' : 'Crear')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog de cambio de contraseña */}
+      <Dialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Cambiar Contraseña</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 3, color: '#64748b' }}>
+            Usuario: {selectedUser?.name}
+          </Typography>
+          <TextField
+            fullWidth
+            label="Nueva contraseña"
+            type="password"
+            variant="outlined"
+            sx={{ mb: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="Confirmar contraseña"
+            type="password"
+            variant="outlined"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPasswordDialogOpen(false)}>Cancelar</Button>
+          <Button variant="contained">Cambiar Contraseña</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog de confirmación de sincronización */}
+      <Dialog 
+        open={syncConfirmDialog} 
+        onClose={() => setSyncConfirmDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ 
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2
+        }}>
+          <Refresh sx={{ fontSize: 32 }} />
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              Sincronizar Todo
+            </Typography>
+            <Typography variant="caption">
+              Descarga completa de datos
+            </Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 3 }}>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+              🔄 Sincronización Completa de WhatsApp
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              Esta acción descargará <strong>TODOS</strong> tus chats, contactos y grupos completos desde WhatsApp.
+            </Typography>
+          </Alert>
+          <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
+            ¿Confirmas que deseas iniciar la sincronización completa?
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#64748b' }}>
+            ⏱️ <strong>Tiempo estimado:</strong> 1-5 minutos (depende de la cantidad de chats)<br/>
+            📱 <strong>Chats individuales:</strong> Se descargarán todos los contactos<br/>
+            👥 <strong>Grupos:</strong> Se descargarán todos los grupos y sus miembros<br/>
+            📞 <strong>Contactos:</strong> Se descargará tu lista completa de contactos<br/>
+            💾 <strong>Almacenamiento:</strong> Todo se guardará en la base de datos
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, gap: 1 }}>
+          <Button 
+            onClick={() => setSyncConfirmDialog(false)}
+            variant="outlined"
+            sx={{ borderRadius: 2 }}
+          >
+            Cancelar
+          </Button>
+          <Button 
+            onClick={() => handleForceSync(false)}
+            variant="contained"
+            startIcon={<Refresh />}
+            sx={{ 
+              borderRadius: 2,
+              background: 'linear-gradient(135deg, #25d366 0%, #1da851 100%)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #1da851 0%, #128c7e 100%)',
+              }
+            }}
+          >
+            Sincronizar Ahora
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar para notificaciones */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{
+            width: '100%',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+            borderRadius: 2
+          }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
+      {/* Delete User Confirmation Dialog */}
+      <Dialog
+        open={deleteUserDialog}
+        onClose={() => !loading && setDeleteUserDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{
+          bgcolor: 'error.main',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
+        }}>
+          <Delete />
+          Confirmar Eliminación
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Esta acción no se puede deshacer
+          </Alert>
+          <Typography variant="body1" gutterBottom>
+            ¿Estás seguro de eliminar este usuario?
+          </Typography>
+          {userToDelete && (
+            <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Usuario a eliminar:
+              </Typography>
+              <Typography variant="h6" sx={{ mt: 1 }}>
+                {userToDelete.name}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {userToDelete.email}
+              </Typography>
+              <Chip
+                label={userToDelete.role}
+                size="small"
+                color="primary"
+                sx={{ mt: 1 }}
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button
+            onClick={() => setDeleteUserDialog(false)}
+            disabled={loading}
+            variant="outlined"
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleDeleteUser}
+            disabled={loading}
+            variant="contained"
+            color="error"
+            startIcon={loading ? <CircularProgress size={20} /> : <Delete />}
+          >
+            {loading ? 'Eliminando...' : 'Eliminar Usuario'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default SettingsModule;

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Multi-Session Manager</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            background-color: #128C7E;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .sessions-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .session-card {
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .qr-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .qr-image {
+            max-width: 200px;
+            margin: 10px auto;
+        }
+        .button {
+            background-color: #128C7E;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .button:hover {
+            background-color: #075E54;
+        }
+        .button.delete {
+            background-color: #DC3545;
+        }
+        .button.delete:hover {
+            background-color: #C82333;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            display: inline-block;
+            margin: 5px 0;
+        }
+        .status.connected {
+            background-color: #28A745;
+            color: white;
+        }
+        .status.disconnected {
+            background-color: #DC3545;
+            color: white;
+        }
+        .message-form {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .input {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: calc(100% - 26px);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>WhatsApp Multi-Session Manager</h1>
+            <button class="button" onclick="createNewSession()">Crear Nueva Sesión</button>
+        </div>
+        <div class="sessions-container" id="sessions">
+            <!-- Las sesiones se agregarán aquí dinámicamente -->
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let sessions = new Map();
+
+        function createNewSession() {
+            const sessionId = 'session_' + Date.now();
+            fetch('/api/session/create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ sessionId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    addSessionCard(sessionId);
+                    listenToSessionEvents(sessionId);
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        function addSessionCard(sessionId) {
+            const card = document.createElement('div');
+            card.className = 'session-card';
+            card.id = `session-${sessionId}`;
+            card.innerHTML = `
+                <h3>Sesión: ${sessionId}</h3>
+                <div class="status disconnected">Desconectado</div>
+                <div class="qr-container">
+                    <img class="qr-image" style="display: none;">
+                    <p>Esperando código QR...</p>
+                </div>
+                <div class="message-form" style="display: none;">
+                    <input type="text" class="input" placeholder="Número (ej: 5511999999999)" id="number-${sessionId}">
+                    <input type="text" class="input" placeholder="Mensaje" id="message-${sessionId}">
+                    <button class="button" onclick="sendMessage('${sessionId}')">Enviar</button>
+                </div>
+                <button class="button delete" onclick="deleteSession('${sessionId}')">Eliminar Sesión</button>
+            `;
+            document.getElementById('sessions').appendChild(card);
+        }
+
+        function listenToSessionEvents(sessionId) {
+            socket.on(`qr-${sessionId}`, (qrCode) => {
+                const card = document.getElementById(`session-${sessionId}`);
+                if (card) {
+                    const qrImage = card.querySelector('.qr-image');
+                    qrImage.src = qrCode;
+                    qrImage.style.display = 'block';
+                    card.querySelector('.qr-container p').style.display = 'none';
+                }
+            });
+
+            socket.on(`connection-info-${sessionId}`, (info) => {
+                const card = document.getElementById(`session-${sessionId}`);
+                if (card) {
+                    const status = card.querySelector('.status');
+                    const qrContainer = card.querySelector('.qr-container');
+                    const messageForm = card.querySelector('.message-form');
+
+                    status.textContent = info.connected ? 'Conectado' : 'Desconectado';
+                    status.className = `status ${info.connected ? 'connected' : 'disconnected'}`;
+
+                    if (info.connected) {
+                        qrContainer.style.display = 'none';
+                        messageForm.style.display = 'block';
+                    } else {
+                        qrContainer.style.display = 'block';
+                        messageForm.style.display = 'none';
+                    }
+                }
+            });
+        }
+
+        function sendMessage(sessionId) {
+            const number = document.getElementById(`number-${sessionId}`).value;
+            const message = document.getElementById(`message-${sessionId}`).value;
+
+            if (!number || !message) {
+                alert('Por favor ingresa número y mensaje');
+                return;
+            }
+
+            fetch(`/api/session/${sessionId}/send`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ number, message })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Mensaje enviado');
+                    document.getElementById(`message-${sessionId}`).value = '';
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error al enviar mensaje');
+            });
+        }
+
+        function deleteSession(sessionId) {
+            if (!confirm('¿Estás seguro de que quieres eliminar esta sesión?')) {
+                return;
+            }
+
+            fetch(`/api/session/${sessionId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const card = document.getElementById(`session-${sessionId}`);
+                    if (card) {
+                        card.remove();
+                    }
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error al eliminar sesión');
+            });
+        }
+
+        // Cargar sesiones existentes al iniciar
+        fetch('/api/sessions')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    data.sessions.forEach(session => {
+                        addSessionCard(session.sessionId);
+                        listenToSessionEvents(session.sessionId);
+                    });
+                }
+            })
+            .catch(error => console.error('Error:', error));
+    </script>
+</body>
+</html> 

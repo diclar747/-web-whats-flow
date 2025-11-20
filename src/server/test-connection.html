@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Prueba de Conexion al Backend</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Prueba de Conexion</h1>
+    <button id="testButton">Probar Conexion API</button>
+    <button id="testSocketButton">Probar Conexion Socket.IO</button>
+    <div id="result"></div>
+
+    <script>
+        // Prueba de conexión API
+        document.getElementById('testButton').addEventListener('click', async () => {
+            const resultDiv = document.getElementById('result');
+            try {
+                resultDiv.innerHTML = 'Intentando conexion API...';
+                
+                const response = await fetch('http://localhost:3002/api/create-session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Origin': 'http://localhost:3000'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML += `<br>✅ Conexion API exitosa: ${JSON.stringify(data)}`;
+                } else {
+                    resultDiv.innerHTML += `<br>❌ Error API: ${response.status} - ${JSON.stringify(data)}`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML += `<br>❌ Error conexion API: ${error.message}`;
+            }
+        });
+        
+        // Prueba de conexión Socket.IO
+        document.getElementById('testSocketButton').addEventListener('click', () => {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML += '<br>Intentando conexion Socket.IO...';
+            
+            try {
+                // Conectar a Socket.IO
+                const socket = io('http://localhost:3002', {
+                    withCredentials: true,
+                    transports: ['websocket', 'polling']
+                });
+                
+                socket.on('connect', () => {
+                    resultDiv.innerHTML += '<br>✅ Conexion Socket.IO establecida';
+                    socket.close();
+                });
+                
+                socket.on('connect_error', (error) => {
+                    resultDiv.innerHTML += `<br>❌ Error conexion Socket.IO: ${error.message}`;
+                    socket.close();
+                });
+            } catch (error) {
+                resultDiv.innerHTML += `<br>❌ Error creando conexion Socket.IO: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>

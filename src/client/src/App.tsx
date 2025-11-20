@@ -1,0 +1,771 @@
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material/styles';
+import { CircularProgress } from '@mui/material';
+import { ThemeProvider as CustomThemeProvider } from './contexts/ThemeContext';
+import { WhatsAppProvider } from './context/WhatsAppContext';
+import { LocalizationProvider } from '@mui/x-date-pickers';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import WhatsFlowDashboard from './pages/WhatsFlowDashboard';
+import Login from './components/Login';
+import LandingPage from './components/LandingPage';
+import AdminLogin from './pages/admin/AdminLogin';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AgentLogin from './pages/AgentLogin';
+import AgentDashboard from './pages/AgentDashboard';
+import AdminChatAssignment from './pages/AdminChatAssignment';
+import AdminAgentManagement from './components/AdminAgentManagement';
+import AgentPermissionsManager from './components/AgentPermissionsManager';
+import { TransferNotificationListener } from './components/TransferNotificationListener';
+import { Toaster } from 'react-hot-toast';
+
+// Componente para integrar ambos contextos de tema
+const CombinedThemeProvider: React.FC<{ children: React.ReactNode, isDarkMode: boolean }> = ({ children, isDarkMode }) => {
+  const theme = createTheme({
+    palette: {
+      mode: isDarkMode ? 'dark' : 'light',
+      primary: {
+        main: '#00a884', // Color de WhatsApp
+      },
+      secondary: {
+        main: '#25d366',
+      },
+    },
+    typography: {
+      fontFamily: [
+        '-apple-system',
+        'BlinkMacSystemFont',
+        '"Segoe UI"',
+        'Roboto',
+        '"Helvetica Neue"',
+        'Arial',
+        'sans-serif',
+        '"Apple Color Emoji"',
+        '"Segoe UI Emoji"',
+        '"Segoe UI Symbol"',
+      ].join(','),
+    },
+  });
+
+  return (
+    <MuiThemeProvider theme={theme}>
+      {children}
+    </MuiThemeProvider>
+  );
+};
+
+// Componente interno que maneja la navegación
+const AppContent: React.FC<{
+  sessionId: string | null;
+  user: any;
+  token: string | null;
+  userType: 'admin' | 'agent' | null;
+  admin: any;
+  adminToken: string | null;
+  loading: boolean;
+  handleLoginSuccess: (userData: any, authToken: string) => void;
+  handleAdminLogin: (adminData: any) => void;
+  handleLogout: () => void;
+  handleQRSuccess: (newSessionId: string) => void;
+  onNavigate?: (path: string) => void;
+}> = ({ sessionId, user, token, userType, admin, adminToken, loading, handleLoginSuccess, handleAdminLogin, handleLogout, handleQRSuccess, onNavigate }) => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Exponer navigate al componente padre
+  React.useEffect(() => {
+    if (onNavigate) {
+      (window as any).__reactNavigate = navigate;
+    }
+  }, [navigate, onNavigate]);
+
+  return (
+    <Routes>
+      {/* Ruta principal - Admin con QR */}
+      <Route path="/" element={
+        sessionId ? (
+          <Navigate to="/dashboard" replace />
+        ) : (
+          <LandingPage onQRSuccess={handleQRSuccess} />
+        )
+      } />
+
+      {/* Ruta por defecto - igual que la raíz */}
+      <Route path="/home" element={
+        sessionId ? (
+          <Navigate to="/dashboard" replace />
+        ) : (
+          <LandingPage onQRSuccess={handleQRSuccess} />
+        )
+      } />
+
+      {/* Ruta de login para agentes - No para usuarios que se conectan con QR */}
+      <Route path="/login" element={
+        sessionId ? (
+          // Si ya hay un sessionId (conexión por QR), no permitir acceso a login
+          <Navigate to="/dashboard" replace />
+        ) : (
+          <Login onLoginSuccess={handleLoginSuccess} />
+        )
+      } />
+
+      {/* Dashboard - Requiere sessionId para todos */}
+      <Route path="/admin/agents" element={
+        user && token && user.role === 'admin' ? (
+          <CombinedThemeProvider isDarkMode={false}>
+            <AdminAgentManagement />
+          </CombinedThemeProvider>
+        ) : (
+          <Navigate to="/admin/login" replace />
+        )
+      } />
+
+      {/* Gestión de Agentes con Privilegios */}
+      <Route path="/agents-permissions" element={
+        user && token ? (
+          <CombinedThemeProvider isDarkMode={false}>
+            <AgentPermissionsManager />
+          </CombinedThemeProvider>
+        ) : (
+          <Navigate to="/login" replace />
+        )
+      } />
+
+      {/* Dashboard - Admin con QR (solo sessionId) o Agentes con login (sessionId + user) */}
+      <Route path="/dashboard/*" element={
+        sessionId ? (
+          <CombinedThemeProvider isDarkMode={false}>
+            {user && (user.role === 'agent' || user.role === 'supervisor') ? (
+              // Dashboard simplificado para agentes (requiere user)
+              <WhatsAppProvider
+                userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
+                userRole={user?.role}
+              >
+                <AgentDashboard />
+              </WhatsAppProvider>
+            ) : (
+              // Dashboard completo para admin (solo requiere sessionId del QR)
+              <WhatsAppProvider
+                userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
+                userRole={user?.role || 'admin'}
+              >
+                <WhatsFlowDashboard
+                  sessionId={sessionId}
+                  onLogout={handleLogout}
+                />
+              </WhatsAppProvider>
+            )}
+          </CombinedThemeProvider>
+        ) : loading ? (
+          <CombinedThemeProvider isDarkMode={false}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              height: '100vh',
+              flexDirection: 'column',
+              gap: '20px'
+            }}>
+              <CircularProgress />
+              <p>Cargando sesión...</p>
+            </div>
+          </CombinedThemeProvider>
+        ) : (
+          // Don't redirect to login if this is the admin QR flow
+          <Navigate to="/" replace />
+        )
+      } />
+
+      {/* Ruta de login de admin - evitar interferencia con sesiones QR */}
+      <Route path="/admin" element={
+        userType === 'admin' && sessionId ? (
+          // Si ya hay un usuario admin con sesión QR, ir al dashboard principal
+          <Navigate to="/dashboard" replace />
+        ) : admin && adminToken ? (
+          <Navigate to="/admin/dashboard" replace />
+        ) : (
+          <AdminLogin onLogin={handleAdminLogin} />
+        )
+      } />
+
+      {/* Ruta de login específico de admin */}
+      <Route path="/admin/login" element={
+        userType === 'admin' && sessionId ? (
+          // Si ya hay un usuario admin con sesión QR, ir al dashboard principal
+          <Navigate to="/dashboard" replace />
+        ) : admin && adminToken ? (
+          <Navigate to="/admin/dashboard" replace />
+        ) : (
+          <AdminLogin onLogin={handleAdminLogin} />
+        )
+      } />
+
+      {/* Dashboard de administrador */}
+      <Route path="/admin/dashboard" element={
+        admin && adminToken ? (
+          <CombinedThemeProvider isDarkMode={false}>
+            <AdminDashboard onLogout={handleLogout} admin={admin} adminToken={adminToken} />
+          </CombinedThemeProvider>
+        ) : (
+          <Navigate to="/admin" replace />
+        )
+      } />
+
+      {/* Ruta por defecto - para cualquier otra ruta no definida */}
+      <Route path="*" element={
+        // Si hay sessionId, ir al dashboard
+        sessionId ? (
+          <Navigate to="/dashboard" replace />
+        ) : (
+          // Si no hay sessionId, verificar si estamos en una ruta protegida
+          // Si intentamos acceder a dashboard sin sessionId, ir a la página principal
+          <Navigate to="/" replace />
+        )
+      } />
+    </Routes>
+  );
+};
+
+const App: React.FC = () => {
+  const [user, setUser] = useState<any>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [userType, setUserType] = useState<'admin' | 'agent' | null>(null);
+  const [admin, setAdmin] = useState<any>(null);
+  const [adminToken, setAdminToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Función para generar un ID de dispositivo ÚNICO usando UUID
+    const generateDeviceId = () => {
+      // Generar UUID v4 único (imposible de duplicar)
+      if (crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+      // Fallback para navegadores antiguos
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    };
+
+    const initializeSession = async () => {
+      // 🔒 SEGURIDAD: Limpiar localStorage SIEMPRE al inicio para forzar sesiones únicas
+      const localStorageKeys = ['whatsflow_session', 'whatsflow_token', 'whatsflow_user_id', 'whatsflow_user_type', 
+                                'whatsflow_session_device_id', 'whatsflow_session_token', 'whatsflow_device_id',
+                                'token', 'userId', 'userRole', 'userName', 'sessionToken', 'device_id'];
+      let localStorageHadData = false;
+      localStorageKeys.forEach(key => {
+        if (localStorage.getItem(key)) localStorageHadData = true;
+        localStorage.removeItem(key);
+      });
+      if (localStorageHadData) {
+        console.log('🧹 localStorage limpiado - Sesiones únicas por pestaña forzadas');
+      }
+
+      // Generar ID de dispositivo ÚNICO para esta pestaña/sesión del navegador
+      let deviceId = sessionStorage.getItem('whatsflow_device_id');
+      if (!deviceId) {
+        deviceId = generateDeviceId();
+        sessionStorage.setItem('whatsflow_device_id', deviceId);
+      }
+
+      // Leer SOLO de sessionStorage (ÚNICO por pestaña - más seguro)
+      const savedToken = sessionStorage.getItem('token');
+      const savedSessionId = sessionStorage.getItem('whatsflow_session');
+      const savedUserType = sessionStorage.getItem('whatsflow_user_type') as 'admin' | 'agent' | null;
+      const savedUserId = sessionStorage.getItem('userId');
+      const savedUserName = sessionStorage.getItem('userName');
+      const savedUserRole = sessionStorage.getItem('userRole');
+      const savedDeviceId = sessionStorage.getItem('whatsflow_session_device_id');
+      const savedSessionToken = sessionStorage.getItem('sessionToken');
+
+      console.log('🔍 [APP-INIT] Verificando sesión guardada en sessionStorage (sesión única)...');
+      console.log('Token:', savedToken ? 'Existe' : 'No');
+      console.log('UserId:', savedUserId);
+      console.log('SessionId:', savedSessionId);
+      console.log('UserType:', savedUserType);
+      console.log('Current Device ID:', deviceId?.substring(0, 20) + '...');
+      console.log('Saved Device ID:', savedDeviceId?.substring(0, 20) + '...');
+      console.log('SessionToken:', savedSessionToken ? 'Existe' : 'No');
+
+      try {
+        // Si hay sessionId guardado, verificar dispositivo
+        if (savedSessionId) {
+          // NOTA: Con sessionStorage, cada pestaña tiene su propia sesión
+          // Por lo que no necesitamos validar deviceId tan estrictamente
+          // sessionStorage ya garantiza aislamiento por pestaña
+
+          // Si NO hay deviceId, generarlo ahora
+          if (!savedDeviceId) {
+            console.log('⚠️ Sesión sin deviceId, asignando actual...');
+            sessionStorage.setItem('whatsflow_session_device_id', deviceId);
+          }
+          
+          console.log('✅ Dispositivo verificado correctamente');
+          
+          // Ahora sí, verificar si la sesión está activa
+          console.log('🔍 Verificando sessionId guardado:', savedSessionId);
+
+          // Obtener sessionToken guardado (puede no existir para sesiones antiguas)
+          const savedSessionToken = sessionStorage.getItem('whatsflow_session_token');
+          if (!savedSessionToken) {
+            console.log('⚠️ No hay sessionToken guardado (sesión antigua, continuando con validación básica)');
+          }
+
+          try {
+            const headers: any = {
+              'X-Device-Id': deviceId
+            };
+
+            // Solo agregar sessionToken si existe
+            if (savedSessionToken) {
+              headers['X-Session-Token'] = savedSessionToken;
+            }
+
+            // Enviar también sessionToken si existe para validación completa
+            const response = await fetch(`/api/session/${savedSessionId}/status`, {
+              headers: {
+                'x-device-id': deviceId,
+                'x-session-token': savedSessionToken || ''
+              }
+            });
+
+            // Si la sesión no existe (404), limpiar completamente
+            if (response.status === 404) {
+              console.log('🗑️ [APP-INIT] Sesión no encontrada (404), limpiando todo');
+              // Limpiar sessionStorage
+              sessionStorage.removeItem('whatsflow_session');
+              sessionStorage.removeItem('whatsflow_session_token');
+              sessionStorage.removeItem('whatsflow_session_device_id');
+              sessionStorage.removeItem('whatsflow_user_type');
+              sessionStorage.removeItem('sessionToken');
+              sessionStorage.removeItem('token');
+              // Limpiar también localStorage por si acaso
+              localStorage.removeItem('whatsflow_session');
+              localStorage.removeItem('whatsflow_session_token');
+              // Resetear estados
+              setSessionId(null);
+              setUser(null);
+              setToken(null);
+              setUserType(null);
+              setLoading(false);
+              console.log('✅ Sesión limpiada, listo para nueva conexión');
+              return;
+            }
+
+            const checkData = await response.json();
+
+            console.log('📊 [APP-INIT] Respuesta de verificación:', checkData);
+
+            // Si no hay sesión activa (is_active=0), redirigir a inicio para login
+            if (checkData.requiresAuth || (checkData.success === false && checkData.message === 'Sin sesión activa')) {
+              console.log('🚫 [APP-INIT] Sin sesión activa - Redirigiendo a inicio');
+
+              // Limpiar sesión
+              sessionStorage.removeItem('whatsflow_session');
+              localStorage.removeItem('whatsflow_session');
+
+              // Resetear estados
+              setSessionId(null);
+              setLoading(false);
+
+              // Redirigir a inicio (sin recarga de página)
+              const nav = (window as any).__reactNavigate;
+              if (nav) {
+                nav('/');
+              } else {
+                window.location.href = '/';
+              }
+              return;
+            }
+
+            if (checkData.success && checkData.isConnected) {
+              console.log('✅ SessionId guardado sigue activo');
+
+              // Si el usuario es admin (QR), no necesitamos token de agente
+              if (savedUserType === 'admin') {
+                // Admin con QR no necesita token de usuario, solo sessionId
+                setSessionId(savedSessionId);
+                setUserType('admin');
+                console.log('✅ Usuario admin (QR) restaurado con sessionId:', savedSessionId);
+              } else if (savedToken && savedUserId) {
+                // Usuario agente necesita tanto token como sessionId
+                const restoredUser = {
+                  id: parseInt(savedUserId),
+                  name: savedUserName || 'Usuario',
+                  role: savedUserRole || 'agent',
+                  email: sessionStorage.getItem('userEmail') || ''
+                };
+
+                setUser(restoredUser);
+                setToken(savedToken);
+                setSessionId(savedSessionId);
+                setUserType('agent');
+
+                console.log('✅ Usuario agente restaurado:', restoredUser.name);
+              } else {
+                // Hay sessionId pero no token de agente - podría ser sesión de admin QR
+                setSessionId(savedSessionId);
+                setUserType(savedUserType || 'admin');
+                console.log('✅ Sesión de WhatsApp activa, tipo de usuario:', savedUserType || 'admin');
+              }
+
+            console.log('✅ Sesión de WhatsApp activa, manteniendo sesión');
+            setLoading(false);
+            return;
+          } else {
+            console.log('⚠️ SessionId guardado ya no está activo');
+            console.log('📊 [APP-INIT] Datos recibidos:', JSON.stringify(checkData));
+            // NO LIMPIAR INMEDIATAMENTE - Dar tiempo a que el servidor reconecte
+            // Solo limpiar si definitivamente no está conectado
+            if (checkData.success === false) {
+              console.log('❌ API reporta error, limpiando sesión');
+              sessionStorage.removeItem('whatsflow_session');
+              sessionStorage.removeItem('whatsflow_session_device_id');
+            } else {
+              console.log('⚠️ Sesión no conectada pero API responde OK - mantener y recargar');
+              // Mantener la sesión y permitir que el usuario intente de nuevo
+              setSessionId(savedSessionId);
+              setUserType(savedUserType || 'admin');
+            }
+          }
+          } catch (verifyError) {
+            console.error('❌ [APP-INIT] Error verificando sesión:', verifyError);
+            // Si hay error de red, mantener la sesión y permitir retry
+            console.log('⚠️ Error de red, manteniendo sesión para retry');
+            setSessionId(savedSessionId);
+            setUserType(savedUserType || 'admin');
+          }
+        } else {
+          console.log('⚠️ No hay sessionId guardado');
+        }
+
+        console.log('⚠️ No hay sesión activa de WhatsApp - Mostrando página de inicio');
+      } catch (error) {
+        console.error('❌ Error verificando sesión de WhatsApp:', error);
+        // En caso de error, limpiar sesión
+        sessionStorage.removeItem('whatsflow_session');
+        sessionStorage.removeItem('whatsflow_session_device_id');
+      }
+
+      // Si llegamos aquí, NO hay sesión activa de WhatsApp
+      // Restaurar datos de usuario solo si existen (para agentes con login)
+      if (savedToken && savedUserId) {
+        const restoredUser = {
+          id: parseInt(savedUserId),
+          name: savedUserName || 'Usuario',
+          role: savedUserRole || 'agent',
+          email: sessionStorage.getItem('userEmail') || ''
+        };
+
+        setUser(restoredUser);
+        setToken(savedToken);
+        setUserType('agent'); // For agent users, we know they have login credentials
+
+        console.log('✅ Usuario agente restaurado (sin WhatsApp activo):', restoredUser.name);
+      } else {
+        // Si no hay token de usuario pero hay tipo guardado (admin),
+        // no necesitamos forzar login
+        if (savedUserType === 'admin') {
+          setUserType('admin');
+          console.log('✅ Tipo de usuario admin identificado (QR mode)');
+        }
+      }
+
+      setLoading(false);
+    };
+
+    initializeSession();
+  }, []);
+
+  // FUNCIÓN ELIMINADA POR SEGURIDAD
+  // fetchActiveSession permitía acceder a sesiones de otros usuarios
+  // Ahora cada usuario debe escanear su propio QR code
+
+  const verifyToken = async (token: string) => {
+    try {
+      const response = await fetch('/api/auth/verify', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setUser(data.user);
+        setToken(token);
+        setUserType('agent');
+
+        // Verificar si tiene sessionId guardado
+        const savedSessionId = sessionStorage.getItem('whatsflow_session');
+
+        if (savedSessionId) {
+          // Ya tiene sessionId, usarlo
+          setSessionId(savedSessionId);
+          console.log('✅ Usando sessionId guardado:', savedSessionId);
+        } else {
+          // No hay sessionId guardado, el usuario debe hacer login nuevamente
+          console.log('⚠️ No hay sessionId guardado, requiere login');
+        }
+      } else {
+        // Token inválido, limpiar
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('userRole');
+      }
+    } catch (error) {
+      console.error('Error verificando token:', error);
+      sessionStorage.removeItem('whatsflow_token');
+      sessionStorage.removeItem('whatsflow_user_type');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyAdminToken = async (token: string) => {
+    try {
+      const response = await fetch('/api/admin/verify', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.admin) {
+        setAdmin(data.admin);
+        setAdminToken(token);
+      } else {
+        // Token inválido, limpiar
+        sessionStorage.removeItem('whatsflow_admin_token');
+      }
+    } catch (error) {
+      console.error('Error verificando token de admin:', error);
+      sessionStorage.removeItem('whatsflow_admin_token');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdminLogin = (adminData: any) => {
+    setAdmin(adminData.admin);
+    setAdminToken(adminData.token);
+    sessionStorage.setItem('whatsflow_admin_token', adminData.token);
+  };
+
+  const handleLoginSuccess = (userData: any, authToken: string, sessionIdFromLogin?: string) => {
+    setUser(userData);
+    setToken(authToken);
+
+    // Determinar userType según el rol
+    if (userData.role === 'admin') {
+      setUserType('admin');
+    } else {
+      setUserType('agent');
+    }
+
+    // Guardar en sessionStorage (único por pestaña - MÁS SEGURO)
+    sessionStorage.setItem('whatsflow_token', authToken);
+    sessionStorage.setItem('whatsflow_user_type', userData.role === 'admin' ? 'admin' : 'agent');
+    sessionStorage.setItem('token', authToken);
+    sessionStorage.setItem('userRole', userData.role);
+    sessionStorage.setItem('userName', userData.name);
+    sessionStorage.setItem('userId', userData.id);
+    sessionStorage.setItem('userEmail', userData.email || '');
+
+    // Si viene sessionId desde el login, guardarlo
+    if (sessionIdFromLogin) {
+      sessionStorage.setItem('whatsflow_session', sessionIdFromLogin);
+      setSessionId(sessionIdFromLogin);
+      console.log('✅ SessionId recibido del backend:', sessionIdFromLogin);
+    } else {
+      // Verificar si hay sessionId guardado previamente
+      const savedSessionId = sessionStorage.getItem('whatsflow_session');
+      if (savedSessionId) {
+        setSessionId(savedSessionId);
+        console.log('✅ SessionId establecido desde sessionStorage:', savedSessionId);
+      } else {
+        console.log('⚠️ No hay sessionId, el usuario verá mensaje de conexión pendiente');
+      }
+    }
+  };
+
+  const handleLogout = () => {
+    const savedSessionId = sessionStorage.getItem('whatsflow_session');
+    const savedSessionToken = sessionStorage.getItem('whatsflow_session_token');
+
+    // Notificar al servidor para eliminar la sesión
+    if (savedSessionId && savedSessionToken) {
+      fetch('/api/logout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sessionId: savedSessionId,
+          sessionToken: savedSessionToken
+        })
+      }).then(() => {
+        console.log('✅ Sesión eliminada del servidor');
+      }).catch(err => {
+        console.error('❌ Error al eliminar sesión del servidor:', err);
+      });
+    }
+
+    setUser(null);
+    setToken(null);
+    setSessionId(null);
+    setUserType(null);
+    setAdmin(null);
+    setAdminToken(null);
+
+    // Limpiar TODOS los tokens y datos de sesión (solo sessionStorage)
+    sessionStorage.clear();
+
+    // También limpiar localStorage por si había datos viejos
+    localStorage.removeItem('whatsflow_token');
+    localStorage.removeItem('whatsflow_session');
+    localStorage.removeItem('whatsflow_session_device_id');
+    localStorage.removeItem('whatsflow_user_type');
+    localStorage.removeItem('whatsflow_admin_token');
+    localStorage.removeItem('token');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userName');
+    localStorage.removeItem('userId');
+
+    console.log('✅ Logout completado, todas las sesiones limpiadas');
+
+    // Redirigir a la página principal (QR) no al login (sin recarga)
+    const nav = (window as any).__reactNavigate;
+    if (nav) {
+      nav('/');
+    } else {
+      window.location.href = '/';
+    }
+  };
+
+  const handleQRSuccess = (newSessionId: string) => {
+    console.log('🎯 [APP] handleQRSuccess llamado con sessionId:', newSessionId);
+
+    setSessionId(newSessionId);
+    setUserType('admin');
+
+    // Generar sessionToken ÚNICO (diferente del sessionId de WhatsApp)
+    const sessionToken = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
+
+    // Obtener o generar deviceId ÚNICO
+    let deviceId = sessionStorage.getItem('whatsflow_device_id');
+    if (!deviceId) {
+      deviceId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
+      sessionStorage.setItem('whatsflow_device_id', deviceId);
+    }
+
+    // Guardar en sessionStorage (único por pestaña/navegador)
+    sessionStorage.setItem('whatsflow_session', newSessionId);
+    sessionStorage.setItem('whatsflow_session_token', sessionToken);
+    sessionStorage.setItem('whatsflow_session_device_id', deviceId);
+    sessionStorage.setItem('whatsflow_user_type', 'admin');
+
+    console.log('✅ [APP] SessionId, SessionToken y Device ID guardados (sesión única)');
+    console.log('📊 [APP] Datos guardados:');
+    console.log('   - whatsflow_session:', newSessionId);
+    console.log('   - whatsflow_session_token:', sessionToken.substring(0, 20) + '...');
+    console.log('   - whatsflow_device_id:', deviceId.substring(0, 20) + '...');
+    console.log('   - whatsflow_user_type:', 'admin');
+
+    // Registrar sesión en el servidor
+    fetch('/api/register-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sessionId: newSessionId,
+        sessionToken: sessionToken,
+        deviceId: deviceId,
+        userType: 'admin'
+      })
+    }).then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          console.log('✅ [APP] Sesión registrada en el servidor');
+          // Navegación fluida al dashboard (sin recarga)
+          console.log('🚀 [APP] Navegando al dashboard...');
+          setTimeout(() => {
+            const nav = (window as any).__reactNavigate;
+            if (nav) {
+              nav('/dashboard');
+            } else {
+              window.location.href = '/dashboard';
+            }
+          }, 500);
+        } else {
+          console.error('❌ [APP] Error registrando sesión:', data.error);
+          alert('Error al iniciar sesión. Por favor, intenta de nuevo.');
+        }
+      })
+      .catch(error => {
+        console.error('❌ [APP] Error al registrar sesión:', error);
+        alert('Error de conexión. Por favor, intenta de nuevo.');
+      });
+  };
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100vh',
+        backgroundColor: '#f5f5f5'
+      }}>
+        <div>Cargando...</div>
+      </div>
+    );
+  }
+
+  return (
+    <Router>
+      <CustomThemeProvider>
+        <LocalizationProvider dateAdapter={AdapterDateFns}>
+          {/* Toaster para notificaciones visuales */}
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 15000,
+              style: {
+                background: '#fff',
+                color: '#363636',
+              },
+              success: {
+                duration: 5000,
+              },
+            }}
+          />
+
+          {/* Listener de notificaciones de transferencia */}
+          {user && <TransferNotificationListener />}
+
+          <AppContent
+            sessionId={sessionId}
+            user={user}
+            token={token}
+            userType={userType}
+            admin={admin}
+            adminToken={adminToken}
+            loading={loading}
+            handleLoginSuccess={handleLoginSuccess}
+            handleAdminLogin={handleAdminLogin}
+            handleLogout={handleLogout}
+            handleQRSuccess={handleQRSuccess}
+            onNavigate={() => {}}
+          />
+        </LocalizationProvider>
+      </CustomThemeProvider>
+    </Router>
+  );
+};
+
+export default App;

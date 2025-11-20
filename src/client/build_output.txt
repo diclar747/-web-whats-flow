@@ -1,0 +1,10 @@
+
+> whatsflow-enterprise@1.0.0 build
+> react-scripts build
+
+Creating an optimized production build...
+Failed to compile.
+
+TS1161: Unterminated regular expression literal.
+
+
