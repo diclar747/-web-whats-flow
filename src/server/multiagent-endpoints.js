@@ -191,21 +191,64 @@ module.exports = function(app, pool) {
             const connection = await pool.getConnection();
             
             try {
+                console.log('[AGENT-CHATS] 🔍 Buscando chats para agente:', userId, 'sessionId:', sessionId);
+                
+                // Query directa sin vista para mayor control
                 let query = `
-                    SELECT * FROM v_agent_chats
-                    WHERE user_id = ?
+                    SELECT DISTINCT
+                        ca.chat_jid,
+                        ca.session_id,
+                        ca.user_id,
+                        ca.assigned_at,
+                        COALESCE(c.name, cg.name, ca.chat_jid) as contact_name,
+                        COALESCE(c.avatar_url, cg.avatar_url) as avatar_url,
+                        COALESCE(c.is_group, 1, 0) as is_group,
+                        (SELECT COUNT(*) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id) as total_messages,
+                        (SELECT MAX(timestamp) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id) as last_message_time,
+                        (SELECT text_content FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id 
+                         ORDER BY timestamp DESC LIMIT 1) as last_message,
+                        (SELECT COUNT(*) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id 
+                         AND m.from_me = 0 
+                         AND m.is_read = 0) as unread_count
+                    FROM chat_assignments ca
+                    LEFT JOIN contacts c ON ca.chat_jid = c.jid AND ca.session_id = c.session_id
+                    LEFT JOIN contact_groups cg ON ca.chat_jid = cg.jid AND ca.session_id = cg.session_id
+                    WHERE ca.user_id = ? AND ca.status = 'active'
                 `;
                 const params = [userId];
 
                 if (sessionId) {
-                    query += ' AND session_id = ?';
+                    query += ' AND ca.session_id = ?';
                     params.push(sessionId);
                 }
 
                 query += ' ORDER BY last_message_time DESC';
 
                 const [chats] = await connection.execute(query, params);
-                res.json({ success: true, chats });
+                
+                console.log('[AGENT-CHATS] ✅ Chats encontrados:', chats.length);
+                
+                // Si no hay sessionId en query, intentar obtenerlo del primer chat
+                let finalSessionId = sessionId;
+                if (!finalSessionId && chats.length > 0) {
+                    finalSessionId = chats[0].session_id;
+                    console.log('[AGENT-CHATS] 📋 SessionId detectado:', finalSessionId);
+                }
+                
+                res.json({ 
+                    success: true, 
+                    chats,
+                    sessionId: finalSessionId,
+                    count: chats.length
+                });
             } finally {
                 connection.release();
             }
@@ -904,6 +947,92 @@ module.exports = function(app, pool) {
             res.status(500).json({ 
                 success: false, 
                 error: 'Error obteniendo mensajes',
+                details: error.message 
+            });
+        }
+    });
+    
+    // NUEVO: Endpoint simplificado para obtener chats del agente por ID
+    app.get('/api/agents/:agentId/chats', authenticateToken, async (req, res) => {
+        try {
+            const agentId = parseInt(req.params.agentId);
+            const { sessionId } = req.query;
+            
+            // Verificar que el usuario tiene permiso (es el agente mismo o es admin/supervisor)
+            if (req.user.id !== agentId && !['admin', 'supervisor'].includes(req.user.role)) {
+                return res.status(403).json({ success: false, error: 'Sin permisos' });
+            }
+            
+            const connection = await pool.getConnection();
+            try {
+                console.log('[AGENT-CHATS-BY-ID] 🔍 Agente:', agentId, 'SessionId:', sessionId);
+                
+                // Obtener chats asignados con información completa
+                let query = `
+                    SELECT 
+                        ca.chat_jid,
+                        ca.session_id,
+                        ca.user_id,
+                        ca.assigned_at,
+                        ca.status,
+                        COALESCE(c.name, cg.name, SUBSTRING_INDEX(ca.chat_jid, '@', 1)) as contact_name,
+                        COALESCE(c.avatar_url, cg.avatar_url, '') as avatar_url,
+                        COALESCE(c.is_group, cg.jid IS NOT NULL, 0) as is_group,
+                        (SELECT COUNT(*) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id) as message_count,
+                        (SELECT MAX(m.timestamp) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id) as last_message_time,
+                        (SELECT m.text_content FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id 
+                         ORDER BY m.timestamp DESC LIMIT 1) as last_message_text,
+                        (SELECT COUNT(*) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id 
+                         AND m.from_me = 0 
+                         AND (m.is_read = 0 OR m.is_read IS NULL)) as unread_count
+                    FROM chat_assignments ca
+                    LEFT JOIN contacts c ON ca.chat_jid = c.jid AND ca.session_id = c.session_id
+                    LEFT JOIN contact_groups cg ON ca.chat_jid = cg.jid AND ca.session_id = cg.session_id
+                    WHERE ca.user_id = ? AND ca.status = 'active'
+                `;
+                
+                const params = [agentId];
+                
+                if (sessionId) {
+                    query += ' AND ca.session_id = ?';
+                    params.push(sessionId);
+                }
+                
+                query += ' ORDER BY last_message_time DESC NULLS LAST';
+                
+                const [chats] = await connection.execute(query, params);
+                
+                console.log('[AGENT-CHATS-BY-ID] ✅ Chats encontrados:', chats.length);
+                
+                // Detectar sessionId si no se proporcionó
+                let detectedSessionId = sessionId;
+                if (!detectedSessionId && chats.length > 0) {
+                    detectedSessionId = chats[0].session_id;
+                }
+                
+                res.json({
+                    success: true,
+                    sessionId: detectedSessionId,
+                    chats: chats,
+                    count: chats.length
+                });
+                
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('[AGENT-CHATS-BY-ID] ❌ Error:', error);
+            res.status(500).json({ 
+                success: false, 
+                error: 'Error obteniendo chats del agente',
                 details: error.message 
             });
         }

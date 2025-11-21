@@ -1370,8 +1370,14 @@ async function insertGroupMembers(groupJid, participants = [], phoneNumber = nul
                 console.log(`[DB-GROUP-MEMBERS-DEBUG] ⚠️ LID detectado, phone=null, se resolverá después`);
             } else if (typeof contactJid === 'string' && contactJid.match(/^\d+$/)) {
                 // Solo números
-                participantPhone = contactJid;
-                console.log(`[DB-GROUP-MEMBERS-DEBUG] ✅ Solo números, phone: ${participantPhone}`);
+                // VALIDACIÓN: Si el número es muy largo, probablemente es un LID sin el sufijo @lid.
+                if (contactJid.length > 14) {
+                    participantPhone = null; // Tratar como LID
+                    console.log(`[DB-GROUP-MEMBERS-DEBUG] ⚠️ Número largo (${contactJid.length} dígitos) detectado como LID, phone=null`);
+                } else {
+                    participantPhone = contactJid;
+                    console.log(`[DB-GROUP-MEMBERS-DEBUG] ✅ Solo números (longitud normal), phone: ${participantPhone}`);
+                }
             } else {
                 console.log(`[DB-GROUP-MEMBERS-DEBUG] ❌ FORMATO DESCONOCIDO: contactJid="${contactJid}"`);
             }
@@ -4274,6 +4280,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             for (const msg of m.messages) {
                 // Si es mensaje de grupo y el participante es LID
                 if (msg.key?.remoteJid?.includes('@g.us') && msg.key?.participant?.includes('@lid')) {
+                    console.log('[LID-MSG-DEBUG] Received message from LID participant:', JSON.stringify(msg, null, 2));
                     const lid = msg.key.participant;
                     const pushName = msg.pushName;
                     const verifiedName = msg.verifiedBizName;
@@ -4285,8 +4292,28 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     }
                     
                     // Guardar mapeo
-                    await saveLidMapping(lid, null, realPhone, pushName || verifiedName, pushName, phoneNumber);
+                    await saveLidMapping(lid, msg.participant, realPhone, pushName || verifiedName, pushName, phoneNumber);
                     console.log(`[LID-CAPTURE] Capturado LID de mensaje: ${lid} -> ${pushName || realPhone || 'sin info'}`);
+
+                    // Si tenemos el número real, actualizar la tabla de miembros del grupo
+                    if (realPhone && msg.participant) {
+                        console.log(`[LID-UPDATE] Actualizando miembro de grupo para LID ${lid} con número ${realPhone}`);
+                        try {
+                            const connection = await pool.getConnection();
+                            try {
+                                // Actualizar contact_group_members
+                                await connection.execute(
+                                    `UPDATE contact_group_members SET phone_number = ?, contact_jid = ? WHERE contact_jid = ? AND session_id = ?`,
+                                    [realPhone, msg.participant, lid, phoneNumber]
+                                );
+                                console.log(`[LID-UPDATE] ✅ contact_group_members actualizado para ${lid}`);
+                            } finally {
+                                connection.release();
+                            }
+                        } catch (dbError) {
+                            console.error(`[LID-UPDATE] ❌ Error actualizando BD para LID ${lid}:`, dbError);
+                        }
+                    }
                 }
             }
             
@@ -4299,9 +4326,6 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             const groupMessages = m.messages.filter(msg => msg.key?.remoteJid?.includes('@g.us'));
             const statusMessages = m.messages.filter(msg => msg.key?.remoteJid?.includes('@broadcast') || msg.key?.remoteJid?.includes('status@'));
 
-            if (groupMessages.length > 0) {
-                console.log(`[${sessionId}] 🚫 IGNORANDO ${groupMessages.length} mensajes de GRUPOS`);
-            }
             if (statusMessages.length > 0) {
                 console.log(`[${sessionId}] 🚫 IGNORANDO ${statusMessages.length} mensajes de STATUS`);
             }
@@ -4311,9 +4335,6 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 const jid = msg.key?.remoteJid;
                 if (!jid) return false;
 
-                // Rechazar grupos
-                if (jid.includes('@g.us')) return false;
-
                 // Rechazar status/estados
                 if (jid.includes('@broadcast') || jid.includes('status@')) return false;
 
@@ -4321,7 +4342,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 if (jid.includes('@lid')) return false;
 
                 // Aceptar solo mensajes individuales (terminan en @s.whatsapp.net)
-                return jid.includes('@s.whatsapp.net');
+                return jid.includes('@s.whatsapp.net') || jid.includes('@g.us');
             });
 
             if (m.messages.length === 0) {
@@ -4329,7 +4350,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 return;
             }
 
-            console.log(`[${sessionId}] ✅ Procesando ${m.messages.length} mensajes individuales (${originalCount - m.messages.length} filtrados)`);
+            console.log(`[${sessionId}] ✅ Procesando ${m.messages.length} mensajes (${originalCount - m.messages.length} filtrados)`);
             // ═══════════════════════════════════════════════════════════
             
             // Verificar si se deben procesar mensajes históricos
@@ -6390,74 +6411,54 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
     }
 });
 
-// Endpoint específico para agentes - enviar mensajes
-app.post('/api/messages/send', async (req, res) => {
-    const { sessionId, chatJid, message, agentId } = req.body;
+// Endpoint específico para agentes - enviar mensajes (con soporte multimedia)
+app.post('/api/messages/send', upload.single('file'), async (req, res) => {
+    const { sessionId, chatJid, message, agentId, phoneNumber } = req.body;
+    const file = req.file;
     
     console.log('[AGENT-SEND] 📤 Recibida solicitud de envío:', { sessionId, chatJid, agentId, message: message?.substring(0, 50) });
     
-    if (!sessionId || !chatJid || !message) {
+    if (!sessionId || !chatJid || (!message && !file)) {
         console.log('[AGENT-SEND] ❌ Faltan parámetros');
         return res.status(400).json({ 
             success: false, 
-            error: 'Faltan parámetros: sessionId, chatJid, message' 
+            error: 'Faltan parámetros: sessionId, chatJid y (message o file)' 
         });
     }
 
-    // Buscar la sesión activa - puede ser directamente o necesitar buscar por usuario del agente
+    // Buscar la sesión activa - MEJORADO: Buscar cualquier sesión conectada
     let session = sessions.get(sessionId);
-    let adminPhoneNumber = null;
+    console.log('[AGENT-SEND] 🔍 Sesión directa:', session ? 'Encontrada' : 'No encontrada');
+    console.log('[AGENT-SEND] 📋 Sesiones disponibles en memoria:', Array.from(sessions.keys()));
     
-    // Si no se encuentra la sesión directamente y hay agentId, buscar sesión del admin asociado
-    if ((!session || !session.isConnected) && agentId && pool) {
-        try {
-            const connection = await pool.getConnection();
-            try {
-                // Obtener el admin_phone asociado al agente
-                const [agents] = await connection.execute(
-                    `SELECT admin_phone FROM users WHERE id = ? AND role = 'agent' LIMIT 1`,
-                    [agentId]
-                );
-                
-                if (agents.length > 0 && agents[0].admin_phone) {
-                    adminPhoneNumber = agents[0].admin_phone;
-                    console.log('[AGENT-SEND] 🔍 Admin asociado al agente:', adminPhoneNumber);
-                    
-                    // Buscar sesión activa del admin por número de teléfono
-                    for (const [sessId, sess] of sessions.entries()) {
-                        if (sess.phoneNumber === adminPhoneNumber && sess.isConnected) {
-                            session = sess;
-                            console.log('[AGENT-SEND] ✅ Sesión del admin encontrada:', sessId);
-                            break;
-                        }
-                    }
-                }
-            } finally {
-                connection.release();
-            }
-        } catch (error) {
-            console.error('[AGENT-SEND] Error buscando sesión del admin:', error);
-        }
-    }
-    
-    // Si aún no tenemos sesión, buscar cualquier sesión activa con el sessionId
+    // Si no se encuentra la sesión directamente, buscar cualquier sesión activa
     if (!session || !session.isConnected) {
-        console.log('[AGENT-SEND] 🔍 Buscando sesión activa para sessionId:', sessionId);
+        console.log('[AGENT-SEND] ⚠️ Sesión no encontrada directamente, buscando alternativas...');
+        
+        // Buscar cualquier sesión conectada (prioridad para el sessionId dado)
         for (const [sessId, sess] of sessions.entries()) {
-            if (sessId === sessionId && sess.isConnected) {
-                session = sess;
-                console.log('[AGENT-SEND] ✅ Sesión encontrada directamente');
-                break;
+            if (sess.isConnected && sess.sock) {
+                // Si encontramos el sessionId exacto y está conectado, usarlo
+                if (sessId === sessionId) {
+                    session = sess;
+                    console.log('[AGENT-SEND] ✅ Sesión encontrada por sessionId exacto:', sessId);
+                    break;
+                }
+                // Si no tenemos sesión aún, guardar la primera sesión conectada
+                if (!session) {
+                    session = sess;
+                    console.log('[AGENT-SEND] ✅ Usando sesión conectada disponible:', sessId);
+                }
             }
         }
     }
     
     if (!session || !session.sock || !session.isConnected) {
-        console.log('[AGENT-SEND] ❌ Sesión no encontrada o no conectada');
-        console.log('[AGENT-SEND] 📋 Sesiones disponibles:', Array.from(sessions.keys()));
+        console.log('[AGENT-SEND] ❌ No se encontró sesión activa de WhatsApp');
+        console.log('[AGENT-SEND] 💡 Sugerencia: Verificar que el admin tenga una sesión activa');
         return res.status(400).json({ 
             success: false, 
-            error: 'Sesión de WhatsApp no disponible' 
+            error: 'Sesión de WhatsApp no disponible. Asegúrese de que el administrador tenga WhatsApp conectado.' 
         });
     }
 
@@ -6465,11 +6466,68 @@ app.post('/api/messages/send', async (req, res) => {
         const jid = chatJid.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`;
         console.log('[AGENT-SEND] 📱 Enviando a:', jid);
         
-        // Enviar mensaje a WhatsApp
-        const sentResult = await session.sock.sendMessage(jid, { text: message });
+        let sentResult;
+        let messageType = 'text';
+        let mediaUrl = null;
+
+        // Si hay archivo, enviarlo
+        if (file) {
+            const fs = require('fs');
+            const path = require('path');
+            
+            console.log('[AGENT-SEND] 📎 Enviando archivo:', file.originalname);
+            
+            const fileBuffer = fs.readFileSync(file.path);
+            const mimetype = file.mimetype;
+            
+            if (mimetype.startsWith('image/')) {
+                messageType = 'image';
+                sentResult = await session.sock.sendMessage(jid, {
+                    image: fileBuffer,
+                    caption: message || ''
+                });
+            } else if (mimetype.startsWith('video/')) {
+                messageType = 'video';
+                sentResult = await session.sock.sendMessage(jid, {
+                    video: fileBuffer,
+                    caption: message || ''
+                });
+            } else if (mimetype.startsWith('audio/')) {
+                messageType = 'audio';
+                sentResult = await session.sock.sendMessage(jid, {
+                    audio: fileBuffer,
+                    mimetype: 'audio/mp4'
+                });
+            } else {
+                messageType = 'document';
+                sentResult = await session.sock.sendMessage(jid, {
+                    document: fileBuffer,
+                    mimetype: mimetype,
+                    fileName: file.originalname
+                });
+            }
+            
+            // Guardar archivo en carpeta media con nombre único
+            const mediaDir = path.join(__dirname, 'media');
+            if (!fs.existsSync(mediaDir)) {
+                fs.mkdirSync(mediaDir, { recursive: true });
+            }
+            
+            const newFileName = `${Date.now()}-${file.originalname}`;
+            const newFilePath = path.join(mediaDir, newFileName);
+            fs.copyFileSync(file.path, newFilePath);
+            fs.unlinkSync(file.path); // Eliminar archivo temporal
+            
+            mediaUrl = `/media/${newFileName}`;
+        } else {
+            // Enviar mensaje de texto
+            sentResult = await session.sock.sendMessage(jid, { text: message });
+        }
+        
         console.log('[AGENT-SEND] ✅ Mensaje enviado a WhatsApp, ID:', sentResult.key.id);
         
         const ownJid = session.sock?.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net';
+        const actualSessionId = session.sessionId || sessionId;
         
         // Guardar en base de datos
         const dbMessage = {
@@ -6477,16 +6535,18 @@ app.post('/api/messages/send', async (req, res) => {
             chat_jid: jid,
             sender_jid: ownJid,
             from_me: true,
-            message_type: 'text',
-            text_content: message,
+            message_type: messageType,
+            text_content: message || '',
+            media_url: mediaUrl,
             timestamp: new Date(Number(sentResult.messageTimestamp) * 1000 || Date.now()),
-            status: 'pending'
+            status: 'pending',
+            assigned_user_id: agentId || null
         };
-        await saveMessageToDB(sessionId, dbMessage);
+        await saveMessageToDB(actualSessionId, dbMessage);
         console.log('[AGENT-SEND] 💾 Mensaje guardado en BD');
         
-        // Emitir evento Socket.IO para actualización en tiempo real
-        io.to(`session-${sessionId}`).emit('message', {
+        // Emitir evento Socket.IO para actualización en tiempo real a todas las salas
+        io.to(`session-${actualSessionId}`).emit('message', {
             id: dbMessage.id,
             chatJid: jid,
             message: message,
@@ -6494,6 +6554,17 @@ app.post('/api/messages/send', async (req, res) => {
             from_me: true,
             status: 'sent'
         });
+        
+        // Si es un agente, emitir también al agente específico
+        if (agentId) {
+            io.to(`agent-${agentId}`).emit('message-sent', {
+                id: dbMessage.id,
+                chatJid: jid,
+                message: message,
+                timestamp: dbMessage.timestamp.toISOString()
+            });
+        }
+        
         console.log('[AGENT-SEND] 📡 Evento Socket.IO emitido');
         
         res.json({ 
@@ -12604,10 +12675,28 @@ app.post('/api/auth/login', async (req, res) => {
                     console.log(`[AUTH] ⚠️ Sesión ${sessionId} no encontrada en user_sessions - usuario debe escanear QR`);
                 }
             } else {
-                console.log(`[AUTH] ⚠️ Usuario ${email} no tiene session_id asignado en su cuenta - debe configurar WhatsApp`);
+                console.log(`[AUTH] ⚠️ Usuario ${email} no tiene session_id asignado en su cuenta`);
                 
+                // Si es AGENTE, buscar session_id del admin activo
+                if (user.role === 'agent' || user.role === 'supervisor') {
+                    const [adminSessions] = await connection.execute(
+                        `SELECT us.session_id, us.phone_number, u.name as admin_name
+                         FROM user_sessions us
+                         INNER JOIN users u ON u.session_id = us.session_id AND u.role IN ('admin', 'super_admin')
+                         WHERE us.is_active = true
+                         ORDER BY us.last_activity DESC
+                         LIMIT 1`
+                    );
+                    
+                    if (adminSessions.length > 0) {
+                        sessionId = adminSessions[0].session_id;
+                        console.log(`[AUTH] ✅ Agente ${email} usando sesión del admin: ${adminSessions[0].admin_name} (${sessionId})`);
+                    } else {
+                        console.log(`[AUTH] ⚠️ No hay sesiones de admin activas - agente debe esperar`);
+                    }
+                }
                 // Si es SUPER ADMIN, puede usar cualquier sesión disponible para administrar
-                if (user.role === 'super_admin' || user.role === 'superadmin') {
+                else if (user.role === 'super_admin' || user.role === 'superadmin') {
                     const [anySessions] = await connection.execute(
                         `SELECT session_id, phone_number FROM user_sessions
                          WHERE is_active = true
@@ -14358,21 +14447,9 @@ app.post('/api/chats/transfer', async (req, res) => {
     try {
         const connection = await pool.getConnection();
         try {
-            // IMPORTANTE: Obtener el session_id correcto del agente destino
-            const [agentData] = await connection.execute(
-                'SELECT session_id FROM users WHERE id = ?',
-                [toAgentId]
-            );
-
-            if (agentData.length === 0 || !agentData[0].session_id) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'El agente no tiene una sesión asignada'
-                });
-            }
-
-            const agentSessionId = agentData[0].session_id;
-            console.log(`[TRANSFER] 📝 Session ID del agente destino: ${agentSessionId}`);
+            // NO usar session_id del agente, usar el sessionId del admin que hace la transferencia
+            // Los agentes comparten el mismo sessionId del admin
+            console.log(`[TRANSFER] 📝 Session ID para asignación: ${sessionId}`);
 
             // Verificar si ya existe una asignación activa para este chat y agente
             const [existingAssignments] = await connection.execute(
@@ -14404,13 +14481,13 @@ app.post('/api/chats/transfer', async (req, res) => {
                 );
             }
 
-            // Crear nueva asignación para el agente destino usando SU session_id
+            // Crear nueva asignación para el agente destino usando el sessionId del admin
             await connection.execute(
                 `INSERT INTO chat_assignments (chat_jid, session_id, user_id, assigned_by, status, notes)
                  VALUES (?, ?, ?, ?, 'active', ?)`,
                 [
                     chatJid,
-                    agentSessionId,  // ← Usar el session_id del agente, no el que viene del request
+                    sessionId,  // ← Usar el sessionId del admin/sistema activo
                     toAgentId,
                     fromAgentId || null,
                     `Transferido ${fromAgentId ? `desde agente ID ${fromAgentId}` : 'manualmente'}`
@@ -14423,16 +14500,21 @@ app.post('/api/chats/transfer', async (req, res) => {
                 [toAgentId]
             );
 
+            // Obtener nombre y avatar del contacto o grupo
             const [chatInfo] = await connection.execute(
-                `SELECT COALESCE(c.name, SUBSTRING_INDEX(?, '@', 1)) as chat_name
+                `SELECT 
+                    COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as chat_name,
+                    COALESCE(c.avatar_url, cg.avatar_url) as avatar_url
                  FROM (SELECT 1) as dummy
-                 LEFT JOIN contacts c ON c.jid = ?
+                 LEFT JOIN contacts c ON c.jid = ? AND c.session_id = ?
+                 LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
                  LIMIT 1`,
-                [chatJid, chatJid]
+                [chatJid, chatJid, sessionId, chatJid, sessionId]
             );
 
             const agentName = agentInfo[0]?.name || 'Agente';
             const chatName = chatInfo[0]?.chat_name || chatJid.split('@')[0];
+            const chatAvatar = chatInfo[0]?.avatar_url || null;
 
             // Insertar mensaje de notificación en la BD para el agente
             const notificationText = `📢 *Chat transferido por Admin*\n\n` +
@@ -14459,19 +14541,25 @@ app.post('/api/chats/transfer', async (req, res) => {
                 ]
             );
 
-            // Emitir evento Socket.IO al agente con sonido
-            io.emit(`agent-${toAgentId}-new-chat`, {
+            // Emitir múltiples eventos Socket.IO para asegurar que el agente lo reciba
+            const transferData = {
                 type: 'transfer',
                 chatJid,
                 sessionId,
                 chatName,
+                avatar: chatAvatar,
                 message: notificationText,
                 transferredFrom: fromAgentId,
                 playSound: true,
                 showNotification: true,
                 timestamp: new Date().toISOString()
-            });
+            };
 
+            // Emitir a todos los eventos posibles que el agente pueda estar escuchando
+            io.emit(`agent-${toAgentId}-new-chat`, transferData);
+            io.emit(`agent:${toAgentId}:transfer`, transferData);
+            io.emit('agent:chat:transfer', { ...transferData, agentId: toAgentId });
+            
             // También emitir evento general para que el frontend recargue
             io.emit('chat-assignment-changed', {
                 agentId: toAgentId,
@@ -14554,15 +14642,14 @@ app.get('/api/agents/:userId/chats', async (req, res) => {
 
             // Formatear para que sea compatible con el formato de chats
             const formattedChats = assignments.map(assignment => ({
-                id: assignment.chat_jid,
+                chatJid: assignment.chat_jid,
                 name: assignment.contact_name || assignment.chat_jid.split('@')[0],
-                isGroup: assignment.chat_jid.includes('@g.us'),
-                lastMessage: assignment.last_message || '',
-                timestamp: assignment.last_message_time || assignment.assigned_at,
-                unreadCount: assignment.unread_count || 0,
                 avatar: assignment.avatar_url,
-                assigned: true,
-                assignedAt: assignment.assigned_at
+                lastMessage: assignment.last_message || '',
+                lastMessageTimestamp: assignment.last_message_time || assignment.assigned_at,
+                unreadCount: assignment.unread_count || 0,
+                assignedAt: assignment.assigned_at,
+                isGroup: assignment.chat_jid.includes('@g.us')
             }));
 
             res.json({
@@ -16030,6 +16117,75 @@ app.get('/api/auth/verify', async (req, res) => {
     }
 });
 
+// GET /api/auth/agent/:userId - Obtener información del agente
+app.get('/api/auth/agent/:userId', async (req, res) => {
+    const { userId } = req.params;
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({ success: false, error: 'Token no proporcionado' });
+    }
+
+    if (!pool) {
+        return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+
+    try {
+        const connection = await pool.getConnection();
+        try {
+            // Obtener información del usuario/agente
+            const [users] = await connection.execute(
+                'SELECT id, name, email, role, department, session_id, phone FROM users WHERE id = ? AND status = "active"',
+                [userId]
+            );
+
+            if (users.length === 0) {
+                return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+            }
+
+            const user = users[0];
+            let sessionId = user.session_id;
+            let phoneNumber = user.phone;
+
+            // Si es agente y no tiene sessionId, buscar el del admin
+            if ((user.role === 'agent' || user.role === 'supervisor') && !sessionId) {
+                const [adminSessions] = await connection.execute(
+                    `SELECT us.session_id, us.phone_number
+                     FROM user_sessions us
+                     INNER JOIN users u ON u.session_id = us.session_id 
+                     WHERE u.role IN ('admin', 'super_admin') 
+                     AND us.is_active = true
+                     ORDER BY us.last_activity DESC
+                     LIMIT 1`
+                );
+
+                if (adminSessions.length > 0) {
+                    sessionId = adminSessions[0].session_id;
+                    phoneNumber = adminSessions[0].phone_number;
+                }
+            }
+
+            res.json({
+                success: true,
+                sessionId,
+                phoneNumber,
+                user: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    role: user.role
+                }
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[AUTH-AGENT] Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // POST /api/admin/login - Login de administrador
 app.post('/api/admin/login', async (req, res) => {
     const { email, password } = req.body;
@@ -16386,12 +16542,13 @@ app.post('/api/subscriptions/activate', verifyAdminToken, async (req, res) => {
                     JSON.stringify(features),
                     maxCampaigns,
                     maxContacts,
-                    req.admin.id,
+                    req.admin ? req.admin.id : null,
                     notes
                 ]
             );
 
-            console.log(`[SUBSCRIPTIONS] Plan activated for ${phoneNumber} by admin ${req.admin.email}`);
+            const adminEmail = req.admin ? req.admin.email : 'system';
+            console.log(`[SUBSCRIPTIONS] Plan activated for ${phoneNumber} by admin ${adminEmail}`);
 
             // Emitir evento Socket.IO para notificar al usuario
             io.emit(`subscription-updated-${phoneNumber}`, {

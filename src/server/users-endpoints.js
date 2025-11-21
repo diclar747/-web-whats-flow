@@ -220,19 +220,31 @@ app.post('/api/users', async (req, res) => {
             // Hash de la contraseña
             const hashedPassword = await bcrypt.hash(password, 10);
 
-            // Insertar usuario con session_id
+            // Si es agente, obtener el admin_phone del sessionId
+            let adminPhone = null;
+            if (role === 'agent' || !role) {
+                const [session] = await connection.execute(
+                    'SELECT phone_number FROM user_sessions WHERE session_id = ? LIMIT 1',
+                    [sessionId]
+                );
+                if (session.length > 0) {
+                    adminPhone = session[0].phone_number;
+                }
+            }
+
+            // Insertar usuario con session_id y admin_phone
             const [result] = await connection.execute(`
-                INSERT INTO users (name, email, password, role, department, category, phone, status, session_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)
-            `, [name, email, hashedPassword, role || 'agent', department || null, category || null, phone || null, sessionId]);
+                INSERT INTO users (name, email, password, role, department, category, phone, status, session_id, admin_phone)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+            `, [name, email, hashedPassword, role || 'agent', department || null, category || null, phone || null, sessionId, adminPhone]);
 
             // Obtener el usuario creado
             const [newUser] = await connection.execute(
-                'SELECT id, name, email, role, department, category, status, phone, created_at, session_id FROM users WHERE id = ?',
+                'SELECT id, name, email, role, department, category, status, phone, created_at, session_id, admin_phone FROM users WHERE id = ?',
                 [result.insertId]
             );
 
-            console.log(`✅ Usuario creado: ${email} (${role || 'agent'}) para sessionId: ${sessionId}`);
+            console.log(`✅ Usuario creado: ${email} (${role || 'agent'}) para sessionId: ${sessionId}, admin_phone: ${adminPhone}`);
             res.json({ success: true, user: newUser[0] });
         } finally {
             connection.release();

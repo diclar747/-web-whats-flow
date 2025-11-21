@@ -84,7 +84,6 @@ const AgentDashboard: React.FC = () => {
       const token = sessionStorage.getItem('token');
       const userId = sessionStorage.getItem('userId');
       const savedUserName = sessionStorage.getItem('userName');
-      const savedSessionId = sessionStorage.getItem('whatsflow_session');
 
       console.log('🔍 [AGENT-DASHBOARD] Inicializando...');
       console.log('🔍 Token:', token ? 'Existe' : 'No');
@@ -107,22 +106,30 @@ const AgentDashboard: React.FC = () => {
         });
       }
 
-      // Obtener sessionId y phoneNumber desde la base de datos
+      // Obtener sessionId del ADMIN desde la base de datos
       try {
         const response = await fetch(`/api/users/${userId}/session`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await response.json();
+        console.log('🔍 [AGENT-SESSION] Respuesta completa:', data);
+        
         if (data.success && data.sessionId) {
           setSessionId(data.sessionId);
           setPhoneNumber(data.phoneNumber);
-          sessionStorage.setItem('whatsflow_session', data.sessionId);
-          sessionStorage.setItem('admin_phone', data.phoneNumber);
-          console.log('✅ SessionId desde BD:', data.sessionId);
-          console.log('✅ PhoneNumber del admin:', data.phoneNumber);
+          console.log('✅ [AGENT] Usando sesión del admin:', data.sessionId);
+          console.log('✅ [AGENT] Número del admin:', data.phoneNumber);
+          
+          // Guardar en sessionStorage para uso global
+          sessionStorage.setItem('adminSessionId', data.sessionId);
+          sessionStorage.setItem('adminPhoneNumber', data.phoneNumber || '');
+        } else {
+          console.error('❌ [AGENT] No se pudo obtener sesión del admin:', data.message);
+          alert('⚠️ El administrador no tiene una sesión activa de WhatsApp.\n\nNo podrás enviar mensajes hasta que el admin inicie sesión en WhatsApp.');
         }
       } catch (error) {
-        console.error('Error obteniendo sessionId:', error);
+        console.error('❌ [AGENT] Error obteniendo sessionId:', error);
+        alert('Error al conectar con el sistema. Por favor, recarga la página.');
       }
     };
 
