@@ -12,7 +12,7 @@ import LandingPage from './components/LandingPage';
 import AdminLogin from './pages/admin/AdminLogin';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AgentLogin from './pages/AgentLogin';
-import AgentDashboard from './pages/AgentDashboardImproved';
+import AgentDashboard from './pages/AgentDashboardFixed';
 import AdminChatAssignment from './pages/AdminChatAssignment';
 import AdminAgentManagement from './components/AdminAgentManagement';
 import AgentPermissionsManager from './components/AgentPermissionsManager';
