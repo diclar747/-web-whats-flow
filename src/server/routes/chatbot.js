@@ -494,4 +494,132 @@ router.get('/analytics/:sessionId', async (req, res) => {
   }
 });
 
+// ==================== ENDPOINTS DE IA CON DEEPSEEK ====================
+
+// POST - Scraping de URL
+router.post('/scrape-url', async (req, res) => {
+  try {
+    const { url } = req.body;
+
+    if (!url) {
+      return res.status(400).json({ success: false, error: 'URL requerida' });
+    }
+
+    // Usar JSDOM o Cheerio para scraping
+    const axios = require('axios');
+    const cheerio = require('cheerio');
+
+    try {
+      const response = await axios.get(url, {
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+
+      const $ = cheerio.load(response.data);
+
+      // Remover scripts y estilos
+      $('script, style, nav, footer, header').remove();
+
+      // Extraer texto
+      let content = $('body').text()
+        .replace(/\s+/g, ' ')
+        .replace(/\n+/g, '\n')
+        .trim();
+
+      // Limitar a 5000 caracteres
+      if (content.length > 5000) {
+        content = content.substring(0, 5000) + '...';
+      }
+
+      console.log(`[SCRAPER] ✅ Contenido extraído de ${url}: ${content.length} caracteres`);
+
+      res.json({ success: true, content });
+    } catch (scrapeError) {
+      console.error('[SCRAPER] ❌ Error al hacer scraping:', scrapeError.message);
+      res.status(500).json({
+        success: false,
+        error: 'No se pudo acceder a la URL',
+        details: scrapeError.message
+      });
+    }
+  } catch (error) {
+    console.error('[SCRAPER] ❌ Error:', error);
+    res.status(500).json({ success: false, error: 'Error en el servidor' });
+  }
+});
+
+// POST - Respuesta con IA DeepSeek
+router.post('/ai-response', async (req, res) => {
+  try {
+    const { message, businessData, scrapedContent, temperature = 0.7, maxTokens = 500 } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ success: false, error: 'Mensaje requerido' });
+    }
+
+    const axios = require('axios');
+
+    // Construir contexto del negocio
+    let systemPrompt = 'Eres un asistente virtual de servicio al cliente. Responde de manera amable, profesional y útil.';
+
+    if (businessData || scrapedContent) {
+      systemPrompt += '\n\nInformación del negocio:\n';
+      if (businessData) {
+        systemPrompt += businessData + '\n\n';
+      }
+      if (scrapedContent) {
+        systemPrompt += scrapedContent;
+      }
+    }
+
+    systemPrompt += '\n\nResponde siempre basándote en la información proporcionada. Si no sabes algo, sé honesto y ofrece ayuda alternativa.';
+
+    try {
+      const deepseekResponse = await axios.post(
+        'https://api.deepseek.com/v1/chat/completions',
+        {
+          model: 'deepseek-chat',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: message }
+          ],
+          temperature: temperature,
+          max_tokens: maxTokens,
+          stream: false
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer sk-1a63bb1681514e0982ab42b0a13377c8'
+          },
+          timeout: 30000
+        }
+      );
+
+      const aiResponse = deepseekResponse.data.choices[0].message.content;
+
+      console.log('[DEEPSEEK-AI] ✅ Respuesta generada:', aiResponse.substring(0, 100) + '...');
+
+      res.json({
+        success: true,
+        response: aiResponse,
+        model: 'deepseek-chat',
+        tokensUsed: deepseekResponse.data.usage?.total_tokens || 0
+      });
+    } catch (aiError) {
+      console.error('[DEEPSEEK-AI] ❌ Error de API:', aiError.response?.data || aiError.message);
+      res.status(500).json({
+        success: false,
+        error: 'Error al generar respuesta con IA',
+        details: aiError.response?.data?.error?.message || aiError.message
+      });
+    }
+  } catch (error) {
+    console.error('[DEEPSEEK-AI] ❌ Error:', error);
+    res.status(500).json({ success: false, error: 'Error en el servidor' });
+  }
+});
+
 module.exports = router;
