@@ -2731,6 +2731,19 @@ async function performFullSync(sessionId, sock, userSessionId) {
                                             // Ignorar error
                                         }
                                     }
+                                    
+                                    // Si aún no hay nombre, intentar obtener de WhatsApp
+                                    if (!participantName && !participantNotifyName) {
+                                        try {
+                                            const waName = await sock.getName(contactJid);
+                                            if (waName && waName !== contactJid.split('@')[0] && !waName.includes('@')) {
+                                                participantName = waName;
+                                                console.log(`[FULL-SYNC] 📛 Nombre obtenido de WA: ${contactJid} -> ${waName}`);
+                                            }
+                                        } catch (nameErr) {
+                                            // Ignorar, no hay nombre disponible
+                                        }
+                                    }
 
                                     await connection.query(
                                         `INSERT INTO contact_group_members (contact_jid, group_jid, is_admin, is_super_admin, session_id, phone_number, name, notify_name)
@@ -8075,12 +8088,13 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
                                     }
                                 }
                                 
-                                // Como último recurso, obtener de WhatsApp
-                                if (!name && !isLid) {
+                                // Como último recurso, obtener de WhatsApp (incluso para LIDs)
+                                if (!name) {
                                     try {
                                         const waName = await session.sock.getName(jid);
                                         if (waName && waName !== phone && !waName.includes('@')) {
                                             name = waName;
+                                            console.log(`[API-GROUP-PARTICIPANTS] 📛 Nombre obtenido: ${jid.substring(0, 20)}... -> ${waName}`);
                                         }
                                     } catch (nameErr) {
                                         // Ignorar
@@ -8091,14 +8105,22 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
                             }
                         }
                         
+                        // Para LIDs sin resolver, extraer un "pseudo-nombre" del JID
+                        let displayName = name;
+                        if (!displayName && isLid) {
+                            const lidNumber = jid.split('@')[0];
+                            displayName = `Miembro ${lidNumber.substring(0, 8)}`;
+                        }
+                        
                         return {
                             id: jid,
                             jid: jid,
                             phone: isLid ? null : phone, // No mostrar número si es LID no resuelto
-                            name: name || 'Usuario de WhatsApp',
+                            name: displayName || 'Usuario de WhatsApp',
                             isAdmin: participant.admin === 'admin' || participant.admin === 'superadmin',
                             isSuperAdmin: participant.admin === 'superadmin',
-                            isUnresolved: isLid // Flag para indicar que es LID no resuelto
+                            isUnresolved: isLid, // Flag para indicar que es LID no resuelto
+                            note: isLid ? 'Este contacto no ha enviado mensajes aún' : null
                         };
                     }));
                     
@@ -8119,11 +8141,18 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
                 throw dbError;
             }
 
+            // Contar cuántos son LIDs sin resolver
+            const unresolvedCount = participants.filter(p => p.isUnresolved).length;
+            
             res.json({
                 success: true,
                 participants: participants,
                 total: participants.length,
-                groupName: metadata.subject || metadata.name
+                groupName: metadata.subject || metadata.name,
+                unresolvedLids: unresolvedCount,
+                warning: unresolvedCount > 0 ? 
+                    `${unresolvedCount} contactos usan identificadores privados de WhatsApp. Los números reales se mostrarán cuando estos contactos envíen mensajes.` : 
+                    null
             });
 
         } catch (metadataError) {
