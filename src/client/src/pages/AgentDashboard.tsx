@@ -45,12 +45,16 @@ interface AgentChat {
 
 interface Message {
   id: string;
+  chatJid?: string;
+  senderJid?: string;
   from_me: boolean;
   text_content: string;
   timestamp: string;
   status: string;
   message_type: string;
   media_url?: string;
+  sender_name?: string;
+  sender_avatar?: string;
 }
 
 const AgentDashboard: React.FC = () => {
@@ -171,16 +175,15 @@ const AgentDashboard: React.FC = () => {
     if (agentId && sessionId) {
       loadAgentChats();
     }
-  }, [agentId, sessionId, loadAgentChats]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, sessionId]);
 
   useEffect(() => {
     if (selectedChat) {
       loadMessages();
-      const interval = setInterval(loadMessages, 3000);
-      return () => clearInterval(interval);
     }
-    return undefined;
-  }, [selectedChat, loadMessages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedChat]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -226,26 +229,61 @@ const AgentDashboard: React.FC = () => {
     
     on('message:received', (data: any) => {
       console.log('📨 Mensaje recibido:', data);
-      // Solo actualizar si es para un chat del agente
-      loadAgentChats();
+      // Agregar mensaje directamente sin recargar
       if (selectedChat && data.chatJid === selectedChat.id) {
-        loadMessages();
+        const newMsg: any = {
+          id: data.id || Date.now().toString(),
+          chatJid: data.chatJid,
+          senderJid: data.senderJid || data.chatJid,
+          from_me: data.from_me || false,
+          message_type: data.message_type || 'conversation',
+          text_content: data.message || data.text_content,
+          timestamp: data.timestamp || new Date().toISOString(),
+          status: data.status || 'received',
+          sender_name: data.sender_name,
+          sender_avatar: data.sender_avatar
+        };
+        setMessages(prev => {
+          // Evitar duplicados
+          if (prev.some(m => m.id === newMsg.id)) return prev;
+          return [...prev, newMsg];
+        });
       }
     });
     
     on('message', (data: any) => {
       console.log('💬 Nuevo mensaje:', data);
-      // Actualizar mensajes si el chat está abierto
       if (selectedChat && data.chatJid === selectedChat.id) {
-        loadMessages();
+        const newMsg: any = {
+          id: data.id || Date.now().toString(),
+          chatJid: data.chatJid,
+          senderJid: data.senderJid || data.chatJid,
+          from_me: data.from_me || false,
+          message_type: data.message_type || 'conversation',
+          text_content: data.message || data.text_content,
+          timestamp: data.timestamp || new Date().toISOString(),
+          status: data.status || 'received',
+          sender_name: data.sender_name,
+          sender_avatar: data.sender_avatar
+        };
+        setMessages(prev => {
+          // Evitar duplicados
+          if (prev.some(m => m.id === newMsg.id)) return prev;
+          return [...prev, newMsg];
+        });
       }
     });
 
-    // Escuchar cuando se envía un mensaje (actualización inmediata)
+    // Escuchar cuando se envía un mensaje (actualización de estado)
     on('message-sent', (data: any) => {
       console.log('✅ Mensaje enviado confirmado:', data);
       if (selectedChat && data.chatJid === selectedChat.id) {
-        loadMessages();
+        setMessages(prev => prev.map(msg => {
+          if (msg.status === 'pending' && msg.chatJid === data.chatJid) {
+            return { ...msg, status: 'sent', id: data.id || msg.id };
+          }
+          return msg;
+        }));
       }
     });
 
@@ -266,18 +304,36 @@ const AgentDashboard: React.FC = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!messageText.trim() || !selectedChat || !sessionId) return;
-
-    const adminPhone = phoneNumber || sessionStorage.getItem('admin_phone');
+    if (!messageText.trim() || !selectedChat || !sessionId) {
+      console.log('[AGENT-SEND] ⚠️ Falta información:', { messageText: !!messageText, selectedChat: !!selectedChat, sessionId });
+      return;
+    }
     
     console.log('[AGENT-SEND] 📤 Enviando mensaje:', {
       sessionId,
-      phoneNumber: adminPhone,
       chatJid: selectedChat.id,
       message: messageText.substring(0, 50) + '...'
     });
 
     setSending(true);
+    
+    // Agregar mensaje optimisticamente a la UI
+    const tempMessage: any = {
+      id: 'temp-' + Date.now(),
+      chatJid: selectedChat.id,
+      senderJid: sessionId,
+      from_me: true,
+      message_type: 'conversation',
+      text_content: messageText,
+      timestamp: new Date().toISOString(),
+      status: 'pending',
+      sender_name: userName,
+      sender_avatar: null
+    };
+    setMessages(prev => [...prev, tempMessage]);
+    const messageToSend = messageText;
+    setMessageText('');
+
     try {
       const token = sessionStorage.getItem('token');
       const response = await fetch('/api/messages/send', {
@@ -288,9 +344,9 @@ const AgentDashboard: React.FC = () => {
         },
         body: JSON.stringify({
           sessionId,
-          phoneNumber: adminPhone,
           chatJid: selectedChat.id,
-          message: messageText
+          message: messageToSend,
+          agentId: agentId
         })
       });
 
@@ -299,31 +355,22 @@ const AgentDashboard: React.FC = () => {
 
       if (data.success) {
         console.log('[AGENT-SEND] ✅ Mensaje enviado exitosamente');
-        
-        // Agregar mensaje optimisticamente a la UI
-        const newMessage: any = {
-          id: 'temp-' + Date.now(),
-          chatJid: selectedChat.id,
-          senderJid: selectedChat.id,
-          from_me: true,
-          message_type: 'conversation',
-          text_content: messageText,
-          timestamp: new Date().toISOString(),
-          status: 'pending',
-          sender_name: userName,
-          sender_avatar: null
-        };
-        setMessages(prev => [...prev, newMessage]);
-        setMessageText('');
-        
-        // Recargar mensajes del servidor en 1 segundo
-        setTimeout(() => loadMessages(), 1000);
+        // Actualizar el estado del mensaje temporal a 'sent'
+        setMessages(prev => prev.map(msg => 
+          msg.id === tempMessage.id ? { ...msg, status: 'sent', id: data.messageId || msg.id } : msg
+        ));
       } else {
         console.error('[AGENT-SEND] ❌ Error:', data.error);
+        // Remover mensaje temporal y mostrar error
+        setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
+        setMessageText(messageToSend); // Restaurar mensaje
         alert('Error: ' + (data.error || 'No se pudo enviar el mensaje'));
       }
     } catch (error: any) {
       console.error('[AGENT-SEND] ❌ Exception:', error);
+      // Remover mensaje temporal en caso de error
+      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
+      setMessageText(messageToSend); // Restaurar mensaje
       alert('Error de red: ' + error.message);
     } finally {
       setSending(false);

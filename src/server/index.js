@@ -6392,9 +6392,9 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
 
 // Endpoint específico para agentes - enviar mensajes
 app.post('/api/messages/send', async (req, res) => {
-    const { sessionId, chatJid, message } = req.body;
+    const { sessionId, chatJid, message, agentId } = req.body;
     
-    console.log('[AGENT-SEND] 📤 Recibida solicitud de envío:', { sessionId, chatJid, message: message?.substring(0, 50) });
+    console.log('[AGENT-SEND] 📤 Recibida solicitud de envío:', { sessionId, chatJid, agentId, message: message?.substring(0, 50) });
     
     if (!sessionId || !chatJid || !message) {
         console.log('[AGENT-SEND] ❌ Faltan parámetros');
@@ -6404,7 +6404,44 @@ app.post('/api/messages/send', async (req, res) => {
         });
     }
 
-    const session = sessions.get(sessionId);
+    // Buscar la sesión activa - puede ser directamente o necesitar buscar por usuario del agente
+    let session = sessions.get(sessionId);
+    
+    // Si no se encuentra la sesión directamente y hay agentId, buscar sesión del admin asociado
+    if ((!session || !session.isConnected) && agentId && pool) {
+        try {
+            const connection = await pool.getConnection();
+            try {
+                // Obtener el admin_phone asociado al agente
+                const [agents] = await connection.execute(
+                    `SELECT users.phone 
+                     FROM users 
+                     INNER JOIN agents ON agents.created_by = users.phone 
+                     WHERE agents.id = ? LIMIT 1`,
+                    [agentId]
+                );
+                
+                if (agents.length > 0) {
+                    const adminPhone = agents[0].phone;
+                    console.log('[AGENT-SEND] 🔍 Buscando sesión del admin:', adminPhone);
+                    
+                    // Buscar sesión activa del admin
+                    for (const [sessId, sess] of sessions.entries()) {
+                        if (sess.phoneNumber === adminPhone && sess.isConnected) {
+                            session = sess;
+                            console.log('[AGENT-SEND] ✅ Sesión del admin encontrada:', sessId);
+                            break;
+                        }
+                    }
+                }
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('[AGENT-SEND] Error buscando sesión del admin:', error);
+        }
+    }
+    
     if (!session || !session.sock || !session.isConnected) {
         console.log('[AGENT-SEND] ❌ Sesión no encontrada o no conectada');
         return res.status(400).json({ 
@@ -16291,7 +16328,21 @@ app.post('/api/subscriptions/activate', verifyAdminToken, async (req, res) => {
     }
 
     try {
-        const phoneNumber = await getUserPhoneNumber(sessionId);
+        // Si sessionId parece un número de teléfono (solo dígitos), usarlo directamente
+        let phoneNumber;
+        if (/^\d+$/.test(sessionId)) {
+            phoneNumber = sessionId;
+            console.log('[SUBSCRIPTIONS] Usando número de teléfono directo:', phoneNumber);
+        } else {
+            phoneNumber = await getUserPhoneNumber(sessionId);
+        }
+        
+        if (!phoneNumber) {
+            return res.status(400).json({
+                success: false,
+                error: 'No se pudo identificar el número de teléfono'
+            });
+        }
 
         const connection = await pool.getConnection();
         try {
