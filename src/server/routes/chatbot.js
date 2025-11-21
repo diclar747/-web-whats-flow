@@ -35,8 +35,9 @@ router.get('/flows/:sessionId', async (req, res) => {
       name: flow.name,
       description: flow.description,
       active: Boolean(flow.active),
+      flowType: flow.flow_type || 'programmed',
       triggers: JSON.parse(flow.triggers || '[]'),
-      responses: [{
+      responses: flow.responses ? JSON.parse(flow.responses) : [{
         id: '1',
         type: flow.response_type || 'text',
         content: flow.response_text || '',
@@ -48,6 +49,13 @@ router.get('/flows/:sessionId', async (req, res) => {
         totalTriggers: flow.stats_total_triggers || 0,
         successRate: flow.stats_success_rate || 100,
         lastTriggered: flow.stats_last_triggered
+      },
+      aiConfig: {
+        businessData: flow.ai_business_data || '',
+        websiteUrl: flow.ai_website_url || '',
+        scrapedContent: flow.ai_scraped_content || '',
+        temperature: parseFloat(flow.ai_temperature) || 0.7,
+        maxTokens: parseInt(flow.ai_max_tokens) || 500
       }
     }));
     
@@ -67,7 +75,7 @@ router.post('/flows/:sessionId', async (req, res) => {
     const flowId = Date.now().toString();
     const connection = await mysql.createConnection(dbConfig);
     
-    // Extraer la primera respuesta del array de respuestas
+    // Extraer la primera respuesta del array de respuestas (para compatibilidad)
     const firstResponse = flowData.responses && flowData.responses.length > 0 
       ? flowData.responses[0] 
       : null;
@@ -76,22 +84,34 @@ router.post('/flows/:sessionId', async (req, res) => {
     const responseText = firstResponse?.content || flowData.responseText || '';
     const responseMedia = firstResponse?.mediaUrl || flowData.responseMedia || '';
     
+    const aiConfig = flowData.aiConfig || {};
+    
     await connection.query(
       `INSERT INTO chatbot_flows (
-        id, session_id, name, description, triggers, 
-        response_type, response_text, response_media, kanban_board_id, active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, session_id, name, description, triggers, responses,
+        response_type, response_text, response_media, 
+        kanban_board_id, active, flow_type,
+        ai_business_data, ai_website_url, ai_scraped_content, 
+        ai_temperature, ai_max_tokens
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         flowId,
         sessionId,
         flowData.name,
         flowData.description || '',
         JSON.stringify(flowData.triggers || []),
+        JSON.stringify(flowData.responses || []),
         responseType,
         responseText,
         responseMedia,
         flowData.kanbanBoardId || null,
-        flowData.active !== false
+        flowData.active !== false,
+        flowData.flowType || 'programmed',
+        aiConfig.businessData || '',
+        aiConfig.websiteUrl || '',
+        aiConfig.scrapedContent || '',
+        aiConfig.temperature || 0.7,
+        aiConfig.maxTokens || 500
       ]
     );
     
@@ -125,7 +145,7 @@ router.put('/flows/:sessionId/:flowId', async (req, res) => {
     
     const connection = await mysql.createConnection(dbConfig);
     
-    // Extraer la primera respuesta del array de respuestas
+    // Extraer la primera respuesta del array de respuestas (para compatibilidad)
     const firstResponse = updatedFlow.responses && updatedFlow.responses.length > 0 
       ? updatedFlow.responses[0] 
       : null;
@@ -134,20 +154,32 @@ router.put('/flows/:sessionId/:flowId', async (req, res) => {
     const responseText = firstResponse?.content || updatedFlow.responseText || '';
     const responseMedia = firstResponse?.mediaUrl || updatedFlow.responseMedia || '';
     
+    const aiConfig = updatedFlow.aiConfig || {};
+    
     const [result] = await connection.query(
       `UPDATE chatbot_flows SET 
-        name = ?, description = ?, triggers = ?, 
-        response_type = ?, response_text = ?, response_media = ?, kanban_board_id = ?, active = ?
+        name = ?, description = ?, triggers = ?, responses = ?,
+        response_type = ?, response_text = ?, response_media = ?, 
+        kanban_board_id = ?, active = ?, flow_type = ?,
+        ai_business_data = ?, ai_website_url = ?, ai_scraped_content = ?,
+        ai_temperature = ?, ai_max_tokens = ?
       WHERE id = ? AND session_id = ?`,
       [
         updatedFlow.name,
         updatedFlow.description || '',
         JSON.stringify(updatedFlow.triggers || []),
+        JSON.stringify(updatedFlow.responses || []),
         responseType,
         responseText,
         responseMedia,
         updatedFlow.kanbanBoardId || null,
         updatedFlow.active !== false,
+        updatedFlow.flowType || 'programmed',
+        aiConfig.businessData || '',
+        aiConfig.websiteUrl || '',
+        aiConfig.scrapedContent || '',
+        aiConfig.temperature || 0.7,
+        aiConfig.maxTokens || 500,
         flowId,
         sessionId
       ]
@@ -156,7 +188,7 @@ router.put('/flows/:sessionId/:flowId', async (req, res) => {
     await connection.end();
     
     if (result.affectedRows > 0) {
-      console.log(`[CHATBOT] ✏️ Flujo actualizado en BD: ${updatedFlow.name}`);
+      console.log(`[CHATBOT] ✏️ Flujo actualizado en BD: ${updatedFlow.name} (${updatedFlow.flowType})`);
       res.json({ success: true, flow: updatedFlow });
     } else {
       res.status(404).json({ success: false, error: 'Flujo no encontrado' });
@@ -472,45 +504,48 @@ router.post('/process-message/:sessionId', async (req, res) => {
     const messageLower = message.toLowerCase().trim();
     let matchedFlow = null;
     
+    // Primero buscar flujos programados con triggers
     for (const flow of flows) {
-      const triggers = JSON.parse(flow.triggers || '[]');
-      const matched = triggers.some(trigger => {
-        const triggerLower = trigger.toLowerCase().trim();
-        return messageLower === triggerLower || 
-               messageLower.includes(' ' + triggerLower + ' ') ||
-               messageLower.startsWith(triggerLower + ' ') ||
-               messageLower.endsWith(' ' + triggerLower) ||
-               messageLower.includes(triggerLower);
-      });
-      
-      if (matched) {
-        matchedFlow = flow;
+      if (flow.flow_type === 'programmed') {
+        const triggers = JSON.parse(flow.triggers || '[]');
+        const matched = triggers.some(trigger => {
+          const triggerLower = trigger.toLowerCase().trim();
+          return messageLower === triggerLower || 
+                 messageLower.includes(' ' + triggerLower + ' ') ||
+                 messageLower.startsWith(triggerLower + ' ') ||
+                 messageLower.endsWith(' ' + triggerLower) ||
+                 messageLower.includes(triggerLower);
+        });
         
-        // Actualizar stats en BD
-        const connection2 = await mysql.createConnection(dbConfig);
-        await connection2.query(
-          'UPDATE chatbot_flows SET stats_total_triggers = stats_total_triggers + 1, stats_last_triggered = NOW() WHERE id = ?',
-          [flow.id]
-        );
-        await connection2.end();
-        
-        // Actualizar stats globales
-        const stats = chatbotStats.get(sessionId) || {
-          totalInteractions: 0,
-          successfulResponses: 0,
-          transferredToAgent: 0,
-          avgResponseTime: 0
-        };
-        stats.totalInteractions++;
-        stats.successfulResponses++;
-        chatbotStats.set(sessionId, stats);
-        
-        break;
+        if (matched) {
+          matchedFlow = flow;
+          
+          // Actualizar stats en BD
+          const connection2 = await mysql.createConnection(dbConfig);
+          await connection2.query(
+            'UPDATE chatbot_flows SET stats_total_triggers = stats_total_triggers + 1, stats_last_triggered = NOW() WHERE id = ?',
+            [flow.id]
+          );
+          await connection2.end();
+          
+          // Actualizar stats globales
+          const stats = chatbotStats.get(sessionId) || {
+            totalInteractions: 0,
+            successfulResponses: 0,
+            transferredToAgent: 0,
+            avgResponseTime: 0
+          };
+          stats.totalInteractions++;
+          stats.successfulResponses++;
+          chatbotStats.set(sessionId, stats);
+          
+          break;
+        }
       }
     }
     
     if (matchedFlow) {
-      console.log(`[CHATBOT] 🎯 Flujo activado: ${matchedFlow.name} por mensaje de ${from}`);
+      console.log(`[CHATBOT] 🎯 Flujo activado: ${matchedFlow.name} (${matchedFlow.flow_type}) por mensaje de ${from}`);
       
       // Si el flujo tiene un kanban asociado, agregar el contacto al kanban
       if (matchedFlow.kanban_board_id) {
@@ -541,31 +576,222 @@ router.post('/process-message/:sessionId', async (req, res) => {
         }
       }
       
-      const responses = [{
-        id: '1',
-        type: matchedFlow.response_type || 'text',
-        content: matchedFlow.response_text || '',
-        mediaUrl: matchedFlow.response_media || ''
-      }];
+      let responses = [];
+      
+      // Verificar si es flujo con IA o programado
+      if (matchedFlow.flow_type === 'ai') {
+        console.log(`[CHATBOT] 🤖 Generando respuesta con IA para: "${message}"`);
+        
+        try {
+          const axios = require('axios');
+          
+          // Construir contexto del negocio
+          let systemPrompt = 'Eres un asistente virtual de servicio al cliente. Responde de manera amable, profesional y útil en español.';
+          
+          if (matchedFlow.ai_business_data || matchedFlow.ai_scraped_content) {
+            systemPrompt += '\n\nInformación del negocio:\n';
+            if (matchedFlow.ai_business_data) {
+              systemPrompt += matchedFlow.ai_business_data + '\n\n';
+            }
+            if (matchedFlow.ai_scraped_content) {
+              systemPrompt += matchedFlow.ai_scraped_content;
+            }
+          }
+          
+          systemPrompt += '\n\nResponde siempre basándote en la información proporcionada. Si no sabes algo, sé honesto y ofrece ayuda alternativa. Mantén las respuestas concisas y útiles.';
+          
+          const deepseekResponse = await axios.post(
+            'https://api.deepseek.com/v1/chat/completions',
+            {
+              model: 'deepseek-chat',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: message }
+              ],
+              temperature: parseFloat(matchedFlow.ai_temperature) || 0.7,
+              max_tokens: parseInt(matchedFlow.ai_max_tokens) || 500,
+              stream: false
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer sk-1a63bb1681514e0982ab42b0a13377c8'
+              },
+              timeout: 30000
+            }
+          );
+          
+          const aiResponse = deepseekResponse.data.choices[0].message.content;
+          
+          console.log(`[CHATBOT] 🤖 IA respondió: ${aiResponse.substring(0, 100)}...`);
+          
+          responses = [{
+            id: '1',
+            type: 'text',
+            content: aiResponse
+          }];
+          
+        } catch (aiError) {
+          console.error('[CHATBOT] ❌ Error con IA:', aiError.response?.data || aiError.message);
+          // Fallback a mensaje genérico
+          responses = [{
+            id: '1',
+            type: 'text',
+            content: 'Disculpa, estoy teniendo problemas para procesar tu mensaje. ¿Podrías intentar de nuevo?'
+          }];
+        }
+        
+      } else {
+        // Flujo programado - usar respuestas guardadas
+        responses = matchedFlow.responses ? JSON.parse(matchedFlow.responses) : [{
+          id: '1',
+          type: matchedFlow.response_type || 'text',
+          content: matchedFlow.response_text || '',
+          mediaUrl: matchedFlow.response_media || ''
+        }];
+      }
       
       res.json({
         success: true,
         botResponse: responses,
         flow: {
           id: matchedFlow.id,
-          name: matchedFlow.name
+          name: matchedFlow.name,
+          type: matchedFlow.flow_type
         }
       });
     } else {
-      console.log(`[CHATBOT] ❌ No se encontró flujo para: "${message}"`);
+      // Si no hay flujo con triggers, buscar si hay algún flujo con IA activo
+      const aiFlows = flows.filter(f => f.flow_type === 'ai');
       
-      // NO enviar mensaje de fallback - solo ignorar el mensaje
-      res.json({
-        success: false,
-        botResponse: null,
-        reason: 'No matching flow',
-        flow: null
-      });
+      if (aiFlows.length > 0) {
+        const aiFlow = aiFlows[0]; // Usar el primer flujo con IA
+        console.log(`[CHATBOT] 🤖 No hay flujo específico, usando IA: ${aiFlow.name}`);
+        
+        // Si el flujo con IA tiene un kanban asociado, agregar el contacto
+        if (aiFlow.kanban_board_id) {
+          try {
+            const connection3 = await mysql.createConnection(dbConfig);
+            
+            // Verificar si el contacto ya existe en ese kanban
+            const [existingContact] = await connection3.query(
+              'SELECT id FROM kanban_contacts WHERE board_id = ? AND contact_jid = ?',
+              [aiFlow.kanban_board_id, from]
+            );
+            
+            if (existingContact.length === 0) {
+              // Agregar el contacto al kanban
+              await connection3.query(
+                'INSERT INTO kanban_contacts (board_id, contact_jid, notes) VALUES (?, ?, ?)',
+                [aiFlow.kanban_board_id, from, `Agregado automáticamente por chatbot IA: ${aiFlow.name}`]
+              );
+              console.log(`[CHATBOT] 📋 Contacto ${from} agregado al kanban ${aiFlow.kanban_board_id} (IA)`);
+            } else {
+              console.log(`[CHATBOT] 📋 Contacto ${from} ya existe en kanban ${aiFlow.kanban_board_id}`);
+            }
+            
+            await connection3.end();
+          } catch (kanbanError) {
+            console.error('[CHATBOT] Error agregando contacto al kanban (IA):', kanbanError);
+            // No fallar la respuesta del bot si falla el kanban
+          }
+        }
+        
+        try {
+          const axios = require('axios');
+          
+          // Construir contexto del negocio
+          let systemPrompt = 'Eres un asistente virtual de servicio al cliente. Responde de manera amable, profesional y útil en español.';
+          
+          if (aiFlow.ai_business_data || aiFlow.ai_scraped_content) {
+            systemPrompt += '\n\nInformación del negocio:\n';
+            if (aiFlow.ai_business_data) {
+              systemPrompt += aiFlow.ai_business_data + '\n\n';
+            }
+            if (aiFlow.ai_scraped_content) {
+              systemPrompt += aiFlow.ai_scraped_content;
+            }
+          }
+          
+          systemPrompt += '\n\nResponde siempre basándote en la información proporcionada. Si no sabes algo, sé honesto y ofrece ayuda alternativa. Mantén las respuestas concisas y útiles.';
+          
+          const deepseekResponse = await axios.post(
+            'https://api.deepseek.com/v1/chat/completions',
+            {
+              model: 'deepseek-chat',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: message }
+              ],
+              temperature: parseFloat(aiFlow.ai_temperature) || 0.7,
+              max_tokens: parseInt(aiFlow.ai_max_tokens) || 500,
+              stream: false
+            },
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer sk-1a63bb1681514e0982ab42b0a13377c8'
+              },
+              timeout: 30000
+            }
+          );
+          
+          const aiResponse = deepseekResponse.data.choices[0].message.content;
+          
+          console.log(`[CHATBOT] 🤖 IA respondió (sin trigger): ${aiResponse.substring(0, 100)}...`);
+          
+          // Actualizar stats
+          const connection2 = await mysql.createConnection(dbConfig);
+          await connection2.query(
+            'UPDATE chatbot_flows SET stats_total_triggers = stats_total_triggers + 1, stats_last_triggered = NOW() WHERE id = ?',
+            [aiFlow.id]
+          );
+          await connection2.end();
+          
+          const stats = chatbotStats.get(sessionId) || {
+            totalInteractions: 0,
+            successfulResponses: 0,
+            transferredToAgent: 0,
+            avgResponseTime: 0
+          };
+          stats.totalInteractions++;
+          stats.successfulResponses++;
+          chatbotStats.set(sessionId, stats);
+          
+          res.json({
+            success: true,
+            botResponse: [{
+              id: '1',
+              type: 'text',
+              content: aiResponse
+            }],
+            flow: {
+              id: aiFlow.id,
+              name: aiFlow.name,
+              type: 'ai'
+            }
+          });
+          
+        } catch (aiError) {
+          console.error('[CHATBOT] ❌ Error con IA (sin trigger):', aiError.response?.data || aiError.message);
+          res.json({
+            success: false,
+            botResponse: null,
+            reason: 'AI error',
+            flow: null
+          });
+        }
+      } else {
+        console.log(`[CHATBOT] ❌ No se encontró flujo para: "${message}"`);
+        
+        // NO enviar mensaje de fallback - solo ignorar el mensaje
+        res.json({
+          success: false,
+          botResponse: null,
+          reason: 'No matching flow',
+          flow: null
+        });
+      }
     }
   } catch (error) {
     console.error('Error procesando mensaje:', error);
@@ -624,6 +850,9 @@ router.get('/analytics/:sessionId', async (req, res) => {
 
 // POST - Scraping de URL
 router.post('/scrape-url', async (req, res) => {
+  const axios = require('axios');
+  const cheerio = require('cheerio');
+  
   try {
     const { url } = req.body;
 
@@ -631,48 +860,79 @@ router.post('/scrape-url', async (req, res) => {
       return res.status(400).json({ success: false, error: 'URL requerida' });
     }
 
-    // Usar JSDOM o Cheerio para scraping
-    const axios = require('axios');
-    const cheerio = require('cheerio');
+    console.log(`[SCRAPER] 🔍 Iniciando scraping de: ${url}`);
 
-    try {
-      const response = await axios.get(url, {
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
+    const response = await axios.get(url, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br'
+      },
+      maxRedirects: 5
+    });
 
-      const $ = cheerio.load(response.data);
+    const $ = cheerio.load(response.data);
 
-      // Remover scripts y estilos
-      $('script, style, nav, footer, header').remove();
+    // Remover elementos no deseados
+    $('script, style, nav, footer, header, iframe, noscript, svg').remove();
+    $('.advertisement, .ads, .cookie-banner, .popup').remove();
 
-      // Extraer texto
-      let content = $('body').text()
-        .replace(/\s+/g, ' ')
-        .replace(/\n+/g, '\n')
-        .trim();
-
-      // Limitar a 5000 caracteres
-      if (content.length > 5000) {
-        content = content.substring(0, 5000) + '...';
+    // Extraer texto del main content o body
+    let content = '';
+    
+    // Intentar obtener contenido principal
+    const mainSelectors = ['main', 'article', '[role="main"]', '.content', '.main-content', '#content'];
+    for (const selector of mainSelectors) {
+      const mainContent = $(selector).first();
+      if (mainContent.length > 0) {
+        content = mainContent.text();
+        break;
       }
-
-      console.log(`[SCRAPER] ✅ Contenido extraído de ${url}: ${content.length} caracteres`);
-
-      res.json({ success: true, content });
-    } catch (scrapeError) {
-      console.error('[SCRAPER] ❌ Error al hacer scraping:', scrapeError.message);
-      res.status(500).json({
-        success: false,
-        error: 'No se pudo acceder a la URL',
-        details: scrapeError.message
-      });
     }
+    
+    // Si no hay main content, usar body
+    if (!content) {
+      content = $('body').text();
+    }
+
+    // Limpiar el texto
+    content = content
+      .replace(/\s+/g, ' ')
+      .replace(/\n+/g, '\n')
+      .replace(/\t+/g, '')
+      .trim();
+
+    // Limitar a 8000 caracteres para mejor contexto
+    if (content.length > 8000) {
+      content = content.substring(0, 8000) + '...';
+    }
+
+    // Verificar que hay contenido útil
+    if (content.length < 50) {
+      throw new Error('No se pudo extraer contenido significativo de la página');
+    }
+
+    console.log(`[SCRAPER] ✅ Contenido extraído exitosamente: ${content.length} caracteres`);
+
+    res.json({ 
+      success: true, 
+      content,
+      metadata: {
+        title: $('title').text() || '',
+        description: $('meta[name="description"]').attr('content') || '',
+        length: content.length
+      }
+    });
+
   } catch (error) {
-    console.error('[SCRAPER] ❌ Error:', error);
-    res.status(500).json({ success: false, error: 'Error en el servidor' });
+    console.error('[SCRAPER] ❌ Error al hacer scraping:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'No se pudo extraer el contenido de la URL',
+      details: error.message
+    });
   }
 });
 
