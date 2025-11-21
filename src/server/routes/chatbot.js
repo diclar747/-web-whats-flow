@@ -226,20 +226,64 @@ router.patch('/flows/:sessionId/:flowId/toggle', async (req, res) => {
 router.get('/settings/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const settings = chatbotSettings.get(sessionId) || {
-      enabled: false,
-      workingHours: {
+
+    // Intentar obtener desde BD primero
+    const connection = await mysql.createConnection(dbConfig);
+    const [rows] = await connection.query(
+      'SELECT * FROM chatbot_settings WHERE session_id = ?',
+      [sessionId]
+    );
+    await connection.end();
+
+    let settings;
+    if (rows.length > 0) {
+      const row = rows[0];
+      settings = {
+        enabled: Boolean(row.enabled),
+        workingHours: {
+          enabled: Boolean(row.working_hours_enabled),
+          start: row.working_hours_start || '09:00',
+          end: row.working_hours_end || '18:00',
+          days: JSON.parse(row.working_days || '[1,2,3,4,5]')
+        },
+        fallbackMessage: row.fallback_message || 'Lo siento, no entiendo tu mensaje.',
+        transferToAgent: Boolean(row.transfer_to_agent),
+        aiEnabled: Boolean(row.ai_enabled),
+        responseDelay: row.response_delay || 1000,
+        botMode: row.bot_mode || 'flows',
+        aiConfig: {
+          businessData: row.ai_business_data || '',
+          websiteUrl: row.ai_website_url || '',
+          scrapedContent: row.ai_scraped_content || '',
+          temperature: parseFloat(row.ai_temperature) || 0.7,
+          maxTokens: parseInt(row.ai_max_tokens) || 500
+        }
+      };
+    } else {
+      // Valores por defecto si no existe configuración
+      settings = {
         enabled: false,
-        start: '09:00',
-        end: '18:00',
-        days: [1, 2, 3, 4, 5]
-      },
-      fallbackMessage: 'Lo siento, no entiendo tu mensaje. ¿Puedo ayudarte con algo más?',
-      transferToAgent: true,
-      aiEnabled: false,
-      responseDelay: 1000
-    };
-    
+        workingHours: {
+          enabled: false,
+          start: '09:00',
+          end: '18:00',
+          days: [1, 2, 3, 4, 5]
+        },
+        fallbackMessage: 'Lo siento, no entiendo tu mensaje.',
+        transferToAgent: true,
+        aiEnabled: false,
+        responseDelay: 1000,
+        botMode: 'flows',
+        aiConfig: {
+          businessData: '',
+          websiteUrl: '',
+          scrapedContent: '',
+          temperature: 0.7,
+          maxTokens: 500
+        }
+      };
+    }
+
     res.json({ success: true, settings });
   } catch (error) {
     console.error('Error obteniendo configuración:', error);
@@ -252,13 +296,95 @@ router.put('/settings/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const settings = req.body;
-    
+
+    const connection = await mysql.createConnection(dbConfig);
+
+    // Verificar si existe configuración
+    const [existing] = await connection.query(
+      'SELECT id FROM chatbot_settings WHERE session_id = ?',
+      [sessionId]
+    );
+
+    const aiConfig = settings.aiConfig || {};
+
+    if (existing.length > 0) {
+      // Actualizar
+      await connection.query(
+        `UPDATE chatbot_settings SET
+          enabled = ?,
+          working_hours_enabled = ?,
+          working_hours_start = ?,
+          working_hours_end = ?,
+          working_days = ?,
+          fallback_message = ?,
+          transfer_to_agent = ?,
+          ai_enabled = ?,
+          response_delay = ?,
+          bot_mode = ?,
+          ai_business_data = ?,
+          ai_website_url = ?,
+          ai_scraped_content = ?,
+          ai_temperature = ?,
+          ai_max_tokens = ?
+        WHERE session_id = ?`,
+        [
+          settings.enabled ? 1 : 0,
+          settings.workingHours?.enabled ? 1 : 0,
+          settings.workingHours?.start || '09:00',
+          settings.workingHours?.end || '18:00',
+          JSON.stringify(settings.workingHours?.days || [1,2,3,4,5]),
+          settings.fallbackMessage || 'Lo siento, no entiendo tu mensaje.',
+          settings.transferToAgent ? 1 : 0,
+          settings.aiEnabled ? 1 : 0,
+          settings.responseDelay || 1000,
+          settings.botMode || 'flows',
+          aiConfig.businessData || '',
+          aiConfig.websiteUrl || '',
+          aiConfig.scrapedContent || '',
+          aiConfig.temperature || 0.7,
+          aiConfig.maxTokens || 500,
+          sessionId
+        ]
+      );
+    } else {
+      // Insertar
+      await connection.query(
+        `INSERT INTO chatbot_settings (
+          session_id, enabled, working_hours_enabled, working_hours_start,
+          working_hours_end, working_days, fallback_message, transfer_to_agent,
+          ai_enabled, response_delay, bot_mode, ai_business_data,
+          ai_website_url, ai_scraped_content, ai_temperature, ai_max_tokens
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          sessionId,
+          settings.enabled ? 1 : 0,
+          settings.workingHours?.enabled ? 1 : 0,
+          settings.workingHours?.start || '09:00',
+          settings.workingHours?.end || '18:00',
+          JSON.stringify(settings.workingHours?.days || [1,2,3,4,5]),
+          settings.fallbackMessage || 'Lo siento, no entiendo tu mensaje.',
+          settings.transferToAgent ? 1 : 0,
+          settings.aiEnabled ? 1 : 0,
+          settings.responseDelay || 1000,
+          settings.botMode || 'flows',
+          aiConfig.businessData || '',
+          aiConfig.websiteUrl || '',
+          aiConfig.scrapedContent || '',
+          aiConfig.temperature || 0.7,
+          aiConfig.maxTokens || 500
+        ]
+      );
+    }
+
+    await connection.end();
+
     chatbotSettings.set(sessionId, settings);
-    
+
     console.log(`[CHATBOT] ⚙️ Configuración actualizada para sesión: ${sessionId}`);
     console.log(`[CHATBOT] - Bot ${settings.enabled ? 'ACTIVO' : 'PAUSADO'}`);
-    console.log(`[CHATBOT] - Horario: ${settings.workingHours.enabled ? 'SI' : 'NO'}`);
-    
+    console.log(`[CHATBOT] - Modo: ${settings.botMode || 'flows'}`);
+    console.log(`[CHATBOT] - IA: ${settings.botMode === 'ai' ? 'HABILITADA' : 'DESHABILITADA'}`);
+
     res.json({ success: true, settings });
   } catch (error) {
     console.error('Error actualizando configuración:', error);

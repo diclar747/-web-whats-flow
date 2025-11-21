@@ -140,7 +140,6 @@ const AppContent: React.FC<{
               ) : (
                 <Navigate to="/" replace />
               )}
-              )}
             </>
           ) : loading ? (
             <div style={{

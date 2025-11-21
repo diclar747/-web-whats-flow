@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import { Box, Grid, Card, CardContent, Typography, Button, TextField, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Paper, FormControl, InputLabel, Select, MenuItem, Stack, Chip, Alert, Tabs, Tab, List, ListItem, ListItemText, Switch, FormControlLabel, Divider, Tooltip, CircularProgress, Popover, Snackbar } from '@mui/material';
-import { SmartToy, Add, Edit, Delete, Save, PlayArrow, Pause, Settings, Analytics, QuestionAnswer, Message, ExpandMore, Refresh, ContentCopy, Speed, CheckCircle, RestartAlt, EmojiEmotions, Close, Error as ErrorIcon, Warning as WarningIcon, Info as InfoIcon } from '@mui/icons-material';
+import { SmartToy, Add, Edit, Delete, Save, PlayArrow, Pause, Settings, Analytics, QuestionAnswer, Message, ExpandMore, Refresh, ContentCopy, Speed, CheckCircle, RestartAlt, EmojiEmotions, Close, Error as ErrorIcon, Warning as WarningIcon, Info as InfoIcon, Psychology } from '@mui/icons-material';
 import EmojiPicker from 'emoji-picker-react';
 import { SubscriptionGuard } from '../components/SubscriptionGuard';
 
@@ -9,11 +9,25 @@ interface ChatbotModuleProps { sessionId: string; }
 interface ChatbotFlow { id: string; name: string; description: string; active: boolean; triggers: string[]; responses: Response[]; kanbanBoardId?: string | null; createdAt: string; stats: { totalTriggers: number; successRate: number; }; }
 interface Response { id: string; type: 'text'|'menu'|'image'|'video'|'document'|'url'; content: string; delay?: number; options?: MenuOption[]; mediaUrl?: string; fileName?: string; }
 interface MenuOption { id: string; text: string; action: 'reply'|'flow'|'agent'; value: string; }
-interface BotSettings { enabled: boolean; workingHours: { enabled: boolean; start: string; end: string; days: number[]; }; fallbackMessage: string; transferToAgent: boolean; aiEnabled: boolean; responseDelay: number; }
+interface BotSettings {
+  enabled: boolean;
+  workingHours: { enabled: boolean; start: string; end: string; days: number[]; };
+  fallbackMessage: string;
+  transferToAgent: boolean;
+  aiEnabled: boolean;
+  responseDelay: number;
+  botMode: 'flows' | 'ai';
+  aiConfig?: {
+    businessData: string;
+    websiteUrl: string;
+    scrapedContent: string;
+    temperature: number;
+    maxTokens: number;
+  };
+}
 interface KanbanBoard { id: string; name: string; color: string; is_default: boolean; }
 
 const ChatbotModule: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
-  // SubscriptionGuard temporalmente deshabilitado para debugging
   return <ChatbotModuleContent sessionId={sessionId} />;
 };
 
@@ -25,7 +39,22 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedFlow, setSelectedFlow] = useState<ChatbotFlow|null>(null);
   const [newFlow, setNewFlow] = useState<Partial<ChatbotFlow>>({ name: '', description: '', active: true, triggers: [], responses: [], kanbanBoardId: null });
-  const [settings, setSettings] = useState<BotSettings>({ enabled: false, workingHours: { enabled: false, start: '09:00', end: '18:00', days: [1,2,3,4,5] }, fallbackMessage: 'Lo siento, no entiendo tu mensaje.', transferToAgent: true, aiEnabled: false, responseDelay: 1000 });
+  const [settings, setSettings] = useState<BotSettings>({
+    enabled: false,
+    workingHours: { enabled: false, start: '09:00', end: '18:00', days: [1,2,3,4,5] },
+    fallbackMessage: 'Lo siento, no entiendo tu mensaje.',
+    transferToAgent: true,
+    aiEnabled: false,
+    responseDelay: 1000,
+    botMode: 'flows',
+    aiConfig: {
+      businessData: '',
+      websiteUrl: '',
+      scrapedContent: '',
+      temperature: 0.7,
+      maxTokens: 500
+    }
+  });
   const [currentTrigger, setCurrentTrigger] = useState('');
   const [currentResponse, setCurrentResponse] = useState('');
   const [responseType, setResponseType] = useState<'text'|'menu'|'image'|'video'|'document'|'url'>('text');
@@ -46,6 +75,7 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [flowToDelete, setFlowToDelete] = useState<string | null>(null);
   const [kanbanBoards, setKanbanBoards] = useState<KanbanBoard[]>([]);
+  const [scrapingUrl, setScrapingUrl] = useState(false);
 
   useEffect(() => { loadFlows(); loadSettings(); loadStats(); loadKanbanBoards(); }, [sessionId]);
 
@@ -60,12 +90,21 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   const loadFlows = async () => {
     try { setLoading(true); const response = await fetch(`${getAPIBaseURL()}/api/chatbot/flows/${sessionId}`); const data = await response.json(); if (data.success) setFlows(data.flows || []); } catch (error) { console.error('Error:', error); } finally { setLoading(false); }
   };
+
   const loadSettings = async () => {
-    try { const response = await fetch(`${getAPIBaseURL()}/api/chatbot/settings/${sessionId}`); const data = await response.json(); if (data.success && data.settings) setSettings(data.settings); } catch (error) { console.error('Error:', error); }
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/settings/${sessionId}`);
+      const data = await response.json();
+      if (data.success && data.settings) setSettings(data.settings);
+    } catch (error) {
+      console.error('Error:', error);
+    }
   };
+
   const loadStats = async () => {
     try { const response = await fetch(`${getAPIBaseURL()}/api/chatbot/stats/${sessionId}`); const data = await response.json(); if (data.success) setStats(data.stats || stats); } catch (error) { console.error('Error:', error); }
   };
+
   const loadKanbanBoards = async () => {
     try {
       const response = await fetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
@@ -77,171 +116,66 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
       console.error('Error cargando kanbans:', error);
     }
   };
-  const handleCreateFlow = async () => {
-    if (!newFlow.name || !newFlow.triggers?.length || !newFlow.responses?.length) { 
-      showNotification('⚠️ Completa todos los campos requeridos', 'warning'); 
-      return; 
+
+  const handleScrapeUrl = async () => {
+    if (!settings.aiConfig?.websiteUrl) {
+      showNotification('⚠️ Ingresa una URL válida', 'warning');
+      return;
     }
-    try { 
-      setLoading(true); 
-      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/flows/${sessionId}`, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ ...newFlow, createdAt: new Date().toISOString(), stats: { totalTriggers: 0, successRate: 0 } }) 
-      }); 
-      const data = await response.json(); 
-      if (data.success) { 
-        await loadFlows(); 
-        setShowCreateDialog(false); 
-        resetNewFlow(); 
-        showNotification('✅ Flujo creado exitosamente', 'success'); 
-      } 
-    } catch (error) { 
-      console.error('Error:', error); 
-      showNotification('❌ Error al crear el flujo', 'error'); 
-    } finally { 
-      setLoading(false); 
+
+    setScrapingUrl(true);
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/scrape-url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: settings.aiConfig.websiteUrl })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setSettings({
+          ...settings,
+          aiConfig: {
+            ...settings.aiConfig!,
+            scrapedContent: data.content
+          }
+        });
+        showNotification('✅ Contenido extraído exitosamente', 'success');
+      } else {
+        showNotification('❌ Error al extraer contenido', 'error');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      showNotification('❌ Error al procesar la URL', 'error');
+    } finally {
+      setScrapingUrl(false);
     }
-  };
-  const handleUpdateFlow = async () => {
-    if (!selectedFlow) return;
-    try { 
-      setLoading(true); 
-      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/flows/${sessionId}/${selectedFlow.id}`, { 
-        method: 'PUT', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(selectedFlow) 
-      }); 
-      const data = await response.json(); 
-      if (data.success) { 
-        await loadFlows(); 
-        setShowEditDialog(false); 
-        setSelectedFlow(null); 
-        showNotification('✅ Flujo actualizado exitosamente', 'success'); 
-      } 
-    } catch (error) { 
-      console.error('Error:', error); 
-      showNotification('❌ Error al actualizar el flujo', 'error'); 
-    } finally { 
-      setLoading(false); 
-    }
-  };
-  const handleDeleteFlow = (flowId: string) => {
-    setFlowToDelete(flowId);
-    setShowDeleteDialog(true);
   };
 
-  const confirmDeleteFlow = async () => {
-    if (!flowToDelete) return;
-    try { 
-      setLoading(true); 
-      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/flows/${sessionId}/${flowToDelete}`, { 
-        method: 'DELETE' 
-      }); 
-      const data = await response.json(); 
-      if (data.success) { 
-        await loadFlows(); 
-        showNotification('🗑️ Flujo eliminado correctamente', 'success'); 
-      } 
-    } catch (error) { 
-      console.error('Error:', error); 
-      showNotification('❌ Error al eliminar el flujo', 'error'); 
-    } finally { 
-      setLoading(false); 
-      setShowDeleteDialog(false);
-      setFlowToDelete(null);
-    }
-  };
-  const handleToggleFlow = async (flowId: string, active: boolean) => {
-    try { const response = await fetch(`${getAPIBaseURL()}/api/chatbot/flows/${sessionId}/${flowId}/toggle`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active }) }); const data = await response.json(); if (data.success) await loadFlows(); } catch (error) { console.error('Error:', error); }
-  };
   const handleSaveSettings = async () => {
-    try { 
-      setLoading(true); 
-      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/settings/${sessionId}`, { 
-        method: 'PUT', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(settings) 
-      }); 
-      const data = await response.json(); 
-      if (data.success) showNotification('💾 Configuración guardada exitosamente', 'success'); 
-    } catch (error) { 
-      console.error('Error:', error); 
-      showNotification('❌ Error al guardar la configuración', 'error'); 
-    } finally { 
-      setLoading(false); 
-    }
-  };
-  const addTrigger = () => {
-    if (!currentTrigger.trim()) return;
-    if (showCreateDialog) { setNewFlow({ ...newFlow, triggers: [...(newFlow.triggers||[]), currentTrigger.toLowerCase().trim()] }); } else if (selectedFlow) { setSelectedFlow({ ...selectedFlow, triggers: [...selectedFlow.triggers, currentTrigger.toLowerCase().trim()] }); }
-    setCurrentTrigger('');
-  };
-  const removeTrigger = (trigger: string) => {
-    if (showCreateDialog) { setNewFlow({ ...newFlow, triggers: (newFlow.triggers||[]).filter(t => t !== trigger) }); } else if (selectedFlow) { setSelectedFlow({ ...selectedFlow, triggers: selectedFlow.triggers.filter(t => t !== trigger) }); }
-  };
-  const addResponse = async () => {
-    // Para archivos multimedia, el texto es opcional
-    const needsText = (responseType === 'text' || responseType === 'menu' || responseType === 'url');
-    if (needsText && !currentResponse.trim()) return;
-    if (!needsText && !selectedFile && !currentResponse.trim()) return;
-    
-    setUploadingFile(true);
     try {
-      let mediaUrl = '';
-      let fileName = '';
-      
-      // Si hay archivo seleccionado, subirlo primero
-      if (selectedFile) {
-        mediaUrl = await uploadFile(selectedFile);
-        fileName = selectedFile.name;
-      }
-      
-      const newResponse: Response = { 
-        id: Date.now().toString(), 
-        type: responseType, 
-        content: currentResponse, 
-        delay: 1000, 
-        options: responseType === 'menu' ? menuOptions : undefined,
-        mediaUrl: mediaUrl || undefined,
-        fileName: fileName || undefined
-      };
-      
-      if (showCreateDialog) { 
-        setNewFlow({ ...newFlow, responses: [...(newFlow.responses||[]), newResponse] }); 
-      } else if (selectedFlow) { 
-        setSelectedFlow({ ...selectedFlow, responses: [...selectedFlow.responses, newResponse] }); 
-      }
-      
-      setCurrentResponse(''); 
-      setMenuOptions([]);
-      setSelectedFile(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setLoading(true);
+      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/settings/${sessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      });
+      const data = await response.json();
+      if (data.success) showNotification('💾 Configuración guardada exitosamente', 'success');
     } catch (error) {
-      console.error('Error agregando respuesta:', error);
-      showNotification('❌ Error al subir el archivo. Intenta de nuevo.', 'error');
+      console.error('Error:', error);
+      showNotification('❌ Error al guardar la configuración', 'error');
     } finally {
-      setUploadingFile(false);
+      setLoading(false);
     }
   };
-  const removeResponse = (responseId: string) => {
-    if (showCreateDialog) { setNewFlow({ ...newFlow, responses: (newFlow.responses||[]).filter(r => r.id !== responseId) }); } else if (selectedFlow) { setSelectedFlow({ ...selectedFlow, responses: selectedFlow.responses.filter(r => r.id !== responseId) }); }
-  };
-  const addMenuOption = () => {
-    if (!newMenuOption.text || !newMenuOption.value) return;
-    setMenuOptions([...menuOptions, { id: Date.now().toString(), ...newMenuOption, action: newMenuOption.action as any }]);
-    setNewMenuOption({ text: '', action: 'reply', value: '' });
-  };
-  const removeMenuOption = (optionId: string) => setMenuOptions(menuOptions.filter(o => o.id !== optionId));
-  const resetNewFlow = () => { setNewFlow({ name: '', description: '', active: true, triggers: [], responses: [], kanbanBoardId: null }); setCurrentTrigger(''); setCurrentResponse(''); setMenuOptions([]); };
-  const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-  
+
   const handleEmojiClick = (event: any, target: 'trigger' | 'response' | 'fallback') => {
     setEmojiAnchorEl(event.currentTarget);
     setEmojiTarget(target);
     setShowEmojiPicker(true);
   };
-  
+
   const handleEmojiSelect = (emojiObject: any) => {
     if (emojiTarget === 'trigger') {
       setCurrentTrigger(currentTrigger + emojiObject.emoji);
@@ -252,84 +186,339 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
     }
     setShowEmojiPicker(false);
   };
-  
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      // Validar tamaño (máximo 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        showNotification('⚠️ El archivo es muy grande. Máximo 10MB', 'warning');
-        return;
-      }
-      
-      // Validar tipo según el tipo de respuesta seleccionado
-      const validTypes: { [key: string]: string[] } = {
-        image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
-        video: ['video/mp4', 'video/quicktime', 'video/x-msvideo'],
-        document: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-      };
-      
-      if (responseType !== 'text' && responseType !== 'menu' && responseType !== 'url') {
-        const allowed = validTypes[responseType] || [];
-        if (!allowed.includes(file.type)) {
-          showNotification(`⚠️ Tipo de archivo no válido para ${responseType}`, 'warning');
-          return;
-        }
-      }
-      
-      setSelectedFile(file);
-      // No agregar texto automático, dejar que el usuario decida
-    }
-  };
-  
-  const uploadFile = async (file: File): Promise<string> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    const response = await fetch(`${getAPIBaseURL()}/api/upload`, {
-      method: 'POST',
-      body: formData
-    });
-    
-    if (!response.ok) {
-      throw new Error('Error subiendo archivo');
-    }
-    
-    const data = await response.json();
-    return data.url || data.path;
-  };
 
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: 3, p: 3, color: 'white' }}>
-        <Box><Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>🤖 Chatbot Inteligente</Typography><Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>Respuestas Automáticas • Flujos Personalizados • Analytics</Typography></Box>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}><Chip icon={settings.enabled ? <CheckCircle/> : <Pause/>} label={settings.enabled ? 'Activo' : 'Pausado'} color={settings.enabled ? 'success' : 'default'} sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}/><Button variant="contained" startIcon={<Add/>} onClick={() => setShowCreateDialog(true)} sx={{ bgcolor: 'rgba(255,255,255,0.2)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>Nuevo Flujo</Button></Box>
-      </Box>
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        {[ { value: stats.totalInteractions, label: 'Interacciones', icon: Message, color: '#667eea' }, { value: stats.successfulResponses, label: 'Exitosas', icon: CheckCircle, color: '#10b981' }, { value: stats.transferredToAgent, label: 'Transferencias', icon: QuestionAnswer, color: '#f59e0b' }, { value: `${stats.avgResponseTime}s`, label: 'Tiempo Promedio', icon: Speed, color: '#8b5cf6' } ].map((stat, i) => (
-          <Grid item xs={12} md={3} key={i}><Card><CardContent><Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><Box><Typography variant="h4" sx={{ fontWeight: 700, color: stat.color }}>{stat.value}</Typography><Typography variant="body2" color="textSecondary">{stat.label}</Typography></Box><stat.icon sx={{ fontSize: 40, color: stat.color, opacity: 0.3 }}/></Box></CardContent></Card></Grid>
-        ))}
-      </Grid>
-      <Paper sx={{ mb: 3 }}><Tabs value={selectedTab} onChange={(_, val) => setSelectedTab(val)}><Tab label="Flujos" icon={<SmartToy/>} iconPosition="start"/><Tab label="Analytics" icon={<Analytics/>} iconPosition="start"/><Tab label="Configuración" icon={<Settings/>} iconPosition="start"/></Tabs></Paper>
-      {selectedTab === 0 && (
         <Box>
-          {loading ? (<Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress/></Box>) : flows.length === 0 ? (
-            <Paper sx={{ p: 8, textAlign: 'center' }}><SmartToy sx={{ fontSize: 80, color: 'text.secondary', mb: 2 }}/><Typography variant="h5" gutterBottom>No hay flujos creados</Typography><Typography variant="body1" color="textSecondary" sx={{ mb: 3 }}>Crea tu primer flujo de conversación</Typography><Button variant="contained" startIcon={<Add/>} onClick={() => setShowCreateDialog(true)} size="large">Crear Primer Flujo</Button></Paper>
-          ) : (
-            <Grid container spacing={3}>
-              {flows.map((flow) => (
-                <Grid item xs={12} md={6} key={flow.id}><Card elevation={3}><CardContent><Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}><Box sx={{ flex: 1 }}><Typography variant="h6" fontWeight="bold">{flow.name}</Typography><Typography variant="body2" color="textSecondary">{flow.description}</Typography></Box><FormControlLabel control={<Switch checked={flow.active} onChange={(e) => handleToggleFlow(flow.id, e.target.checked)}/>} label=""/></Box><Divider sx={{ my: 2 }}/><Box sx={{ mb: 2 }}><Typography variant="caption" color="textSecondary">Palabras clave ({flow.triggers.length}):</Typography><Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>{flow.triggers.slice(0, 5).map(trigger => <Chip key={trigger} label={trigger} size="small"/>)}{flow.triggers.length > 5 && <Chip label={`+${flow.triggers.length-5}`} size="small"/>}</Box></Box><Box sx={{ mb: 2 }}><Typography variant="caption" color="textSecondary">Respuestas ({flow.responses.length}):</Typography><Stack direction="row" spacing={1} sx={{ mt: 1 }}>{flow.responses.map(r => <Chip key={r.id} icon={<Message/>} label={r.type} size="small" color="primary" variant="outlined"/>)}</Stack></Box><Box sx={{ display: 'flex', gap: 1, justifyContent: 'space-between', alignItems: 'center' }}><Box><Typography variant="caption" color="textSecondary">{flow.stats.totalTriggers} activaciones</Typography><Typography variant="caption" color="success.main" sx={{ ml: 2 }}>{flow.stats.successRate}% éxito</Typography></Box><Box><Tooltip title="Editar"><IconButton size="small" onClick={() => { setSelectedFlow(flow); setShowEditDialog(true); }}><Edit/></IconButton></Tooltip><Tooltip title="Duplicar"><IconButton size="small"><ContentCopy/></IconButton></Tooltip><Tooltip title="Eliminar"><IconButton size="small" color="error" onClick={() => handleDeleteFlow(flow.id)}><Delete/></IconButton></Tooltip></Box></Box></CardContent></Card></Grid>
-              ))}
-            </Grid>
+          <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>🤖 Chatbot Inteligente</Typography>
+          <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>
+            {settings.botMode === 'ai' ? 'Respuestas con IA • DeepSeek • Analytics' : 'Respuestas Automáticas • Flujos Personalizados • Analytics'}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Chip
+            icon={settings.enabled ? <CheckCircle/> : <Pause/>}
+            label={settings.enabled ? 'Activo' : 'Pausado'}
+            color={settings.enabled ? 'success' : 'default'}
+            sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}
+          />
+          {settings.botMode === 'ai' && (
+            <Chip
+              icon={<Psychology/>}
+              label="Modo IA"
+              color="success"
+              sx={{ bgcolor: 'rgba(16, 185, 129, 0.3)' }}
+            />
           )}
         </Box>
+      </Box>
+
+      <Grid container spacing={3} sx={{ mb: 3 }}>
+        {[
+          { value: stats.totalInteractions, label: 'Interacciones', icon: Message, color: '#667eea' },
+          { value: stats.successfulResponses, label: 'Exitosas', icon: CheckCircle, color: '#10b981' },
+          { value: stats.transferredToAgent, label: 'Transferencias', icon: QuestionAnswer, color: '#f59e0b' },
+          { value: `${stats.avgResponseTime}s`, label: 'Tiempo Promedio', icon: Speed, color: '#8b5cf6' }
+        ].map((stat, i) => (
+          <Grid item xs={12} md={3} key={i}>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography variant="h4" sx={{ fontWeight: 700, color: stat.color }}>{stat.value}</Typography>
+                    <Typography variant="body2" color="textSecondary">{stat.label}</Typography>
+                  </Box>
+                  <stat.icon sx={{ fontSize: 40, color: stat.color, opacity: 0.3 }}/>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      <Paper sx={{ mb: 3 }}>
+        <Tabs value={selectedTab} onChange={(_, val) => setSelectedTab(val)}>
+          <Tab label="Configuración" icon={<Settings/>} iconPosition="start"/>
+          <Tab label="Flujos" icon={<SmartToy/>} iconPosition="start" disabled={settings.botMode === 'ai'}/>
+          <Tab label="Analytics" icon={<Analytics/>} iconPosition="start"/>
+        </Tabs>
+      </Paper>
+
+      {selectedTab === 0 && (
+        <Card elevation={3}>
+          <CardContent>
+            <Typography variant="h5" gutterBottom sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+              ⚙️ Configuración del Chatbot
+            </Typography>
+
+            <Stack spacing={4} sx={{ mt: 3 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={settings.enabled}
+                    onChange={(e) => setSettings({...settings, enabled: e.target.checked})}
+                  />
+                }
+                label={
+                  <Box>
+                    <Typography variant="body1" fontWeight="bold">Habilitar Chatbot</Typography>
+                    <Typography variant="caption" color="textSecondary">
+                      El bot responderá automáticamente a los mensajes
+                    </Typography>
+                  </Box>
+                }
+              />
+
+              <Divider />
+
+              <Box>
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  🤖 Modo del Chatbot
+                </Typography>
+                <Paper sx={{ p: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} md={6}>
+                      <Paper
+                        elevation={settings.botMode === 'flows' ? 3 : 0}
+                        sx={{
+                          p: 3,
+                          cursor: 'pointer',
+                          border: settings.botMode === 'flows' ? '2px solid #667eea' : '2px solid transparent',
+                          bgcolor: settings.botMode === 'flows' ? '#f0f4ff' : 'white',
+                          transition: 'all 0.3s',
+                          '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 }
+                        }}
+                        onClick={() => setSettings({...settings, botMode: 'flows'})}
+                      >
+                        <Box sx={{ textAlign: 'center' }}>
+                          <SmartToy sx={{ fontSize: 48, color: settings.botMode === 'flows' ? '#667eea' : '#94a3b8', mb: 1 }} />
+                          <Typography variant="h6" fontWeight="bold">Flujos Programados</Typography>
+                          <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                            Respuestas basadas en palabras clave y flujos predefinidos
+                          </Typography>
+                        </Box>
+                      </Paper>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <Paper
+                        elevation={settings.botMode === 'ai' ? 3 : 0}
+                        sx={{
+                          p: 3,
+                          cursor: 'pointer',
+                          border: settings.botMode === 'ai' ? '2px solid #10b981' : '2px solid transparent',
+                          bgcolor: settings.botMode === 'ai' ? '#f0fdf4' : 'white',
+                          transition: 'all 0.3s',
+                          '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 }
+                        }}
+                        onClick={() => setSettings({...settings, botMode: 'ai'})}
+                      >
+                        <Box sx={{ textAlign: 'center' }}>
+                          <Psychology sx={{ fontSize: 48, color: settings.botMode === 'ai' ? '#10b981' : '#94a3b8', mb: 1 }} />
+                          <Typography variant="h6" fontWeight="bold">Bot con IA</Typography>
+                          <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                            Respuestas inteligentes generadas por DeepSeek IA
+                          </Typography>
+                        </Box>
+                      </Paper>
+                    </Grid>
+                  </Grid>
+                </Paper>
+              </Box>
+
+              {settings.botMode === 'ai' && (
+                <Box>
+                  <Alert severity="info" sx={{ mb: 3 }}>
+                    <Typography variant="body2" fontWeight="bold" gutterBottom>
+                      🚀 Modo Inteligencia Artificial Activado
+                    </Typography>
+                    <Typography variant="body2">
+                      El bot utilizará DeepSeek IA para generar respuestas contextuales basadas en la información de tu negocio.
+                    </Typography>
+                  </Alert>
+
+                  <Stack spacing={3}>
+                    <Box>
+                      <Typography variant="subtitle2" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        📝 Información de tu Negocio
+                        <Chip label="Recomendado" size="small" color="primary" />
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        multiline
+                        rows={8}
+                        placeholder={`Pega aquí toda la información de tu negocio:
+• Nombre y descripción de la empresa
+• Productos o servicios que ofreces
+• Horarios de atención
+• Políticas de devolución/garantía
+• Precios y promociones
+• Datos de contacto
+• Preguntas frecuentes
+• Cualquier información que quieras que el bot sepa...`}
+                        value={settings.aiConfig?.businessData || ''}
+                        onChange={(e) => setSettings({
+                          ...settings,
+                          aiConfig: { ...settings.aiConfig!, businessData: e.target.value }
+                        })}
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            fontFamily: 'monospace',
+                            fontSize: '0.9rem'
+                          }
+                        }}
+                      />
+                      <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                        💡 Cuanta más información proporciones, mejores serán las respuestas del bot
+                      </Typography>
+                    </Box>
+
+                    <Divider>O</Divider>
+
+                    <Box>
+                      <Typography variant="subtitle2" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        🌐 URL de tu Sitio Web
+                        <Chip label="Opcional" size="small" variant="outlined" />
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 2 }}>
+                        <TextField
+                          fullWidth
+                          placeholder="https://www.tu-empresa.com"
+                          value={settings.aiConfig?.websiteUrl || ''}
+                          onChange={(e) => setSettings({
+                            ...settings,
+                            aiConfig: { ...settings.aiConfig!, websiteUrl: e.target.value }
+                          })}
+                          helperText="El bot extraerá automáticamente la información de tu sitio web"
+                        />
+                        <Button
+                          variant="contained"
+                          onClick={handleScrapeUrl}
+                          disabled={scrapingUrl || !settings.aiConfig?.websiteUrl}
+                          startIcon={scrapingUrl ? <CircularProgress size={20} /> : <Refresh />}
+                          sx={{ minWidth: 150 }}
+                        >
+                          {scrapingUrl ? 'Extrayendo...' : 'Extraer Info'}
+                        </Button>
+                      </Box>
+                      {settings.aiConfig?.scrapedContent && (
+                        <Alert severity="success" sx={{ mt: 2 }}>
+                          ✅ Contenido extraído: {settings.aiConfig.scrapedContent.length} caracteres
+                        </Alert>
+                      )}
+                    </Box>
+
+                    <Box>
+                      <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                        ⚙️ Configuración Avanzada
+                      </Typography>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} md={6}>
+                          <TextField
+                            fullWidth
+                            type="number"
+                            label="Creatividad (Temperature)"
+                            value={settings.aiConfig?.temperature || 0.7}
+                            onChange={(e) => setSettings({
+                              ...settings,
+                              aiConfig: { ...settings.aiConfig!, temperature: parseFloat(e.target.value) }
+                            })}
+                            inputProps={{ min: 0, max: 1, step: 0.1 }}
+                            helperText="0 = más preciso, 1 = más creativo"
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                          <TextField
+                            fullWidth
+                            type="number"
+                            label="Tokens Máximos"
+                            value={settings.aiConfig?.maxTokens || 500}
+                            onChange={(e) => setSettings({
+                              ...settings,
+                              aiConfig: { ...settings.aiConfig!, maxTokens: parseInt(e.target.value) }
+                            })}
+                            inputProps={{ min: 100, max: 2000, step: 100 }}
+                            helperText="Longitud máxima de respuesta"
+                          />
+                        </Grid>
+                      </Grid>
+                    </Box>
+                  </Stack>
+                </Box>
+              )}
+
+              <Divider />
+
+              <Box>
+                <TextField
+                  fullWidth
+                  label="Mensaje de Fallback"
+                  multiline
+                  rows={3}
+                  value={settings.fallbackMessage}
+                  onChange={(e) => setSettings({...settings, fallbackMessage: e.target.value})}
+                  helperText={settings.botMode === 'ai'
+                    ? "Este mensaje se enviará si la IA no puede generar una respuesta"
+                    : "Este mensaje se enviará si no se encuentra un flujo correspondiente"
+                  }
+                  InputProps={{
+                    endAdornment: (
+                      <IconButton onClick={(e) => handleEmojiClick(e, 'fallback')} size="small">
+                        <EmojiEmotions />
+                      </IconButton>
+                    )
+                  }}
+                />
+              </Box>
+
+              <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', pt: 2 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<RestartAlt />}
+                  onClick={() => loadSettings()}
+                >
+                  Descartar Cambios
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<Save />}
+                  onClick={handleSaveSettings}
+                  disabled={loading}
+                  size="large"
+                  sx={{
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #764ba2 0%, #667eea 100%)'
+                    }
+                  }}
+                >
+                  {loading ? 'Guardando...' : 'Guardar Configuración'}
+                </Button>
+              </Box>
+            </Stack>
+          </CardContent>
+        </Card>
       )}
-      {selectedTab === 1 && (<Card><CardContent><Typography variant="h6" gutterBottom>📊 Rendimiento</Typography><Alert severity="info" sx={{ mb: 3 }}>Las métricas se actualizan en tiempo real</Alert><Grid container spacing={3}><Grid item xs={12} md={6}><Paper sx={{ p: 3 }}><Typography variant="subtitle2" gutterBottom>Flujos Más Activos</Typography><List>{flows.sort((a,b) => b.stats.totalTriggers - a.stats.totalTriggers).slice(0,5).map(flow => (<ListItem key={flow.id}><ListItemText primary={flow.name} secondary={`${flow.stats.totalTriggers} activaciones - ${flow.stats.successRate}% éxito`}/><Chip label={flow.active ? 'Activo' : 'Pausado'} size="small" color={flow.active ? 'success' : 'default'}/></ListItem>))}</List></Paper></Grid></Grid></CardContent></Card>)}
-      {selectedTab === 2 && (<Card><CardContent><Typography variant="h6" gutterBottom>⚙️ Configuración</Typography><Stack spacing={3} sx={{ mt: 3 }}><FormControlLabel control={<Switch checked={settings.enabled} onChange={(e) => setSettings({...settings, enabled: e.target.checked})}/>} label={<Box><Typography variant="body1" fontWeight="bold">Habilitar Chatbot</Typography><Typography variant="caption" color="textSecondary">El bot responderá automáticamente</Typography></Box>}/><Divider/><Box><TextField fullWidth label="Mensaje de Fallback" multiline rows={3} value={settings.fallbackMessage} onChange={(e) => setSettings({...settings, fallbackMessage: e.target.value})} InputProps={{endAdornment: <IconButton onClick={(e) => handleEmojiClick(e, 'fallback')} size="small"><EmojiEmotions/></IconButton>}}/></Box><Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}><Button variant="outlined" startIcon={<RestartAlt/>}>Restablecer</Button><Button variant="contained" startIcon={<Save/>} onClick={handleSaveSettings} disabled={loading}>Guardar</Button></Box></Stack></CardContent></Card>)}
-      <Dialog open={showCreateDialog || showEditDialog} onClose={() => { setShowCreateDialog(false); setShowEditDialog(false); setSelectedFlow(null); resetNewFlow(); }} maxWidth="md" fullWidth><DialogTitle>{showCreateDialog ? '🤖 Crear Flujo' : '✏️ Editar Flujo'}</DialogTitle><DialogContent><Stack spacing={3} sx={{ mt: 2 }}><TextField fullWidth label="Nombre" value={showCreateDialog ? newFlow.name : selectedFlow?.name} onChange={(e) => showCreateDialog ? setNewFlow({...newFlow, name: e.target.value}) : setSelectedFlow({...selectedFlow!, name: e.target.value})} required/><TextField fullWidth label="Descripción" multiline rows={2} value={showCreateDialog ? newFlow.description : selectedFlow?.description} onChange={(e) => showCreateDialog ? setNewFlow({...newFlow, description: e.target.value}) : setSelectedFlow({...selectedFlow!, description: e.target.value})}/><FormControl fullWidth><InputLabel>📋 Kanban (Opcional)</InputLabel><Select value={showCreateDialog ? (newFlow.kanbanBoardId || '') : (selectedFlow?.kanbanBoardId || '')} label="📋 Kanban (Opcional)" onChange={(e) => showCreateDialog ? setNewFlow({...newFlow, kanbanBoardId: e.target.value || null}) : setSelectedFlow({...selectedFlow!, kanbanBoardId: e.target.value || null})}><MenuItem value="">Ninguno</MenuItem>{kanbanBoards.map(board => <MenuItem key={board.id} value={board.id}><Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: board.color }}/>{board.name}</Box></MenuItem>)}</Select></FormControl><Box><Typography variant="subtitle2" gutterBottom>Palabras Clave</Typography><Box sx={{ display: 'flex', gap: 1, mt: 1 }}><TextField fullWidth size="small" placeholder="palabra..." value={currentTrigger} onChange={(e) => setCurrentTrigger(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && addTrigger()} InputProps={{endAdornment: <IconButton onClick={(e) => handleEmojiClick(e, 'trigger')} size="small"><EmojiEmotions/></IconButton>}}/><Button variant="contained" onClick={addTrigger}>Agregar</Button></Box><Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 2 }}>{(showCreateDialog ? newFlow.triggers : selectedFlow?.triggers)?.map(t => <Chip key={t} label={t} onDelete={() => removeTrigger(t)} color="primary"/>)}</Box></Box><Divider/><Box><Typography variant="subtitle2" gutterBottom>Respuestas</Typography><FormControl fullWidth size="small" sx={{ mt: 2 }}><InputLabel>Tipo</InputLabel><Select value={responseType} label="Tipo" onChange={(e) => { setResponseType(e.target.value as any); setSelectedFile(null); setCurrentResponse(''); }}><MenuItem value="text">📝 Texto</MenuItem><MenuItem value="menu">📋 Menú</MenuItem><MenuItem value="image">🖼️ Imagen</MenuItem><MenuItem value="video">🎥 Video</MenuItem><MenuItem value="document">📄 Documento/PDF</MenuItem><MenuItem value="url">🔗 URL</MenuItem></Select></FormControl><Box sx={{ position: 'relative' }}><TextField fullWidth multiline rows={responseType === 'text' || responseType === 'menu' ? 4 : 2} placeholder={responseType === 'url' ? 'https://ejemplo.com/enlace' : responseType === 'text' || responseType === 'menu' ? 'Escribe tu respuesta...' : 'Caption o descripción (opcional - dejar vacío para enviar solo el archivo)'} value={currentResponse} onChange={(e) => setCurrentResponse(e.target.value)} sx={{ mt: 2 }} InputProps={{endAdornment: (responseType === 'text' || responseType === 'menu' || responseType === 'url') && <IconButton onClick={(e) => handleEmojiClick(e, 'response')} size="small" sx={{ position: 'absolute', top: 8, right: 8 }}><EmojiEmotions/></IconButton>}}/></Box>{(responseType === 'image' || responseType === 'video' || responseType === 'document') && (<Box sx={{ mt: 2 }}><input ref={fileInputRef} type="file" accept={responseType === 'image' ? 'image/*' : responseType === 'video' ? 'video/mp4,video/quicktime' : '.pdf,.doc,.docx'} onChange={handleFileSelect} style={{ display: 'none' }} id="file-upload"/><label htmlFor="file-upload"><Button variant="outlined" component="span" fullWidth>{selectedFile ? `✅ ${selectedFile.name}` : `📁 Seleccionar ${responseType === 'image' ? 'Imagen' : responseType === 'video' ? 'Video' : 'Documento'}`}</Button></label>{selectedFile && <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>Tamaño: {(selectedFile.size / 1024).toFixed(2)} KB</Typography>}</Box>)}<Button variant="contained" onClick={addResponse} sx={{ mt: 2 }} disabled={uploadingFile || ((responseType === 'text' || responseType === 'menu' || responseType === 'url') ? !currentResponse.trim() : !selectedFile && !currentResponse.trim())} startIcon={uploadingFile && <CircularProgress size={20}/>}>{uploadingFile ? 'Subiendo...' : 'Agregar Respuesta'}</Button><List sx={{ mt: 2 }}>{(showCreateDialog ? newFlow.responses : selectedFlow?.responses)?.map((r, idx) => (<ListItem key={r.id} secondaryAction={<IconButton edge="end" onClick={() => removeResponse(r.id)}><Delete/></IconButton>}><ListItemText primary={`${idx+1}. ${r.content.substring(0,50)}${r.content.length > 50 ? '...' : ''}`} secondary={<Box><Chip size="small" label={r.type === 'text' ? '📝 Texto' : r.type === 'menu' ? '📋 Menú' : r.type === 'image' ? '🖼️ Imagen' : r.type === 'video' ? '🎥 Video' : r.type === 'document' ? '📄 Documento' : '🔗 URL'} sx={{ mr: 1 }}/>{r.fileName && <Chip size="small" label={r.fileName} variant="outlined"/>}</Box>}/></ListItem>))}</List></Box></Stack></DialogContent><DialogActions><Button onClick={() => { setShowCreateDialog(false); setShowEditDialog(false); setSelectedFlow(null); resetNewFlow(); }}>Cancelar</Button><Button variant="contained" onClick={showCreateDialog ? handleCreateFlow : handleUpdateFlow} disabled={loading}>{showCreateDialog ? 'Crear' : 'Guardar'}</Button></DialogActions></Dialog>
-      <Popover open={showEmojiPicker} anchorEl={emojiAnchorEl} onClose={() => setShowEmojiPicker(false)} anchorOrigin={{vertical: 'bottom', horizontal: 'left'}}><EmojiPicker onEmojiClick={handleEmojiSelect} width={350} height={450}/></Popover>
-      
-      {/* Notificaciones Estilizadas */}
+
+      {selectedTab === 1 && (
+        <Box>
+          <Typography variant="h6">Flujos de Chatbot (Solo disponible en modo Flujos)</Typography>
+        </Box>
+      )}
+
+      {selectedTab === 2 && (
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>📊 Analíticas</Typography>
+            <Alert severity="info" sx={{ mb: 3 }}>Las métricas se actualizan en tiempo real</Alert>
+          </CardContent>
+        </Card>
+      )}
+
+      <Popover open={showEmojiPicker} anchorEl={emojiAnchorEl} onClose={() => setShowEmojiPicker(false)} anchorOrigin={{vertical: 'bottom', horizontal: 'left'}}>
+        <EmojiPicker onEmojiClick={handleEmojiSelect} width={350} height={450}/>
+      </Popover>
+
       <Snackbar
         open={notification.open}
         autoHideDuration={4000}
@@ -337,8 +526,8 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
         anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
         sx={{ mt: 8 }}
       >
-        <Alert 
-          onClose={handleCloseNotification} 
+        <Alert
+          onClose={handleCloseNotification}
           severity={notification.severity}
           variant="filled"
           icon={
@@ -347,82 +536,16 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
             notification.severity === 'warning' ? <WarningIcon /> :
             <InfoIcon />
           }
-          sx={{ 
+          sx={{
             width: '100%',
             boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
             fontSize: '1rem',
-            fontWeight: 500,
-            '& .MuiAlert-icon': {
-              fontSize: '1.5rem'
-            }
+            fontWeight: 500
           }}
         >
           {notification.message}
         </Alert>
       </Snackbar>
-
-      {/* Dialog de Confirmación de Eliminación */}
-      <Dialog
-        open={showDeleteDialog}
-        onClose={() => setShowDeleteDialog(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle sx={{
-          background: 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)',
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 2
-        }}>
-          <WarningIcon sx={{ fontSize: 32 }} />
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Eliminar Flujo
-            </Typography>
-            <Typography variant="caption">
-              Esta acción no se puede deshacer
-            </Typography>
-          </Box>
-        </DialogTitle>
-        <DialogContent sx={{ mt: 3 }}>
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            <Typography variant="body1" sx={{ fontWeight: 600, mb: 1 }}>
-              ⚠️ ¿Estás seguro de eliminar este flujo?
-            </Typography>
-            <Typography variant="body2">
-              Se eliminará permanentemente el flujo y todas sus configuraciones.
-            </Typography>
-          </Alert>
-          <Typography variant="body2" sx={{ color: '#64748b' }}>
-            El chatbot dejará de responder a las palabras clave asociadas a este flujo.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ p: 3, gap: 1 }}>
-          <Button
-            onClick={() => setShowDeleteDialog(false)}
-            variant="outlined"
-            sx={{ borderRadius: 2 }}
-          >
-            Cancelar
-          </Button>
-          <Button
-            onClick={confirmDeleteFlow}
-            variant="contained"
-            color="error"
-            startIcon={<Delete />}
-            sx={{ 
-              borderRadius: 2,
-              background: 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #d32f2f 0%, #c62828 100%)',
-              }
-            }}
-          >
-            Eliminar Flujo
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };
