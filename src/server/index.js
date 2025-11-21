@@ -6406,6 +6406,7 @@ app.post('/api/messages/send', async (req, res) => {
 
     // Buscar la sesión activa - puede ser directamente o necesitar buscar por usuario del agente
     let session = sessions.get(sessionId);
+    let adminPhoneNumber = null;
     
     // Si no se encuentra la sesión directamente y hay agentId, buscar sesión del admin asociado
     if ((!session || !session.isConnected) && agentId && pool) {
@@ -6414,20 +6415,17 @@ app.post('/api/messages/send', async (req, res) => {
             try {
                 // Obtener el admin_phone asociado al agente
                 const [agents] = await connection.execute(
-                    `SELECT users.phone 
-                     FROM users 
-                     INNER JOIN agents ON agents.created_by = users.phone 
-                     WHERE agents.id = ? LIMIT 1`,
+                    `SELECT admin_phone FROM users WHERE id = ? AND role = 'agent' LIMIT 1`,
                     [agentId]
                 );
                 
-                if (agents.length > 0) {
-                    const adminPhone = agents[0].phone;
-                    console.log('[AGENT-SEND] 🔍 Buscando sesión del admin:', adminPhone);
+                if (agents.length > 0 && agents[0].admin_phone) {
+                    adminPhoneNumber = agents[0].admin_phone;
+                    console.log('[AGENT-SEND] 🔍 Admin asociado al agente:', adminPhoneNumber);
                     
-                    // Buscar sesión activa del admin
+                    // Buscar sesión activa del admin por número de teléfono
                     for (const [sessId, sess] of sessions.entries()) {
-                        if (sess.phoneNumber === adminPhone && sess.isConnected) {
+                        if (sess.phoneNumber === adminPhoneNumber && sess.isConnected) {
                             session = sess;
                             console.log('[AGENT-SEND] ✅ Sesión del admin encontrada:', sessId);
                             break;
@@ -6442,8 +6440,21 @@ app.post('/api/messages/send', async (req, res) => {
         }
     }
     
+    // Si aún no tenemos sesión, buscar cualquier sesión activa con el sessionId
+    if (!session || !session.isConnected) {
+        console.log('[AGENT-SEND] 🔍 Buscando sesión activa para sessionId:', sessionId);
+        for (const [sessId, sess] of sessions.entries()) {
+            if (sessId === sessionId && sess.isConnected) {
+                session = sess;
+                console.log('[AGENT-SEND] ✅ Sesión encontrada directamente');
+                break;
+            }
+        }
+    }
+    
     if (!session || !session.sock || !session.isConnected) {
         console.log('[AGENT-SEND] ❌ Sesión no encontrada o no conectada');
+        console.log('[AGENT-SEND] 📋 Sesiones disponibles:', Array.from(sessions.keys()));
         return res.status(400).json({ 
             success: false, 
             error: 'Sesión de WhatsApp no disponible' 

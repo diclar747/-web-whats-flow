@@ -793,6 +793,121 @@ module.exports = function(app, pool) {
             res.status(500).json({ success: false, error: 'Error obteniendo agentes' });
         }
     });
+
+    // ==================== ENDPOINT PARA ENVIAR MENSAJES DE AGENTES ====================
+    
+    app.post('/api/agent/messages/send', authenticateToken, async (req, res) => {
+        try {
+            const { sessionId, chatJid, message } = req.body;
+            const agentId = req.user.id;
+
+            console.log('[AGENT-SEND] 📤 Solicitud de envío:', {
+                agentId,
+                sessionId,
+                chatJid,
+                message: message?.substring(0, 50) + '...'
+            });
+
+            if (!sessionId || !chatJid || !message) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Faltan parámetros: sessionId, chatJid, message'
+                });
+            }
+
+            // Verificar que el chat está asignado al agente
+            const connection = await pool.getConnection();
+            try {
+                const [assignments] = await connection.execute(
+                    'SELECT * FROM chat_assignments WHERE chat_jid = ? AND session_id = ? AND user_id = ? AND status = "active"',
+                    [chatJid, sessionId, agentId]
+                );
+
+                if (assignments.length === 0) {
+                    console.log('[AGENT-SEND] ❌ Chat no asignado al agente');
+                    return res.status(403).json({
+                        success: false,
+                        error: 'No tienes permiso para enviar mensajes a este chat'
+                    });
+                }
+
+                console.log('[AGENT-SEND] ✅ Chat asignado verificado, delegando envío...');
+                connection.release();
+            } catch (error) {
+                connection.release();
+                throw error;
+            }
+
+            // Enviar el mensaje usando el endpoint interno de envío
+            // (esto reutiliza la lógica existente de envío)
+            res.json({
+                success: true,
+                message: 'Solicitud recibida',
+                useMainEndpoint: true
+            });
+
+        } catch (error) {
+            console.error('[AGENT-SEND] Error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error procesando envío de mensaje'
+            });
+        }
+    });
+
+    // ==================== MENSAJES ====================
+
+    // Obtener mensajes de un chat específico
+    app.get('/api/messages/:sessionId/:chatJid', authenticateToken, async (req, res) => {
+        try {
+            const { sessionId, chatJid } = req.params;
+            const { limit = 50, offset = 0 } = req.query;
+
+            console.log('[MESSAGES-GET] 📥 Obteniendo mensajes:', { sessionId, chatJid, limit, offset });
+
+            const connection = await pool.getConnection();
+            try {
+                const [messages] = await connection.execute(`
+                    SELECT 
+                        m.id,
+                        m.chat_jid,
+                        m.sender_jid,
+                        m.from_me,
+                        m.message_type,
+                        m.text_content,
+                        m.media_url,
+                        m.caption,
+                        m.timestamp,
+                        m.status,
+                        m.quoted_message_id,
+                        c.name as contact_name,
+                        c.avatar_url as contact_avatar
+                    FROM messages m
+                    LEFT JOIN contacts c ON m.sender_jid = c.jid AND m.session_id = c.session_id
+                    WHERE m.session_id = ? AND m.chat_jid = ?
+                    ORDER BY m.timestamp DESC
+                    LIMIT ? OFFSET ?
+                `, [sessionId, chatJid, parseInt(limit), parseInt(offset)]);
+
+                console.log('[MESSAGES-GET] ✅ Mensajes obtenidos:', messages.length);
+
+                res.json({ 
+                    success: true, 
+                    messages: messages.reverse(), // Invertir para orden cronológico
+                    count: messages.length 
+                });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('[MESSAGES-GET] ❌ Error obteniendo mensajes:', error);
+            res.status(500).json({ 
+                success: false, 
+                error: 'Error obteniendo mensajes',
+                details: error.message 
+            });
+        }
+    });
     
     console.log('✅ Sistema multi-agente endpoints cargados correctamente');
 };
