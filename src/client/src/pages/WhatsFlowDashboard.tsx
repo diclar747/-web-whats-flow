@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useWhatsApp } from '../context/WhatsAppContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { frontendLogger } from '../utils/frontendLogger';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { usePermissions } from '../hooks/usePermissions';
@@ -55,7 +56,9 @@ import {
   QrCode,
   SupervisorAccount as AgentsIcon,
   ViewKanban as KanbanIcon,
-  Security as SecurityIcon
+  Security as SecurityIcon,
+  Brightness4,
+  Brightness7
 } from '@mui/icons-material';
 
 // Componente de llamada entrante (cargado inmediatamente por ser crítico)
@@ -141,6 +144,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   const navigate = useNavigate();
   const location = useLocation();
   const { chats } = useWhatsApp();
+  const { toggleTheme, isDarkMode } = useTheme();
   const { hasModuleAccess, userRole: permUserRole } = usePermissions();
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [drawerMinimized, setDrawerMinimized] = useState(true);
@@ -180,7 +184,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     title: '',
     message: '',
     type: 'info' as 'info' | 'success' | 'warning' | 'error',
-    onConfirm: () => {}
+    onConfirm: () => { }
   });
 
   // Calcular mensajes no leídos totales
@@ -287,7 +291,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   const navigationItems = useMemo(() => {
     // Si no hay userRole pero hay sessionId, es usuario con QR - mostrar todo
     const hasQRSession = sessionId && !permUserRole;
-    
+
     return allNavigationItems.filter(item => {
       const module = moduleMap[item.id];
       // Dashboard siempre visible
@@ -302,8 +306,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   }, [userRole, hasModuleAccess, sessionId, permUserRole]);
 
   // Detectar ruta activa
-  const activeItem = navigationItems.find(item => 
-    location.pathname === item.path || 
+  const activeItem = navigationItems.find(item =>
+    location.pathname === item.path ||
     (item.path !== '/dashboard' && location.pathname.startsWith(item.path))
   ) || navigationItems[0];
 
@@ -329,7 +333,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
 
     try {
       frontendLogger.log('CHECKING_SESSION_VALIDITY', { sessionId: currentSessionId });
-      
+
       const response = await fetch(`/api/session/${currentSessionId}/status`);
       const data = await response.json();
 
@@ -338,7 +342,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
           phoneNumber: data.phoneNumber,
           isConnected: data.isConnected
         });
-        
+
         setSessionValid(true);
         setWhatsappStatus('connected');
         setUserPhoneNumber(data.phoneNumber);
@@ -348,7 +352,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
           reason: 'Not connected or no phone number',
           data
         });
-        
+
         setSessionValid(false);
         setWhatsappStatus('disconnected');
       }
@@ -357,7 +361,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       frontendLogger.log('SESSION_CHECK_ERROR', {
         error: error instanceof Error ? error.message : String(error)
       });
-      
+
       setSessionValid(false);
       setWhatsappStatus('disconnected');
     }
@@ -477,7 +481,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     // Handler para cuando se cierra sesión desde el teléfono
     const handleSessionLoggedOut = (data: any) => {
       console.log('[SOCKET] 👋 Sesión cerrada desde el teléfono:', data);
-      
+
       // ⚠️ LOGGING CRÍTICO - Este es el evento que causa el cierre de sesión
       frontendLogger.log('LOGOUT_EVENT_RECEIVED', {
         eventData: data,
@@ -486,15 +490,15 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
         willRedirect: true,
         currentUrl: window.location.href
       });
-      
+
       // Limpiar toda la sesión
       sessionStorage.clear();
       localStorage.clear();
-      
+
       frontendLogger.log('STORAGE_CLEARED', {
         action: 'sessionStorage and localStorage cleared'
       });
-      
+
       // Mostrar alert moderno y redirigir
       setAlertConfig({
         title: 'Sesión Cerrada',
@@ -762,16 +766,16 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       {/* Contenido principal */}
       <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
         {/* AppBar superior */}
-        <AppBar 
-          position="static" 
+        <AppBar
+          position="static"
           elevation={0}
-          sx={{ 
+          sx={{
             bgcolor: 'background.paper',
             color: 'text.primary',
             borderBottom: '1px solid',
             borderColor: 'divider',
             backdropFilter: 'blur(20px) saturate(180%)',
-            backgroundColor: (theme) => theme.palette.mode === 'dark' 
+            backgroundColor: (theme) => theme.palette.mode === 'dark'
               ? 'rgba(32, 44, 51, 0.8)'
               : 'rgba(255, 255, 255, 0.8)',
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
@@ -785,32 +789,39 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
             >
               <MenuIcon />
             </IconButton>
-            
+
             <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 500 }}>
               {activeItem.label}
             </Typography>
 
             {/* Indicadores de estado */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              {/* Toggle de Tema */}
+              <Tooltip title={isDarkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}>
+                <IconButton onClick={toggleTheme} color="inherit">
+                  {isDarkMode ? <Brightness7 /> : <Brightness4 />}
+                </IconButton>
+              </Tooltip>
+
               {/* Estado de WhatsApp */}
               <Tooltip title={`WhatsApp ${whatsappStatus === 'connected' ? 'Conectado' : whatsappStatus === 'connecting' ? 'Conectando...' : 'Desconectado'} - Última verificación: ${lastConnectionCheck.toLocaleTimeString()}`}>
                 <Chip
                   icon={
                     whatsappStatus === 'connected' ? <WhatsApp sx={{ fontSize: 16 }} /> :
-                    whatsappStatus === 'connecting' ? <CircularProgress size={16} /> :
-                    <ErrorIcon sx={{ fontSize: 16 }} />
+                      whatsappStatus === 'connecting' ? <CircularProgress size={16} /> :
+                        <ErrorIcon sx={{ fontSize: 16 }} />
                   }
                   label={
                     whatsappStatus === 'connected' ? 'WhatsApp OK' :
-                    whatsappStatus === 'connecting' ? 'Conectando...' :
-                    'WhatsApp OFF'
+                      whatsappStatus === 'connecting' ? 'Conectando...' :
+                        'WhatsApp OFF'
                   }
                   size="small"
                   variant="outlined"
                   color={
                     whatsappStatus === 'connected' ? 'success' :
-                    whatsappStatus === 'connecting' ? 'warning' :
-                    'error'
+                      whatsappStatus === 'connecting' ? 'warning' :
+                        'error'
                   }
                   sx={{
                     '& .MuiChip-icon': {
@@ -958,7 +969,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                         <Suspense fallback={<ModuleLoadingFallback />}>
                           {isAgent ? (
                             <Box sx={{ p: 3 }}>
-                              <AgentChatView 
+                              <AgentChatView
                                 userId={userId || ''}
                                 sessionId={sessionId}
                                 onChatSelect={(chatJid) => {
@@ -1013,11 +1024,16 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                       </ProtectedRoute>
                     } />
                     <Route path="/settings/*" element={
-                      <ProtectedRoute module="settings" action="view">
-                        <SettingsModule sessionId={sessionId} />
+                      <ProtectedRoute module="users" action="view">
+                        <Box sx={{ p: 3 }}>
+                          <Typography variant="h4" gutterBottom>Configuración</Typography>
+                          <Box sx={{ mt: 3 }}>
+                            <AgentPermissionsManager />
+                          </Box>
+                        </Box>
                       </ProtectedRoute>
                     } />
-                    <Route path="*" element={<Navigate to="/" replace />} />
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
                   </Routes>
                 </Suspense>
               )}
@@ -1026,18 +1042,21 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
         </Box>
       </Box>
 
-      {/* ModernAlert para notificaciones */}
+      {/* Alert moderno para notificaciones importantes */}
       <ModernAlert
         open={alertOpen}
-        onClose={() => setAlertOpen(false)}
-        onConfirm={alertConfig.onConfirm}
         title={alertConfig.title}
         message={alertConfig.message}
         type={alertConfig.type}
-        confirmText="Entendido"
+        onClose={() => {
+          if (alertConfig.type !== 'info') {
+            setAlertOpen(false);
+          }
+        }}
+        onConfirm={alertConfig.onConfirm}
       />
     </Box>
   );
 };
 
-export default WhatsFlowDashboard; 
+export default WhatsFlowDashboard;

@@ -23,40 +23,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 
-// Componente para integrar ambos contextos de tema
-const CombinedThemeProvider: React.FC<{ children: React.ReactNode, isDarkMode: boolean }> = ({ children, isDarkMode }) => {
-  const theme = createTheme({
-    palette: {
-      mode: isDarkMode ? 'dark' : 'light',
-      primary: {
-        main: '#00a884', // Color de WhatsApp
-      },
-      secondary: {
-        main: '#25d366',
-      },
-    },
-    typography: {
-      fontFamily: [
-        '-apple-system',
-        'BlinkMacSystemFont',
-        '"Segoe UI"',
-        'Roboto',
-        '"Helvetica Neue"',
-        'Arial',
-        'sans-serif',
-        '"Apple Color Emoji"',
-        '"Segoe UI Emoji"',
-        '"Segoe UI Symbol"',
-      ].join(','),
-    },
-  });
 
-  return (
-    <MuiThemeProvider theme={theme}>
-      {children}
-    </MuiThemeProvider>
-  );
-};
 
 // Componente interno que maneja la navegación
 const AppContent: React.FC<{
@@ -116,9 +83,7 @@ const AppContent: React.FC<{
       {/* Dashboard - Requiere sessionId para todos */}
       <Route path="/admin/agents" element={
         user && token && user.role === 'admin' ? (
-          <CombinedThemeProvider isDarkMode={false}>
-            <AdminAgentManagement />
-          </CombinedThemeProvider>
+          <AdminAgentManagement />
         ) : (
           <Navigate to="/admin/login" replace />
         )
@@ -127,9 +92,7 @@ const AppContent: React.FC<{
       {/* Gestión de Agentes con Privilegios */}
       <Route path="/agents-permissions" element={
         user && token ? (
-          <CombinedThemeProvider isDarkMode={false}>
             <AgentPermissionsManager />
-          </CombinedThemeProvider>
         ) : (
           <Navigate to="/login" replace />
         )
@@ -144,7 +107,7 @@ const AppContent: React.FC<{
           console.log('  - user.role:', user?.role);
           console.log('  - Condición agente:', user && (user.role === 'agent' || user.role === 'supervisor'));
           return (sessionId || (user && (user.role === 'agent' || user.role === 'supervisor'))) ? (
-            <CombinedThemeProvider isDarkMode={false}>
+            <>
               {user && (user.role === 'agent' || user.role === 'supervisor') ? (
                 // Dashboard simplificado para agentes (requiere user pero NO requiere sessionId inmediato)
                 (() => {
@@ -177,9 +140,9 @@ const AppContent: React.FC<{
               ) : (
                 <Navigate to="/" replace />
               )}
-            </CombinedThemeProvider>
+              )}
+            </>
           ) : loading ? (
-          <CombinedThemeProvider isDarkMode={false}>
             <div style={{
               display: 'flex',
               justifyContent: 'center',
@@ -191,7 +154,6 @@ const AppContent: React.FC<{
               <CircularProgress />
               <p>Cargando sesión...</p>
             </div>
-          </CombinedThemeProvider>
           ) : (
             // Redirigir a login si no hay ni sessionId ni user agent
             <Navigate to="/login" replace />
@@ -226,9 +188,7 @@ const AppContent: React.FC<{
       {/* Dashboard de administrador */}
       <Route path="/admin/dashboard" element={
         admin && adminToken ? (
-          <CombinedThemeProvider isDarkMode={false}>
             <AdminDashboard onLogout={handleLogout} admin={admin} adminToken={adminToken} />
-          </CombinedThemeProvider>
         ) : (
           <Navigate to="/admin" replace />
         )

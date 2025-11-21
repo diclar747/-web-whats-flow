@@ -30,7 +30,7 @@ function ThemeProvider({ children }: ThemeProviderProps) {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('whatsflow-theme');
     if (saved === 'light' || saved === 'dark') return saved;
-    
+
     // Detectar preferencia del sistema
     if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
       return 'dark';
@@ -51,10 +51,11 @@ function ThemeProvider({ children }: ThemeProviderProps) {
     return theme === 'dark' ? modernDarkTheme : modernLightTheme;
   }, [theme]);
 
-  // Actualizar clase en body para estilos globales
+  // Actualizar clase en body y atributo data-theme para estilos globales
   useEffect(() => {
     document.body.classList.remove('theme-light', 'theme-dark');
     document.body.classList.add(`theme-${theme}`);
+    document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
   const value = {
