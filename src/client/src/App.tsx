@@ -17,7 +17,10 @@ import AdminChatAssignment from './pages/AdminChatAssignment';
 import AdminAgentManagement from './components/AdminAgentManagement';
 import AgentPermissionsManager from './components/AgentPermissionsManager';
 import { TransferNotificationListener } from './components/TransferNotificationListener';
+import FloatingWhatsAppButton from './components/FloatingWhatsAppButton';
 import { Toaster } from 'react-hot-toast';
+import { AuthProvider } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
 
 // Componente para integrar ambos contextos de tema
 const CombinedThemeProvider: React.FC<{ children: React.ReactNode, isDarkMode: boolean }> = ({ children, isDarkMode }) => {
@@ -133,30 +136,48 @@ const AppContent: React.FC<{
 
       {/* Dashboard - Admin con QR (solo sessionId) o Agentes con login (sessionId + user) */}
       <Route path="/dashboard/*" element={
-        sessionId ? (
-          <CombinedThemeProvider isDarkMode={false}>
-            {user && (user.role === 'agent' || user.role === 'supervisor') ? (
-              // Dashboard simplificado para agentes (requiere user)
-              <WhatsAppProvider
-                userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
-                userRole={user?.role}
-              >
-                <AgentDashboard />
-              </WhatsAppProvider>
-            ) : (
-              // Dashboard completo para admin (solo requiere sessionId del QR)
-              <WhatsAppProvider
-                userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
-                userRole={user?.role || 'admin'}
-              >
-                <WhatsFlowDashboard
-                  sessionId={sessionId}
-                  onLogout={handleLogout}
-                />
-              </WhatsAppProvider>
-            )}
-          </CombinedThemeProvider>
-        ) : loading ? (
+        (() => {
+          console.log('🔍 [DASHBOARD-ROUTE] Evaluando acceso:');
+          console.log('  - sessionId:', sessionId);
+          console.log('  - user:', user);
+          console.log('  - user.role:', user?.role);
+          console.log('  - Condición agente:', user && (user.role === 'agent' || user.role === 'supervisor'));
+          return (sessionId || (user && (user.role === 'agent' || user.role === 'supervisor'))) ? (
+            <CombinedThemeProvider isDarkMode={false}>
+              {user && (user.role === 'agent' || user.role === 'supervisor') ? (
+                // Dashboard simplificado para agentes (requiere user pero NO requiere sessionId inmediato)
+                (() => {
+                  console.log('✅ [DASHBOARD-ROUTE] Cargando AgentDashboard para:', user.name);
+                  return (
+                    <WhatsAppProvider
+                      userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
+                      userRole={user?.role}
+                    >
+                      <AgentDashboard />
+                    </WhatsAppProvider>
+                  );
+                })()
+              ) : sessionId ? (
+                // Dashboard completo para admin (requiere sessionId del QR)
+                (() => {
+                  console.log('✅ [DASHBOARD-ROUTE] Cargando WhatsFlowDashboard (admin) con sessionId:', sessionId);
+                  return (
+                    <WhatsAppProvider
+                      userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
+                      userRole={user?.role || 'admin'}
+                    >
+                      <WhatsFlowDashboard
+                        sessionId={sessionId}
+                        onLogout={handleLogout}
+                      />
+                    </WhatsAppProvider>
+                  );
+                })()
+              ) : (
+                <Navigate to="/" replace />
+              )}
+            </CombinedThemeProvider>
+          ) : loading ? (
           <CombinedThemeProvider isDarkMode={false}>
             <div style={{
               display: 'flex',
@@ -170,10 +191,11 @@ const AppContent: React.FC<{
               <p>Cargando sesión...</p>
             </div>
           </CombinedThemeProvider>
-        ) : (
-          // Don't redirect to login if this is the admin QR flow
-          <Navigate to="/" replace />
-        )
+          ) : (
+            // Redirigir a login si no hay ni sessionId ni user agent
+            <Navigate to="/login" replace />
+          );
+        })()
       } />
 
       {/* Ruta de login de admin - evitar interferencia con sesiones QR */}
@@ -728,42 +750,49 @@ const App: React.FC = () => {
 
   return (
     <Router>
-      <CustomThemeProvider>
-        <LocalizationProvider dateAdapter={AdapterDateFns}>
-          {/* Toaster para notificaciones visuales */}
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              duration: 15000,
-              style: {
-                background: '#fff',
-                color: '#363636',
-              },
-              success: {
-                duration: 5000,
-              },
-            }}
-          />
+      <AuthProvider>
+        <SocketProvider>
+          <CustomThemeProvider>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+            {/* Toaster para notificaciones visuales */}
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                duration: 15000,
+                style: {
+                  background: '#fff',
+                  color: '#363636',
+                },
+                success: {
+                  duration: 5000,
+                },
+              }}
+            />
 
-          {/* Listener de notificaciones de transferencia */}
-          {user && <TransferNotificationListener />}
+            {/* Listener de notificaciones de transferencia */}
+            {user && <TransferNotificationListener />}
 
-          <AppContent
-            sessionId={sessionId}
-            user={user}
-            token={token}
-            userType={userType}
-            admin={admin}
-            adminToken={adminToken}
-            loading={loading}
-            handleLoginSuccess={handleLoginSuccess}
-            handleAdminLogin={handleAdminLogin}
-            handleLogout={handleLogout}
-            handleQRSuccess={handleQRSuccess}
-            onNavigate={() => {}}
-          />
-        </LocalizationProvider>
-      </CustomThemeProvider>
+            {/* Botón flotante de WhatsApp para soporte */}
+            <FloatingWhatsAppButton />
+
+            <AppContent
+              sessionId={sessionId}
+              user={user}
+              token={token}
+              userType={userType}
+              admin={admin}
+              adminToken={adminToken}
+              loading={loading}
+              handleLoginSuccess={handleLoginSuccess}
+              handleAdminLogin={handleAdminLogin}
+              handleLogout={handleLogout}
+              handleQRSuccess={handleQRSuccess}
+              onNavigate={() => {}}
+            />
+            </LocalizationProvider>
+          </CustomThemeProvider>
+        </SocketProvider>
+      </AuthProvider>
     </Router>
   );
 };

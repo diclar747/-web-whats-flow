@@ -339,10 +339,10 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
   // Función para cargar participantes de un grupo
   const loadGroupParticipants = async (groupId: string) => {
-    
+
     try {
       console.log(`📥 Cargando participantes del grupo ${groupId}...`);
-      
+
       // Verificar que tenemos sessionId válido
       if (!sessionId) {
         console.warn(`⚠️ No hay sessionId válido para cargar participantes del grupo ${groupId}`);
@@ -352,14 +352,31 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
         }));
         return;
       }
-      
+
       const response = await fetch(`${getAPIBaseURL()}/api/group/participants/${sessionId}/${groupId}`);
       const data = await response.json();
-      console.log(`📥 Respuesta completa para grupo ${groupId}:`, data);
+      console.log(`📥 Respuesta completa para grupo ${groupId}:`, JSON.stringify(data, null, 2));
 
       if (response.ok && data.success && data.participants) {
         console.log(`👥 ${data.participants.length} participantes cargados para grupo ${data.groupName || groupId}`);
-        console.log(`👥 Datos de participantes:`, data.participants);
+        console.log(`👥 Datos de participantes (primeros 5):`, data.participants.slice(0, 5).map((p: any) => ({
+          jid: p.jid,
+          phone: p.phone,
+          name: p.name,
+          id: p.id
+        })));
+
+        // VERIFICAR QUE LOS PARTICIPANTES TENGAN phone
+        const participantesConPhone = data.participants.filter((p: any) => p.phone);
+        const participantesSinPhone = data.participants.filter((p: any) => !p.phone);
+
+        console.log(`✅ Participantes CON phone: ${participantesConPhone.length}`);
+        console.log(`❌ Participantes SIN phone: ${participantesSinPhone.length}`);
+
+        if (participantesSinPhone.length > 0) {
+          console.warn(`⚠️ Participantes sin phone (primeros 3):`, participantesSinPhone.slice(0, 3));
+        }
+
         setGroupParticipants(prev => ({
           ...prev,
           [groupId]: data.participants
@@ -765,6 +782,54 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
         });
       }
 
+      // Extraer participantes individuales de los grupos seleccionados
+      let groupContactsList: any[] = [];
+      if (contactSelectionType === 'groups' && selectedGroups.length > 0) {
+        selectedGroups.forEach(groupId => {
+          const participants = groupParticipants[groupId] || [];
+          console.log(`📋 Grupo ${groupId}: ${participants.length} participantes`, participants);
+          groupContactsList = groupContactsList.concat(participants.map(p => ({
+            jid: p.jid || p.id,
+            phone: p.phone,
+            name: p.name
+          })));
+        });
+        console.log(`✅ Total de participantes de grupos: ${groupContactsList.length}`, groupContactsList);
+      }
+
+      // Construir lista de recipients según el tipo de selección
+      let recipients: any[] = [];
+      if (contactSelectionType === 'individual') {
+        // Contactos individuales seleccionados
+        recipients = selectedContacts.map(contactId => {
+          const contact = contacts.find(c => c.id === contactId);
+          return {
+            jid: contact?.phone || contactId,
+            phone: contact?.phone || contactId,
+            name: contact?.name || contactId.split('@')[0]
+          };
+        });
+      } else if (contactSelectionType === 'groups') {
+        // Participantes de grupos
+        recipients = groupContactsList;
+      } else if (contactSelectionType === 'manual') {
+        // Contactos manuales
+        recipients = manualContacts.map(c => ({
+          jid: c.phone.includes('@') ? c.phone : `${c.phone}@s.whatsapp.net`,
+          phone: c.phone,
+          name: c.name
+        }));
+      } else if (contactSelectionType === 'kanban') {
+        // Contactos de tableros Kanban
+        recipients = kanbanContacts.map(c => ({
+          jid: c.jid || c.phone,
+          phone: c.phone || c.jid?.split('@')[0],
+          name: c.name || c.jid?.split('@')[0]
+        }));
+      }
+
+      console.log(`📤 Recipients a enviar: ${recipients.length}`, recipients);
+
       // Construir objeto de campaña completo
       const campaignData = {
         ...newCampaign,
@@ -774,6 +839,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
         selectedContacts,
         selectedGroups,
         selectedKanbanBoards,
+        recipients,
         kanbanContacts: kanbanContacts.map(c => ({
           phone: c.jid || c.phone,
           name: c.name || c.jid?.split('@')[0]

@@ -320,6 +320,12 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
   const [syncedGroups, setSyncedGroups] = useState<any[]>([]);
   const [showOnlyNamed, setShowOnlyNamed] = useState(true); // Filtrar solo contactos con nombre real
 
+  // Estados para modal de miembros del grupo
+  const [showMembersDialog, setShowMembersDialog] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState<any>(null);
+  const [groupMembers, setGroupMembers] = useState<any[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+
   useEffect(() => {
     loadCRMData();
     loadWhatsAppData();
@@ -569,6 +575,33 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
       }
     } catch (error) {
       console.error('[CRM] Error loading WhatsApp data:', error);
+    }
+  };
+
+  // Función para cargar miembros de un grupo
+  const loadGroupMembers = async (group: any) => {
+    try {
+      setLoadingMembers(true);
+      setSelectedGroup(group);
+      setShowMembersDialog(true);
+
+      console.log('[CRM] Loading members for group:', group.id || group.jid);
+
+      const response = await fetch(`${getAPIBaseURL()}/api/group/participants/${sessionId}/${group.id || group.jid}`);
+      const data = await response.json();
+
+      if (response.ok && data.success && data.participants) {
+        console.log('[CRM] Members loaded:', data.participants.length);
+        setGroupMembers(data.participants);
+      } else {
+        console.error('[CRM] Failed to load members:', data.error);
+        setGroupMembers([]);
+      }
+    } catch (error) {
+      console.error('[CRM] Error loading group members:', error);
+      setGroupMembers([]);
+    } finally {
+      setLoadingMembers(false);
     }
   };
 
@@ -1192,19 +1225,40 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
 
         {/* Tabs principales */}
         <Paper sx={{ mb: 3 }}>
-          <Tabs value={selectedTab} onChange={(_, newValue) => {
-            setSelectedTab(newValue);
-            setPage(0); // Reset pagination when changing tabs
-          }}>
-            <Tab label={`Contactos WhatsApp (${syncedContacts.length})`} />
-            <Tab label={`Grupos WhatsApp (${syncedGroups.length})`} />
-            <Tab label={`Pipeline (${deals.length})`} />
-            <Tab label="Segmentos" />
-            <Tab label="Analytics" />
+          <Tabs 
+            value={selectedTab} 
+            onChange={(_, newValue) => {
+              setSelectedTab(newValue);
+              setPage(0); // Reset pagination when changing tabs
+            }}
+            variant="scrollable"
+            scrollButtons="auto"
+          >
+            <Tab 
+              label={`WhatsApp Contactos (${syncedContacts.length})`} 
+              icon={<WhatsApp />}
+              iconPosition="start"
+              sx={{ fontWeight: 600 }}
+            />
+            <Tab 
+              label={`WhatsApp Grupos (${syncedGroups.length})`} 
+              icon={<Group />}
+              iconPosition="start"
+            />
+            <Tab 
+              label="Contactos" 
+              icon={<Person />}
+              iconPosition="start"
+            />
+            <Tab 
+              label="Grupos" 
+              icon={<Group />}
+              iconPosition="start"
+            />
           </Tabs>
         </Paper>
 
-        {/* Contenido de las tabs */}
+        {/* Pestaña 1: WhatsApp Contactos */}
         {selectedTab === 0 && (
           <Box>
             {/* Contactos de WhatsApp sincronizados */}
@@ -1362,6 +1416,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
           </Box>
         )}
 
+        {/* Pestaña 2: WhatsApp Grupos */}
         {selectedTab === 1 && (
           <Box>
             {/* Grupos de WhatsApp sincronizados */}
@@ -1440,6 +1495,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
                             variant="contained"
                             size="small"
                             startIcon={<Group />}
+                            onClick={() => loadGroupMembers(group)}
                             sx={{
                               flex: 1,
                               bgcolor: '#ff9800',
@@ -1486,66 +1542,89 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
           </Box>
         )}
 
+        {/* Pestaña 3: Contactos */}
         {selectedTab === 2 && (
           <Grid container spacing={3}>
-            {/* Pipeline por etapas */}
+            {/* Contactos Locales */}
             <Grid item xs={12}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>Pipeline de Ventas</Typography>
-                  <Grid container spacing={2}>
-                    {salesStages.filter(stage => stage.isActive).map((stage) => {
-                      const stageDeals = deals.filter(deal => deal.stage === stage.id);
-                      const stageValue = stageDeals.reduce((sum, deal) => sum + deal.value, 0);
-                      
-                      return (
-                        <Grid item xs={12} md={2} key={stage.id}>
-                          <Paper sx={{ 
-                            p: 2, 
-                            borderTop: `4px solid ${stage.color}`,
-                            minHeight: 200
-                          }}>
-                            <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
-                              {stage.name}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h5" sx={{ fontWeight: 600 }}>
+                  Contactos Locales (Manuales)
+                </Typography>
+                <Button
+                  variant="contained"
+                  startIcon={<Add />}
+                  onClick={() => setShowContactDialog(true)}
+                >
+                  Crear Contacto
+                </Button>
+              </Box>
+            </Grid>
+
+            {/* Lista de Contactos Locales */}
+            <Grid item xs={12}>
+              {contacts.length === 0 ? (
+                <Card>
+                  <CardContent sx={{ textAlign: 'center', py: 6 }}>
+                    <Person sx={{ fontSize: 64, color: '#cbd5e1', mb: 2 }} />
+                    <Typography variant="h6" gutterBottom>
+                      No hay contactos locales
+                    </Typography>
+                    <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+                      Los contactos locales son aquellos que creas manualmente en el sistema
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      startIcon={<Add />}
+                      onClick={() => setShowContactDialog(true)}
+                    >
+                      Crear Primer Contacto
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Grid container spacing={2}>
+                  {contacts.map((contact) => (
+                    <Grid item xs={12} md={6} lg={4} key={contact.id}>
+                      <Card>
+                        <CardContent>
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                            <Avatar sx={{ bgcolor: '#00a884', mr: 2 }}>
+                              {contact.firstName.charAt(0)}
+                            </Avatar>
+                            <Box sx={{ flex: 1 }}>
+                              <Typography variant="h6">
+                                {contact.firstName} {contact.lastName}
+                              </Typography>
+                              <Typography variant="body2" color="textSecondary">
+                                {contact.phone}
+                              </Typography>
+                            </Box>
+                          </Box>
+                          {contact.email && (
+                            <Typography variant="body2" sx={{ mb: 1 }}>
+                              📧 {contact.email}
                             </Typography>
-                            <Typography variant="body2" sx={{ color: '#64748b', mb: 2 }}>
-                              {stageDeals.length} oportunidades
+                          )}
+                          {contact.company && (
+                            <Typography variant="body2" color="textSecondary">
+                              🏢 {contact.company}
                             </Typography>
-                            <Typography variant="h5" sx={{ fontWeight: 700, color: stage.color, mb: 2 }}>
-                              €{(stageValue / 1000).toFixed(0)}K
-                            </Typography>
-                            
-                            <Stack spacing={1}>
-                              {stageDeals.slice(0, 3).map((deal) => (
-                                <Paper key={deal.id} sx={{ p: 1, bgcolor: '#f8fafc' }}>
-                                  <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                                    {deal.title}
-                                  </Typography>
-                                  <Typography variant="caption" sx={{ display: 'block', color: '#64748b' }}>
-                                    €{deal.value.toLocaleString()}
-                                  </Typography>
-                                </Paper>
-                              ))}
-                              {stageDeals.length > 3 && (
-                                <Typography variant="caption" sx={{ color: '#64748b', textAlign: 'center' }}>
-                                  +{stageDeals.length - 3} más
-                                </Typography>
-                              )}
-                            </Stack>
-                          </Paper>
-                        </Grid>
-                      );
-                    })}
-                  </Grid>
-                </CardContent>
-              </Card>
+                          )}
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  ))}
+                </Grid>
+              )}
             </Grid>
           </Grid>
         )}
 
+        {/* Pestaña 4: Grupos */}
         {selectedTab === 3 && (
           <Grid container spacing={3}>
-            {/* Header de Segmentos */}
+            {/* Header de Grupos Locales */}
             <Grid item xs={12}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h5" sx={{ fontWeight: 600 }}>
@@ -1853,6 +1932,180 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
             disabled={!editContactName.trim()}
           >
             Guardar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal para ver miembros del grupo */}
+      <Dialog
+        open={showMembersDialog}
+        onClose={() => setShowMembersDialog(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+          }
+        }}
+      >
+        <DialogTitle sx={{
+          background: 'linear-gradient(135deg, #00a884 0%, #008c6f 100%)',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          pb: 2
+        }}>
+          <Group sx={{ fontSize: 32 }} />
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              {selectedGroup?.name || 'Grupo'}
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.9 }}>
+              {groupMembers.length} {groupMembers.length === 1 ? 'miembro' : 'miembros'}
+            </Typography>
+          </Box>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 0, mt: 2 }}>
+          {loadingMembers ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 6 }}>
+              <CircularProgress sx={{ color: '#00a884' }} />
+            </Box>
+          ) : groupMembers.length === 0 ? (
+            <Box sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              py: 6,
+              px: 3
+            }}>
+              <Group sx={{ fontSize: 64, color: '#ccc', mb: 2 }} />
+              <Typography variant="h6" color="text.secondary">
+                No se encontraron miembros
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Este grupo no tiene miembros o no se pudieron cargar
+              </Typography>
+            </Box>
+          ) : (
+            <List sx={{ px: 2 }}>
+              {groupMembers.map((member, index) => (
+                <ListItem
+                  key={member.jid || member.id || index}
+                  sx={{
+                    borderRadius: 2,
+                    mb: 1,
+                    border: '1px solid #f0f0f0',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      bgcolor: '#f8f9fa',
+                      transform: 'translateX(4px)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                    }
+                  }}
+                >
+                  <ListItemAvatar>
+                    <Avatar
+                      src={member.avatar || member.profilePicUrl}
+                      sx={{
+                        width: 48,
+                        height: 48,
+                        bgcolor: '#00a884',
+                        fontWeight: 600
+                      }}
+                    >
+                      {(member.name || member.phone || '?')[0].toUpperCase()}
+                    </Avatar>
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                          {member.name || member.phone || 'Sin nombre'}
+                        </Typography>
+                        {member.isAdmin && (
+                          <Chip
+                            label={member.isSuperAdmin ? 'Super Admin' : 'Admin'}
+                            size="small"
+                            sx={{
+                              bgcolor: member.isSuperAdmin ? '#ff6b6b' : '#ffa726',
+                              color: 'white',
+                              fontWeight: 600,
+                              fontSize: '0.7rem',
+                              height: 20
+                            }}
+                          />
+                        )}
+                      </Box>
+                    }
+                    secondary={
+                      <Box sx={{ mt: 0.5 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                            color: member.phone ? '#00a884' : '#999',
+                            fontFamily: 'monospace',
+                            fontSize: '0.95rem',
+                            fontWeight: 500
+                          }}
+                        >
+                          <Phone sx={{ fontSize: 14 }} />
+                          {member.phone || 'Número no disponible'}
+                        </Typography>
+                        {member.jid && (
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: '#999',
+                              fontSize: '0.75rem',
+                              display: 'block',
+                              mt: 0.5
+                            }}
+                          >
+                            JID: {member.jid}
+                          </Typography>
+                        )}
+                      </Box>
+                    }
+                  />
+                  <IconButton
+                    href={`https://wa.me/${member.phone?.replace(/[^0-9]/g, '')}`}
+                    target="_blank"
+                    disabled={!member.phone}
+                    sx={{
+                      bgcolor: '#00a884',
+                      color: 'white',
+                      '&:hover': { bgcolor: '#008c6f' },
+                      '&:disabled': { bgcolor: '#e0e0e0', color: '#999' }
+                    }}
+                  >
+                    <WhatsApp />
+                  </IconButton>
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #f0f0f0' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+            {selectedGroup?.description || 'Grupo de WhatsApp'}
+          </Typography>
+          <Button
+            onClick={() => setShowMembersDialog(false)}
+            variant="contained"
+            sx={{
+              bgcolor: '#00a884',
+              '&:hover': { bgcolor: '#008c6f' }
+            }}
+          >
+            Cerrar
           </Button>
         </DialogActions>
       </Dialog>

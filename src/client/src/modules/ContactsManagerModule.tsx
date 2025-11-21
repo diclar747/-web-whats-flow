@@ -30,6 +30,10 @@ import {
   Badge,
   CircularProgress,
   TablePagination,
+  List,
+  ListItem,
+  ListItemAvatar,
+  ListItemText,
 } from '@mui/material';
 import {
   PersonAdd,
@@ -47,6 +51,7 @@ import {
   Refresh,
   CheckCircle,
   Chat,
+  WhatsApp,
 } from '@mui/icons-material';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -113,6 +118,12 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
   const [showEditNameDialog, setShowEditNameDialog] = useState(false);
   const [editingContactName, setEditingContactName] = useState('');
   const [contactToEdit, setContactToEdit] = useState<SyncedContact | null>(null);
+
+  // Estados para ver miembros del grupo
+  const [showMembersDialog, setShowMembersDialog] = useState(false);
+  const [selectedGroup, setSelectedGroup] = useState<any>(null);
+  const [groupMembers, setGroupMembers] = useState<any[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
 
   // Funciones de sincronización
   const handleSyncContacts = async () => {
@@ -245,7 +256,36 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
     loadSyncedContacts();
     loadSyncedGroups();
   }, [loadSyncedContacts, loadSyncedGroups]);
-  
+
+  // Función para cargar miembros de un grupo
+  const loadGroupMembers = async (group: any) => {
+    try {
+      setLoadingMembers(true);
+      setSelectedGroup(group);
+      setShowMembersDialog(true);
+
+      console.log('[ContactsManager] Loading members for group:', group.id || group.jid);
+
+      const response = await fetch(`${getAPIBaseURL()}/api/group/participants/${sessionId}/${group.id || group.jid}`);
+      const data = await response.json();
+
+      if (response.ok && data.success && data.participants) {
+        console.log('[ContactsManager] Members loaded:', data.participants.length);
+        setGroupMembers(data.participants);
+      } else {
+        console.error('[ContactsManager] Failed to load members:', data.error);
+        setGroupMembers([]);
+        setError('Error al cargar miembros del grupo');
+      }
+    } catch (error) {
+      console.error('[ContactsManager] Error loading group members:', error);
+      setGroupMembers([]);
+      setError('Error al cargar miembros del grupo');
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+
   // Función para guardar el nombre editado
   const handleSaveEditedName = async () => {
     if (!contactToEdit || !editingContactName.trim()) {
@@ -1208,10 +1248,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
                         size="small"
                         variant="outlined"
                         startIcon={<Group />}
-                        onClick={() => {
-                          // Aquí puedes agregar funcionalidad para ver miembros del grupo
-                          console.log('Ver miembros del grupo:', group.id);
-                        }}
+                        onClick={() => loadGroupMembers(group)}
                       >
                         Ver Miembros
                       </Button>
@@ -1845,6 +1882,180 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
             }}
           >
             Guardar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal para ver miembros del grupo */}
+      <Dialog
+        open={showMembersDialog}
+        onClose={() => setShowMembersDialog(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+          }
+        }}
+      >
+        <DialogTitle sx={{
+          background: 'linear-gradient(135deg, #00a884 0%, #008c6f 100%)',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          pb: 2
+        }}>
+          <Group sx={{ fontSize: 32 }} />
+          <Box>
+            <Typography variant="h6" sx={{ fontWeight: 600 }}>
+              {selectedGroup?.name || 'Grupo'}
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.9 }}>
+              {groupMembers.length} {groupMembers.length === 1 ? 'miembro' : 'miembros'}
+            </Typography>
+          </Box>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 0, mt: 2 }}>
+          {loadingMembers ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 6 }}>
+              <CircularProgress sx={{ color: '#00a884' }} />
+            </Box>
+          ) : groupMembers.length === 0 ? (
+            <Box sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              py: 6,
+              px: 3
+            }}>
+              <Group sx={{ fontSize: 64, color: '#ccc', mb: 2 }} />
+              <Typography variant="h6" color="text.secondary">
+                No se encontraron miembros
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Este grupo no tiene miembros o no se pudieron cargar
+              </Typography>
+            </Box>
+          ) : (
+            <List sx={{ px: 2 }}>
+              {groupMembers.map((member, index) => (
+                <ListItem
+                  key={member.jid || member.id || index}
+                  sx={{
+                    borderRadius: 2,
+                    mb: 1,
+                    border: '1px solid #f0f0f0',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      bgcolor: '#f8f9fa',
+                      transform: 'translateX(4px)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+                    }
+                  }}
+                >
+                  <ListItemAvatar>
+                    <Avatar
+                      src={member.avatar || member.profilePicUrl}
+                      sx={{
+                        width: 48,
+                        height: 48,
+                        bgcolor: '#00a884',
+                        fontWeight: 600
+                      }}
+                    >
+                      {(member.name || member.phone || '?')[0].toUpperCase()}
+                    </Avatar>
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                          {member.name || member.phone || 'Sin nombre'}
+                        </Typography>
+                        {member.isAdmin && (
+                          <Chip
+                            label={member.isSuperAdmin ? 'Super Admin' : 'Admin'}
+                            size="small"
+                            sx={{
+                              bgcolor: member.isSuperAdmin ? '#ff6b6b' : '#ffa726',
+                              color: 'white',
+                              fontWeight: 600,
+                              fontSize: '0.7rem',
+                              height: 20
+                            }}
+                          />
+                        )}
+                      </Box>
+                    }
+                    secondary={
+                      <Box sx={{ mt: 0.5 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                            color: member.phone ? '#00a884' : '#999',
+                            fontFamily: 'monospace',
+                            fontSize: '0.95rem',
+                            fontWeight: 500
+                          }}
+                        >
+                          <Phone sx={{ fontSize: 14 }} />
+                          {member.phone || 'Número no disponible'}
+                        </Typography>
+                        {member.jid && (
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: '#999',
+                              fontSize: '0.75rem',
+                              display: 'block',
+                              mt: 0.5
+                            }}
+                          >
+                            JID: {member.jid}
+                          </Typography>
+                        )}
+                      </Box>
+                    }
+                  />
+                  <IconButton
+                    href={`https://wa.me/${member.phone?.replace(/[^0-9]/g, '')}`}
+                    target="_blank"
+                    disabled={!member.phone}
+                    sx={{
+                      bgcolor: '#00a884',
+                      color: 'white',
+                      '&:hover': { bgcolor: '#008c6f' },
+                      '&:disabled': { bgcolor: '#e0e0e0', color: '#999' }
+                    }}
+                  >
+                    <WhatsApp />
+                  </IconButton>
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid #f0f0f0' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+            {selectedGroup?.description || 'Grupo de WhatsApp'}
+          </Typography>
+          <Button
+            onClick={() => setShowMembersDialog(false)}
+            variant="contained"
+            sx={{
+              bgcolor: '#00a884',
+              '&:hover': { bgcolor: '#008c6f' }
+            }}
+          >
+            Cerrar
           </Button>
         </DialogActions>
       </Dialog>

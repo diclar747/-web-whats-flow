@@ -32,8 +32,8 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     // Determinar URL del socket según el entorno
     const socketURL = getSocketURL();
 
-    // Obtener sessionId de localStorage (compartido entre pestañas)
-    const sessionId = localStorage.getItem('whatsflow_session');
+    // Obtener sessionId de sessionStorage primero (para agentes) o localStorage (para admins)
+    const sessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
 
     console.log('🔌 Conectando a Socket.IO en:', socketURL);
     console.log('🔌 SessionId para conexión:', sessionId);
@@ -67,7 +67,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
     // Eventos de conexión
     newSocket.on('connect', () => {
-      const currentSessionId = localStorage.getItem('whatsflow_session');
+      const currentSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
       console.log('🔌 Socket conectado:', newSocket.id);
       console.log('🔌 SessionId actual:', currentSessionId);
       setIsConnected(true);
@@ -85,7 +85,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     });
 
     newSocket.on('reconnect', (attemptNumber: number) => {
-      const currentSessionId = localStorage.getItem('whatsflow_session');
+      const currentSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
       console.log('🔌 Socket reconectado después de', attemptNumber, 'intentos');
       setIsConnected(true);
 

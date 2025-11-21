@@ -105,7 +105,13 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         // Cada usuario debe tener su propio sessionId vinculado a su cuenta
         const finalSessionId = data.sessionId || sessionStorage.getItem('whatsflow_session');
 
-        if (finalSessionId) {
+        // Redirigir según el rol del usuario
+        const userRole = data.user?.role;
+        
+        if (userRole === 'agent' || userRole === 'supervisor') {
+          console.log('✅ Navegando al dashboard de agente');
+          navigate('/dashboard');  // El mismo /dashboard mostrará AgentDashboard según el rol
+        } else if (finalSessionId) {
           console.log('✅ Navegando al dashboard con sessionId:', finalSessionId);
           navigate('/dashboard');
         } else {

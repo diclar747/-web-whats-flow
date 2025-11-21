@@ -434,6 +434,25 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
     phone: ''
   });
 
+  // Estados para modal de permisos
+  const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+  const [selectedUserForPermissions, setSelectedUserForPermissions] = useState<UserAccount | null>(null);
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+
+  // Lista de módulos disponibles
+  const availableModules = [
+    { id: 'dashboard', name: 'Dashboard', icon: '📊', description: 'Vista general del sistema' },
+    { id: 'chats', name: 'Chats', icon: '💬', description: 'Gestión de conversaciones' },
+    { id: 'contacts', name: 'Contactos', icon: '👥', description: 'Administrar contactos' },
+    { id: 'campaigns', name: 'Campañas', icon: '📢', description: 'Crear y gestionar campañas' },
+    { id: 'calendar', name: 'Calendario', icon: '📅', description: 'Gestión de citas' },
+    { id: 'crm', name: 'CRM', icon: '📇', description: 'Gestión de relaciones' },
+    { id: 'kanban', name: 'Kanban', icon: '📋', description: 'Tableros de contactos' },
+    { id: 'chatbot', name: 'Chatbot', icon: '🤖', description: 'Automatización de respuestas' },
+    { id: 'analytics', name: 'Analytics', icon: '📈', description: 'Estadísticas y reportes' },
+    { id: 'settings', name: 'Configuración', icon: '⚙️', description: 'Ajustes del sistema' }
+  ];
+
   useEffect(() => {
     loadSettingsData();
   }, [sessionId]);
@@ -861,6 +880,72 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
     } catch (error) {
       console.error('Error deleting user:', error);
       alert((error as Error).message || 'Error al eliminar usuario');
+    }
+  };
+
+  // Funciones para gestionar permisos
+  const handleOpenPermissionsDialog = (user: UserAccount) => {
+    setSelectedUserForPermissions(user);
+    setSelectedPermissions(user.permissions || []);
+    setPermissionsDialogOpen(true);
+  };
+
+  const handleClosePermissionsDialog = () => {
+    setPermissionsDialogOpen(false);
+    setSelectedUserForPermissions(null);
+    setSelectedPermissions([]);
+  };
+
+  const handleTogglePermission = (moduleId: string) => {
+    setSelectedPermissions(prev =>
+      prev.includes(moduleId)
+        ? prev.filter(id => id !== moduleId)
+        : [...prev, moduleId]
+    );
+  };
+
+  const handleSavePermissions = async () => {
+    if (!selectedUserForPermissions) return;
+
+    try {
+      // Convertir permisos a formato esperado por el backend
+      const permissionsFormatted = selectedPermissions.map(moduleId => ({
+        permission_id: moduleId,
+        can_view: true,
+        can_create: true,
+        can_edit: true,
+        can_delete: false
+      }));
+
+      const response = await fetch(`${getAPIBaseURL()}/api/users/${selectedUserForPermissions.id}/permissions`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ permissions: permissionsFormatted })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSnackbar({
+          open: true,
+          message: 'Permisos actualizados exitosamente',
+          severity: 'success'
+        });
+        handleClosePermissionsDialog();
+        loadSettingsData(); // Recargar lista
+      } else {
+        throw new Error(data.error || 'Error al actualizar permisos');
+      }
+    } catch (error) {
+      console.error('Error updating permissions:', error);
+      setSnackbar({
+        open: true,
+        message: (error as Error).message || 'Error al actualizar permisos',
+        severity: 'error'
+      });
     }
   };
 
@@ -1443,9 +1528,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                                 <IconButton
                                   size="small"
                                   color="primary"
-                                  onClick={() => {
-                                    window.location.href = '/dashboard/permissions';
-                                  }}
+                                  onClick={() => handleOpenPermissionsDialog(user)}
                                 >
                                   <Shield />
                                 </IconButton>
@@ -2115,6 +2198,108 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
             startIcon={loading ? <CircularProgress size={20} /> : <Delete />}
           >
             {loading ? 'Eliminando...' : 'Eliminar Usuario'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal de Permisos */}
+      <Dialog
+        open={permissionsDialogOpen}
+        onClose={handleClosePermissionsDialog}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          pb: 2, 
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
+        }}>
+          <Shield />
+          Gestionar Privilegios - {selectedUserForPermissions?.name}
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+            Selecciona los módulos a los que este agente tendrá acceso:
+          </Typography>
+          
+          <Grid container spacing={2}>
+            {availableModules.map((module) => (
+              <Grid item xs={12} sm={6} key={module.id}>
+                <Card
+                  sx={{
+                    cursor: 'pointer',
+                    transition: 'all 0.3s',
+                    border: selectedPermissions.includes(module.id) 
+                      ? '2px solid #667eea' 
+                      : '2px solid transparent',
+                    bgcolor: selectedPermissions.includes(module.id)
+                      ? 'rgba(102, 126, 234, 0.1)'
+                      : 'transparent',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: 3
+                    }
+                  }}
+                  onClick={() => handleTogglePermission(module.id)}
+                >
+                  <CardContent>
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="h4" sx={{ mr: 1 }}>
+                        {module.icon}
+                      </Typography>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                          {module.name}
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          {module.description}
+                        </Typography>
+                      </Box>
+                      <Checkbox
+                        checked={selectedPermissions.includes(module.id)}
+                        color="primary"
+                      />
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+
+          {selectedPermissions.length === 0 && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              ⚠️ El agente debe tener acceso al menos a un módulo
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button 
+            onClick={handleClosePermissionsDialog}
+            variant="outlined"
+          >
+            Cancelar
+          </Button>
+          <Button 
+            onClick={handleSavePermissions}
+            variant="contained"
+            disabled={selectedPermissions.length === 0}
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
+              }
+            }}
+          >
+            Guardar Privilegios
           </Button>
         </DialogActions>
       </Dialog>

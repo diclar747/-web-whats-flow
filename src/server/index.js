@@ -1339,6 +1339,15 @@ async function insertGroupMembers(groupJid, participants = [], phoneNumber = nul
         return;
     }
 
+    // ===== LOGS DE DEPURACIÓN =====
+    console.log(`[DB-GROUP-MEMBERS-DEBUG] ==========================================`);
+    console.log(`[DB-GROUP-MEMBERS-DEBUG] Procesando grupo: ${groupJid}`);
+    console.log(`[DB-GROUP-MEMBERS-DEBUG] Total participantes: ${participants.length}`);
+    console.log(`[DB-GROUP-MEMBERS-DEBUG] Primeros 3 participantes completos:`,
+        JSON.stringify(participants.slice(0, 3), null, 2)
+    );
+    // ===== FIN LOGS DE DEPURACIÓN =====
+
     const connection = await pool.getConnection();
     try {
         for (const participant of participants) {
@@ -1346,17 +1355,25 @@ async function insertGroupMembers(groupJid, participants = [], phoneNumber = nul
             const isAdmin = participant.admin === 'admin' || participant.admin === 'superadmin';
             const isSuperAdmin = participant.admin === 'superadmin';
 
+            // LOG: Ver qué contactJid se está usando
+            console.log(`[DB-GROUP-MEMBERS-DEBUG] Procesando participante: contactJid="${contactJid}", groupJid="${groupJid}"`);
+
             // Extraer número de teléfono del JID
             let participantPhone = null;
             if (contactJid.includes('@s.whatsapp.net')) {
                 // JID normal: "5491112345678@s.whatsapp.net"
                 participantPhone = contactJid.split('@')[0];
+                console.log(`[DB-GROUP-MEMBERS-DEBUG] ✅ JID normal, phone extraído: ${participantPhone}`);
             } else if (contactJid.includes('@lid')) {
                 // LID: guardar null, el número real se intentará obtener después
                 participantPhone = null;
+                console.log(`[DB-GROUP-MEMBERS-DEBUG] ⚠️ LID detectado, phone=null, se resolverá después`);
             } else if (typeof contactJid === 'string' && contactJid.match(/^\d+$/)) {
                 // Solo números
                 participantPhone = contactJid;
+                console.log(`[DB-GROUP-MEMBERS-DEBUG] ✅ Solo números, phone: ${participantPhone}`);
+            } else {
+                console.log(`[DB-GROUP-MEMBERS-DEBUG] ❌ FORMATO DESCONOCIDO: contactJid="${contactJid}"`);
             }
 
             // Obtener nombre del participante si existe en contacts
@@ -1495,27 +1512,34 @@ async function saveLidMapping(lid, realJid, phoneNumber, name, notifyName, sessi
 }
 
 // Función para resolver un LID
-async function resolveLid(lid, sessionId) {
-    if (!pool || !lid || !lid.includes('@lid')) {
+async function resolveLid(lid, sessionId, sock = null) {
+    if (!lid || !lid.includes('@lid')) {
         return null;
     }
 
     try {
-        const connection = await pool.getConnection();
-        try {
-            const [rows] = await connection.execute(
-                'SELECT real_jid, phone_number, name, notify_name FROM lid_mappings WHERE lid = ? AND session_id = ? LIMIT 1',
-                [lid, sessionId]
-            );
-            
-            if (rows.length > 0) {
-                console.log(`[LID-RESOLVE] ${lid} -> ${rows[0].phone_number || rows[0].real_jid}`);
-                return rows[0];
+        // Buscar en la base de datos (solo lugar confiable donde están mapeados)
+        if (pool) {
+            const connection = await pool.getConnection();
+            try {
+                const [rows] = await connection.execute(
+                    'SELECT real_jid, phone_number, name, notify_name FROM lid_mappings WHERE lid = ? AND session_id = ? LIMIT 1',
+                    [lid, sessionId]
+                );
+                
+                if (rows.length > 0) {
+                    console.log(`[LID-RESOLVE] ${lid} -> ${rows[0].phone_number || rows[0].real_jid}`);
+                    return rows[0];
+                }
+            } finally {
+                connection.release();
             }
-            return null;
-        } finally {
-            connection.release();
         }
+        
+        // Los LIDs solo se pueden resolver cuando el contacto interactúa
+        // No hay API de WhatsApp para resolverlos directamente
+        console.log(`[LID-RESOLVE] ⚠️  LID no mapeado: ${lid} (se resolverá cuando el contacto envíe un mensaje)`);
+        return null;
     } catch (error) {
         console.error(`[LID-RESOLVE] Error resolviendo LID:`, error.message);
         return null;
@@ -2649,29 +2673,87 @@ async function performFullSync(sessionId, sock, userSessionId) {
                     // Guardar MIEMBROS del grupo
                     if (group.participants && group.participants.length > 0) {
                         console.log(`[FULL-SYNC] 👤 Guardando ${group.participants.length} miembros del grupo ${group.subject}`);
-                        
+
                         // Primero limpiar miembros existentes
                         await connection.query(
                             'DELETE FROM contact_group_members WHERE group_jid = ? AND session_id = ?',
                             [group.id, sessionId]
                         );
 
-                        // Insertar todos los miembros
-                        for (const participant of group.participants) {
-                            try {
-                                await connection.query(
-                                    `INSERT INTO contact_group_members (contact_jid, group_jid, is_admin, is_super_admin, session_id) 
-                                     VALUES (?, ?, ?, ?, ?)`,
-                                    [
-                                        participant.id,
-                                        group.id,
-                                        participant.admin === 'admin' || participant.admin === 'superadmin',
-                                        participant.admin === 'superadmin',
-                                        sessionId
-                                    ]
-                                );
-                            } catch (memberErr) {
-                                console.error(`[FULL-SYNC] Error guardando miembro ${participant.id}:`, memberErr.message);
+                        // Insertar todos los miembros con phone_number, name y notify_name
+                        // Procesar en lotes para evitar sobrecarga
+                        const BATCH_SIZE = 5;
+                        for (let i = 0; i < group.participants.length; i += BATCH_SIZE) {
+                            const batch = group.participants.slice(i, i + BATCH_SIZE);
+                            
+                            await Promise.all(batch.map(async (participant) => {
+                                try {
+                                    const contactJid = participant.id;
+                                    const isAdmin = participant.admin === 'admin' || participant.admin === 'superadmin';
+                                    const isSuperAdmin = participant.admin === 'superadmin';
+
+                                    // Extraer número de teléfono del JID
+                                    let participantPhone = null;
+                                    let participantName = null;
+                                    let participantNotifyName = null;
+                                    
+                                    if (contactJid.includes('@s.whatsapp.net')) {
+                                        // JID normal: "5491112345678@s.whatsapp.net"
+                                        participantPhone = contactJid.split('@')[0];
+                                    } else if (contactJid.includes('@lid')) {
+                                        // LID: intentar resolver usando la función mejorada
+                                        const lidInfo = await resolveLid(contactJid, sessionId, sock);
+                                        if (lidInfo && lidInfo.phone_number) {
+                                            participantPhone = lidInfo.phone_number;
+                                            participantName = lidInfo.name;
+                                            participantNotifyName = lidInfo.notify_name;
+                                            console.log(`[FULL-SYNC] ✅ LID resuelto: ${contactJid} -> ${participantPhone}`);
+                                        } else {
+                                            console.log(`[FULL-SYNC] ⚠️  LID no resuelto: ${contactJid}`);
+                                        }
+                                    } else if (typeof contactJid === 'string' && contactJid.match(/^\d+$/)) {
+                                        // Solo números
+                                        participantPhone = contactJid;
+                                    }
+
+                                    // Si no obtuvimos nombre del LID, buscar en contacts
+                                    if (!participantName && !participantNotifyName) {
+                                        try {
+                                            const [contactRows] = await connection.query(
+                                                'SELECT name, notify_name FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
+                                                [contactJid, sessionId]
+                                            );
+                                            if (contactRows.length > 0) {
+                                                participantName = contactRows[0].name;
+                                                participantNotifyName = contactRows[0].notify_name;
+                                            }
+                                        } catch (err) {
+                                            // Ignorar error
+                                        }
+                                    }
+
+                                    await connection.query(
+                                        `INSERT INTO contact_group_members (contact_jid, group_jid, is_admin, is_super_admin, session_id, phone_number, name, notify_name)
+                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                                        [
+                                            contactJid,
+                                            group.id,
+                                            isAdmin,
+                                            isSuperAdmin,
+                                            sessionId,
+                                            participantPhone,
+                                            participantName,
+                                            participantNotifyName
+                                        ]
+                                    );
+                                } catch (memberErr) {
+                                    console.error(`[FULL-SYNC] Error guardando miembro ${participant.id}:`, memberErr.message);
+                                }
+                            }));
+                            
+                            // Pequeña pausa entre lotes
+                            if (i + BATCH_SIZE < group.participants.length) {
+                                await new Promise(resolve => setTimeout(resolve, 100));
                             }
                         }
                     }
@@ -6225,6 +6307,149 @@ app.post('/api/send/message', async (req, res) => {
     }
 });
 
+// Endpoint específico para agentes - obtener mensajes de un chat
+app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
+    const { sessionId, chatJid } = req.params;
+    const { limit = 100 } = req.query;
+
+    console.log('[AGENT-MESSAGES] 📥 Obteniendo mensajes:', { sessionId, chatJid, limit });
+
+    if (!pool) {
+        return res.status(503).json({ success: false, error: 'DB no disponible' });
+    }
+
+    try {
+        // Obtener el número de teléfono del sessionId
+        let phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            phoneNumber = sessionId;
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            const [messages] = await connection.execute(
+                `SELECT
+                    m.id, m.session_id, m.chat_jid, m.sender_jid,
+                    m.from_me, m.message_type, m.text_content, m.media_url,
+                    m.timestamp, m.status, m.sender_name, m.sender_avatar
+                FROM messages m
+                WHERE (m.session_id = ? OR m.phone_number = ?)
+                  AND m.chat_jid = ?
+                ORDER BY m.timestamp ASC
+                LIMIT ?`,
+                [phoneNumber, phoneNumber, chatJid, parseInt(limit, 10)]
+            );
+
+            console.log('[AGENT-MESSAGES] ✅ Encontrados:', messages.length, 'mensajes');
+
+            // Marcar como leídos los mensajes recibidos
+            await connection.execute(
+                `UPDATE messages SET is_read = true
+                 WHERE chat_jid = ?
+                   AND (session_id = ? OR phone_number = ?)
+                   AND from_me = false
+                   AND COALESCE(is_read, false) = false`,
+                [chatJid, phoneNumber, phoneNumber]
+            );
+
+            res.json({
+                success: true,
+                messages: messages.map(msg => ({
+                    id: msg.id,
+                    chatJid: msg.chat_jid,
+                    senderJid: msg.sender_jid,
+                    from_me: msg.from_me,
+                    message_type: msg.message_type,
+                    text_content: msg.text_content,
+                    media_url: msg.media_url,
+                    timestamp: msg.timestamp,
+                    status: msg.status,
+                    sender_name: msg.sender_name,
+                    sender_avatar: msg.sender_avatar
+                }))
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[AGENT-MESSAGES] ❌ Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Endpoint específico para agentes - enviar mensajes
+app.post('/api/messages/send', async (req, res) => {
+    const { sessionId, chatJid, message } = req.body;
+    
+    console.log('[AGENT-SEND] 📤 Recibida solicitud de envío:', { sessionId, chatJid, message: message?.substring(0, 50) });
+    
+    if (!sessionId || !chatJid || !message) {
+        console.log('[AGENT-SEND] ❌ Faltan parámetros');
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Faltan parámetros: sessionId, chatJid, message' 
+        });
+    }
+
+    const session = sessions.get(sessionId);
+    if (!session || !session.sock || !session.isConnected) {
+        console.log('[AGENT-SEND] ❌ Sesión no encontrada o no conectada');
+        return res.status(400).json({ 
+            success: false, 
+            error: 'Sesión de WhatsApp no disponible' 
+        });
+    }
+
+    try {
+        const jid = chatJid.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`;
+        console.log('[AGENT-SEND] 📱 Enviando a:', jid);
+        
+        // Enviar mensaje a WhatsApp
+        const sentResult = await session.sock.sendMessage(jid, { text: message });
+        console.log('[AGENT-SEND] ✅ Mensaje enviado a WhatsApp, ID:', sentResult.key.id);
+        
+        const ownJid = session.sock?.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net';
+        
+        // Guardar en base de datos
+        const dbMessage = {
+            id: sentResult.key.id,
+            chat_jid: jid,
+            sender_jid: ownJid,
+            from_me: true,
+            message_type: 'text',
+            text_content: message,
+            timestamp: new Date(Number(sentResult.messageTimestamp) * 1000 || Date.now()),
+            status: 'pending'
+        };
+        await saveMessageToDB(sessionId, dbMessage);
+        console.log('[AGENT-SEND] 💾 Mensaje guardado en BD');
+        
+        // Emitir evento Socket.IO para actualización en tiempo real
+        io.to(`session-${sessionId}`).emit('message', {
+            id: dbMessage.id,
+            chatJid: jid,
+            message: message,
+            timestamp: dbMessage.timestamp.toISOString(),
+            from_me: true,
+            status: 'sent'
+        });
+        console.log('[AGENT-SEND] 📡 Evento Socket.IO emitido');
+        
+        res.json({ 
+            success: true, 
+            messageId: sentResult.key.id,
+            message: 'Mensaje enviado correctamente'
+        });
+    } catch (error) {
+        console.error('[AGENT-SEND] ❌ Error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Error al enviar mensaje', 
+            details: error.message 
+        });
+    }
+});
+
 // Enviar archivo multimedia (imagen, video, audio, documento)
 app.post('/api/send/media', upload.single('file'), async (req, res) => {
     const { sessionId, number } = req.body;
@@ -7636,9 +7861,16 @@ app.get('/api/group-contacts/:sessionId/:groupId', async (req, res) => {
 
             console.log(`[API-GROUP-CONTACTS] Grupo: ${metadata.subject}, Participantes: ${metadata.participants?.length || 0}`);
             
-            // Debug: Ver estructura completa del primer participante
+            // Debug: Ver estructura completa de TODOS los participantes
             if (metadata.participants && metadata.participants.length > 0) {
-                console.log(`[API-GROUP-CONTACTS] DEBUG Primer participante:`, JSON.stringify(metadata.participants[0]));
+                console.log(`[API-GROUP-PARTICIPANTS] ========== DEBUG METADATA ==========`);
+                console.log(`[API-GROUP-PARTICIPANTS] Grupo: ${metadata.subject || metadata.id}`);
+                console.log(`[API-GROUP-PARTICIPANTS] Total participantes: ${metadata.participants.length}`);
+                console.log(`[API-GROUP-PARTICIPANTS] Primeros 3 participantes COMPLETOS:`);
+                metadata.participants.slice(0, 3).forEach((p, i) => {
+                    console.log(`[API-GROUP-PARTICIPANTS] Participante ${i + 1}:`, JSON.stringify(p, null, 2));
+                });
+                console.log(`[API-GROUP-PARTICIPANTS] ====================================`);
             }
 
             // Obtener conexión a la base de datos para buscar nombres
@@ -7784,74 +8016,101 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
             
             let participants = [];
             try {
-                // Formatear participantes
-                const participantsPromises = (metadata.participants || []).map(async participant => {
-                    const jid = participant.id;
-                    let phone = jid.split('@')[0];
-                    let name = phone;
+                // Procesar participantes en lotes pequeños para evitar "Queue limit reached"
+                const BATCH_SIZE = 5; // Procesar 5 participantes a la vez
+                const allParticipants = metadata.participants || [];
+                
+                console.log(`[API-GROUP-PARTICIPANTS] Procesando ${allParticipants.length} participantes en lotes de ${BATCH_SIZE}...`);
+                
+                for (let i = 0; i < allParticipants.length; i += BATCH_SIZE) {
+                    const batch = allParticipants.slice(i, i + BATCH_SIZE);
                     
-                    // Si es LID, intentar resolver primero
-                    if (jid.includes('@lid')) {
-                        const lidInfo = await resolveLid(jid, phoneNumber);
-                        if (lidInfo) {
-                            phone = lidInfo.phone_number || phone;
-                            name = lidInfo.name || lidInfo.notify_name || phone;
-                            console.log(`[API-GROUP-PARTICIPANTS] LID resuelto: ${jid} -> ${phone} (${name})`);
-                        } else {
-                            console.log(`[API-GROUP-PARTICIPANTS] LID no resuelto aún: ${jid}`);
-                        }
-                    }
-                    
-                    // Primero buscar en la tabla contact_group_members que ya tiene phone_number y name
-                    try {
-                        const [memberRows] = await connection.execute(
-                            `SELECT phone_number, name, notify_name 
-                             FROM contact_group_members 
-                             WHERE contact_jid = ? AND group_jid = ? AND session_id = ? 
-                             LIMIT 1`,
-                            [jid, groupId, phoneNumber]
-                        );
+                    const batchResults = await Promise.all(batch.map(async participant => {
+                        const jid = participant.id;
+                        let phone = jid.split('@')[0];
+                        let name = null;
+                        let isLid = jid.includes('@lid');
                         
-                        if (memberRows.length > 0 && memberRows[0].phone_number) {
-                            phone = memberRows[0].phone_number;
-                            name = memberRows[0].name || memberRows[0].notify_name || phone;
-                            console.log(`[API-GROUP-PARTICIPANTS] Encontrado en members: ${jid} -> ${phone} (${name})`);
-                        } else {
-                            // Si no está en members, buscar en contacts
-                            const [contactRows] = await connection.execute(
-                                'SELECT name, notify_name FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
-                                [jid, phoneNumber]
-                            );
-                            
-                            if (contactRows.length > 0) {
-                                name = contactRows[0].name || contactRows[0].notify_name || phone;
-                            } else {
-                                // Como último recurso, intentar obtener de WhatsApp
-                                try {
-                                    const waName = await session.sock.getName(jid);
-                                    if (waName && waName !== phone && !waName.includes('@')) {
-                                        name = waName;
+                        // Si es LID, intentar resolver primero
+                        if (isLid) {
+                            const lidInfo = await resolveLid(jid, phoneNumber, session.sock);
+                            if (lidInfo && lidInfo.phone_number) {
+                                phone = lidInfo.phone_number;
+                                name = lidInfo.name || lidInfo.notify_name;
+                                isLid = false; // Ya se resolvió
+                                console.log(`[API-GROUP-PARTICIPANTS] ✅ LID resuelto: ${jid} -> ${phone} (${name || 'sin nombre'})`);
+                            }
+                        } else if (jid.includes('@s.whatsapp.net')) {
+                            phone = jid.split('@')[0];
+                        }
+                        
+                        // Buscar nombre si aún no lo tenemos
+                        if (!name) {
+                            try {
+                                // Primero buscar en contact_group_members
+                                const [memberRows] = await connection.execute(
+                                    `SELECT phone_number, name, notify_name 
+                                     FROM contact_group_members 
+                                     WHERE contact_jid = ? AND group_jid = ? AND session_id = ? 
+                                     LIMIT 1`,
+                                    [jid, groupId, phoneNumber]
+                                );
+                                
+                                if (memberRows.length > 0) {
+                                    if (memberRows[0].phone_number && !isLid) {
+                                        phone = memberRows[0].phone_number;
                                     }
-                                } catch (nameErr) {
-                                    // Ignorar error, usar número
+                                    name = memberRows[0].name || memberRows[0].notify_name;
                                 }
+                                
+                                // Si no hay nombre, buscar en contacts
+                                if (!name) {
+                                    const [contactRows] = await connection.execute(
+                                        'SELECT name, notify_name FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
+                                        [jid, phoneNumber]
+                                    );
+                                    
+                                    if (contactRows.length > 0) {
+                                        name = contactRows[0].name || contactRows[0].notify_name;
+                                    }
+                                }
+                                
+                                // Como último recurso, obtener de WhatsApp
+                                if (!name && !isLid) {
+                                    try {
+                                        const waName = await session.sock.getName(jid);
+                                        if (waName && waName !== phone && !waName.includes('@')) {
+                                            name = waName;
+                                        }
+                                    } catch (nameErr) {
+                                        // Ignorar
+                                    }
+                                }
+                            } catch (dbError) {
+                                console.error(`[API-GROUP-PARTICIPANTS] Error buscando contacto ${jid}:`, dbError);
                             }
                         }
-                    } catch (dbError) {
-                        console.error(`[API-GROUP-PARTICIPANTS] Error buscando contacto ${jid}:`, dbError);
-                    }
+                        
+                        return {
+                            id: jid,
+                            jid: jid,
+                            phone: isLid ? null : phone, // No mostrar número si es LID no resuelto
+                            name: name || 'Usuario de WhatsApp',
+                            isAdmin: participant.admin === 'admin' || participant.admin === 'superadmin',
+                            isSuperAdmin: participant.admin === 'superadmin',
+                            isUnresolved: isLid // Flag para indicar que es LID no resuelto
+                        };
+                    }));
                     
-                    return {
-                        id: jid,
-                        jid: jid,
-                        phone: phone,
-                        name: name,
-                        isAdmin: participant.admin === 'admin' || participant.admin === 'superadmin',
-                        isSuperAdmin: participant.admin === 'superadmin'
-                    };
-                });
+                    participants.push(...batchResults);
+                    
+                    // Pequeña pausa entre lotes para dar respiro a la DB
+                    if (i + BATCH_SIZE < allParticipants.length) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                }
                 
-                participants = await Promise.all(participantsPromises);
+                console.log(`[API-GROUP-PARTICIPANTS] Procesamiento completado: ${participants.length} participantes`);
                 
                 connection.release();
             } catch (dbError) {
@@ -10570,23 +10829,55 @@ app.post('/api/groups/sync/:sessionId', async (req, res) => {
         if (groupFetchResult && typeof groupFetchResult === 'object') {
             for (const [jid, groupData] of Object.entries(groupFetchResult)) {
                 if (jid.includes('@g.us') && typeof groupData === 'object') {
-                    // Guardar grupo
-                    await getOrInsertWhatsAppGroup(
-                        jid,
-                        groupData.subject || groupData.name || 'Grupo',
-                        groupData.subject || groupData.name || 'Grupo',
-                        phoneNumber,
-                        groupData
-                    );
-                    
-                    // Guardar miembros del grupo
-                    const participants = groupData.participants || [];
-                    if (participants.length > 0) {
-                        await insertGroupMembers(jid, participants, phoneNumber);
-                        membersCount += participants.length;
+                    try {
+                        // Obtener metadatos completos del grupo incluyendo participantes
+                        console.log(`[${sessionId}] 📥 Obteniendo metadatos de ${groupData.subject || jid}...`);
+                        const metadata = await session.sock.groupMetadata(jid).catch(err => {
+                            console.error(`[${sessionId}] Error obteniendo metadatos de ${jid}:`, err);
+                            return null;
+                        });
+                        
+                        let participants = [];
+                        let participantCount = 0;
+                        
+                        if (metadata && metadata.participants) {
+                            participants = metadata.participants;
+                            participantCount = participants.length;
+                        } else if (groupData.participants) {
+                            participants = groupData.participants;
+                            participantCount = participants.length;
+                        }
+                        
+                        // Guardar grupo con el contador correcto
+                        const groupDbId = await getOrInsertWhatsAppGroup(
+                            jid,
+                            groupData.subject || groupData.name || 'Grupo',
+                            groupData.subject || groupData.name || 'Grupo',
+                            phoneNumber,
+                            { ...groupData, participants: participants, participantCount: participantCount }
+                        );
+                        
+                        // Guardar miembros del grupo
+                        if (participants.length > 0) {
+                            console.log(`[${sessionId}] 👥 Guardando ${participants.length} miembros de ${groupData.subject || jid}`);
+                            await insertGroupMembers(jid, participants, phoneNumber);
+                            membersCount += participants.length;
+                            
+                            // Actualizar el contador en la base de datos
+                            if (pool) {
+                                const connection = await pool.getConnection();
+                                await connection.query(
+                                    'UPDATE contact_groups SET participants_count = ? WHERE jid = ? AND session_id = ?',
+                                    [participants.length, jid, phoneNumber]
+                                );
+                                connection.release();
+                            }
+                        }
+                        
+                        syncedCount++;
+                    } catch (groupError) {
+                        console.error(`[${sessionId}] Error procesando grupo ${jid}:`, groupError);
                     }
-                    
-                    syncedCount++;
                 }
             }
         }
@@ -13092,6 +13383,83 @@ app.put('/api/users/:userId/assign-session', async (req, res) => {
     }
 });
 
+// GET - Obtener sessionId y phoneNumber del usuario (para agentes)
+app.get('/api/users/:userId/session', async (req, res) => {
+    const { userId } = req.params;
+    
+    if (!pool) {
+        return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+    
+    try {
+        const connection = await pool.getConnection();
+        
+        try {
+            // Obtener datos del usuario (role, admin_phone)
+            const [users] = await connection.execute(
+                'SELECT role, admin_phone, session_id FROM users WHERE id = ?',
+                [userId]
+            );
+            
+            if (users.length === 0) {
+                return res.json({ success: false, message: 'Usuario no encontrado' });
+            }
+            
+            const user = users[0];
+            let sessionId = null;
+            let phoneNumber = null;
+            
+            // Si es agente, obtener session_id del admin
+            if (user.role === 'agent' && user.admin_phone) {
+                // Buscar sesión activa del admin
+                const [adminSessions] = await connection.execute(
+                    'SELECT session_id, phone_number FROM user_sessions WHERE phone_number = ? AND is_active = 1 ORDER BY last_activity DESC LIMIT 1',
+                    [user.admin_phone]
+                );
+                
+                if (adminSessions.length > 0) {
+                    sessionId = adminSessions[0].session_id;
+                    phoneNumber = adminSessions[0].phone_number;
+                    console.log(`[AGENT-SESSION] ✅ Agente ${userId} usando sesión del admin: ${sessionId} (${phoneNumber})`);
+                } else {
+                    return res.json({ 
+                        success: false, 
+                        message: 'Admin sin sesión activa de WhatsApp' 
+                    });
+                }
+            } else {
+                // Si es admin, usar su propia sesión
+                sessionId = user.session_id;
+                if (sessionId) {
+                    const [sessions] = await connection.execute(
+                        'SELECT phone_number FROM user_sessions WHERE session_id = ?',
+                        [sessionId]
+                    );
+                    if (sessions.length > 0) {
+                        phoneNumber = sessions[0].phone_number;
+                    }
+                }
+            }
+            
+            if (!sessionId) {
+                return res.json({ success: false, message: 'Sin sesión disponible' });
+            }
+            
+            res.json({
+                success: true,
+                sessionId,
+                phoneNumber
+            });
+            
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[USER-SESSION] Error obteniendo sesión:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // GET - Estadísticas de usuarios
 // ============= ASIGNACIÓN Y TRANSFERENCIA DE CHATS =============
 
@@ -13913,11 +14281,27 @@ app.post('/api/chats/transfer', async (req, res) => {
     try {
         const connection = await pool.getConnection();
         try {
+            // IMPORTANTE: Obtener el session_id correcto del agente destino
+            const [agentData] = await connection.execute(
+                'SELECT session_id FROM users WHERE id = ?',
+                [toAgentId]
+            );
+
+            if (agentData.length === 0 || !agentData[0].session_id) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'El agente no tiene una sesión asignada'
+                });
+            }
+
+            const agentSessionId = agentData[0].session_id;
+            console.log(`[TRANSFER] 📝 Session ID del agente destino: ${agentSessionId}`);
+
             // Verificar si ya existe una asignación activa para este chat y agente
             const [existingAssignments] = await connection.execute(
                 `SELECT id FROM chat_assignments 
-                 WHERE chat_jid = ? AND session_id = ? AND user_id = ? AND status = 'active'`,
-                [chatJid, sessionId, toAgentId]
+                 WHERE chat_jid = ? AND user_id = ? AND status = 'active'`,
+                [chatJid, toAgentId]
             );
 
             if (existingAssignments.length > 0) {
@@ -13928,11 +14312,11 @@ app.post('/api/chats/transfer', async (req, res) => {
                 });
             }
 
-            // Buscar asignación actual (de otro agente)
+            // Buscar asignación actual (de cualquier agente)
             const [currentAssignments] = await connection.execute(
                 `SELECT id FROM chat_assignments 
-                 WHERE chat_jid = ? AND session_id = ? AND status = 'active'`,
-                [chatJid, sessionId]
+                 WHERE chat_jid = ? AND status = 'active'`,
+                [chatJid]
             );
 
             if (currentAssignments.length > 0) {
@@ -13943,13 +14327,13 @@ app.post('/api/chats/transfer', async (req, res) => {
                 );
             }
 
-            // Crear nueva asignación para el agente destino
+            // Crear nueva asignación para el agente destino usando SU session_id
             await connection.execute(
                 `INSERT INTO chat_assignments (chat_jid, session_id, user_id, assigned_by, status, notes)
                  VALUES (?, ?, ?, ?, 'active', ?)`,
                 [
                     chatJid,
-                    sessionId,
+                    agentSessionId,  // ← Usar el session_id del agente, no el que viene del request
                     toAgentId,
                     fromAgentId || null,
                     `Transferido ${fromAgentId ? `desde agente ID ${fromAgentId}` : 'manualmente'}`
