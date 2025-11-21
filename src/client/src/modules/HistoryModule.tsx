@@ -483,7 +483,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
             timestamp: msg.timestamp || new Date().toISOString(),
             isFromMe: msg.fromMe || msg.from_me || false,
             status: msg.status || 'sent',
-            agentName: msg.senderName || 'Sistema',
+            agentName: msg.agentName || msg.agent_name || 'Sistema',
             labels: [],
             priority: 'medium',
             sentiment: 'neutral',
@@ -514,7 +514,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
               lastMessageTime: msg.timestamp || new Date().toISOString(),
               duration: 0,
               status: 'active',
-              agentName: 'Sistema',
+              agentName: msg.agentName || 'Sistema',
               labels: [],
               responseTime: 0
             });
@@ -525,6 +525,10 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           if (new Date(msg.timestamp || 0) > new Date(conv.lastMessageTime || 0)) {
             conv.lastMessage = msg.content || 'Sin mensaje';
             conv.lastMessageTime = msg.timestamp || new Date().toISOString();
+            // Actualizar agentName si el mensaje más reciente tiene uno
+            if (msg.agentName) {
+              conv.agentName = msg.agentName;
+            }
           }
         });
 

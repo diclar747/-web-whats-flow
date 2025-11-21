@@ -72,8 +72,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setUser(userData.user);
             console.log('✅ Sesión restaurada correctamente');
           } else {
-            console.log('❌ Token inválido, limpiando sesión');
-            sessionStorage.clear();
+            // No limpiar sesión inmediatamente, puede ser problema temporal
+            console.log('⚠️ Token no verificado, pero manteniendo para re-login');
+            // Solo limpiar si el error es 401 (no autorizado), no 403 (forbidden/dispositivo diferente)
+            if (response.status === 401) {
+              console.log('❌ Token expirado/inválido (401), limpiando sesión');
+              sessionStorage.clear();
+            } else {
+              console.log('⚠️ Error ' + response.status + ', manteniendo sesión para re-autenticación');
+            }
           }
         } else {
           console.log('ℹ️ No se encontró token - nueva sesión requerida (debe autenticarse)');

@@ -426,19 +426,38 @@ module.exports = function(app, pool) {
 
                 console.log(`✅ Chat ${chat_jid} transferido a usuario ${to_user_id} por ${req.user.name}`);
 
-                // Emitir evento Socket.IO para notificar al agente
+                // Emitir eventos Socket.IO para notificar al agente
                 try {
                     const io = app.get('io');
                     if (io) {
-                        io.emit('chat_transferred', {
-                            chat_jid,
-                            session_id,
-                            to_user_id,
-                            assigned_by: req.user.name,
-                            assigned_by_id: req.user.id,
-                            timestamp: new Date()
-                        });
-                        console.log(`📡 Evento chat_transferred emitido para usuario ${to_user_id}`);
+                        // Obtener nombre del contacto para la notificación
+                        const [contactInfo] = await connection.execute(`
+                            SELECT COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as contact_name
+                            FROM (SELECT 1) as dummy
+                            LEFT JOIN contacts c ON c.jid = ? AND c.session_id = ?
+                            LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
+                            LIMIT 1
+                        `, [chat_jid, chat_jid, session_id, chat_jid, session_id]);
+
+                        const chatName = contactInfo[0]?.contact_name || chat_jid.replace('@s.whatsapp.net', '');
+
+                        const eventData = {
+                            chatJid: chat_jid,
+                            chatName: chatName,
+                            sessionId: session_id,
+                            agentId: to_user_id,
+                            assignedBy: req.user.name,
+                            assignedById: req.user.id,
+                            timestamp: new Date().toISOString()
+                        };
+
+                        // Emitir múltiples eventos para asegurar que el frontend los capture
+                        io.emit('chat_transferred', eventData); // Evento general
+                        io.emit(`agent-${to_user_id}-new-chat`, eventData); // Evento específico del agente
+                        io.emit('chat:assigned', eventData); // Evento alternativo
+                        io.emit('chat-assignment-changed', eventData); // Evento de cambio
+
+                        console.log(`📡 Eventos de transferencia emitidos para agente ${to_user_id} (chat: ${chatName})`);
                     }
                 } catch (ioError) {
                     console.warn('⚠️ Error emitiendo evento Socket.IO:', ioError);
@@ -910,8 +929,15 @@ module.exports = function(app, pool) {
 
             const connection = await pool.getConnection();
             try {
+                // Obtener phoneNumber del sessionId
+                const [sessionInfo] = await connection.execute(
+                    `SELECT phone_number FROM user_sessions WHERE session_id = ? LIMIT 1`,
+                    [sessionId]
+                );
+                const phoneNumber = sessionInfo[0]?.phone_number || null;
+
                 const [messages] = await connection.execute(`
-                    SELECT 
+                    SELECT
                         m.id,
                         m.chat_jid,
                         m.sender_jid,
@@ -926,11 +952,11 @@ module.exports = function(app, pool) {
                         c.name as contact_name,
                         c.avatar_url as contact_avatar
                     FROM messages m
-                    LEFT JOIN contacts c ON m.sender_jid = c.jid AND m.session_id = c.session_id
+                    LEFT JOIN contacts c ON m.sender_jid = c.jid AND c.session_id = ?
                     WHERE m.session_id = ? AND m.chat_jid = ?
                     ORDER BY m.timestamp DESC
                     LIMIT ? OFFSET ?
-                `, [sessionId, chatJid, parseInt(limit), parseInt(offset)]);
+                `, [phoneNumber, sessionId, chatJid, parseInt(limit), parseInt(offset)]);
 
                 console.log('[MESSAGES-GET] ✅ Mensajes obtenidos:', messages.length);
 
@@ -966,10 +992,24 @@ module.exports = function(app, pool) {
             const connection = await pool.getConnection();
             try {
                 console.log('[AGENT-CHATS-BY-ID] 🔍 Agente:', agentId, 'SessionId:', sessionId);
-                
+
+                // Si se proporciona sessionId, intentar obtener el sessionId real desde user_sessions
+                let actualSessionId = sessionId;
+                if (sessionId) {
+                    // Verificar si sessionId es un phoneNumber (solo números) y convertirlo
+                    const [sessionInfo] = await connection.execute(
+                        `SELECT session_id FROM user_sessions WHERE session_id = ? OR phone_number = ? LIMIT 1`,
+                        [sessionId, sessionId]
+                    );
+                    if (sessionInfo.length > 0) {
+                        actualSessionId = sessionInfo[0].session_id;
+                        console.log('[AGENT-CHATS-BY-ID] ✅ SessionId resuelto:', actualSessionId);
+                    }
+                }
+
                 // Obtener chats asignados con información completa
                 let query = `
-                    SELECT 
+                    SELECT
                         ca.chat_jid,
                         ca.session_id,
                         ca.user_id,
@@ -978,49 +1018,49 @@ module.exports = function(app, pool) {
                         COALESCE(c.name, cg.name, SUBSTRING_INDEX(ca.chat_jid, '@', 1)) as contact_name,
                         COALESCE(c.avatar_url, cg.avatar_url, '') as avatar_url,
                         COALESCE(c.is_group, cg.jid IS NOT NULL, 0) as is_group,
-                        (SELECT COUNT(*) FROM messages m 
-                         WHERE m.chat_jid = ca.chat_jid 
+                        (SELECT COUNT(*) FROM messages m
+                         WHERE m.chat_jid = ca.chat_jid
                          AND m.session_id = ca.session_id) as message_count,
-                        (SELECT MAX(m.timestamp) FROM messages m 
-                         WHERE m.chat_jid = ca.chat_jid 
+                        (SELECT MAX(m.timestamp) FROM messages m
+                         WHERE m.chat_jid = ca.chat_jid
                          AND m.session_id = ca.session_id) as last_message_time,
-                        (SELECT m.text_content FROM messages m 
-                         WHERE m.chat_jid = ca.chat_jid 
-                         AND m.session_id = ca.session_id 
+                        (SELECT m.text_content FROM messages m
+                         WHERE m.chat_jid = ca.chat_jid
+                         AND m.session_id = ca.session_id
                          ORDER BY m.timestamp DESC LIMIT 1) as last_message_text,
-                        (SELECT COUNT(*) FROM messages m 
-                         WHERE m.chat_jid = ca.chat_jid 
-                         AND m.session_id = ca.session_id 
-                         AND m.from_me = 0 
+                        (SELECT COUNT(*) FROM messages m
+                         WHERE m.chat_jid = ca.chat_jid
+                         AND m.session_id = ca.session_id
+                         AND m.from_me = 0
                          AND (m.is_read = 0 OR m.is_read IS NULL)) as unread_count
                     FROM chat_assignments ca
                     LEFT JOIN contacts c ON ca.chat_jid = c.jid AND ca.session_id = c.session_id
                     LEFT JOIN contact_groups cg ON ca.chat_jid = cg.jid AND ca.session_id = cg.session_id
                     WHERE ca.user_id = ? AND ca.status = 'active'
                 `;
-                
+
                 const params = [agentId];
-                
-                if (sessionId) {
+
+                if (actualSessionId) {
                     query += ' AND ca.session_id = ?';
-                    params.push(sessionId);
+                    params.push(actualSessionId);
                 }
                 
-                query += ' ORDER BY last_message_time DESC NULLS LAST';
+                query += ' ORDER BY last_message_time DESC';
                 
                 const [chats] = await connection.execute(query, params);
-                
+
                 console.log('[AGENT-CHATS-BY-ID] ✅ Chats encontrados:', chats.length);
-                
-                // Detectar sessionId si no se proporcionó
-                let detectedSessionId = sessionId;
-                if (!detectedSessionId && chats.length > 0) {
-                    detectedSessionId = chats[0].session_id;
+
+                // Usar actualSessionId o detectarlo de los chats encontrados
+                let finalSessionId = actualSessionId;
+                if (!finalSessionId && chats.length > 0) {
+                    finalSessionId = chats[0].session_id;
                 }
-                
+
                 res.json({
                     success: true,
-                    sessionId: detectedSessionId,
+                    sessionId: finalSessionId,
                     chats: chats,
                     count: chats.length
                 });

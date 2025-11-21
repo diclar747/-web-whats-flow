@@ -147,8 +147,22 @@ const AgentDashboard: React.FC = () => {
       });
 
       const data = await response.json();
+      console.log('[AGENT-LOAD-CHATS] Respuesta del backend:', data);
+      
       if (data.success) {
-        setChats(data.chats || []);
+        // Mapear los datos del backend al formato del frontend
+        const mappedChats = (data.chats || []).map((chat: any) => ({
+          id: chat.chat_jid,
+          name: chat.contact_name || chat.chat_jid.replace('@s.whatsapp.net', ''),
+          avatar: chat.avatar_url || '',
+          lastMessage: chat.last_message_text || 'Sin mensajes',
+          timestamp: chat.last_message_time || chat.assigned_at,
+          unreadCount: chat.unread_count || 0,
+          assignedAt: chat.assigned_at
+        }));
+        
+        console.log('[AGENT-LOAD-CHATS] Chats mapeados:', mappedChats.length);
+        setChats(mappedChats);
       }
     } catch (err) {
       console.error('Error loading chats:', err);

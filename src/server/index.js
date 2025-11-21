@@ -3687,8 +3687,35 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 } else {
                                     // Si ya existe, actualizar el session_id si es necesario
                                     if (!existingUser[0].session_id || existingUser[0].session_id !== sessionId) {
+                                        const oldSessionId = existingUser[0].session_id;
                                         await pool.query('UPDATE users SET session_id = ? WHERE phone = ?', [sessionId, userPhoneNumber]);
-                                        console.log(`[${sessionId}] ✅ Usuario existente actualizado con nuevo session_id=${sessionId}`);
+                                        console.log(`[${sessionId}] ✅ Usuario existente actualizado con nuevo session_id=${sessionId} (anterior: ${oldSessionId})`);
+
+                                        // 🚀 NUEVO: Actualizar automáticamente todos los chat_assignments de TODOS los agentes
+                                        try {
+                                            if (oldSessionId) {
+                                                const [updateResult] = await pool.query(
+                                                    'UPDATE chat_assignments SET session_id = ? WHERE session_id = ? AND status = "active"',
+                                                    [sessionId, oldSessionId]
+                                                );
+                                                const rowsUpdated = updateResult.affectedRows || 0;
+                                                console.log(`[${sessionId}] 🔄 Chat assignments actualizados: ${rowsUpdated} chats migrados de sessionId ${oldSessionId} → ${sessionId}`);
+
+                                                if (rowsUpdated > 0) {
+                                                    // Emitir evento a TODOS los agentes para que recarguen sus chats
+                                                    io.emit('session-updated', {
+                                                        oldSessionId: oldSessionId,
+                                                        newSessionId: sessionId,
+                                                        phoneNumber: userPhoneNumber,
+                                                        timestamp: new Date().toISOString(),
+                                                        message: 'Admin reconectó WhatsApp, chats actualizados'
+                                                    });
+                                                    console.log(`[${sessionId}] 📡 Evento session-updated emitido para notificar a agentes`);
+                                                }
+                                            }
+                                        } catch (updateErr) {
+                                            console.error(`[${sessionId}] ❌ Error actualizando chat_assignments:`, updateErr.message);
+                                        }
                                     } else {
                                         console.log(`[${sessionId}] ℹ️ Usuario ya existe en tabla users (auto_sync: ${existingUser[0].auto_sync}, session_id: ${existingUser[0].session_id})`);
                                     }
@@ -6582,6 +6609,174 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
     }
 });
 
+// Alias para envío de archivos multimedia desde AgentDashboardPro
+// Este endpoint es idéntico a /api/messages/send pero con un nombre más descriptivo
+app.post('/api/messages/send-media', upload.single('file'), async (req, res) => {
+    console.log('[SEND-MEDIA] 📎 Recibida solicitud de envío de archivo');
+    // Los parámetros son los mismos que /api/messages/send
+    // El handler ya está implementado arriba, así que simplemente lo procesamos igual
+    const { sessionId, chatJid, message, caption, agentId } = req.body;
+    const file = req.file;
+
+    // Usar caption si existe (para imágenes/videos)
+    req.body.message = caption || message || '';
+
+    console.log('[SEND-MEDIA] 📋 Parámetros:', {
+        sessionId,
+        chatJid,
+        agentId,
+        hasFile: !!file,
+        fileName: file?.originalname
+    });
+
+    // Validar parámetros
+    if (!sessionId || !chatJid || !file) {
+        console.log('[SEND-MEDIA] ❌ Faltan parámetros');
+        return res.status(400).json({
+            success: false,
+            error: 'Faltan parámetros: sessionId, chatJid y file son requeridos'
+        });
+    }
+
+    // Buscar la sesión activa
+    let session = sessions.get(sessionId);
+
+    if (!session || !session.isConnected) {
+        for (const [sessId, sess] of sessions.entries()) {
+            if (sess.isConnected && sess.sock) {
+                if (sessId === sessionId) {
+                    session = sess;
+                    break;
+                }
+                if (!session) {
+                    session = sess;
+                }
+            }
+        }
+    }
+
+    if (!session || !session.sock || !session.isConnected) {
+        console.log('[SEND-MEDIA] ❌ Sesión no disponible');
+        return res.status(400).json({
+            success: false,
+            error: 'Sesión de WhatsApp no disponible'
+        });
+    }
+
+    try {
+        const jid = chatJid.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`;
+        const fs = require('fs');
+        const path = require('path');
+
+        console.log('[SEND-MEDIA] 📎 Enviando archivo:', file.originalname);
+
+        const fileBuffer = fs.readFileSync(file.path);
+        const mimetype = file.mimetype;
+        let sentResult;
+        let messageType = 'document';
+
+        // Enviar según tipo de archivo
+        if (mimetype.startsWith('image/')) {
+            messageType = 'image';
+            sentResult = await session.sock.sendMessage(jid, {
+                image: fileBuffer,
+                caption: req.body.message || ''
+            });
+        } else if (mimetype.startsWith('video/')) {
+            messageType = 'video';
+            sentResult = await session.sock.sendMessage(jid, {
+                video: fileBuffer,
+                caption: req.body.message || ''
+            });
+        } else if (mimetype.startsWith('audio/')) {
+            messageType = 'audio';
+            sentResult = await session.sock.sendMessage(jid, {
+                audio: fileBuffer,
+                mimetype: 'audio/mp4'
+            });
+        } else {
+            sentResult = await session.sock.sendMessage(jid, {
+                document: fileBuffer,
+                mimetype: mimetype,
+                fileName: file.originalname
+            });
+        }
+
+        // Guardar archivo en carpeta media
+        const mediaDir = path.join(__dirname, 'media');
+        if (!fs.existsSync(mediaDir)) {
+            fs.mkdirSync(mediaDir, { recursive: true });
+        }
+
+        const newFileName = `${Date.now()}-${file.originalname}`;
+        const newFilePath = path.join(mediaDir, newFileName);
+        fs.copyFileSync(file.path, newFilePath);
+        fs.unlinkSync(file.path);
+
+        const mediaUrl = `/media/${newFileName}`;
+
+        console.log('[SEND-MEDIA] ✅ Archivo enviado, ID:', sentResult.key.id);
+
+        const ownJid = session.sock?.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net';
+        const actualSessionId = session.sessionId || sessionId;
+
+        // Guardar en BD
+        const dbMessage = {
+            id: sentResult.key.id,
+            chat_jid: jid,
+            sender_jid: ownJid,
+            from_me: true,
+            message_type: messageType,
+            text_content: req.body.message || '',
+            media_url: mediaUrl,
+            file_name: file.originalname,
+            file_size: file.size,
+            mime_type: mimetype,
+            timestamp: new Date(Number(sentResult.messageTimestamp) * 1000 || Date.now()),
+            status: 'pending',
+            assigned_user_id: agentId || null
+        };
+        await saveMessageToDB(actualSessionId, dbMessage);
+        console.log('[SEND-MEDIA] 💾 Guardado en BD');
+
+        // Emitir evento Socket.IO
+        io.to(`session-${actualSessionId}`).emit('message', {
+            id: dbMessage.id,
+            chatJid: jid,
+            message: req.body.message,
+            media_url: mediaUrl,
+            message_type: messageType,
+            timestamp: dbMessage.timestamp.toISOString(),
+            from_me: true,
+            status: 'sent'
+        });
+
+        if (agentId) {
+            io.to(`agent-${agentId}`).emit('message-sent', {
+                id: dbMessage.id,
+                chatJid: jid,
+                timestamp: dbMessage.timestamp.toISOString()
+            });
+        }
+
+        console.log('[SEND-MEDIA] 📡 Eventos emitidos');
+
+        res.json({
+            success: true,
+            messageId: sentResult.key.id,
+            mediaUrl: mediaUrl,
+            message: 'Archivo enviado correctamente'
+        });
+    } catch (error) {
+        console.error('[SEND-MEDIA] ❌ Error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error al enviar archivo',
+            details: error.message
+        });
+    }
+});
+
 // Enviar archivo multimedia (imagen, video, audio, documento)
 app.post('/api/send/media', upload.single('file'), async (req, res) => {
     const { sessionId, number } = req.body;
@@ -7394,10 +7589,13 @@ app.get('/api/history/messages', async (req, res) => {
                      COALESCE(c.name, c.notify_name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as chat_name,
                      m.sender_jid,
                      COALESCE(s.name, s.notify_name, SUBSTRING_INDEX(m.sender_jid, '@', 1)) as sender_name,
-                     m.from_me, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status
+                     m.from_me, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status,
+                     ag.username as agent_name, ag.name as agent_full_name
                      FROM messages m
                      LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id IN (${placeholders})
                      LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id IN (${placeholders})
+                     LEFT JOIN agent_chat_history ach ON m.chat_jid = ach.chat_jid AND ach.status = 'active'
+                     LEFT JOIN agents ag ON ach.agent_id = ag.id
                      WHERE m.session_id IN (${placeholders})`;
         const queryParams = [...sessionIds, ...sessionIds, ...sessionIds];
 
@@ -7450,7 +7648,8 @@ app.get('/api/history/messages', async (req, res) => {
             mediaMimeType: msg.media_mime_type,
             timestamp: new Date(msg.timestamp).toISOString(),
             type: msg.message_type,
-            status: msg.status
+            status: msg.status,
+            agentName: msg.agent_name || msg.agent_full_name || (msg.from_me ? 'Sistema' : '-')
         }));
         
         console.log(`[API-HISTORY] Returning ${historyMessages.length} messages, total: ${totalMessages}`);
@@ -14604,10 +14803,19 @@ app.get('/api/agents/:userId/chats', async (req, res) => {
     try {
         const connection = await pool.getConnection();
         try {
+            // Primero obtener el número de teléfono del sessionId
+            const [sessionInfo] = await connection.execute(
+                `SELECT phone_number FROM user_sessions WHERE session_id = ? LIMIT 1`,
+                [sessionId]
+            );
+
+            const phoneNumber = sessionInfo[0]?.phone_number || null;
+            console.log('[AGENTS-CHATS] SessionId:', sessionId, 'PhoneNumber:', phoneNumber);
+
             // Obtener todos los chats asignados activos al agente (GROUP BY para evitar duplicados)
-            // Incluye tanto contacts como contact_groups
+            // Usar phoneNumber para JOIN con contacts (que usa phone_number como session_id)
             const [assignments] = await connection.execute(
-                `SELECT 
+                `SELECT
                     ca.chat_jid,
                     ca.session_id,
                     MAX(ca.assigned_at) as assigned_at,
@@ -14619,25 +14827,25 @@ app.get('/api/agents/:userId/chats', async (req, res) => {
                     COALESCE(
                         MAX(CASE WHEN ca.chat_jid LIKE '%@g.us' THEN cg.avatar_url ELSE c.avatar_url END)
                     ) as avatar_url,
-                    (SELECT text_content FROM messages m 
-                     WHERE m.chat_jid = ca.chat_jid 
+                    (SELECT text_content FROM messages m
+                     WHERE m.chat_jid = ca.chat_jid
                      ORDER BY m.timestamp DESC LIMIT 1) as last_message,
-                    (SELECT timestamp FROM messages m 
-                     WHERE m.chat_jid = ca.chat_jid 
+                    (SELECT timestamp FROM messages m
+                     WHERE m.chat_jid = ca.chat_jid
                      ORDER BY m.timestamp DESC LIMIT 1) as last_message_time,
-                    (SELECT COUNT(*) FROM messages m 
-                     WHERE m.chat_jid = ca.chat_jid 
-                     AND m.from_me = 0 
+                    (SELECT COUNT(*) FROM messages m
+                     WHERE m.chat_jid = ca.chat_jid
+                     AND m.from_me = 0
                      AND m.status != 'read') as unread_count
                 FROM chat_assignments ca
-                LEFT JOIN contacts c ON c.jid = ca.chat_jid AND c.session_id = ca.session_id
-                LEFT JOIN contact_groups cg ON cg.jid = ca.chat_jid AND cg.session_id = ca.session_id
-                WHERE ca.user_id = ? 
+                LEFT JOIN contacts c ON c.jid = ca.chat_jid AND c.session_id = ?
+                LEFT JOIN contact_groups cg ON cg.jid = ca.chat_jid AND cg.session_id = ?
+                WHERE ca.user_id = ?
                 AND ca.session_id = ?
                 AND ca.status = 'active'
                 GROUP BY ca.chat_jid, ca.session_id
                 ORDER BY last_message_time DESC`,
-                [userId, sessionId]
+                [phoneNumber, phoneNumber, userId, sessionId]
             );
 
             // Formatear para que sea compatible con el formato de chats

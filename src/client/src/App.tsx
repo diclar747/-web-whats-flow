@@ -13,6 +13,7 @@ import AdminLogin from './pages/admin/AdminLogin';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AgentLogin from './pages/AgentLogin';
 import AgentDashboard from './pages/AgentDashboard';
+import AgentDashboardPro from './pages/AgentDashboardPro';
 import AdminChatAssignment from './pages/AdminChatAssignment';
 import AdminAgentManagement from './components/AdminAgentManagement';
 import AgentPermissionsManager from './components/AgentPermissionsManager';
@@ -153,7 +154,7 @@ const AppContent: React.FC<{
                       userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
                       userRole={user?.role}
                     >
-                      <AgentDashboard />
+                      <AgentDashboardPro />
                     </WhatsAppProvider>
                   );
                 })()
@@ -772,8 +773,8 @@ const App: React.FC = () => {
             {/* Listener de notificaciones de transferencia */}
             {user && <TransferNotificationListener />}
 
-            {/* Botón flotante de WhatsApp para soporte */}
-            <FloatingWhatsAppButton />
+            {/* Botón flotante de WhatsApp para soporte (NO mostrar en panel de agentes) */}
+            {user?.role !== 'agent' && <FloatingWhatsAppButton />}
 
             <AppContent
               sessionId={sessionId}

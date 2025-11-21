@@ -1,0 +1,1589 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Box,
+  Avatar,
+  Typography,
+  TextField,
+  IconButton,
+  List,
+  ListItem,
+  ListItemAvatar,
+  ListItemText,
+  Badge,
+  AppBar,
+  Toolbar,
+  Button,
+  InputAdornment,
+  Paper,
+  CircularProgress,
+  Chip,
+  Divider,
+  Menu,
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Tooltip,
+  LinearProgress,
+  Card,
+  CardMedia,
+  Fade,
+  Zoom,
+  Alert,
+  Snackbar,
+  Tabs,
+  Tab
+} from '@mui/material';
+import {
+  Chat as ChatIcon,
+  Search as SearchIcon,
+  Logout as LogoutIcon,
+  Send as SendIcon,
+  AttachFile as AttachFileIcon,
+  EmojiEmotions as EmojiIcon,
+  MoreVert as MoreIcon,
+  Image as ImageIcon,
+  Description as DocumentIcon,
+  Videocam as VideoIcon,
+  AudioFile as AudioIcon,
+  Check as CheckIcon,
+  DoneAll as DoneAllIcon,
+  AccessTime as PendingIcon,
+  Close as CloseIcon,
+  GetApp as DownloadIcon,
+  Info as InfoIcon,
+  Archive as ArchiveIcon,
+  Person as PersonIcon,
+  Phone as PhoneIcon,
+  Notifications as NotificationsIcon,
+  NotificationsActive as NotificationsActiveIcon,
+  Refresh as RefreshIcon
+} from '@mui/icons-material';
+import { format, formatDistanceToNow } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { useNavigate } from 'react-router-dom';
+import { useSocket } from '../context/SocketContext';
+import EmojiPicker from 'emoji-picker-react';
+
+// ==================== INTERFACES ====================
+
+interface AgentChat {
+  id: string;
+  name: string;
+  avatar?: string;
+  lastMessage: string;
+  timestamp: string;
+  unreadCount: number;
+  assignedAt: string;
+  phoneNumber?: string;
+  isOnline?: boolean;
+  isTyping?: boolean;
+}
+
+interface Message {
+  id: string;
+  chatJid?: string;
+  senderJid?: string;
+  from_me: boolean;
+  text_content?: string;
+  timestamp: string;
+  status: 'pending' | 'sent' | 'delivered' | 'read' | 'error';
+  message_type: 'conversation' | 'image' | 'document' | 'video' | 'audio' | 'ptt';
+  media_url?: string;
+  caption?: string;
+  file_name?: string;
+  file_size?: number;
+  mime_type?: string;
+  sender_name?: string;
+  sender_avatar?: string;
+  quoted_message_id?: string;
+}
+
+interface UploadProgress {
+  file: File;
+  progress: number;
+  status: 'uploading' | 'complete' | 'error';
+}
+
+// ==================== COMPONENTE PRINCIPAL ====================
+
+const AgentDashboardPro: React.FC = () => {
+  const navigate = useNavigate();
+  const { socket, isConnected, on, off } = useSocket();
+
+  // ==================== ESTADOS ====================
+  const [chats, setChats] = useState<AgentChat[]>([]);
+  const [selectedChat, setSelectedChat] = useState<AgentChat | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [messageText, setMessageText] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [agentId, setAgentId] = useState<number | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string>('');
+
+  // Estados UI avanzados
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [showChatInfo, setShowChatInfo] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress[]>([]);
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
+    open: false,
+    message: '',
+    severity: 'info'
+  });
+  const [unreadTotal, setUnreadTotal] = useState(0);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [whatsappConnected, setWhatsappConnected] = useState(false);
+  const [chatFilter, setChatFilter] = useState<'all' | 'unread'>('all');
+
+  // Referencias
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // ==================== INICIALIZACIÓN ====================
+
+  useEffect(() => {
+    const initializeAgent = async () => {
+      const token = sessionStorage.getItem('token');
+      const userId = sessionStorage.getItem('userId');
+      const savedUserName = sessionStorage.getItem('userName');
+
+      console.log('🚀 [AGENT-PRO] Inicializando panel profesional...');
+      console.log('🔍 Token:', token ? 'Existe' : 'No existe');
+      console.log('🔍 UserId:', userId);
+
+      if (!token || !userId) {
+        console.log('❌ No hay sesión de agente');
+        showSnackbar('Sesión expirada. Por favor, inicia sesión nuevamente', 'error');
+        setTimeout(() => navigate('/login'), 2000);
+        return;
+      }
+
+      setAgentId(parseInt(userId));
+      setUserName(savedUserName || 'Agente');
+      console.log('✅ AgentId establecido:', userId);
+
+      // Solicitar permisos de notificación
+      if ('Notification' in window && Notification.permission === 'default') {
+        try {
+          const permission = await Notification.requestPermission();
+          console.log('🔔 Permisos de notificación:', permission);
+          if (permission === 'granted') {
+            showSnackbar('Notificaciones activadas correctamente', 'success');
+          }
+        } catch (error) {
+          console.error('Error solicitando permisos:', error);
+        }
+      }
+
+      // Inicializar audio de notificación (con manejo de errores)
+      try {
+        // Intentar cargar archivo de notificación
+        audioRef.current = new Audio('/notification.mp3');
+        audioRef.current.volume = 0.5; // Volumen moderado
+        audioRef.current.load(); // Pre-cargar
+        console.log('✅ Audio de notificación inicializado');
+      } catch (error) {
+        console.log('⚠️ No se pudo cargar audio de notificación:', error);
+        // Si falla, usar AudioContext para generar un beep
+        try {
+          const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+          const audioContext = new AudioContext();
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          oscillator.frequency.value = 800;
+          oscillator.type = 'sine';
+          gainNode.gain.value = 0.3;
+          // Guardar referencia para reproducir después
+          (audioRef as any).beepContext = { audioContext, oscillator, gainNode };
+        } catch (beepError) {
+          console.log('⚠️ Tampoco se pudo crear beep de audio');
+          audioRef.current = null;
+        }
+      }
+
+      // Obtener sessionId del ADMIN desde la base de datos
+      try {
+        const response = await fetch(`/api/users/${userId}/session`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        console.log('🔍 [AGENT-SESSION] Respuesta:', data);
+
+        if (data.success && data.sessionId) {
+          setSessionId(data.sessionId);
+          setPhoneNumber(data.phoneNumber);
+          setWhatsappConnected(true); // ✅ WhatsApp está conectado
+          console.log('✅ Usando sesión del admin:', data.sessionId);
+          console.log('✅ Número del admin:', data.phoneNumber);
+
+          // Guardar en sessionStorage para uso global
+          sessionStorage.setItem('adminSessionId', data.sessionId);
+          sessionStorage.setItem('adminPhoneNumber', data.phoneNumber || '');
+          sessionStorage.setItem('whatsflow_session', data.sessionId); // Para Socket
+        } else {
+          setWhatsappConnected(false); // ❌ WhatsApp NO está conectado
+          console.error('❌ No se pudo obtener sesión del admin:', data.message);
+          showSnackbar('⚠️ El administrador no tiene WhatsApp conectado. No podrás enviar mensajes.', 'error');
+        }
+      } catch (error) {
+        console.error('❌ Error obteniendo sessionId:', error);
+        showSnackbar('Error al conectar con el sistema. Recarga la página.', 'error');
+      }
+    };
+
+    initializeAgent();
+  }, [navigate]);
+
+  // ==================== FUNCIONES AUXILIARES ====================
+
+  const showSnackbar = (message: string, severity: 'success' | 'error' | 'info' = 'info') => {
+    setSnackbar({ open: true, message, severity });
+  };
+
+  const playNotificationSound = () => {
+    if (!soundEnabled) return;
+
+    // Intentar reproducir audio
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(e => {
+        console.log('⚠️ No se pudo reproducir sonido:', e.message || e);
+      });
+    }
+    // Si no hay audio, intentar con beep generado
+    else if ((audioRef as any).beepContext) {
+      try {
+        const { audioContext, oscillator, gainNode } = (audioRef as any).beepContext;
+        const newOscillator = audioContext.createOscillator();
+        const newGainNode = audioContext.createGain();
+        newOscillator.connect(newGainNode);
+        newGainNode.connect(audioContext.destination);
+        newOscillator.frequency.value = 800;
+        newOscillator.type = 'sine';
+        newGainNode.gain.value = 0.3;
+        newOscillator.start();
+        setTimeout(() => newOscillator.stop(), 200);
+      } catch (e) {
+        console.log('⚠️ No se pudo reproducir beep');
+      }
+    }
+  };
+
+  const showDesktopNotification = (title: string, body: string) => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, {
+        body,
+        icon: '/whatsapp-icon.png',
+        badge: '/whatsapp-icon.png',
+        tag: 'whatsflow-notification',
+        requireInteraction: false
+      });
+    }
+  };
+
+  // ==================== CARGA DE DATOS ====================
+
+  const loadAgentChats = useCallback(async () => {
+    if (!agentId || !sessionId) return;
+
+    try {
+      const token = sessionStorage.getItem('token');
+      const response = await fetch(`/api/agents/${agentId}/chats?sessionId=${sessionId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      const data = await response.json();
+      console.log('[AGENT-PRO] Chats recibidos:', data);
+
+      // Debugging: ver primer chat para entender estructura
+      if (data.chats && data.chats.length > 0) {
+        console.log('[AGENT-PRO] Estructura del primer chat:', data.chats[0]);
+        console.log('[AGENT-PRO] Campos disponibles:', Object.keys(data.chats[0]));
+      }
+
+      if (data.success) {
+        const mappedChats = (data.chats || [])
+          .filter((chat: any) => chat.chatJid)
+          .map((chat: any) => ({
+            id: chat.chatJid,
+            name: chat.name || chat.chatJid?.replace('@s.whatsapp.net', '') || 'Sin nombre',
+            avatar: chat.avatar || '',
+            lastMessage: chat.lastMessage || 'Sin mensajes',
+            timestamp: chat.lastMessageTimestamp || chat.assignedAt,
+            unreadCount: chat.unreadCount || 0,
+            assignedAt: chat.assignedAt,
+            phoneNumber: chat.chatJid?.replace('@s.whatsapp.net', '') || '',
+            isOnline: false,
+            isTyping: false
+          }));
+
+        console.log('[AGENT-PRO] Chats mapeados:', mappedChats.length);
+        setChats(mappedChats);
+
+        // Calcular total de no leídos
+        const total = mappedChats.reduce((sum: number, chat: AgentChat) => sum + chat.unreadCount, 0);
+        setUnreadTotal(total);
+      }
+    } catch (err) {
+      console.error('Error cargando chats:', err);
+      showSnackbar('Error al cargar chats', 'error');
+    }
+  }, [agentId, sessionId]);
+
+  const loadMessages = useCallback(async () => {
+    if (!selectedChat || !sessionId) return;
+
+    setLoading(true);
+    try {
+      const token = sessionStorage.getItem('token');
+      const response = await fetch(`/api/messages/${sessionId}/${selectedChat.id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setMessages(data.messages || []);
+      }
+    } catch (error) {
+      console.error('Error cargando mensajes:', error);
+      showSnackbar('Error al cargar mensajes', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedChat, sessionId]);
+
+  // ==================== EFECTOS ====================
+
+  useEffect(() => {
+    if (agentId && sessionId) {
+      loadAgentChats();
+    }
+  }, [agentId, sessionId, loadAgentChats]);
+
+  useEffect(() => {
+    if (selectedChat) {
+      loadMessages();
+    }
+  }, [selectedChat, loadMessages]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // ==================== SOCKET EVENTOS ====================
+
+  useEffect(() => {
+    if (!socket || !isConnected || !agentId) return;
+
+    console.log('🔌 [AGENT-PRO] Socket conectado, escuchando eventos...');
+
+    const handleNewChat = (data: any) => {
+      console.log('📨 🎉 Nuevo chat asignado:', data);
+      playNotificationSound();
+      showDesktopNotification('✨ Nuevo chat asignado', `Chat con ${data.chatName || 'un contacto'}`);
+      showSnackbar(`✨ Nuevo chat asignado: ${data.chatName || 'contacto'}`, 'success');
+      setNotifications(prev => [...prev, { type: 'new_chat', data, timestamp: new Date() }]);
+      // Recargar chats inmediatamente
+      setTimeout(() => loadAgentChats(), 500);
+    };
+
+    const handleNewMessage = (data: any) => {
+      console.log('💬 Nuevo mensaje:', data);
+
+      // Si es del chat actual, agregar mensaje
+      if (selectedChat && data.chatJid === selectedChat.id) {
+        const newMsg: Message = {
+          id: data.id || Date.now().toString(),
+          chatJid: data.chatJid,
+          senderJid: data.senderJid || data.chatJid,
+          from_me: data.from_me || false,
+          message_type: data.message_type || 'conversation',
+          text_content: data.message || data.text_content,
+          timestamp: data.timestamp || new Date().toISOString(),
+          status: data.status || 'received',
+          media_url: data.media_url,
+          caption: data.caption,
+          file_name: data.file_name,
+          sender_name: data.sender_name,
+          sender_avatar: data.sender_avatar
+        };
+
+        setMessages(prev => {
+          if (prev.some(m => m.id === newMsg.id)) return prev;
+          return [...prev, newMsg];
+        });
+      }
+
+      // Reproducir sonido solo si no es del chat actual o es mensaje entrante
+      if (!selectedChat || data.chatJid !== selectedChat.id) {
+        playNotificationSound();
+      }
+
+      // Actualizar lista de chats
+      loadAgentChats();
+    };
+
+    // Escuchar eventos específicos del agente
+    on(`agent-${agentId}-new-chat`, handleNewChat);
+    on('chat:assigned', handleNewChat);
+    on('chat-assignment-changed', (data: any) => {
+      if (data.agentId === agentId) {
+        console.log('🔄 Asignación de chat cambiada');
+        loadAgentChats();
+      }
+    });
+
+    on('message:received', handleNewMessage);
+    on('message', handleNewMessage);
+
+    on('message-sent', (data: any) => {
+      console.log('✅ Mensaje enviado confirmado:', data);
+      if (selectedChat && data.chatJid === selectedChat.id) {
+        setMessages(prev => prev.map(msg => {
+          if (msg.status === 'pending' && msg.chatJid === data.chatJid) {
+            return { ...msg, status: 'sent', id: data.id || msg.id };
+          }
+          return msg;
+        }));
+      }
+    });
+
+    // Indicador de escritura
+    on('user-typing', (data: any) => {
+      if (selectedChat && data.chatJid === selectedChat.id) {
+        setSelectedChat(prev => prev ? { ...prev, isTyping: true } : null);
+        setTimeout(() => {
+          setSelectedChat(prev => prev ? { ...prev, isTyping: false } : null);
+        }, 3000);
+      }
+    });
+
+    // 🚀 NUEVO: Escuchar cuando el admin reconecta WhatsApp
+    on('session-updated', async (data: any) => {
+      console.log('🔄 [AGENT-PRO] Admin reconectó WhatsApp:', data);
+      showSnackbar(`Admin reconectó WhatsApp. Actualizando chats...`, 'info');
+
+      // Actualizar sessionId local
+      if (data.newSessionId) {
+        setSessionId(data.newSessionId);
+        setWhatsappConnected(true); // ✅ WhatsApp reconectado
+        sessionStorage.setItem('adminSessionId', data.newSessionId);
+        sessionStorage.setItem('whatsflow_session', data.newSessionId);
+        console.log('✅ [AGENT-PRO] SessionId actualizado:', data.newSessionId);
+      }
+
+      // Recargar chats con el nuevo sessionId
+      setTimeout(() => {
+        loadAgentChats();
+        showSnackbar('Chats actualizados correctamente', 'success');
+      }, 1000);
+    });
+
+    return () => {
+      off(`agent-${agentId}-new-chat`);
+      off('chat-assignment-changed');
+      off('chat:assigned');
+      off('message:received');
+      off('message');
+      off('message-sent');
+      off('user-typing');
+      off('session-updated');
+    };
+  }, [socket, isConnected, agentId, on, off, loadAgentChats, selectedChat, setSessionId]);
+
+  // ==================== HANDLERS DE MENSAJES ====================
+
+  const handleSendMessage = async () => {
+    if (!messageText.trim() || !selectedChat || !sessionId) {
+      console.log('[AGENT-PRO] ⚠️ Falta información para enviar');
+      return;
+    }
+
+    console.log('[AGENT-PRO] 📤 Enviando mensaje...');
+
+    setSending(true);
+
+    // Mensaje optimista
+    const tempMessage: Message = {
+      id: 'temp-' + Date.now(),
+      chatJid: selectedChat.id,
+      senderJid: sessionId,
+      from_me: true,
+      message_type: 'conversation',
+      text_content: messageText,
+      timestamp: new Date().toISOString(),
+      status: 'pending',
+      sender_name: userName
+    };
+
+    setMessages(prev => [...prev, tempMessage]);
+    const messageToSend = messageText;
+    setMessageText('');
+
+    try {
+      const token = sessionStorage.getItem('token');
+      const response = await fetch('/api/messages/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          sessionId,
+          chatJid: selectedChat.id,
+          message: messageToSend,
+          agentId: agentId
+        })
+      });
+
+      const data = await response.json();
+      console.log('[AGENT-PRO] 📥 Respuesta:', data);
+
+      if (data.success) {
+        console.log('[AGENT-PRO] ✅ Mensaje enviado');
+        setMessages(prev => prev.map(msg =>
+          msg.id === tempMessage.id ? { ...msg, status: 'sent', id: data.messageId || msg.id } : msg
+        ));
+        showSnackbar('Mensaje enviado', 'success');
+      } else {
+        console.error('[AGENT-PRO] ❌ Error:', data.error);
+        setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
+        setMessageText(messageToSend);
+        showSnackbar('Error: ' + (data.error || 'No se pudo enviar'), 'error');
+      }
+    } catch (error: any) {
+      console.error('[AGENT-PRO] ❌ Exception:', error);
+      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
+      setMessageText(messageToSend);
+      showSnackbar('Error de red: ' + error.message, 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0 || !selectedChat || !sessionId) return;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      console.log('[AGENT-PRO] 📎 Subiendo archivo:', file.name);
+
+      // Validar tamaño (máximo 16MB)
+      if (file.size > 16 * 1024 * 1024) {
+        showSnackbar(`Archivo ${file.name} es muy grande (máx 16MB)`, 'error');
+        continue;
+      }
+
+      // Agregar a progreso
+      const uploadId = Date.now() + i;
+      setUploadProgress(prev => [...prev, {
+        file,
+        progress: 0,
+        status: 'uploading'
+      }]);
+
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('sessionId', sessionId);
+        formData.append('chatJid', selectedChat.id);
+        formData.append('agentId', agentId?.toString() || '');
+        if (file.type.startsWith('image/')) {
+          formData.append('caption', messageText || '');
+        }
+
+        const token = sessionStorage.getItem('token');
+        const response = await fetch('/api/messages/send-media', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          console.log('[AGENT-PRO] ✅ Archivo enviado:', file.name);
+          setUploadProgress(prev => prev.map(up =>
+            up.file === file ? { ...up, progress: 100, status: 'complete' } : up
+          ));
+          showSnackbar(`Archivo ${file.name} enviado`, 'success');
+
+          // Limpiar mensaje si era caption
+          if (file.type.startsWith('image/') && messageText) {
+            setMessageText('');
+          }
+
+          // Recargar mensajes
+          setTimeout(() => loadMessages(), 1000);
+        } else {
+          throw new Error(data.error || 'Error desconocido');
+        }
+      } catch (error: any) {
+        console.error('[AGENT-PRO] ❌ Error subiendo:', error);
+        setUploadProgress(prev => prev.map(up =>
+          up.file === file ? { ...up, status: 'error' } : up
+        ));
+        showSnackbar(`Error subiendo ${file.name}: ${error.message}`, 'error');
+      }
+    }
+
+    // Limpiar input
+    event.target.value = '';
+
+    // Remover uploads completados después de 3s
+    setTimeout(() => {
+      setUploadProgress(prev => prev.filter(up => up.status === 'uploading'));
+    }, 3000);
+  };
+
+  // ==================== HANDLERS UI ====================
+
+  const handleChatClick = (chat: AgentChat) => {
+    setSelectedChat(chat);
+    setMessages([]);
+    setShowChatInfo(false);
+  };
+
+  const handleEmojiClick = (emojiData: any) => {
+    setMessageText(prev => prev + emojiData.emoji);
+    setShowEmojiPicker(false);
+  };
+
+  const handleLogout = () => {
+    sessionStorage.clear();
+    navigate('/login');
+  };
+
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+
+  const handleRefresh = () => {
+    showSnackbar('Recargando chats...', 'info');
+    loadAgentChats();
+    if (selectedChat) {
+      loadMessages();
+    }
+  };
+
+  // ==================== FUNCIONES DE FORMATO ====================
+
+  const formatTime = (timestamp: string) => {
+    try {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+
+      if (diffInHours < 24) {
+        return format(date, 'HH:mm', { locale: es });
+      } else if (diffInHours < 48) {
+        return 'Ayer';
+      } else {
+        return format(date, 'dd/MM/yyyy', { locale: es });
+      }
+    } catch {
+      return '';
+    }
+  };
+
+  const formatMessageTime = (timestamp: string) => {
+    try {
+      return format(new Date(timestamp), 'HH:mm', { locale: es });
+    } catch {
+      return '';
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const getMessageStatusIcon = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return <PendingIcon sx={{ fontSize: 14, color: '#667781' }} />;
+      case 'sent':
+        return <CheckIcon sx={{ fontSize: 14, color: '#667781' }} />;
+      case 'delivered':
+        return <DoneAllIcon sx={{ fontSize: 14, color: '#667781' }} />;
+      case 'read':
+        return <DoneAllIcon sx={{ fontSize: 14, color: '#53bdeb' }} />;
+      case 'error':
+        return <CloseIcon sx={{ fontSize: 14, color: '#f44336' }} />;
+      default:
+        return null;
+    }
+  };
+
+  const filteredChats = chats.filter(chat => {
+    // Filtro por búsqueda
+    const matchesSearch = chat.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         chat.phoneNumber?.includes(searchTerm);
+
+    // Filtro por tipo de chat
+    const matchesFilter = chatFilter === 'all' ||
+                         (chatFilter === 'unread' && chat.unreadCount > 0);
+
+    return matchesSearch && matchesFilter;
+  });
+
+  // ==================== RENDER DE MENSAJES ====================
+
+  const renderMessage = (msg: Message) => {
+    const isMedia = ['image', 'document', 'video', 'audio', 'ptt'].includes(msg.message_type);
+
+    return (
+      <Zoom in key={msg.id}>
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: msg.from_me ? 'flex-end' : 'flex-start',
+            mb: 1,
+            px: 2
+          }}
+        >
+          <Paper
+            elevation={1}
+            sx={{
+              maxWidth: '65%',
+              minWidth: '80px',
+              p: 1.5,
+              bgcolor: msg.from_me ? '#d9fdd3' : 'white',
+              borderRadius: msg.from_me ? '8px 0px 8px 8px' : '0px 8px 8px 8px',
+              boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)',
+              position: 'relative'
+            }}
+          >
+            {/* Nombre del remitente (solo en grupos o mensajes entrantes) */}
+            {!msg.from_me && msg.sender_name && (
+              <Typography
+                variant="caption"
+                sx={{
+                  color: '#00a884',
+                  fontWeight: 600,
+                  display: 'block',
+                  mb: 0.5
+                }}
+              >
+                {msg.sender_name}
+              </Typography>
+            )}
+
+            {/* Contenido de media */}
+            {isMedia && msg.media_url && (
+              <Box sx={{ mb: 1 }}>
+                {msg.message_type === 'image' && (
+                  <CardMedia
+                    component="img"
+                    image={msg.media_url}
+                    alt="Imagen"
+                    sx={{
+                      maxWidth: '100%',
+                      maxHeight: '300px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      objectFit: 'contain'
+                    }}
+                    onClick={() => window.open(msg.media_url, '_blank')}
+                  />
+                )}
+
+                {msg.message_type === 'document' && (
+                  <Card sx={{ display: 'flex', alignItems: 'center', p: 1, bgcolor: '#f0f2f5' }}>
+                    <DocumentIcon sx={{ fontSize: 40, color: '#667781', mr: 1 }} />
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {msg.file_name || 'Documento'}
+                      </Typography>
+                      {msg.file_size && (
+                        <Typography variant="caption" color="text.secondary">
+                          {formatFileSize(msg.file_size)}
+                        </Typography>
+                      )}
+                    </Box>
+                    <IconButton
+                      size="small"
+                      href={msg.media_url}
+                      download
+                      target="_blank"
+                    >
+                      <DownloadIcon />
+                    </IconButton>
+                  </Card>
+                )}
+
+                {msg.message_type === 'video' && (
+                  <Box sx={{ position: 'relative' }}>
+                    <video
+                      src={msg.media_url}
+                      controls
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '300px',
+                        borderRadius: '8px'
+                      }}
+                    />
+                  </Box>
+                )}
+
+                {(msg.message_type === 'audio' || msg.message_type === 'ptt') && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <AudioIcon sx={{ color: '#667781' }} />
+                    <audio src={msg.media_url} controls style={{ width: '100%' }} />
+                  </Box>
+                )}
+              </Box>
+            )}
+
+            {/* Texto o caption */}
+            {(msg.text_content || msg.caption) && (
+              <Typography
+                variant="body2"
+                sx={{
+                  wordBreak: 'break-word',
+                  whiteSpace: 'pre-wrap',
+                  mb: 0.5
+                }}
+              >
+                {msg.text_content || msg.caption}
+              </Typography>
+            )}
+
+            {/* Timestamp y estado */}
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+              <Typography variant="caption" sx={{ fontSize: 11, color: '#667781' }}>
+                {formatMessageTime(msg.timestamp)}
+              </Typography>
+              {msg.from_me && getMessageStatusIcon(msg.status)}
+            </Box>
+          </Paper>
+        </Box>
+      </Zoom>
+    );
+  };
+
+  // ==================== RENDER PRINCIPAL ====================
+
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: '#111b21', width: '100%', margin: 0, padding: 0 }}>
+      {/* ==================== HEADER SUPERIOR MODERNO ==================== */}
+      <Paper
+        elevation={2}
+        sx={{
+          bgcolor: '#00a884',
+          borderRadius: 0,
+          width: '100%',
+          zIndex: 1200
+        }}
+      >
+        <Box sx={{ px: 3, py: 1.5, display: 'flex', alignItems: 'center', gap: 2 }}>
+          {/* Logo y título */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexGrow: 1 }}>
+            <Avatar sx={{ bgcolor: '#ffffff', width: 40, height: 40 }}>
+              <ChatIcon sx={{ color: '#00a884', fontSize: 24 }} />
+            </Avatar>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: 'white', lineHeight: 1.2 }}>
+                WhatsFlow Agent
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.75rem' }}>
+                Panel Profesional
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Información del agente y herramientas */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {/* Estado de conexión */}
+            <Chip
+              icon={whatsappConnected ? <CheckIcon /> : <CloseIcon />}
+              label={whatsappConnected ? 'Conectado' : 'Desconectado'}
+              size="small"
+              sx={{
+                bgcolor: whatsappConnected ? 'rgba(76, 175, 80, 0.2)' : 'rgba(244, 67, 54, 0.2)',
+                color: 'white',
+                fontWeight: 600,
+                '& .MuiChip-icon': { color: 'white' }
+              }}
+            />
+
+            {/* Estadísticas rápidas */}
+            <Chip
+              label={`${chats.length} Chats`}
+              size="small"
+              sx={{
+                bgcolor: 'rgba(255,255,255,0.2)',
+                color: 'white',
+                fontWeight: 600
+              }}
+            />
+
+            {/* Notificaciones */}
+            <Tooltip title={soundEnabled ? 'Sonido activado' : 'Sonido desactivado'}>
+              <IconButton
+                color="inherit"
+                size="small"
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                sx={{ color: 'white' }}
+              >
+                <Badge badgeContent={unreadTotal} color="error">
+                  {soundEnabled ? <NotificationsActiveIcon /> : <NotificationsIcon />}
+                </Badge>
+              </IconButton>
+            </Tooltip>
+
+            {/* Actualizar */}
+            <Tooltip title="Actualizar chats">
+              <IconButton
+                color="inherit"
+                size="small"
+                onClick={handleRefresh}
+                sx={{ color: 'white' }}
+              >
+                <RefreshIcon />
+              </IconButton>
+            </Tooltip>
+
+            {/* Perfil del agente */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 1, pl: 2, borderLeft: '1px solid rgba(255,255,255,0.3)' }}>
+              <Avatar
+                sx={{
+                  bgcolor: 'white',
+                  color: '#00a884',
+                  width: 36,
+                  height: 36,
+                  fontWeight: 700,
+                  fontSize: '0.9rem'
+                }}
+              >
+                {userName?.[0]?.toUpperCase() || 'A'}
+              </Avatar>
+              <Box>
+                <Typography variant="body2" sx={{ color: 'white', fontWeight: 600, lineHeight: 1.2 }}>
+                  {userName}
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.7rem' }}>
+                  Agente
+                </Typography>
+              </Box>
+            </Box>
+
+            {/* Logout */}
+            <Tooltip title="Cerrar sesión">
+              <IconButton
+                color="inherit"
+                size="small"
+                onClick={handleLogout}
+                sx={{ color: 'white', ml: 1 }}
+              >
+                <LogoutIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        </Box>
+      </Paper>
+
+      {/* ==================== LAYOUT PRINCIPAL ==================== */}
+      <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
+
+        {/* ==================== PANEL IZQUIERDO: LISTA DE CHATS ==================== */}
+        <Box
+          sx={{
+            width: selectedChat ? '35%' : '100%',
+            minWidth: '320px',
+            maxWidth: '500px',
+            bgcolor: '#ffffff',
+            borderRight: '1px solid #d1d7db',
+            display: 'flex',
+            flexDirection: 'column',
+            transition: 'width 0.3s ease-in-out'
+          }}
+        >
+          {/* Header del panel */}
+          <Box sx={{ p: 2, bgcolor: '#f0f2f5', borderBottom: '1px solid #d1d7db' }}>
+            <Typography variant="h6" sx={{ mb: 1.5, fontWeight: 600, color: '#111b21' }}>
+              Mis Chats Asignados
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Buscar chat o número..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ color: '#667781' }} />
+                  </InputAdornment>
+                ),
+                sx: {
+                  borderRadius: '10px',
+                  bgcolor: 'white',
+                  '& fieldset': { borderColor: '#d1d7db' },
+                  '&:hover fieldset': { borderColor: '#00a884 !important' },
+                  '&.Mui-focused fieldset': { borderColor: '#00a884 !important' }
+                }
+              }}
+            />
+
+            {/* Pestañas de filtro de chats */}
+            <Box sx={{ mt: 2 }}>
+              <Tabs
+                value={chatFilter}
+                onChange={(e, newValue) => setChatFilter(newValue)}
+                textColor="inherit"
+                indicatorColor="primary"
+                variant="fullWidth"
+                sx={{
+                  minHeight: 36,
+                  '& .MuiTab-root': {
+                    minHeight: 36,
+                    fontSize: '0.8rem',
+                    textTransform: 'none',
+                    fontWeight: 500,
+                    color: '#667781',
+                    '&.Mui-selected': {
+                      color: '#00a884',
+                      fontWeight: 600
+                    }
+                  },
+                  '& .MuiTabs-indicator': {
+                    backgroundColor: '#00a884',
+                    height: 2
+                  }
+                }}
+              >
+                <Tab label="Todos" value="all" />
+                <Tab label="Sin leer" value="unread" />
+              </Tabs>
+            </Box>
+          </Box>
+
+          {/* Lista de chats */}
+          <List sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
+            {filteredChats.length === 0 ? (
+              <Box sx={{ p: 4, textAlign: 'center' }}>
+                <ChatIcon sx={{ fontSize: 60, color: '#d1d7db', mb: 2 }} />
+                <Typography variant="body1" color="text.secondary" gutterBottom>
+                  No hay chats asignados
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Espera a que el admin te asigne chats
+                </Typography>
+              </Box>
+            ) : (
+              filteredChats.map((chat) => (
+                <ListItem
+                  key={chat.id}
+                  button
+                  selected={selectedChat?.id === chat.id}
+                  onClick={() => handleChatClick(chat)}
+                  sx={{
+                    borderBottom: '1px solid #f0f0f0',
+                    bgcolor: selectedChat?.id === chat.id ? '#f0f2f5' : 'transparent',
+                    '&:hover': { bgcolor: '#f5f5f5' },
+                    py: 2,
+                    px: 2,
+                    transition: 'background-color 0.2s'
+                  }}
+                >
+                  <ListItemAvatar>
+                    <Badge
+                      badgeContent={chat.unreadCount}
+                      color="error"
+                      overlap="circular"
+                      anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+                    >
+                      <Badge
+                        overlap="circular"
+                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                        variant="dot"
+                        sx={{
+                          '& .MuiBadge-badge': {
+                            backgroundColor: chat.isOnline ? '#44b700' : 'transparent',
+                            color: '#44b700',
+                            boxShadow: `0 0 0 2px white`,
+                            '&::after': chat.isOnline ? {
+                              position: 'absolute',
+                              top: 0,
+                              left: 0,
+                              width: '100%',
+                              height: '100%',
+                              borderRadius: '50%',
+                              animation: 'ripple 1.2s infinite ease-in-out',
+                              border: '1px solid currentColor',
+                              content: '""',
+                            } : {}
+                          },
+                        }}
+                      >
+                        <Avatar
+                          src={chat.avatar}
+                          alt={chat.name}
+                          sx={{ width: 50, height: 50 }}
+                        >
+                          {chat.name?.[0]?.toUpperCase() || '?'}
+                        </Avatar>
+                      </Badge>
+                    </Badge>
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={
+                      <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography
+                          variant="subtitle1"
+                          fontWeight={chat.unreadCount > 0 ? 600 : 400}
+                          sx={{ color: '#111b21' }}
+                        >
+                          {chat.name || chat.phoneNumber}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {formatTime(chat.timestamp)}
+                        </Typography>
+                      </Box>
+                    }
+                    secondary={
+                      <Box>
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontWeight: chat.unreadCount > 0 ? 500 : 400,
+                            fontStyle: chat.isTyping ? 'italic' : 'normal',
+                            color: chat.isTyping ? '#00a884' : 'text.secondary'
+                          }}
+                        >
+                          {chat.isTyping ? 'Escribiendo...' : (chat.lastMessage || 'Sin mensajes')}
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                </ListItem>
+              ))
+            )}
+          </List>
+        </Box>
+
+        {/* ==================== PANEL DERECHO: CHAT SELECCIONADO ==================== */}
+        {selectedChat ? (
+          <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', bgcolor: '#efeae2', position: 'relative' }}>
+            {/* Header del chat */}
+            <Paper
+              elevation={2}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                p: 2,
+                bgcolor: '#f0f2f5',
+                borderBottom: '1px solid #d1d7db',
+                zIndex: 10
+              }}
+            >
+              <Avatar
+                src={selectedChat.avatar}
+                sx={{ width: 45, height: 45, mr: 2, border: '2px solid #00a884' }}
+              >
+                {selectedChat.name?.[0]?.toUpperCase() || '?'}
+              </Avatar>
+              <Box sx={{ flexGrow: 1 }}>
+                <Typography variant="subtitle1" fontWeight={600} sx={{ color: '#111b21' }}>
+                  {selectedChat.name || 'Sin nombre'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {selectedChat.phoneNumber || selectedChat.id.replace('@s.whatsapp.net', '')}
+                </Typography>
+                {selectedChat.isTyping && (
+                  <Typography variant="caption" sx={{ color: '#00a884', fontStyle: 'italic' }}>
+                    <> • Escribiendo...</>
+                  </Typography>
+                )}
+              </Box>
+
+              {/* Botones de acción */}
+              <Tooltip title="Información del contacto">
+                <IconButton onClick={() => setShowChatInfo(!showChatInfo)}>
+                  <InfoIcon />
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title="Más opciones">
+                <IconButton onClick={handleMenuOpen}>
+                  <MoreIcon />
+                </IconButton>
+              </Tooltip>
+            </Paper>
+
+            {/* Menú de opciones */}
+            <Menu
+              anchorEl={anchorEl}
+              open={Boolean(anchorEl)}
+              onClose={handleMenuClose}
+            >
+              <MenuItem onClick={() => { loadMessages(); handleMenuClose(); }}>
+                <RefreshIcon sx={{ mr: 1 }} /> Recargar mensajes
+              </MenuItem>
+              <MenuItem onClick={() => { handleMenuClose(); }}>
+                <ArchiveIcon sx={{ mr: 1 }} /> Archivar chat
+              </MenuItem>
+            </Menu>
+
+            {/* Área de mensajes */}
+            <Box
+              sx={{
+                flexGrow: 1,
+                overflowY: 'auto',
+                p: 2,
+                backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpattern id=\'pattern\' x=\'0\' y=\'0\' width=\'20\' height=\'20\' patternUnits=\'userSpaceOnUse\'%3E%3Ccircle cx=\'2\' cy=\'2\' r=\'1\' fill=\'%23d9d9d9\' opacity=\'0.3\'/%3E%3C/pattern%3E%3Crect x=\'0\' y=\'0\' width=\'100%25\' height=\'100%25\' fill=\'url(%23pattern)\'/%3E%3C/svg%3E")',
+                backgroundSize: 'contain'
+              }}
+            >
+              {loading ? (
+                <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+                  <CircularProgress sx={{ color: '#00a884' }} />
+                </Box>
+              ) : messages.length === 0 ? (
+                <Box display="flex" justifyContent="center" alignItems="center" height="100%" flexDirection="column">
+                  <ChatIcon sx={{ fontSize: 80, color: '#d1d7db', mb: 2 }} />
+                  <Typography variant="body1" color="text.secondary">
+                    No hay mensajes en este chat
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Envía el primer mensaje
+                  </Typography>
+                </Box>
+              ) : (
+                messages.map(renderMessage)
+              )}
+              <div ref={messagesEndRef} />
+            </Box>
+
+            {/* Progreso de subida */}
+            {uploadProgress.length > 0 && (
+              <Box sx={{ px: 2, py: 1, bgcolor: '#f0f2f5' }}>
+                {uploadProgress.map((upload, index) => (
+                  <Box key={index} sx={{ mb: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Typography variant="caption">
+                        {upload.file.name}
+                      </Typography>
+                      <Typography variant="caption" color={upload.status === 'error' ? 'error' : 'text.secondary'}>
+                        {upload.status === 'uploading' ? `${upload.progress}%` :
+                         upload.status === 'complete' ? 'Completado' : 'Error'}
+                      </Typography>
+                    </Box>
+                    <LinearProgress
+                      variant={upload.status === 'uploading' ? 'determinate' : 'indeterminate'}
+                      value={upload.progress}
+                      color={upload.status === 'error' ? 'error' : 'primary'}
+                    />
+                  </Box>
+                ))}
+              </Box>
+            )}
+
+            {/* Área de envío */}
+            <Paper
+              elevation={3}
+              sx={{
+                p: 1.5,
+                display: 'flex',
+                gap: 1,
+                alignItems: 'flex-end',
+                bgcolor: '#f0f2f5',
+                borderTop: '1px solid #d1d7db'
+              }}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+                style={{ display: 'none' }}
+                onChange={handleFileUpload}
+              />
+
+              <Tooltip title="Emojis">
+                <IconButton
+                  size="small"
+                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                  sx={{ color: '#54656f' }}
+                >
+                  <EmojiIcon />
+                </IconButton>
+              </Tooltip>
+
+              <Tooltip title="Adjuntar archivo">
+                <IconButton
+                  size="small"
+                  onClick={() => fileInputRef.current?.click()}
+                  sx={{ color: '#54656f' }}
+                >
+                  <AttachFileIcon />
+                </IconButton>
+              </Tooltip>
+
+              <TextField
+                fullWidth
+                multiline
+                maxRows={4}
+                value={messageText}
+                onChange={(e) => setMessageText(e.target.value)}
+                placeholder="Escribe un mensaje..."
+                size="small"
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '20px',
+                    bgcolor: 'white',
+                    '& fieldset': { borderColor: '#d1d7db' },
+                    '&:hover fieldset': { borderColor: '#00a884' },
+                    '&.Mui-focused fieldset': { borderColor: '#00a884' }
+                  }
+                }}
+              />
+
+              <Tooltip title={messageText.trim() ? 'Enviar mensaje' : 'Escribe un mensaje primero'}>
+                <span>
+                  <IconButton
+                    onClick={handleSendMessage}
+                    disabled={sending || !messageText.trim()}
+                    sx={{
+                      bgcolor: messageText.trim() && !sending ? '#00a884' : '#e9edef',
+                      color: messageText.trim() && !sending ? 'white' : '#667781',
+                      '&:hover': {
+                        bgcolor: messageText.trim() && !sending ? '#008c6d' : '#e9edef'
+                      },
+                      '&:disabled': { bgcolor: '#e9edef', color: '#667781' },
+                      width: 48,
+                      height: 48
+                    }}
+                  >
+                    {sending ? <CircularProgress size={24} sx={{ color: '#667781' }} /> : <SendIcon />}
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </Paper>
+
+            {/* Emoji Picker */}
+            {showEmojiPicker && (
+              <Fade in={showEmojiPicker}>
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    bottom: 80,
+                    left: 20,
+                    zIndex: 1000,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    borderRadius: '12px',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <EmojiPicker onEmojiClick={handleEmojiClick} />
+                </Box>
+              </Fade>
+            )}
+
+            {/* Panel de información del chat */}
+            {showChatInfo && (
+              <Fade in={showChatInfo}>
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: '350px',
+                    bgcolor: 'white',
+                    boxShadow: '-2px 0 8px rgba(0,0,0,0.1)',
+                    zIndex: 999,
+                    overflowY: 'auto',
+                    borderLeft: '1px solid #d1d7db'
+                  }}
+                >
+                  <Box sx={{ p: 3 }}>
+                    {/* Header */}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                      <Typography variant="h6" fontWeight={600}>
+                        Información del contacto
+                      </Typography>
+                      <IconButton size="small" onClick={() => setShowChatInfo(false)}>
+                        <CloseIcon />
+                      </IconButton>
+                    </Box>
+
+                    {/* Avatar y nombre */}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
+                      <Avatar
+                        src={selectedChat.avatar}
+                        sx={{ width: 100, height: 100, mb: 2, border: '3px solid #00a884' }}
+                      >
+                        {selectedChat.name?.[0]?.toUpperCase() || '?'}
+                      </Avatar>
+                      <Typography variant="h6" fontWeight={600} gutterBottom>
+                        {selectedChat.name || 'Sin nombre'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {selectedChat.phoneNumber || 'Sin número'}
+                      </Typography>
+                    </Box>
+
+                    <Divider sx={{ my: 2 }} />
+
+                    {/* Información adicional */}
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        Información del chat
+                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                        <PersonIcon fontSize="small" color="action" />
+                        <Typography variant="body2">
+                          Asignado el {format(new Date(selectedChat.assignedAt), 'dd/MM/yyyy HH:mm', { locale: es })}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                        <ChatIcon fontSize="small" color="action" />
+                        <Typography variant="body2">
+                          {messages.length} mensajes en total
+                        </Typography>
+                      </Box>
+                    </Box>
+
+                    <Divider sx={{ my: 2 }} />
+
+                    {/* Acciones */}
+                    <Box>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                        Acciones
+                      </Typography>
+                      <Button
+                        fullWidth
+                        variant="outlined"
+                        startIcon={<RefreshIcon />}
+                        onClick={loadMessages}
+                        sx={{ mb: 1, justifyContent: 'flex-start' }}
+                      >
+                        Recargar mensajes
+                      </Button>
+                      <Button
+                        fullWidth
+                        variant="outlined"
+                        startIcon={<ArchiveIcon />}
+                        sx={{ mb: 1, justifyContent: 'flex-start' }}
+                      >
+                        Archivar chat
+                      </Button>
+                    </Box>
+                  </Box>
+                </Box>
+              </Fade>
+            )}
+          </Box>
+        ) : (
+          // Pantalla de bienvenida
+          <Box
+            sx={{
+              flexGrow: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'center',
+              bgcolor: '#f0f2f5',
+              background: 'linear-gradient(135deg, #f0f2f5 0%, #e4e9eb 100%)'
+            }}
+          >
+            <Fade in timeout={800}>
+              <Box sx={{ textAlign: 'center' }}>
+                <ChatIcon sx={{ fontSize: 120, color: '#d1d7db', mb: 3 }} />
+                <Typography variant="h4" color="text.primary" gutterBottom fontWeight={600}>
+                  WhatsFlow Panel de Agente
+                </Typography>
+                <Typography variant="h6" color="text.secondary" gutterBottom>
+                  Selecciona un chat para comenzar a responder
+                </Typography>
+                <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  <Chip
+                    label={`${chats.length} chats asignados`}
+                    color="primary"
+                    size="medium"
+                    icon={<ChatIcon />}
+                  />
+                  <Chip
+                    label={`${unreadTotal} sin leer`}
+                    color="error"
+                    size="medium"
+                    icon={<NotificationsIcon />}
+                  />
+                  <Chip
+                    label={isConnected ? 'Conectado' : 'Desconectado'}
+                    color={isConnected ? 'success' : 'error'}
+                    size="medium"
+                    icon={isConnected ? <CheckIcon /> : <CloseIcon />}
+                  />
+                </Box>
+              </Box>
+            </Fade>
+          </Box>
+        )}
+      </Box>
+
+      {/* ==================== SNACKBAR DE NOTIFICACIONES ==================== */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={5000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
+      {/* ==================== ESTILOS CSS ADICIONALES ==================== */}
+      <style>{`
+        @keyframes ripple {
+          0% {
+            transform: scale(.8);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(2.4);
+            opacity: 0;
+          }
+        }
+      `}</style>
+    </Box>
+  );
+};
+
+export default AgentDashboardPro;
