@@ -7589,13 +7589,10 @@ app.get('/api/history/messages', async (req, res) => {
                      COALESCE(c.name, c.notify_name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as chat_name,
                      m.sender_jid,
                      COALESCE(s.name, s.notify_name, SUBSTRING_INDEX(m.sender_jid, '@', 1)) as sender_name,
-                     m.from_me, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status,
-                     ag.username as agent_name, ag.name as agent_full_name
+                     m.from_me, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status
                      FROM messages m
                      LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id IN (${placeholders})
                      LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id IN (${placeholders})
-                     LEFT JOIN agent_chat_history ach ON m.chat_jid = ach.chat_jid AND ach.status = 'active'
-                     LEFT JOIN agents ag ON ach.agent_id = ag.id
                      WHERE m.session_id IN (${placeholders})`;
         const queryParams = [...sessionIds, ...sessionIds, ...sessionIds];
 
@@ -7649,7 +7646,7 @@ app.get('/api/history/messages', async (req, res) => {
             timestamp: new Date(msg.timestamp).toISOString(),
             type: msg.message_type,
             status: msg.status,
-            agentName: msg.agent_name || msg.agent_full_name || (msg.from_me ? 'Sistema' : '-')
+            agentName: msg.from_me ? 'Sistema' : '-'
         }));
         
         console.log(`[API-HISTORY] Returning ${historyMessages.length} messages, total: ${totalMessages}`);
