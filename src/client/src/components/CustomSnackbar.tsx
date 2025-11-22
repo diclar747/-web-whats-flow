@@ -79,29 +79,29 @@ const CustomSnackbar: React.FC<CustomSnackbarProps> = ({
       open={open}
       autoHideDuration={autoHideDuration}
       onClose={onClose}
-      anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-      sx={{ mt: 8 }}
+      anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      sx={{ mt: 2 }}
     >
       <Box
         sx={{
-          minWidth: 300,
-          maxWidth: 500,
+          minWidth: 320,
+          maxWidth: 600,
           background: colors.bg,
-          borderRadius: 2,
+          borderRadius: '12px',
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.25)',
           backdropFilter: 'blur(10px)',
-          padding: 2,
+          padding: '12px 16px',
           display: 'flex',
           alignItems: 'center',
           gap: 2,
-          animation: 'slideInRight 0.3s ease-out',
-          '@keyframes slideInRight': {
+          animation: 'slideInDown 0.3s ease-out',
+          '@keyframes slideInDown': {
             from: {
-              transform: 'translateX(100%)',
+              transform: 'translateY(-100%)',
               opacity: 0
             },
             to: {
-              transform: 'translateX(0)',
+              transform: 'translateY(0)',
               opacity: 1
             }
           }

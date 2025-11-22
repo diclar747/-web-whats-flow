@@ -175,7 +175,10 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     messagesToday: 0,
     agents: 0,
     activeLines: 0,
-    unreadMessages: 0
+    unreadMessages: 0,
+    chatbots: 0,
+    campaigns: 0,
+    kanbans: 0
   });
 
   // Estado para ModernAlert
@@ -409,7 +412,10 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
           messagesToday: data.stats.messages?.today || 0,
           agents: data.stats.agents || 0,
           activeLines: data.stats.activeLines || 0,
-          unreadMessages: data.stats.unreadMessages || 0
+          unreadMessages: data.stats.unreadMessages || 0,
+          chatbots: data.stats.chatbots || 0,
+          campaigns: data.stats.campaigns || 0,
+          kanbans: data.stats.kanbans || 0
         };
         setDashboardStats(stats);
         // Las notificaciones se calculan automáticamente desde chats.unreadCount
@@ -458,10 +464,13 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
         messagesToday: stats.messages?.today || 0,
         agents: stats.agents || 0,
         activeLines: stats.activeLines || 0,
-        unreadMessages: stats.unreadMessages || 0
+        unreadMessages: stats.unreadMessages || 0,
+        chatbots: stats.chatbots || 0,
+        campaigns: stats.campaigns || 0,
+        kanbans: stats.kanbans || 0
       };
       setDashboardStats(updatedStats);
-      // Las notificaciones se calculan automáticamente desde chats.unreadCount
+      // Las notificaciones se calculan automáticamente desde chats.unreadMessages
     };
 
     // Handler para actualizaciones de conexión de WhatsApp en tiempo real
@@ -781,117 +790,152 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
           }}
         >
-          <Toolbar>
-            <IconButton
-              edge="start"
-              onClick={() => setDrawerOpen(!drawerOpen)}
-              sx={{ mr: 2 }}
+          <Toolbar sx={{ gap: 2 }}>
+            {/* Logo/Marca */}
+            <WhatsApp sx={{ fontSize: 32, color: '#25d366', mr: 1 }} />
+            
+            <Typography 
+              variant="h5" 
+              sx={{ 
+                flexGrow: 1, 
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                letterSpacing: '-0.5px'
+              }}
             >
-              <MenuIcon />
-            </IconButton>
-
-            <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 500 }}>
-              {activeItem.label}
+              WhatsFlow
             </Typography>
 
-            {/* Indicadores de estado */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              {/* Toggle de Tema */}
-              <Tooltip title={isDarkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}>
-                <IconButton onClick={toggleTheme} color="inherit">
-                  {isDarkMode ? <Brightness7 /> : <Brightness4 />}
-                </IconButton>
-              </Tooltip>
-
+            {/* Indicadores de estado - Compactos y organizados */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               {/* Estado de WhatsApp */}
-              <Tooltip title={`WhatsApp ${whatsappStatus === 'connected' ? 'Conectado' : whatsappStatus === 'connecting' ? 'Conectando...' : 'Desconectado'} - Última verificación: ${lastConnectionCheck.toLocaleTimeString()}`}>
+              <Tooltip title={`WhatsApp ${whatsappStatus === 'connected' ? 'Conectado' : whatsappStatus === 'connecting' ? 'Conectando...' : 'Desconectado'}`}>
                 <Chip
                   icon={
                     whatsappStatus === 'connected' ? <WhatsApp sx={{ fontSize: 16 }} /> :
                       whatsappStatus === 'connecting' ? <CircularProgress size={16} /> :
                         <ErrorIcon sx={{ fontSize: 16 }} />
                   }
-                  label={
-                    whatsappStatus === 'connected' ? 'WhatsApp OK' :
-                      whatsappStatus === 'connecting' ? 'Conectando...' :
-                        'WhatsApp OFF'
-                  }
+                  label={whatsappStatus === 'connected' ? 'Conectado' : whatsappStatus === 'connecting' ? 'Conectando' : 'Offline'}
                   size="small"
-                  variant="outlined"
                   color={
                     whatsappStatus === 'connected' ? 'success' :
                       whatsappStatus === 'connecting' ? 'warning' :
                         'error'
                   }
                   sx={{
-                    '& .MuiChip-icon': {
-                      color: whatsappStatus === 'connected' ? '#25d366' : 'inherit'
-                    }
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    height: 28
                   }}
                 />
               </Tooltip>
 
-              <Tooltip title={`Total de contactos: ${dashboardStats.contacts.toLocaleString()}`}>
+              {/* Agentes en línea */}
+              <Tooltip title={`Agentes online: ${dashboardStats.agents || 0}`}>
                 <Chip
-                  icon={<ContactsIcon />}
-                  label={`${dashboardStats.contacts.toLocaleString()} contactos`}
+                  icon={<AgentsIcon sx={{ fontSize: 16 }} />}
+                  label={`${dashboardStats.agents || 0} Agentes`}
                   size="small"
                   variant="outlined"
-                  color="primary"
-                  sx={{ fontWeight: 500 }}
+                  sx={{ 
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    height: 28,
+                    borderColor: '#2196f3',
+                    color: '#2196f3'
+                  }}
                 />
               </Tooltip>
 
-              <Tooltip title={`Total de grupos: ${dashboardStats.groups.toLocaleString()}`}>
+              {/* Bots activos */}
+              <Tooltip title="Chatbots activos">
                 <Chip
-                  icon={<PeopleIcon />}
-                  label={`${dashboardStats.groups} grupos`}
+                  icon={<BotIcon sx={{ fontSize: 16 }} />}
+                  label={`${dashboardStats.chatbots || 0} Bots`}
                   size="small"
                   variant="outlined"
-                  color="secondary"
-                  sx={{ fontWeight: 500 }}
+                  sx={{ 
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    height: 28,
+                    borderColor: '#9c27b0',
+                    color: '#9c27b0'
+                  }}
                 />
               </Tooltip>
 
-              <Tooltip title={`Agentes registrados: ${dashboardStats.agents}`}>
+              {/* Campañas activas */}
+              <Tooltip title="Campañas en curso">
                 <Chip
-                  icon={<AgentsIcon />}
-                  label={`${dashboardStats.agents} agentes`}
+                  icon={<CampaignIcon sx={{ fontSize: 16 }} />}
+                  label={`${dashboardStats.campaigns || 0} Campañas`}
                   size="small"
                   variant="outlined"
-                  color="info"
-                  sx={{ fontWeight: 500 }}
+                  sx={{ 
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    height: 28,
+                    borderColor: '#ff9800',
+                    color: '#ff9800'
+                  }}
                 />
               </Tooltip>
 
-              <Tooltip title={`Mensajes hoy: ${dashboardStats.messagesToday.toLocaleString()} | Total: ${dashboardStats.messages.toLocaleString()}`}>
+              {/* Kanbans activos */}
+              <Tooltip title="Tableros Kanban">
                 <Chip
-                  icon={<MessageIcon />}
-                  label={`${dashboardStats.messagesToday.toLocaleString()} msgs hoy`}
+                  icon={<KanbanIcon sx={{ fontSize: 16 }} />}
+                  label={`${dashboardStats.kanbans || 0} Kanbans`}
                   size="small"
                   variant="outlined"
-                  sx={{ fontWeight: 500 }}
+                  sx={{ 
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    height: 28,
+                    borderColor: '#673ab7',
+                    color: '#673ab7'
+                  }}
                 />
               </Tooltip>
 
-              <IconButton onClick={handleMenuOpen}>
+              <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+
+              {/* Toggle de Tema */}
+              <Tooltip title={isDarkMode ? "Modo claro" : "Modo oscuro"}>
+                <IconButton onClick={toggleTheme} size="small" color="inherit">
+                  {isDarkMode ? <Brightness7 fontSize="small" /> : <Brightness4 fontSize="small" />}
+                </IconButton>
+              </Tooltip>
+
+              {/* Notificaciones */}
+              <IconButton onClick={handleMenuOpen} size="small">
                 <Badge badgeContent={notifications} color="error">
-                  <NotificationsIcon />
+                  <NotificationsIcon fontSize="small" />
                 </Badge>
               </IconButton>
 
-              <Tooltip title={userPhoneNumber ? `Perfil: ${userPhoneNumber}` : 'Perfil'}>
+              {/* Perfil de usuario */}
+              <Tooltip title={userPhoneNumber || 'Perfil'}>
                 <Avatar
                   src={userProfilePic || undefined}
                   sx={{
-                    bgcolor: '#00a884',
-                    width: 40,
-                    height: 40,
+                    bgcolor: '#25d366',
+                    width: 36,
+                    height: 36,
                     cursor: 'pointer',
-                    border: '2px solid #00a884'
+                    border: '2px solid',
+                    borderColor: 'divider',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      transform: 'scale(1.1)',
+                      borderColor: '#25d366'
+                    }
                   }}
                 >
-                  {!userProfilePic && <BusinessIcon />}
+                  {!userProfilePic && <BusinessIcon sx={{ fontSize: 20 }} />}
                 </Avatar>
               </Tooltip>
             </Box>

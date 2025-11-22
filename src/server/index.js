@@ -15464,6 +15464,21 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                 sessionIds
             );
 
+            // Chatbots activos
+            const [chatbotsResult] = await connection.execute(
+                `SELECT COUNT(*) as total FROM chatbot_flows WHERE is_active = 1`
+            );
+
+            // Campañas activas
+            const [campaignsResult] = await connection.execute(
+                `SELECT COUNT(*) as total FROM campaigns WHERE status = 'active' OR status = 'running'`
+            );
+
+            // Kanbans activos
+            const [kanbansResult] = await connection.execute(
+                `SELECT COUNT(*) as total FROM kanban_boards WHERE is_active = 1`
+            );
+
             res.json({
                 success: true,
                 stats: {
@@ -15473,7 +15488,10 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                     messagesToday: messagesTodayResult[0].total || 0,
                     agents: agentsResult[0].total || 0,
                     activeLines: activeLinesResult[0].total || 0,
-                    unreadMessages: unreadMessagesResult[0].total || 0
+                    unreadMessages: unreadMessagesResult[0].total || 0,
+                    chatbots: chatbotsResult[0].total || 0,
+                    campaigns: campaignsResult[0].total || 0,
+                    kanbans: kanbansResult[0].total || 0
                 }
             });
         } finally {

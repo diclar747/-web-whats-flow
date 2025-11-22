@@ -28,7 +28,8 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  Chip
+  Chip,
+  Popover
 } from '@mui/material';
 import {
   Search,
@@ -117,6 +118,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     message: '',
     severity: 'success'
   });
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [messageToDelete, setMessageToDelete] = useState<{ id: string; isFromMe: boolean } | null>(null);
 
   // Estado de sincronización
   const [syncStatus, setSyncStatus] = useState<{
@@ -222,22 +225,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     return () => clearInterval(interval);
   }, [sessionId]);
 
-  // Recargar mensajes cada 5 segundos para asegurar sincronización
-  useEffect(() => {
-    if (!activeChat || !loadMessages) return;
-
-    console.log('🔄 Configurando recarga automática de mensajes para:', activeChat.name);
-    
-    const reloadInterval = setInterval(() => {
-      console.log('🔄 Recargando mensajes automáticamente...');
-      loadMessages(activeChat.id);
-    }, 5000);
-
-    return () => {
-      console.log('🛑 Deteniendo recarga automática de mensajes');
-      clearInterval(reloadInterval);
-    };
-  }, [activeChat, loadMessages]);
+  // ✅ RECARGA AUTOMÁTICA DESACTIVADA - El sistema ya usa Socket.IO para tiempo real
+  // WhatsAppContext maneja automáticamente los mensajes en tiempo real vía Socket.IO
 
   // Socket.IO: DESHABILITADO - WhatsAppContext ya maneja la conexión Socket.IO
   // Tener múltiples conexiones causa conflictos y desconexiones
@@ -588,26 +577,44 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     }
   };
 
-  const handleDeleteMessage = async (messageId: string, isFromMe: boolean) => {
-    if (!activeChat) return;
-    if (!window.confirm('¿Eliminar este mensaje?')) return;
+  const handleDeleteMessage = async () => {
+    if (!activeChat || !messageToDelete) return;
 
     try {
-      
       await fetch(`${getAPIBaseURL()}/api/message/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: sessionId,
           chatJid: activeChat.id,
-          messageId: messageId,
-          fromMe: isFromMe
+          messageId: messageToDelete.id,
+          fromMe: messageToDelete.isFromMe
         })
       });
+      
+      setSnackbar({
+        open: true,
+        message: '✅ Mensaje eliminado correctamente',
+        severity: 'success'
+      });
+      
+      setDeleteConfirmOpen(false);
+      setMessageToDelete(null);
       // ✅ WhatsAppContext actualizará los mensajes vía Socket.IO
     } catch (error) {
       console.error('Error eliminando mensaje:', error);
+      setSnackbar({
+        open: true,
+        message: '❌ Error al eliminar el mensaje',
+        severity: 'error'
+      });
     }
+  };
+
+  const openDeleteConfirm = (messageId: string, isFromMe: boolean) => {
+    setMessageToDelete({ id: messageId, isFromMe });
+    setDeleteConfirmOpen(true);
+    setMessageMenuAnchor(null);
   };
 
   const handleForwardMessage = async () => {
@@ -1329,42 +1336,22 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                     sx={{
                       maxWidth: '65%',
                       bgcolor: msg.isFromMe ? colors.myMessage : colors.theirMessage,
-                      p: '8px 10px 9px 10px',
-                      borderRadius: '8px',
+                      p: '10px 12px 10px 12px',
+                      borderRadius: msg.isFromMe 
+                        ? '12px 12px 4px 12px'  // Esquina inferior derecha más pequeña
+                        : '12px 12px 12px 4px', // Esquina inferior izquierda más pequeña
                       position: 'relative',
                       boxShadow: isDarkMode 
-                        ? '0 1px 3px rgba(0,0,0,0.5)' 
-                        : '0 1px 2px rgba(0,0,0,0.12)',
-                      // 🎨 FASE 1: Hover effect mejorado
+                        ? '0 2px 4px rgba(0,0,0,0.3)' 
+                        : '0 1px 2px rgba(0,0,0,0.1)',
+                      // 🎨 Hover effect mejorado
                       transition: 'all 0.2s ease-in-out',
                       '&:hover': {
                         bgcolor: msg.isFromMe ? colors.myMessageHover : colors.theirMessageHover,
                         boxShadow: isDarkMode 
-                          ? '0 2px 8px rgba(0,0,0,0.7)' 
-                          : '0 2px 6px rgba(0,0,0,0.15)',
-                        transform: 'translateY(-1px)'
-                      },
-                      // Cola triangular
-                      '&::before': msg.isFromMe ? {
-                        content: '""',
-                        position: 'absolute',
-                        right: -8,
-                        top: 0,
-                        width: 0,
-                        height: 0,
-                        borderStyle: 'solid',
-                        borderWidth: '0 0 10px 10px',
-                        borderColor: `transparent transparent ${colors.myMessage} transparent`
-                      } : {
-                        content: '""',
-                        position: 'absolute',
-                        left: -8,
-                        top: 0,
-                        width: 0,
-                        height: 0,
-                        borderStyle: 'solid',
-                        borderWidth: '0 10px 10px 0',
-                        borderColor: `transparent ${colors.theirMessage} transparent transparent`
+                          ? '0 4px 12px rgba(0,0,0,0.5)' 
+                          : '0 2px 8px rgba(0,0,0,0.15)',
+                        transform: 'translateY(-2px)'
                       }
                     }}
                     onContextMenu={(e) => {
@@ -1633,42 +1620,6 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                       />
                     )}
 
-                    {/* Botón de opciones - Solo visible en hover */}
-                    {hoveredMessageId === msg.id && (
-                      <Box sx={{
-                        position: 'absolute',
-                        top: 4,
-                        right: msg.isFromMe ? 8 : 'auto',
-                        left: msg.isFromMe ? 'auto' : 8,
-                        animation: 'fadeIn 0.2s ease-in',
-                        '@keyframes fadeIn': {
-                          from: { opacity: 0, transform: 'scale(0.8)' },
-                          to: { opacity: 1, transform: 'scale(1)' }
-                        }
-                      }}>
-                        <IconButton 
-                          size="small" 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedMessage(msg);
-                            setMessageMenuAnchor(e.currentTarget);
-                          }} 
-                          sx={{ 
-                            bgcolor: 'rgba(0,0,0,0.1)',
-                            color: colors.text,
-                            padding: '4px',
-                            transition: 'all 0.2s ease',
-                            '&:hover': { 
-                              bgcolor: 'rgba(0,0,0,0.2)',
-                              transform: 'scale(1.1)'
-                            }
-                          }}
-                        >
-                          <MoreVert sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Box>
-                    )}
-
                     {/* Hora y estado */}
                     <Box sx={{
                       display: 'flex',
@@ -1709,6 +1660,45 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                       )}
                     </Box>
                   </Paper>
+
+                  {/* Botón de opciones - FUERA del mensaje, al lado derecho */}
+                  {hoveredMessageId === msg.id && (
+                    <Box sx={{
+                      ml: msg.isFromMe ? 0 : 1,
+                      mr: msg.isFromMe ? 1 : 0,
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      animation: 'fadeIn 0.2s ease-in',
+                      '@keyframes fadeIn': {
+                        from: { opacity: 0, transform: 'scale(0.8)' },
+                        to: { opacity: 1, transform: 'scale(1)' }
+                      }
+                    }}>
+                      <IconButton 
+                        size="small" 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedMessage(msg);
+                          setMessageMenuAnchor(e.currentTarget);
+                        }} 
+                        sx={{ 
+                          bgcolor: colors.hover,
+                          color: colors.textSecondary,
+                          padding: '6px',
+                          transition: 'all 0.2s ease',
+                          boxShadow: colors.shadow,
+                          '&:hover': { 
+                            bgcolor: colors.hoverStrong,
+                            color: colors.text,
+                            transform: 'scale(1.1)',
+                            boxShadow: colors.shadowStrong
+                          }
+                        }}
+                      >
+                        <MoreVert sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Box>
+                  )}
                 </Box>
               )))}
               <div ref={messagesEndRef} />
@@ -1919,28 +1909,53 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               )}
             </Box>
 
-            {/* Menú contextual de mensajes - Mejorado */}
-            <Menu
+            {/* Menú contextual de mensajes - Popover mejorado */}
+            <Popover
               anchorEl={messageMenuAnchor}
               open={Boolean(messageMenuAnchor)}
               onClose={() => setMessageMenuAnchor(null)}
               anchorOrigin={{
-                vertical: 'top',
-                horizontal: 'center',
+                vertical: 'bottom',
+                horizontal: 'left',
               }}
               transformOrigin={{
                 vertical: 'top',
-                horizontal: 'center',
+                horizontal: 'right',
               }}
-              PaperProps={{
-                elevation: 8,
-                sx: {
-                  minWidth: 200,
-                  borderRadius: '12px',
-                  mt: 0.5,
-                  bgcolor: colors.sidebar,
-                  border: `1px solid ${colors.divider}`,
-                  '& .MuiMenuItem-root': {
+              slotProps={{
+                paper: {
+                  elevation: 8,
+                  sx: {
+                    minWidth: 220,
+                    borderRadius: '12px',
+                    bgcolor: colors.sidebar,
+                    border: `1px solid ${colors.divider}`,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+                    overflow: 'visible',
+                    mt: 1,
+                    '&::before': {
+                      content: '""',
+                      display: 'block',
+                      position: 'absolute',
+                      top: -8,
+                      right: 14,
+                      width: 16,
+                      height: 16,
+                      bgcolor: colors.sidebar,
+                      border: `1px solid ${colors.divider}`,
+                      borderBottom: 'none',
+                      borderRight: 'none',
+                      transform: 'rotate(45deg)',
+                      zIndex: 0,
+                    }
+                  }
+                }
+              }}
+            >
+              <Box sx={{ py: 1 }}>
+                <MenuItem 
+                  onClick={() => { setReplyMessage?.(selectedMessage); setMessageMenuAnchor(null); }}
+                  sx={{
                     px: 2,
                     py: 1.2,
                     borderRadius: '8px',
@@ -1952,45 +1967,118 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                       bgcolor: colors.hover,
                       transform: 'translateX(4px)'
                     }
-                  }
-                }
-              }}
-            >
-              <MenuItem onClick={() => { setReplyMessage?.(selectedMessage); setMessageMenuAnchor(null); }}>
-                <Reply sx={{ mr: 1.5, fontSize: 20, color: colors.primary }} /> Responder
-              </MenuItem>
-              <MenuItem onClick={() => {
-                setMessageToForward(selectedMessage);
-                setForwardDialogOpen(true);
-                setMessageMenuAnchor(null);
-              }}>
-                <Forward sx={{ mr: 1.5, fontSize: 20, color: '#2196f3' }} /> Reenviar
-              </MenuItem>
-              <Divider sx={{ my: 0.5 }} />
-              <MenuItem onClick={() => { setShowKanbanModal(true); setMessageMenuAnchor(null); }}>
-                <ViewKanban sx={{ mr: 1.5, fontSize: 20, color: '#673ab7' }} /> Enviar a Kanban
-              </MenuItem>
-              <MenuItem onClick={() => { setTransferAgentDialogOpen(true); setMessageMenuAnchor(null); }}>
-                <People sx={{ mr: 1.5, fontSize: 20, color: '#ff9800' }} /> Transferir a Agente
-              </MenuItem>
-              <Divider sx={{ my: 0.5 }} />
-              <MenuItem onClick={() => setMessageMenuAnchor(null)}>
-                <Star sx={{ mr: 1.5, fontSize: 20, color: '#ffc107' }} /> Destacar
-              </MenuItem>
-              {selectedMessage?.isFromMe && (
-                <>
-                  <Divider sx={{ my: 0.5 }} />
-                  <MenuItem onClick={() => {
-                    if (selectedMessage) {
-                      handleDeleteMessage(selectedMessage.id, selectedMessage.isFromMe);
-                    }
+                  }}
+                >
+                  <Reply sx={{ mr: 1.5, fontSize: 20, color: colors.primary }} /> Responder
+                </MenuItem>
+                <MenuItem 
+                  onClick={() => {
+                    setMessageToForward(selectedMessage);
+                    setForwardDialogOpen(true);
                     setMessageMenuAnchor(null);
-                  }} sx={{ color: '#f44336' }}>
-                    <Delete sx={{ mr: 1.5, fontSize: 20 }} /> Eliminar
-                  </MenuItem>
-                </>
-              )}
-            </Menu>
+                  }}
+                  sx={{
+                    px: 2,
+                    py: 1.2,
+                    borderRadius: '8px',
+                    mx: 1,
+                    my: 0.3,
+                    fontSize: '14px',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      bgcolor: colors.hover,
+                      transform: 'translateX(4px)'
+                    }
+                  }}
+                >
+                  <Forward sx={{ mr: 1.5, fontSize: 20, color: '#2196f3' }} /> Reenviar
+                </MenuItem>
+                <Divider sx={{ my: 0.5 }} />
+                <MenuItem 
+                  onClick={() => { setShowKanbanModal(true); setMessageMenuAnchor(null); }}
+                  sx={{
+                    px: 2,
+                    py: 1.2,
+                    borderRadius: '8px',
+                    mx: 1,
+                    my: 0.3,
+                    fontSize: '14px',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      bgcolor: colors.hover,
+                      transform: 'translateX(4px)'
+                    }
+                  }}
+                >
+                  <ViewKanban sx={{ mr: 1.5, fontSize: 20, color: '#673ab7' }} /> Enviar a Kanban
+                </MenuItem>
+                <MenuItem 
+                  onClick={() => { setTransferAgentDialogOpen(true); setMessageMenuAnchor(null); }}
+                  sx={{
+                    px: 2,
+                    py: 1.2,
+                    borderRadius: '8px',
+                    mx: 1,
+                    my: 0.3,
+                    fontSize: '14px',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      bgcolor: colors.hover,
+                      transform: 'translateX(4px)'
+                    }
+                  }}
+                >
+                  <People sx={{ mr: 1.5, fontSize: 20, color: '#ff9800' }} /> Transferir a Agente
+                </MenuItem>
+                <Divider sx={{ my: 0.5 }} />
+                <MenuItem 
+                  onClick={() => setMessageMenuAnchor(null)}
+                  sx={{
+                    px: 2,
+                    py: 1.2,
+                    borderRadius: '8px',
+                    mx: 1,
+                    my: 0.3,
+                    fontSize: '14px',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      bgcolor: colors.hover,
+                      transform: 'translateX(4px)'
+                    }
+                  }}
+                >
+                  <Star sx={{ mr: 1.5, fontSize: 20, color: '#ffc107' }} /> Destacar
+                </MenuItem>
+                {selectedMessage?.isFromMe && (
+                  <>
+                    <Divider sx={{ my: 0.5 }} />
+                    <MenuItem 
+                      onClick={() => {
+                        if (selectedMessage) {
+                          openDeleteConfirm(selectedMessage.id, selectedMessage.isFromMe);
+                        }
+                      }}
+                      sx={{
+                        px: 2,
+                        py: 1.2,
+                        borderRadius: '8px',
+                        mx: 1,
+                        my: 0.3,
+                        fontSize: '14px',
+                        color: '#f44336',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          bgcolor: 'rgba(244, 67, 54, 0.1)',
+                          transform: 'translateX(4px)'
+                        }
+                      }}
+                    >
+                      <Delete sx={{ mr: 1.5, fontSize: 20 }} /> Eliminar
+                    </MenuItem>
+                  </>
+                )}
+              </Box>
+            </Popover>
 
 {/* Diálogo de reenvío */}
             <Dialog
@@ -2120,6 +2208,89 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                   sx={{ bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' } }}
                 >
                   Transferir
+                </Button>
+              </DialogActions>
+            </Dialog>
+
+            {/* Diálogo de confirmación de eliminación */}
+            <Dialog
+              open={deleteConfirmOpen}
+              onClose={() => setDeleteConfirmOpen(false)}
+              maxWidth="xs"
+              fullWidth
+              PaperProps={{
+                sx: {
+                  borderRadius: '16px',
+                  bgcolor: colors.sidebar
+                }
+              }}
+            >
+              <DialogTitle sx={{ 
+                bgcolor: colors.header, 
+                color: colors.text,
+                pb: 2
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <Box sx={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    bgcolor: 'rgba(244, 67, 54, 0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    <Delete sx={{ color: '#f44336', fontSize: 22 }} />
+                  </Box>
+                  <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                    Eliminar mensaje
+                  </Typography>
+                </Box>
+              </DialogTitle>
+              
+              <DialogContent sx={{ bgcolor: colors.background, pt: 3, pb: 2 }}>
+                <Typography variant="body1" sx={{ color: colors.text, mb: 1 }}>
+                  ¿Estás seguro de que deseas eliminar este mensaje?
+                </Typography>
+                <Typography variant="body2" sx={{ color: colors.textSecondary }}>
+                  Esta acción no se puede deshacer.
+                </Typography>
+              </DialogContent>
+              
+              <DialogActions sx={{ bgcolor: colors.background, p: 2, gap: 1 }}>
+                <Button 
+                  onClick={() => {
+                    setDeleteConfirmOpen(false);
+                    setMessageToDelete(null);
+                  }}
+                  sx={{ 
+                    color: colors.textSecondary,
+                    textTransform: 'none',
+                    px: 3,
+                    borderRadius: '8px',
+                    '&:hover': {
+                      bgcolor: colors.hover
+                    }
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleDeleteMessage}
+                  variant="contained"
+                  sx={{ 
+                    bgcolor: '#f44336',
+                    textTransform: 'none',
+                    px: 3,
+                    borderRadius: '8px',
+                    boxShadow: '0 2px 8px rgba(244, 67, 54, 0.3)',
+                    '&:hover': { 
+                      bgcolor: '#d32f2f',
+                      boxShadow: '0 4px 12px rgba(244, 67, 54, 0.4)'
+                    }
+                  }}
+                >
+                  Eliminar
                 </Button>
               </DialogActions>
             </Dialog>
