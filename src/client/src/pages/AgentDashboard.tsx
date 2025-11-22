@@ -60,7 +60,7 @@ interface Message {
 const AgentDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { socket, isConnected, on, off } = useSocket();
-  
+
   // Estados
   const [chats, setChats] = useState<AgentChat[]>([]);
   const [selectedChat, setSelectedChat] = useState<AgentChat | null>(null);
@@ -74,7 +74,7 @@ const AgentDashboard: React.FC = () => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
-  
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -113,13 +113,13 @@ const AgentDashboard: React.FC = () => {
         });
         const data = await response.json();
         console.log('🔍 [AGENT-SESSION] Respuesta completa:', data);
-        
+
         if (data.success && data.sessionId) {
           setSessionId(data.sessionId);
           setPhoneNumber(data.phoneNumber);
           console.log('✅ [AGENT] Usando sesión del admin:', data.sessionId);
           console.log('✅ [AGENT] Número del admin:', data.phoneNumber);
-          
+
           // Guardar en sessionStorage para uso global
           sessionStorage.setItem('adminSessionId', data.sessionId);
           sessionStorage.setItem('adminPhoneNumber', data.phoneNumber || '');
@@ -148,7 +148,7 @@ const AgentDashboard: React.FC = () => {
 
       const data = await response.json();
       console.log('[AGENT-LOAD-CHATS] Respuesta del backend:', data);
-      
+
       if (data.success) {
         // Mapear los datos del backend al formato del frontend
         const mappedChats = (data.chats || []).map((chat: any) => ({
@@ -160,7 +160,7 @@ const AgentDashboard: React.FC = () => {
           unreadCount: chat.unread_count || 0,
           assignedAt: chat.assigned_at
         }));
-        
+
         console.log('[AGENT-LOAD-CHATS] Chats mapeados:', mappedChats.length);
         setChats(mappedChats);
       }
@@ -179,7 +179,7 @@ const AgentDashboard: React.FC = () => {
       const response = await fetch(`/api/messages/${sessionId}/${selectedChat.id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      
+
       const data = await response.json();
       if (data.success) {
         setMessages(data.messages || []);
@@ -218,11 +218,11 @@ const AgentDashboard: React.FC = () => {
 
     const handleNewChat = (data: any) => {
       console.log('📨 Nuevo chat asignado:', data);
-      
+
       // Reproducir sonido de notificación
       const audio = new Audio('/notification.mp3');
       audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
-      
+
       // Mostrar notificación del navegador
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('Nuevo chat asignado', {
@@ -231,23 +231,51 @@ const AgentDashboard: React.FC = () => {
           badge: '/whatsapp-icon.png'
         });
       }
-      
+
       // Recargar lista de chats
       loadAgentChats();
     };
 
     // Escuchar eventos específicos del agente
     on(`agent-${agentId}-new-chat`, handleNewChat);
-    
+
     on('chat-assignment-changed', (data: any) => {
       if (data.agentId === agentId) {
         console.log('🔄 Asignación de chat cambiada');
         loadAgentChats();
       }
     });
-    
+
     on('chat:assigned', handleNewChat);
-    
+
+    // Escuchar eventos de transferencia
+    on(`agent:${agentId}:transfer`, (data: any) => {
+      console.log('🔄 Chat transferido a este agente:', data);
+
+      // Reproducir sonido de notificación
+      const audio = new Audio('/notification.mp3');
+      audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
+
+      // Mostrar notificación del navegador
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Chat transferido', {
+          body: `Se te ha transferido el chat: ${data.chatName || data.chatJid}`,
+          icon: '/whatsapp-icon.png',
+          badge: '/whatsapp-icon.png'
+        });
+      }
+
+      // Recargar lista de chats
+      loadAgentChats();
+    });
+
+    on('agent:chat:transfer', (data: any) => {
+      if (data.agentId === agentId) {
+        console.log('🔄 Transferencia global recibida:', data);
+        loadAgentChats();
+      }
+    });
+
     on('message:received', (data: any) => {
       console.log('📨 Mensaje recibido:', data);
       // Agregar mensaje directamente sin recargar
@@ -271,7 +299,7 @@ const AgentDashboard: React.FC = () => {
         });
       }
     });
-    
+
     on('message', (data: any) => {
       console.log('💬 Nuevo mensaje:', data);
       if (selectedChat && data.chatJid === selectedChat.id) {
@@ -310,6 +338,8 @@ const AgentDashboard: React.FC = () => {
 
     return () => {
       off(`agent-${agentId}-new-chat`);
+      off(`agent:${agentId}:transfer`);
+      off('agent:chat:transfer');
       off('chat-assignment-changed');
       off('chat:assigned');
       off('message:received');
@@ -329,7 +359,7 @@ const AgentDashboard: React.FC = () => {
       console.log('[AGENT-SEND] ⚠️ Falta información:', { messageText: !!messageText, selectedChat: !!selectedChat, sessionId });
       return;
     }
-    
+
     console.log('[AGENT-SEND] 📤 Enviando mensaje:', {
       sessionId,
       chatJid: selectedChat.id,
@@ -337,7 +367,7 @@ const AgentDashboard: React.FC = () => {
     });
 
     setSending(true);
-    
+
     // Agregar mensaje optimisticamente a la UI
     const tempMessage: any = {
       id: 'temp-' + Date.now(),
@@ -377,7 +407,7 @@ const AgentDashboard: React.FC = () => {
       if (data.success) {
         console.log('[AGENT-SEND] ✅ Mensaje enviado exitosamente');
         // Actualizar el estado del mensaje temporal a 'sent'
-        setMessages(prev => prev.map(msg => 
+        setMessages(prev => prev.map(msg =>
           msg.id === tempMessage.id ? { ...msg, status: 'sent', id: data.messageId || msg.id } : msg
         ));
       } else {
@@ -395,6 +425,50 @@ const AgentDashboard: React.FC = () => {
       alert('Error de red: ' + error.message);
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedChat || !sessionId) return;
+
+    console.log('[AGENT-MEDIA] 📎 Archivo seleccionado:', file.name, file.type);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('sessionId', sessionId);
+    formData.append('chatJid', selectedChat.id);
+    formData.append('agentId', agentId?.toString() || '');
+
+    setSending(true);
+    try {
+      const token = sessionStorage.getItem('token');
+      const response = await fetch('/api/messages/send-media', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      const data = await response.json();
+      console.log('[AGENT-MEDIA] 📥 Respuesta:', data);
+
+      if (data.success) {
+        console.log('[AGENT-MEDIA] ✅ Multimedia enviada');
+        // El mensaje aparecerá vía Socket.IO
+      } else {
+        alert('Error: ' + (data.error || 'No se pudo enviar el archivo'));
+      }
+    } catch (error: any) {
+      console.error('[AGENT-MEDIA] ❌ Error:', error);
+      alert('Error de red: ' + error.message);
+    } finally {
+      setSending(false);
+      // Limpiar input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -624,13 +698,25 @@ const AgentDashboard: React.FC = () => {
 
             {/* Área de envío de mensajes */}
             <Paper elevation={2} sx={{ p: 1.5, display: 'flex', gap: 1, alignItems: 'flex-end', bgcolor: '#f0f2f5' }}>
-              <input ref={fileInputRef} type="file" style={{ display: 'none' }} />
-              
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx"
+                onChange={handleFileSelect}
+                style={{ display: 'none' }}
+              />
+
+
               <IconButton size="small" sx={{ color: '#54656f' }}>
                 <EmojiIcon onClick={() => setShowEmojiPicker(!showEmojiPicker)} />
               </IconButton>
 
-              <IconButton size="small" onClick={() => fileInputRef.current?.click()} sx={{ color: '#54656f' }}>
+              <IconButton
+                size="small"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!selectedChat || !sessionId || sending}
+                sx={{ color: '#54656f' }}
+              >
                 <AttachFileIcon />
               </IconButton>
 
