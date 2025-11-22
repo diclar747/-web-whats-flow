@@ -12958,7 +12958,8 @@ app.post('/api/auth/login', async (req, res) => {
             delete user.password;
             
             // Crear sesión única por dispositivo usando el nuevo sistema
-            const sessionToken = createUniqueSession(user.id, deviceId, email, user.role);
+            // IMPORTANTE: Esto cerrará automáticamente cualquier sesión previa del mismo usuario
+            const sessionToken = createUniqueSession(user.id, deviceId, email, user.role, io);
             const token = Buffer.from(`${user.id}:${user.email}:${Date.now()}:${sessionToken}`).toString('base64');
             
             // Para TODOS los usuarios (admin, agente, supervisor), obtener el sessionId activo del sistema

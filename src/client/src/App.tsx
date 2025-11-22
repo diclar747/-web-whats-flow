@@ -462,6 +462,46 @@ const App: React.FC = () => {
     initializeSession();
   }, []);
 
+  // Listener para detectar cuando la sesión fue cerrada en otro dispositivo
+  useEffect(() => {
+    // Solo activar si hay usuario logueado
+    const userId = sessionStorage.getItem('userId');
+    if (!userId) return;
+
+    // Importar socket.io-client
+    import('socket.io-client').then(({ io }) => {
+      const API_BASE = process.env.REACT_APP_API_URL || 'https://web.whats-flow.com';
+      const sessionSocket = io(API_BASE, {
+        transports: ['websocket', 'polling'],
+        reconnection: true
+      });
+
+      const handleSessionClosed = (data: any) => {
+        console.log('🔐 [APP] Sesión cerrada en otro dispositivo:', data);
+        
+        // Verificar si es nuestra sesión la que fue cerrada
+        const currentUserId = parseInt(sessionStorage.getItem('userId') || '0');
+        const currentSessionToken = sessionStorage.getItem('sessionToken');
+        
+        if (data.userId === currentUserId || (data.oldTokens && data.oldTokens.includes(currentSessionToken))) {
+          alert(`Tu sesión ha sido cerrada porque iniciaste sesión en otro dispositivo.\n\nRazón: ${data.reason}`);
+          
+          // Limpiar todo y redirigir
+          sessionStorage.clear();
+          localStorage.clear();
+          window.location.href = '/';
+        }
+      };
+
+      sessionSocket.on('session-closed', handleSessionClosed);
+
+      return () => {
+        sessionSocket.off('session-closed', handleSessionClosed);
+        sessionSocket.disconnect();
+      };
+    });
+  }, [user]);
+
   // FUNCIÓN ELIMINADA POR SEGURIDAD
   // fetchActiveSession permitía acceder a sesiones de otros usuarios
   // Ahora cada usuario debe escanear su propio QR code

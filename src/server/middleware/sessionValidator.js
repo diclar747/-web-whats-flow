@@ -68,8 +68,39 @@ const validateUniqueSession = (req, res, next) => {
 
 /**
  * Crear una nueva sesión única
+ * IMPORTANTE: Cierra todas las sesiones previas del mismo usuario
  */
-const createUniqueSession = (userId, deviceId, email, role) => {
+const createUniqueSession = (userId, deviceId, email, role, io = null) => {
+    // PRIMERO: Cerrar todas las sesiones previas de este usuario
+    let closedSessions = 0;
+    const oldTokens = [];
+    
+    for (const [token, session] of activeSessions.entries()) {
+        if (session.userId === userId) {
+            console.log(`[SESSION] 🔐 Cerrando sesión previa de ${email} en ${session.deviceId.substr(0, 20)}...`);
+            oldTokens.push(token);
+            activeSessions.delete(token);
+            closedSessions++;
+        }
+    }
+    
+    if (closedSessions > 0) {
+        console.log(`[SESSION] ⚠️ ${closedSessions} sesión(es) previa(s) cerrada(s) para ${email}`);
+        
+        // Emitir evento para cerrar sesiones en otros dispositivos
+        if (io) {
+            io.emit('session-closed', {
+                userId: userId,
+                email: email,
+                reason: 'Nueva sesión iniciada en otro dispositivo',
+                oldTokens: oldTokens,
+                timestamp: new Date().toISOString()
+            });
+            console.log(`[SESSION] 📢 Evento session-closed emitido para ${email}`);
+        }
+    }
+    
+    // SEGUNDO: Crear la nueva sesión
     const sessionToken = crypto.randomBytes(32).toString('hex');
     const now = Date.now();
     
