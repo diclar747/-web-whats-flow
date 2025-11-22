@@ -536,28 +536,80 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
           ) : (
             <Grid container spacing={3}>
               {flows.map((flow) => (
-                <Grid item xs={12} md={6} key={flow.id}>
-                  <Card elevation={3}>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                            <Typography variant="h6" fontWeight="bold">{flow.name}</Typography>
+                <Grid item xs={12} md={6} lg={4} key={flow.id}>
+                  <Card 
+                    elevation={0}
+                    sx={{ 
+                      border: flow.flowType === 'ai' 
+                        ? '2px solid #10b981' 
+                        : '2px solid #667eea',
+                      borderRadius: 3,
+                      background: flow.flowType === 'ai'
+                        ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(16, 185, 129, 0.1) 100%)'
+                        : 'linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(102, 126, 234, 0.1) 100%)',
+                      transition: 'all 0.3s',
+                      '&:hover': {
+                        transform: 'translateY(-4px)',
+                        boxShadow: flow.flowType === 'ai'
+                          ? '0 12px 24px rgba(16, 185, 129, 0.3)'
+                          : '0 12px 24px rgba(102, 126, 234, 0.3)'
+                      }
+                    }}
+                  >
+                    {/* Header colorido */}
+                    <Box 
+                      sx={{ 
+                        background: flow.flowType === 'ai'
+                          ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                          : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        p: 2,
+                        color: 'white',
+                        borderRadius: '10px 10px 0 0'
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {flow.flowType === 'ai' ? (
+                            <Psychology sx={{ fontSize: 28 }}/>
+                          ) : (
+                            <Code sx={{ fontSize: 28 }}/>
+                          )}
+                          <Box>
+                            <Typography variant="h6" fontWeight="bold" sx={{ fontSize: '1.1rem' }}>
+                              {flow.name}
+                            </Typography>
                             <Chip 
                               size="small" 
-                              icon={flow.flowType === 'ai' ? <Psychology/> : <Code/>}
-                              label={flow.flowType === 'ai' ? 'IA' : 'Programado'} 
-                              color={flow.flowType === 'ai' ? 'success' : 'primary'}
+                              label={flow.flowType === 'ai' ? 'Inteligencia Artificial' : 'Flujo Programado'} 
+                              sx={{ 
+                                bgcolor: 'rgba(255,255,255,0.2)',
+                                color: 'white',
+                                fontSize: '0.7rem',
+                                height: 20
+                              }}
                             />
                           </Box>
-                          <Typography variant="body2" color="textSecondary">{flow.description}</Typography>
                         </Box>
-                        <FormControlLabel 
-                          control={<Switch checked={flow.active} onChange={(e) => handleToggleFlow(flow.id, e.target.checked)}/>} 
-                          label=""
+                        <Switch 
+                          checked={flow.active} 
+                          onChange={(e) => handleToggleFlow(flow.id, e.target.checked)}
+                          sx={{
+                            '& .MuiSwitch-switchBase.Mui-checked': {
+                              color: 'white',
+                            },
+                            '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                              backgroundColor: 'rgba(255,255,255,0.5)',
+                            }
+                          }}
                         />
                       </Box>
-                      <Divider sx={{ my: 2 }}/>
+                    </Box>
+
+                    {/* Body del card */}
+                    <CardContent>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, minHeight: 40 }}>
+                        {flow.description || 'Sin descripción'}
+                      </Typography>
                       
                       {flow.flowType === 'programmed' && (
                         <>
