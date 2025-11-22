@@ -790,24 +790,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
             boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
           }}
         >
-          <Toolbar sx={{ gap: 2 }}>
-            {/* Logo/Marca */}
-            <WhatsApp sx={{ fontSize: 32, color: '#25d366', mr: 1 }} />
-            
-            <Typography 
-              variant="h5" 
-              sx={{ 
-                flexGrow: 1, 
-                fontWeight: 700,
-                background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                letterSpacing: '-0.5px'
-              }}
-            >
-              WhatsFlow
-            </Typography>
-
+          <Toolbar sx={{ gap: 2, justifyContent: 'flex-end' }}>
             {/* Indicadores de estado - Compactos y organizados */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               {/* Estado de WhatsApp */}
@@ -833,8 +816,42 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                 />
               </Tooltip>
 
+              {/* Contactos */}
+              <Tooltip title={`Total de contactos: ${dashboardStats.contacts || 0}`}>
+                <Chip
+                  icon={<ContactsIcon sx={{ fontSize: 16 }} />}
+                  label={`${dashboardStats.contacts || 0} Contactos`}
+                  size="small"
+                  variant="outlined"
+                  sx={{ 
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    height: 28,
+                    borderColor: '#00bcd4',
+                    color: '#00bcd4'
+                  }}
+                />
+              </Tooltip>
+
+              {/* Mensajes hoy */}
+              <Tooltip title={`Mensajes hoy: ${dashboardStats.messagesToday || 0} | Total: ${dashboardStats.messages || 0}`}>
+                <Chip
+                  icon={<MessageIcon sx={{ fontSize: 16 }} />}
+                  label={`${dashboardStats.messagesToday || 0} Mensajes`}
+                  size="small"
+                  variant="outlined"
+                  sx={{ 
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    height: 28,
+                    borderColor: '#4caf50',
+                    color: '#4caf50'
+                  }}
+                />
+              </Tooltip>
+
               {/* Agentes en línea */}
-              <Tooltip title={`Agentes online: ${dashboardStats.agents || 0}`}>
+              <Tooltip title={`Agentes activos: ${dashboardStats.agents || 0}`}>
                 <Chip
                   icon={<AgentsIcon sx={{ fontSize: 16 }} />}
                   label={`${dashboardStats.agents || 0} Agentes`}
@@ -851,7 +868,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
               </Tooltip>
 
               {/* Bots activos */}
-              <Tooltip title="Chatbots activos">
+              <Tooltip title={`Chatbots activos: ${dashboardStats.chatbots || 0}`}>
                 <Chip
                   icon={<BotIcon sx={{ fontSize: 16 }} />}
                   label={`${dashboardStats.chatbots || 0} Bots`}
@@ -868,7 +885,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
               </Tooltip>
 
               {/* Campañas activas */}
-              <Tooltip title="Campañas en curso">
+              <Tooltip title={`Campañas activas: ${dashboardStats.campaigns || 0}`}>
                 <Chip
                   icon={<CampaignIcon sx={{ fontSize: 16 }} />}
                   label={`${dashboardStats.campaigns || 0} Campañas`}
@@ -885,7 +902,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
               </Tooltip>
 
               {/* Kanbans activos */}
-              <Tooltip title="Tableros Kanban">
+              <Tooltip title={`Tableros Kanban: ${dashboardStats.kanbans || 0}`}>
                 <Chip
                   icon={<KanbanIcon sx={{ fontSize: 16 }} />}
                   label={`${dashboardStats.kanbans || 0} Kanbans`}
@@ -1068,14 +1085,9 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                       </ProtectedRoute>
                     } />
                     <Route path="/settings/*" element={
-                      <ProtectedRoute module="users" action="view">
-                        <Box sx={{ p: 3 }}>
-                          <Typography variant="h4" gutterBottom>Configuración</Typography>
-                          <Box sx={{ mt: 3 }}>
-                            <AgentPermissionsManager />
-                          </Box>
-                        </Box>
-                      </ProtectedRoute>
+                      <Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>}>
+                        <SettingsModule sessionId={sessionId} />
+                      </Suspense>
                     } />
                     <Route path="*" element={<Navigate to="/dashboard" replace />} />
                   </Routes>
