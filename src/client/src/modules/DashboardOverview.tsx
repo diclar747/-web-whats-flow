@@ -229,15 +229,6 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
             color: '#9c27b0',
             gradient: 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)',
             trend: { value: 0, isPositive: true, period: 'total' }
-          },
-          {
-            title: 'Grupos',
-            value: (contacts.groups || 0).toLocaleString(),
-            subtitle: 'Grupos de WhatsApp',
-            icon: <Group />,
-            color: '#673ab7',
-            gradient: 'linear-gradient(135deg, #673ab7 0%, #512da8 100%)',
-            trend: { value: 0, isPositive: true, period: 'total' }
           }
         ];
 
