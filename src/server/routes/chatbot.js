@@ -858,7 +858,7 @@ router.post('/upload', async (req, res) => {
     // Configurar storage de multer
     const storage = multer.diskStorage({
       destination: (req, file, cb) => {
-        const uploadDir = path.join(__dirname, '../uploads/chatbot');
+        const uploadDir = path.join(__dirname, '../../uploads/chatbot');
         
         // Crear directorio si no existe
         if (!fs.existsSync(uploadDir)) {
