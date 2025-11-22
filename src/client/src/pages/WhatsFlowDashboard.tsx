@@ -308,11 +308,16 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     });
   }, [userRole, hasModuleAccess, sessionId, permUserRole]);
 
+
   // Detectar ruta activa
   const activeItem = navigationItems.find(item =>
     location.pathname === item.path ||
     (item.path !== '/dashboard' && location.pathname.startsWith(item.path))
   ) || navigationItems[0];
+
+  // Detectar si estamos en la página de chat para aplicar modo oscuro completo
+  const isInChatPage = location.pathname.startsWith('/dashboard/chat');
+
 
   // Configurar logger con sessionId
   useEffect(() => {
@@ -774,20 +779,23 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
 
       {/* Contenido principal */}
       <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-        {/* AppBar superior */}
         <AppBar
           position="static"
           elevation={0}
           sx={{
-            bgcolor: 'background.paper',
-            color: 'text.primary',
+            bgcolor: isInChatPage ? '#1a1a1a' : 'background.paper',
+            color: isInChatPage ? '#ffffff' : 'text.primary',
             borderBottom: '1px solid',
-            borderColor: 'divider',
+            borderColor: isInChatPage ? 'rgba(255, 255, 255, 0.1)' : 'divider',
             backdropFilter: 'blur(20px) saturate(180%)',
-            backgroundColor: (theme) => theme.palette.mode === 'dark'
-              ? 'rgba(32, 44, 51, 0.8)'
-              : 'rgba(255, 255, 255, 0.8)',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+            backgroundColor: isInChatPage
+              ? 'rgba(26, 26, 26, 0.95)'
+              : (theme) => theme.palette.mode === 'dark'
+                ? 'rgba(32, 44, 51, 0.8)'
+                : 'rgba(255, 255, 255, 0.8)',
+            boxShadow: isInChatPage
+              ? '0 2px 8px rgba(0, 0, 0, 0.3)'
+              : '0 2px 8px rgba(0, 0, 0, 0.04)',
           }}
         >
           <Toolbar sx={{ gap: 2, justifyContent: 'flex-end' }}>
@@ -823,12 +831,12 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                   label={`${dashboardStats.contacts || 0} Contactos`}
                   size="small"
                   variant="outlined"
-                  sx={{ 
+                  sx={{
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: '#00bcd4',
-                    color: '#00bcd4'
+                    borderColor: isInChatPage ? '#4dd0e1' : '#00bcd4',
+                    color: isInChatPage ? '#4dd0e1' : '#00bcd4'
                   }}
                 />
               </Tooltip>
@@ -840,12 +848,12 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                   label={`${dashboardStats.messagesToday || 0} Mensajes`}
                   size="small"
                   variant="outlined"
-                  sx={{ 
+                  sx={{
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: '#4caf50',
-                    color: '#4caf50'
+                    borderColor: isInChatPage ? '#66bb6a' : '#4caf50',
+                    color: isInChatPage ? '#66bb6a' : '#4caf50'
                   }}
                 />
               </Tooltip>
@@ -857,12 +865,12 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                   label={`${dashboardStats.agents || 0} Agentes`}
                   size="small"
                   variant="outlined"
-                  sx={{ 
+                  sx={{
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: '#2196f3',
-                    color: '#2196f3'
+                    borderColor: isInChatPage ? '#42a5f5' : '#2196f3',
+                    color: isInChatPage ? '#42a5f5' : '#2196f3'
                   }}
                 />
               </Tooltip>
@@ -874,12 +882,12 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                   label={`${dashboardStats.chatbots || 0} Bots`}
                   size="small"
                   variant="outlined"
-                  sx={{ 
+                  sx={{
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: '#9c27b0',
-                    color: '#9c27b0'
+                    borderColor: isInChatPage ? '#ab47bc' : '#9c27b0',
+                    color: isInChatPage ? '#ab47bc' : '#9c27b0'
                   }}
                 />
               </Tooltip>
@@ -891,12 +899,12 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                   label={`${dashboardStats.campaigns || 0} Campañas`}
                   size="small"
                   variant="outlined"
-                  sx={{ 
+                  sx={{
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: '#ff9800',
-                    color: '#ff9800'
+                    borderColor: isInChatPage ? '#ffa726' : '#ff9800',
+                    color: isInChatPage ? '#ffa726' : '#ff9800'
                   }}
                 />
               </Tooltip>
@@ -908,12 +916,12 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                   label={`${dashboardStats.kanbans || 0} Kanbans`}
                   size="small"
                   variant="outlined"
-                  sx={{ 
+                  sx={{
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: '#673ab7',
-                    color: '#673ab7'
+                    borderColor: isInChatPage ? '#7e57c2' : '#673ab7',
+                    color: isInChatPage ? '#7e57c2' : '#673ab7'
                   }}
                 />
               </Tooltip>
