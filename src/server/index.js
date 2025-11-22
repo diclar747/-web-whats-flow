@@ -44,6 +44,20 @@ function getRandomDelay(minSeconds = 60, maxSeconds = 120) {
     return randomSeconds * 1000; // Convertir a milisegundos
 }
 
+// Función para normalizar JIDs y eliminar sufijos de dispositivo/hilo
+function normalizeJid(jid) {
+    if (!jid) return jid;
+    
+    // Eliminar sufijos como :82, :1, etc. que WhatsApp agrega para hilos/dispositivos
+    // Formato: 595994854167:82@s.whatsapp.net -> 595994854167@s.whatsapp.net
+    const parts = jid.split('@');
+    if (parts.length === 2) {
+        const numberPart = parts[0].split(':')[0]; // Tomar solo la parte antes de ":"
+        return `${numberPart}@${parts[1]}`;
+    }
+    return jid;
+}
+
 const app = express();
 const server = createServer(app);
 
@@ -1588,9 +1602,11 @@ async function saveMessageToDB(sessionId, msg) {
     try {
         const {
             id: messageId, // Baileys message ID
-            chat_jid, // JID of the chat (contact or group)
-            sender_jid, // JID of the actual sender (can be different from chat_jid in groups)
+            chat_jid: rawChatJid, // JID of the chat (contact or group)
+            sender_jid: rawSenderJid, // JID of the actual sender (can be different from chat_jid in groups)
             from_me,
+            agent_id = null, // ID del agente (opcional)
+            agent_name = null, // Nombre del agente (opcional)
             message_type,
             text_content,
             media_url,
@@ -1598,6 +1614,10 @@ async function saveMessageToDB(sessionId, msg) {
             timestamp, // Should be a JS Date object or a string parsable by new Date()
             status = 'sent' // Default status, can be updated later
         } = msg;
+
+        // Normalizar JIDs para eliminar sufijos de dispositivo/hilo
+        const chat_jid = normalizeJid(rawChatJid);
+        const sender_jid = normalizeJid(rawSenderJid);
 
         // Ensure timestamp is in YYYY-MM-DD HH:MM:SS format for MySQL DATETIME
         const mysqlTimestamp = new Date(timestamp).toISOString().slice(0, 19).replace('T', ' ');
@@ -1661,19 +1681,21 @@ async function saveMessageToDB(sessionId, msg) {
             chat_jid,
             finalSenderJid,
             from_me,
+            agent_id, // 🆕 ID del agente
+            agent_name, // 🆕 Nombre del agente
             message_type || null, // Asegurar null si message_type es undefined
             text_content || null,
             media_url || null,
             media_mime_type || null,
             mysqlTimestamp,
             status || 'pending', // Asegurar un estado por defecto si es undefined
-            senderName, // 🆕 Nombre del remitente
-            senderAvatar // 🆕 Avatar del remitente
+            senderName, // Nombre del remitente
+            senderAvatar // Avatar del remitente
         ];
 
-        console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for phone number: ${phoneNumber}, user_session_id: ${userSessionId}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, type: ${params[6]}, status: ${params[11]}, sender_name: ${senderName}`);
+        console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for phone number: ${phoneNumber}, user_session_id: ${userSessionId}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[8]}, status: ${params[13]}, sender_name: ${senderName}`);
         const [result] = await connection.execute(
-            'INSERT INTO messages (id, session_id, user_session_id, chat_jid, sender_jid, from_me, message_type, text_content, media_url, media_mime_type, timestamp, status, sender_name, sender_avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), sender_name = VALUES(sender_name), sender_avatar = VALUES(sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), text_content = COALESCE(VALUES(text_content), text_content), updated_at = CURRENT_TIMESTAMP',
+            'INSERT INTO messages (id, session_id, user_session_id, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, timestamp, status, sender_name, sender_avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = VALUES(agent_id), agent_name = VALUES(agent_name), sender_name = VALUES(sender_name), sender_avatar = VALUES(sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), text_content = COALESCE(VALUES(text_content), text_content), updated_at = CURRENT_TIMESTAMP',
             params
         );
         console.log(`[DB-MSG-QUERY-RESULT] Result for messageId ${messageId}: affectedRows: ${result.affectedRows}, insertId: ${result.insertId !== undefined ? result.insertId : 'N/A (update)'}`);
@@ -4439,7 +4461,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 // if (msg.key.remoteJid.includes('@g.us')) continue;
                 
                 const messageId = msg.key.id;
-                const senderJid = msg.key.remoteJid;
+                const rawSenderJid = msg.key.remoteJid;
+                const senderJid = normalizeJid(rawSenderJid); // Normalizar JID
                 const textContent = msg.message?.conversation || 
                                    msg.message?.extendedTextMessage?.text ||
                                    msg.message?.imageMessage?.caption ||
@@ -4448,6 +4471,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 console.log(`[${sessionId}] 🚀🚀🚀 EMITIENDO EN TIEMPO REAL:`, {
                     id: messageId.substring(0, 20),
                     from: senderJid.substring(0, 30),
+                    rawJid: rawSenderJid !== senderJid ? rawSenderJid.substring(0, 30) : 'igual',
                     text: textContent.substring(0, 30),
                     isGroup: senderJid.includes('@g.us')
                 });
@@ -4480,7 +4504,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
             if (shouldProcess) {
                 for (const msg of m.messages) {
-                    const senderJid = msg.key.remoteJid; 
+                    const rawSenderJid = msg.key.remoteJid;
+                    const senderJid = normalizeJid(rawSenderJid); // Normalizar JID
                     const participantJid = msg.key.participant; 
                     const messageId = msg.key.id;
                     let pushName = msg.pushName; // Puede ser el nombre del contacto o el asunto del grupo
@@ -4750,7 +4775,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 pushName: pushName
                             };
                             // SOLO emitir a la sesión específica, NO globalmente
-                            console.log(`[${sessionId}] 🚀 PREPARANDO EMISIÓN mensaje a session-${sessionId}`);
+                            console.log(`[${sessionId}] 🚀 PREPARANDO EMISIÓN mensaje a session-${sessionId} y session-${phoneNumber}`);
                             console.log(`[${sessionId}] 📊 Datos del mensaje:`, {
                                 id: clientMessage.id,
                                 from: clientMessage.from,
@@ -4758,8 +4783,15 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 message: clientMessage.message?.substring(0, 50),
                                 contactName: contactName
                             });
+                            // Emitir a ambas salas: sessionId y phoneNumber
                             io.to(`session-${sessionId}`).emit('message', clientMessage);
-                            console.log(`[${sessionId}] ✅ Nuevo mensaje emitido SOLO a session-${sessionId} de ${contactName}: ${clientMessage.message?.substring(0, 50)}`);
+                            if (phoneNumber && phoneNumber !== sessionId) {
+                                io.to(`session-${phoneNumber}`).emit('message', clientMessage);
+                                console.log(`[${sessionId}] ✅ Mensaje emitido a session-${sessionId} Y session-${phoneNumber}`);
+                            } else {
+                                console.log(`[${sessionId}] ✅ Mensaje emitido a session-${sessionId}`);
+                            }
+                            console.log(`[${sessionId}] 📨 De ${contactName}: ${clientMessage.message?.substring(0, 50)}`);
                             
                             // CHATBOT: Procesar mensaje entrante y responder automáticamente
                             if (textContent && senderJid && !msg.key.fromMe) {
@@ -6371,7 +6403,7 @@ app.post('/api/send/message', async (req, res) => {
 // Endpoint específico para agentes - obtener mensajes de un chat
 app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
     const { sessionId, chatJid } = req.params;
-    const { limit = 100 } = req.query;
+    const { limit = 10000 } = req.query; // Aumentado a 10000 por defecto
 
     console.log('[AGENT-MESSAGES] 📥 Obteniendo mensajes:', { sessionId, chatJid, limit });
 
@@ -6388,18 +6420,31 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            const [messages] = await connection.execute(
-                `SELECT
+            // Cargar TODOS los mensajes sin límite si limit es muy grande
+            const query = parseInt(limit, 10) >= 10000
+                ? `SELECT
                     m.id, m.session_id, m.chat_jid, m.sender_jid,
-                    m.from_me, m.message_type, m.text_content, m.media_url,
+                    m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url,
+                    m.timestamp, m.status, m.sender_name, m.sender_avatar
+                FROM messages m
+                WHERE (m.session_id = ? OR m.phone_number = ?)
+                  AND m.chat_jid = ?
+                ORDER BY m.timestamp ASC`
+                : `SELECT
+                    m.id, m.session_id, m.chat_jid, m.sender_jid,
+                    m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url,
                     m.timestamp, m.status, m.sender_name, m.sender_avatar
                 FROM messages m
                 WHERE (m.session_id = ? OR m.phone_number = ?)
                   AND m.chat_jid = ?
                 ORDER BY m.timestamp ASC
-                LIMIT ?`,
-                [phoneNumber, phoneNumber, chatJid, parseInt(limit, 10)]
-            );
+                LIMIT ?`;
+            
+            const params = parseInt(limit, 10) >= 10000 
+                ? [phoneNumber, phoneNumber, chatJid]
+                : [phoneNumber, phoneNumber, chatJid, parseInt(limit, 10)];
+            
+            const [messages] = await connection.execute(query, params);
 
             console.log('[AGENT-MESSAGES] ✅ Encontrados:', messages.length, 'mensajes');
 
@@ -6420,6 +6465,8 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
                     chatJid: msg.chat_jid,
                     senderJid: msg.sender_jid,
                     from_me: msg.from_me,
+                    agent_id: msg.agent_id,
+                    agent_name: msg.agent_name,
                     message_type: msg.message_type,
                     text_content: msg.text_content,
                     media_url: msg.media_url,
@@ -6555,13 +6602,30 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
         
         const ownJid = session.sock?.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net';
         const actualSessionId = session.sessionId || sessionId;
-        
+
+        // Obtener nombre del agente si está disponible
+        let agentName = null;
+        if (agentId && pool) {
+            try {
+                const conn = await pool.getConnection();
+                const [users] = await conn.execute('SELECT name FROM users WHERE id = ? LIMIT 1', [agentId]);
+                conn.release();
+                if (users.length > 0) {
+                    agentName = users[0].name;
+                }
+            } catch (err) {
+                console.log('[AGENT-SEND] ⚠️ No se pudo obtener nombre del agente:', err.message);
+            }
+        }
+
         // Guardar en base de datos
         const dbMessage = {
             id: sentResult.key.id,
             chat_jid: jid,
             sender_jid: ownJid,
             from_me: true,
+            agent_id: agentId || null,
+            agent_name: agentName,
             message_type: messageType,
             text_content: message || '',
             media_url: mediaUrl,
@@ -7296,7 +7360,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // Obtener mensajes
 app.get('/api/messages/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
-    const { number, startDate, endDate, limit = 50, offset = 0 } = req.query;
+    const { number, startDate, endDate, limit = 10000, offset = 0 } = req.query;
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'DB service unavailable' });
@@ -7339,10 +7403,14 @@ app.get('/api/messages/:sessionId', async (req, res) => {
 
         query += ' ORDER BY m.timestamp ASC';
 
-        // Ejecutar consulta principal directamente; calcular total a partir del resultado para simplificar.
-        query += ' LIMIT ? OFFSET ?';
-        queryParams.push(parseInt(limit, 10));
-        queryParams.push(parseInt(offset, 10));
+        // Ejecutar consulta principal con límite muy alto o sin límite
+        const limitValue = parseInt(limit, 10);
+        if (limitValue < 10000) {
+            query += ' LIMIT ? OFFSET ?';
+            queryParams.push(limitValue);
+            queryParams.push(parseInt(offset, 10));
+        }
+        // Si limit >= 10000, no agregar LIMIT (cargar todos)
 
         const [messagesFromDB] = await connection.execute(query, queryParams);
         const totalMessages = Array.isArray(messagesFromDB) ? messagesFromDB.length : 0;
@@ -7539,6 +7607,8 @@ app.get('/api/messages', async (req, res) => {
                 chat_jid as contactId,
                 sender_jid,
                 from_me as isFromMe,
+                agent_id as agentId,
+                agent_name as agentName,
                 message_type as type,
                 text_content as text,
                 media_url,
@@ -7597,7 +7667,7 @@ app.get('/api/history/messages', async (req, res) => {
                      COALESCE(c.name, c.notify_name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as chat_name,
                      m.sender_jid,
                      COALESCE(s.name, s.notify_name, SUBSTRING_INDEX(m.sender_jid, '@', 1)) as sender_name,
-                     m.from_me, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status
+                     m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status
                      FROM messages m
                      LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id IN (${placeholders})
                      LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id IN (${placeholders})
@@ -7654,7 +7724,8 @@ app.get('/api/history/messages', async (req, res) => {
             timestamp: new Date(msg.timestamp).toISOString(),
             type: msg.message_type,
             status: msg.status,
-            agentName: msg.from_me ? 'Sistema' : '-'
+            agentId: msg.agent_id,
+            agentName: msg.agent_name || (msg.from_me ? 'Sistema' : '-')
         }));
         
         console.log(`[API-HISTORY] Returning ${historyMessages.length} messages, total: ${totalMessages}`);
@@ -14860,8 +14931,15 @@ app.get('/api/agents/:userId/chats', async (req, res) => {
                 AND ca.status = 'active'
                 GROUP BY ca.chat_jid, ca.session_id
                 ORDER BY last_message_time DESC`,
-                [phoneNumber, phoneNumber, userId, sessionId]
+                [phoneNumber, phoneNumber, userId, phoneNumber]  // ← Usar phoneNumber en lugar de sessionId
             );
+
+            console.log('[AGENTS-CHATS] ✅ Chats encontrados:', assignments.length);
+            if (assignments.length > 0) {
+                console.log('[AGENTS-CHATS] 📋 Primer chat:', JSON.stringify(assignments[0]));
+            } else {
+                console.log('[AGENTS-CHATS] ⚠️ No se encontraron chats para userId:', userId, 'phoneNumber:', phoneNumber);
+            }
 
             // Formatear para que sea compatible con el formato de chats
             const formattedChats = assignments.map(assignment => ({

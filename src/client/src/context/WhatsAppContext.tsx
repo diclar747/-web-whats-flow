@@ -474,6 +474,14 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         );
       });
 
+      // Recargar chats periódicamente para asegurar sincronización
+      const syncInterval = setInterval(() => {
+        if (loadChats && session?.sessionId) {
+          console.log('🔄 [AUTO-SYNC] Recargando chats automáticamente...');
+          loadChats(session.sessionId);
+        }
+      }, 10000); // Cada 10 segundos
+
       // LOG DE DEBUG: Capturar TODOS los eventos para debugging
       newSocket.onAny((eventName: string, ...args: any[]) => {
         console.log(`🔔 [SOCKET-EVENT] Evento recibido: ${eventName}`, args);
@@ -618,6 +626,12 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
               avatar: undefined
             };
             updatedChats.unshift(newChat);
+            
+            // Recargar chats completos desde el servidor para obtener información actualizada
+            console.log('🔄 Recargando lista completa de chats desde el servidor...');
+            if (loadChats && session?.sessionId) {
+              loadChats(session.sessionId);
+            }
           }
 
           return updatedChats.sort((a, b) => {
@@ -662,6 +676,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       return () => {
         console.log('Desconectando socket en WhatsAppContext');
+        clearInterval(syncInterval);
         newSocket.disconnect();
       };
     }
@@ -669,7 +684,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     return () => {
       // Cleanup por defecto si no hay sessionId
     };
-  }, [session?.sessionId]); // Solo reconectar cuando cambia la sesión, NO cuando cambia el chat activo
+  }, [session?.sessionId, loadChats]); // Solo reconectar cuando cambia la sesión, NO cuando cambia el chat activo
 
   const rejectCall = async (callId: string) => {
     if (!session?.sessionId) return;
@@ -748,10 +763,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       setMessages([]);
       setIsLoading(true);
       
-      console.log(`🔄 Cargando mensajes para chat: ${chatId}`);
+      console.log(`🔄 Cargando TODOS los mensajes para chat: ${chatId}`);
 
-      // Cargar menos mensajes por defecto para no saturar (se pueden cargar más al hacer scroll)
-      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&limit=50`);
+      // Cargar TODOS los mensajes sin límite
+      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&limit=10000`);
       const data = await response.json();
 
       if (data.success && data.messages) {

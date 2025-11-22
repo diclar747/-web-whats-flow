@@ -29,7 +29,10 @@ import {
   DialogActions,
   Button,
   Chip,
-  Popover
+  Popover,
+  Select,
+  FormControl,
+  InputLabel
 } from '@mui/material';
 import {
   Search,
@@ -59,7 +62,9 @@ import {
   Download,
   Description,
   Image as ImageIcon,
-  Sync
+  Sync,
+  PictureAsPdf,
+  FilterList
 } from '@mui/icons-material';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import KanbanSelectorModal from '../components/KanbanSelectorModal';
@@ -120,6 +125,9 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<{ id: string; isFromMe: boolean } | null>(null);
+  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [dateFilter, setDateFilter] = useState('');
+  const [quickFilter, setQuickFilter] = useState('');
 
   // Estado de sincronización
   const [syncStatus, setSyncStatus] = useState<{
@@ -547,7 +555,28 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
-    return date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    // Si es hoy, mostrar solo hora
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    }
+    // Si es ayer, mostrar "Ayer"
+    else if (date.toDateString() === yesterday.toDateString()) {
+      return 'Ayer ' + date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    }
+    // Si es esta semana, mostrar día de la semana
+    else if (now.getTime() - date.getTime() < 7 * 24 * 60 * 60 * 1000) {
+      return date.toLocaleDateString('es', { weekday: 'short' }) + ' ' + 
+             date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    }
+    // Sino, mostrar fecha completa
+    else {
+      return date.toLocaleDateString('es', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' +
+             date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    }
   };
 
   const handleReactToMessage = async (messageId: string, emoji: string) => {
@@ -831,7 +860,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     divider: isDarkMode ? '#2a3942' : '#e9edef',
     hover: isDarkMode ? '#202c33' : '#f0f2f5',
     hoverStrong: isDarkMode ? '#2a3942' : '#e9edef',
-    inputBg: isDarkMode ? '#2a3942' : '#ffffff',
+    inputBg: isDarkMode ? '#1f2c34' : '#ffffff', // Mismo color que mensajes recibidos
     selected: isDarkMode ? '#2a3942' : '#e6f7ff',
     
     shadow: isDarkMode ? '0 1px 2px rgba(0,0,0,0.4)' : '0 1px 2px rgba(0,0,0,0.1)',
@@ -1160,34 +1189,45 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 </Box>
               </Box>
               
-              {/* Indicador de sincronización */}
-              {syncStatus.isSync && (
+              {/* Indicador de sincronización - Visible cuando está sincronizando o cargando */}
+              {(syncStatus.isSync || isLoading) && (
                 <Box sx={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 1,
-                  bgcolor: colors.primary,
+                  bgcolor: '#25d366',
                   color: 'white',
-                  px: 1.5,
-                  py: 0.5,
-                  borderRadius: 2,
-                  fontSize: '0.75rem'
+                  px: 2,
+                  py: 0.8,
+                  borderRadius: 3,
+                  fontSize: '0.85rem',
+                  boxShadow: '0 2px 8px rgba(37, 211, 102, 0.3)',
+                  animation: 'pulse 2s ease-in-out infinite',
+                  '@keyframes pulse': {
+                    '0%, 100%': { opacity: 1 },
+                    '50%': { opacity: 0.8 }
+                  }
                 }}>
-                  <CircularProgress size={14} sx={{ color: 'white' }} />
-                  <Typography variant="caption" sx={{ color: 'white' }}>
-                    {syncStatus.message}
+                  <CircularProgress size={16} sx={{ color: 'white' }} />
+                  <Typography variant="body2" sx={{ color: 'white', fontWeight: 600 }}>
+                    {isLoading ? 'Sincronizando chat...' : syncStatus.message || 'Sincronizando...'}
                   </Typography>
                 </Box>
               )}
               
               {/* Botón de sincronización manual */}
-              <Tooltip title="Sincronizar mensajes">
+              <Tooltip title="Actualizar mensajes">
                 <IconButton
                   onClick={() => activeChat && loadMessages && loadMessages(activeChat.id)}
-                  disabled={syncStatus.isSync}
+                  disabled={syncStatus.isSync || isLoading}
                   sx={{ 
                     color: colors.textSecondary,
                     transition: 'all 0.2s ease',
+                    animation: (syncStatus.isSync || isLoading) ? 'rotate 1s linear infinite' : 'none',
+                    '@keyframes rotate': {
+                      from: { transform: 'rotate(0deg)' },
+                      to: { transform: 'rotate(360deg)' }
+                    },
                     '&:hover': { color: colors.text, bgcolor: colors.hover },
                     '&:disabled': { color: colors.divider }
                   }}
@@ -1196,10 +1236,11 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 </IconButton>
               </Tooltip>
               
-              <Tooltip title="Buscar">
+              <Tooltip title="Buscar por fecha">
                 <IconButton 
+                  onClick={() => setShowSearchBar(!showSearchBar)}
                   sx={{ 
-                    color: colors.textSecondary,
+                    color: showSearchBar ? colors.primary : colors.textSecondary,
                     transition: 'all 0.2s ease',
                     '&:hover': { color: colors.text, bgcolor: colors.hover }
                   }}
@@ -1242,6 +1283,171 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 <DeleteOutline sx={{ mr: 2 }} /> Eliminar chat
               </MenuItem>
             </Menu>
+
+            {/* Barra de búsqueda por fecha */}
+            {showSearchBar && (
+              <Box sx={{ 
+                p: 2, 
+                bgcolor: colors.header, 
+                borderBottom: `1px solid ${colors.divider}`,
+                display: 'flex',
+                gap: 2,
+                alignItems: 'center',
+                flexWrap: 'wrap'
+              }}>
+                <FormControl size="small" sx={{ minWidth: 200 }}>
+                  <InputLabel>Filtro rápido</InputLabel>
+                  <Select
+                    value={quickFilter}
+                    label="Filtro rápido"
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setQuickFilter(value);
+                      
+                      // Calcular fecha según filtro
+                      const now = new Date();
+                      let filterDate = '';
+                      
+                      switch(value) {
+                        case 'today':
+                          filterDate = now.toISOString().split('T')[0];
+                          break;
+                        case 'yesterday':
+                          const yesterday = new Date(now);
+                          yesterday.setDate(yesterday.getDate() - 1);
+                          filterDate = yesterday.toISOString().split('T')[0];
+                          break;
+                        case 'week':
+                          const weekAgo = new Date(now);
+                          weekAgo.setDate(weekAgo.getDate() - 7);
+                          filterDate = weekAgo.toISOString().split('T')[0];
+                          break;
+                        case '15days':
+                          const days15 = new Date(now);
+                          days15.setDate(days15.getDate() - 15);
+                          filterDate = days15.toISOString().split('T')[0];
+                          break;
+                        case 'month':
+                          const monthAgo = new Date(now);
+                          monthAgo.setMonth(monthAgo.getMonth() - 1);
+                          filterDate = monthAgo.toISOString().split('T')[0];
+                          break;
+                        case '3months':
+                          const months3 = new Date(now);
+                          months3.setMonth(months3.getMonth() - 3);
+                          filterDate = months3.toISOString().split('T')[0];
+                          break;
+                        case '6months':
+                          const months6 = new Date(now);
+                          months6.setMonth(months6.getMonth() - 6);
+                          filterDate = months6.toISOString().split('T')[0];
+                          break;
+                        case 'year':
+                          const yearAgo = new Date(now);
+                          yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+                          filterDate = yearAgo.toISOString().split('T')[0];
+                          break;
+                      }
+                      
+                      setDateFilter(filterDate);
+                    }}
+                  >
+                    <MenuItem value="">Sin filtro</MenuItem>
+                    <MenuItem value="today">Hoy</MenuItem>
+                    <MenuItem value="yesterday">Ayer</MenuItem>
+                    <MenuItem value="week">Última semana</MenuItem>
+                    <MenuItem value="15days">Últimos 15 días</MenuItem>
+                    <MenuItem value="month">Último mes</MenuItem>
+                    <MenuItem value="3months">Últimos 3 meses</MenuItem>
+                    <MenuItem value="6months">Últimos 6 meses</MenuItem>
+                    <MenuItem value="year">Último año</MenuItem>
+                  </Select>
+                </FormControl>
+
+                <TextField
+                  type="date"
+                  label="Fecha específica"
+                  value={dateFilter}
+                  onChange={(e) => {
+                    setDateFilter(e.target.value);
+                    setQuickFilter(''); // Limpiar filtro rápido
+                  }}
+                  size="small"
+                  sx={{ minWidth: 180 }}
+                  InputLabelProps={{
+                    shrink: true,
+                  }}
+                />
+
+                {(dateFilter || quickFilter) && (
+                  <Button 
+                    onClick={() => {
+                      setDateFilter('');
+                      setQuickFilter('');
+                    }}
+                    variant="outlined"
+                    size="small"
+                    startIcon={<Close />}
+                  >
+                    Limpiar
+                  </Button>
+                )}
+
+                <Button
+                  onClick={async () => {
+                    if (!activeChat) return;
+                    
+                    // Generar PDF con jsPDF
+                    const { jsPDF } = await import('jspdf');
+                    const doc = new jsPDF();
+                    
+                    // Título
+                    doc.setFontSize(16);
+                    doc.text(`Chat con ${activeChat.name}`, 20, 20);
+                    doc.setFontSize(10);
+                    doc.text(`Exportado: ${new Date().toLocaleString('es')}`, 20, 30);
+                    
+                    let y = 40;
+                    const filteredMessages = messages.filter(msg => {
+                      if (!dateFilter) return true;
+                      const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
+                      return msgDate >= dateFilter;
+                    });
+                    
+                    filteredMessages.forEach((msg, index) => {
+                      if (y > 270) {
+                        doc.addPage();
+                        y = 20;
+                      }
+                      
+                      const time = new Date(msg.timestamp).toLocaleString('es');
+                      const sender = msg.isFromMe ? 'Yo' : activeChat.name;
+                      const text = msg.message || 'Media';
+                      
+                      doc.setFontSize(8);
+                      doc.setTextColor(100);
+                      doc.text(`[${time}] ${sender}:`, 20, y);
+                      y += 5;
+                      
+                      doc.setFontSize(10);
+                      doc.setTextColor(0);
+                      const lines = doc.splitTextToSize(text, 170);
+                      doc.text(lines, 20, y);
+                      y += lines.length * 5 + 3;
+                    });
+                    
+                    doc.save(`chat-${activeChat.name}-${new Date().toISOString().split('T')[0]}.pdf`);
+                  }}
+                  variant="contained"
+                  size="small"
+                  startIcon={<PictureAsPdf />}
+                  disabled={!activeChat || messages.length === 0}
+                  sx={{ ml: 'auto' }}
+                >
+                  Exportar PDF
+                </Button>
+              </Box>
+            )}
 
             {/* Mensajes */}
             <Box
@@ -1303,7 +1509,19 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                   </Typography>
                 </Box>
               ) : (
-                messages.map((msg, index) => (
+                messages
+                  .filter(msg => {
+                    // Filtrar por fecha si está seleccionada
+                    if (!dateFilter) return true;
+                    const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
+                    // Si hay un filtro rápido, mostrar desde esa fecha hasta hoy
+                    if (quickFilter) {
+                      return msgDate >= dateFilter;
+                    }
+                    // Si es fecha específica, solo ese día
+                    return msgDate === dateFilter;
+                  })
+                  .map((msg, index) => (
                 <Box
                   key={msg.id}
                   sx={{
@@ -1360,12 +1578,23 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                       setMessageMenuAnchor(e.currentTarget);
                     }}
                   >
-                    {/* Contenido del mensaje */}
-                    {!msg.isFromMe && activeChat.isGroup && (
-                      <Typography variant="caption" sx={{ fontWeight: 600, color: '#06cf9c', display: 'block', mb: 0.5 }}>
-                        ~{msg.from?.split('@')[0]}
-                      </Typography>
-                    )}
+                    {/* Nombre del remitente - Siempre visible */}
+                    <Typography 
+                      variant="caption" 
+                      sx={{ 
+                        fontWeight: 700,
+                        fontSize: '0.75rem',
+                        color: msg.isFromMe 
+                          ? '#075E54'  // Verde oscuro para mensajes propios
+                          : '#00897B', // Teal para mensajes recibidos
+                        display: 'block', 
+                        mb: 0.5,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px'
+                      }}
+                    >
+                      {msg.isFromMe ? 'Tú' : (activeChat?.name || msg.from?.split('@')[0] || 'Contacto')}
+                    </Typography>
 
                     {/* Respuesta citada */}
                     {msg.contextInfo && (
@@ -1834,28 +2063,27 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
-                    bgcolor: colors.inputBg,
+                    bgcolor: colors.theirMessage, // Mismo color que mensajes recibidos
                     borderRadius: '10px',
                     fontSize: '15px',
                     fontWeight: 400,
-                    // 🎨 FASE 1: Transiciones suaves
                     transition: 'all 0.2s ease',
                     '& fieldset': { 
                       border: `1px solid ${colors.divider}`,
                       transition: 'all 0.2s ease'
                     },
                     '&:hover': {
-                      bgcolor: colors.hover,
+                      bgcolor: colors.theirMessageHover, // Mismo hover que mensajes
                       '& fieldset': {
-                        borderColor: colors.primary,
+                        borderColor: colors.divider,
                         borderWidth: '1px'
                       }
                     },
                     '&.Mui-focused': {
-                      bgcolor: colors.inputBg,
-                      boxShadow: `0 0 0 2px ${colors.primary}25`,
+                      bgcolor: colors.theirMessage, // Mantener mismo color al escribir
+                      boxShadow: `0 0 0 2px ${colors.divider}`,
                       '& fieldset': {
-                        borderColor: colors.primary,
+                        borderColor: colors.textSecondary,
                         borderWidth: '1px'
                       }
                     },

@@ -58,7 +58,10 @@ import {
   Phone as PhoneIcon,
   Notifications as NotificationsIcon,
   NotificationsActive as NotificationsActiveIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  Brightness4 as DarkModeIcon,
+  Brightness7 as LightModeIcon,
+  WhatsApp as WhatsAppIcon
 } from '@mui/icons-material';
 import { format, formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -98,6 +101,8 @@ interface Message {
   sender_name?: string;
   sender_avatar?: string;
   quoted_message_id?: string;
+  agent_id?: number | null;  // ID del agente que respondió
+  agent_name?: string;  // Nombre del agente que respondió
 }
 
 interface UploadProgress {
@@ -141,10 +146,67 @@ const AgentDashboardPro: React.FC = () => {
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [chatFilter, setChatFilter] = useState<'all' | 'unread'>('all');
 
+  // Nuevo: Estado para modo oscuro/claro
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('agentDashboardTheme');
+    return saved ? saved === 'dark' : false;
+  });
+
   // Referencias
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // ==================== TEMA Y COLORES ====================
+
+  // Paleta de colores según modo
+  const theme = {
+    // Modo claro
+    light: {
+      bg: {
+        primary: '#f0f2f5',
+        secondary: '#ffffff',
+        chat: '#efeae2',
+        header: '#00a884',
+        messageOwn: '#d9fdd3',
+        messageOther: '#ffffff'
+      },
+      text: {
+        primary: '#111b21',
+        secondary: '#667781',
+        onHeader: '#ffffff'
+      },
+      border: '#d1d7db',
+      hover: '#f5f5f5'
+    },
+    // Modo oscuro
+    dark: {
+      bg: {
+        primary: '#111b21',
+        secondary: '#202c33',
+        chat: '#0b141a',
+        header: '#00a884',
+        messageOwn: '#005c4b',
+        messageOther: '#202c33'
+      },
+      text: {
+        primary: '#e9edef',
+        secondary: '#8696a0',
+        onHeader: '#ffffff'
+      },
+      border: '#2a3942',
+      hover: '#2a3942'
+    }
+  };
+
+  const currentTheme = darkMode ? theme.dark : theme.light;
+
+  // Manejar cambio de tema
+  const toggleTheme = () => {
+    const newMode = !darkMode;
+    setDarkMode(newMode);
+    localStorage.setItem('agentDashboardTheme', newMode ? 'dark' : 'light');
+  };
 
   // ==================== INICIALIZACIÓN ====================
 
@@ -539,7 +601,9 @@ const AgentDashboardPro: React.FC = () => {
       text_content: messageText,
       timestamp: new Date().toISOString(),
       status: 'pending',
-      sender_name: userName
+      sender_name: userName,
+      agent_id: agentId,
+      agent_name: userName  // Nombre del agente que envía
     };
 
     setMessages(prev => [...prev, tempMessage]);
@@ -688,8 +752,29 @@ const AgentDashboardPro: React.FC = () => {
   };
 
   const handleLogout = () => {
+    console.log('🚪 [AGENT-PRO] Cerrando sesión del agente...');
+
+    // Desconectar socket si está conectado
+    if (socket && isConnected) {
+      socket.disconnect();
+    }
+
+    // Limpiar todo el almacenamiento
     sessionStorage.clear();
-    navigate('/login');
+    localStorage.removeItem('agentDashboardTheme'); // Mantener preferencia de tema
+
+    // Resetear estados
+    setChats([]);
+    setSelectedChat(null);
+    setMessages([]);
+    setAgentId(null);
+    setSessionId(null);
+    setPhoneNumber(null);
+
+    console.log('✅ [AGENT-PRO] Sesión cerrada correctamente');
+
+    // Redirigir a login
+    navigate('/login', { replace: true });
   };
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
@@ -787,14 +872,15 @@ const AgentDashboardPro: React.FC = () => {
           }}
         >
           <Paper
-            elevation={1}
+            elevation={darkMode ? 2 : 1}
             sx={{
               maxWidth: '65%',
               minWidth: '80px',
               p: 1.5,
-              bgcolor: msg.from_me ? '#d9fdd3' : 'white',
+              bgcolor: msg.from_me ? currentTheme.bg.messageOwn : currentTheme.bg.messageOther,
+              color: msg.from_me && darkMode ? '#e9edef' : currentTheme.text.primary,
               borderRadius: msg.from_me ? '8px 0px 8px 8px' : '0px 8px 8px 8px',
-              boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)',
+              boxShadow: darkMode ? '0 2px 4px rgba(0,0,0,0.4)' : '0 1px 0.5px rgba(0,0,0,0.13)',
               position: 'relative'
             }}
           >
@@ -811,6 +897,24 @@ const AgentDashboardPro: React.FC = () => {
               >
                 {msg.sender_name}
               </Typography>
+            )}
+
+            {/* Etiqueta de agente (cuando un agente responde) */}
+            {msg.from_me && msg.agent_name && (
+              <Chip
+                label={`Respondido por: ${msg.agent_name}`}
+                size="small"
+                sx={{
+                  mb: 0.5,
+                  height: '20px',
+                  fontSize: '0.7rem',
+                  bgcolor: '#00a884',
+                  color: 'white',
+                  '& .MuiChip-label': {
+                    px: 1
+                  }
+                }}
+              />
             )}
 
             {/* Contenido de media */}
@@ -833,7 +937,7 @@ const AgentDashboardPro: React.FC = () => {
                 )}
 
                 {msg.message_type === 'document' && (
-                  <Card sx={{ display: 'flex', alignItems: 'center', p: 1, bgcolor: '#f0f2f5' }}>
+                  <Card sx={{ display: 'flex', alignItems: 'center', p: 1, bgcolor: darkMode ? currentTheme.bg.primary : '#f0f2f5' }}>
                     <DocumentIcon sx={{ fontSize: 40, color: '#667781', mr: 1 }} />
                     <Box sx={{ flexGrow: 1 }}>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>
@@ -909,44 +1013,73 @@ const AgentDashboardPro: React.FC = () => {
   // ==================== RENDER PRINCIPAL ====================
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: '#111b21', width: '100%', margin: 0, padding: 0 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: currentTheme.bg.primary, width: '100%', margin: 0, padding: 0 }}>
       {/* ==================== HEADER SUPERIOR MODERNO ==================== */}
       <Paper
-        elevation={2}
+        elevation={0}
         sx={{
-          bgcolor: '#00a884',
+          bgcolor: currentTheme.bg.header,
           borderRadius: 0,
           width: '100%',
-          zIndex: 1200
+          zIndex: 1200,
+          boxShadow: '0 2px 4px rgba(0,0,0,0.15)'
         }}
       >
         <Box sx={{ px: 3, py: 1.5, display: 'flex', alignItems: 'center', gap: 2 }}>
-          {/* Logo y título */}
+          {/* Logo WhatsApp y título */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexGrow: 1 }}>
-            <Avatar sx={{ bgcolor: '#ffffff', width: 40, height: 40 }}>
-              <ChatIcon sx={{ color: '#00a884', fontSize: 24 }} />
-            </Avatar>
+            <Box sx={{
+              bgcolor: '#ffffff',
+              width: 44,
+              height: 44,
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+            }}>
+              <WhatsAppIcon sx={{ color: '#25D366', fontSize: 28 }} />
+            </Box>
             <Box>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: 'white', lineHeight: 1.2 }}>
-                WhatsFlow Agent
+              <Typography variant="h6" sx={{ fontWeight: 700, color: currentTheme.text.onHeader, lineHeight: 1.2, letterSpacing: '0.5px' }}>
+                WhatsaFlow
               </Typography>
               <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.75rem' }}>
-                Panel Profesional
+                Panel de Agente
               </Typography>
             </Box>
           </Box>
 
           {/* Información del agente y herramientas */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {/* Modo oscuro/claro */}
+            <Tooltip title={darkMode ? 'Modo claro' : 'Modo oscuro'}>
+              <IconButton
+                color="inherit"
+                size="small"
+                onClick={toggleTheme}
+                sx={{
+                  color: 'white',
+                  transition: 'transform 0.3s',
+                  '&:hover': {
+                    transform: 'rotate(180deg)'
+                  }
+                }}
+              >
+                {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
+              </IconButton>
+            </Tooltip>
+
             {/* Estado de conexión */}
             <Chip
               icon={whatsappConnected ? <CheckIcon /> : <CloseIcon />}
               label={whatsappConnected ? 'Conectado' : 'Desconectado'}
               size="small"
               sx={{
-                bgcolor: whatsappConnected ? 'rgba(76, 175, 80, 0.2)' : 'rgba(244, 67, 54, 0.2)',
+                bgcolor: whatsappConnected ? 'rgba(76, 175, 80, 0.25)' : 'rgba(244, 67, 54, 0.25)',
                 color: 'white',
                 fontWeight: 600,
+                border: `1px solid ${whatsappConnected ? '#4caf50' : '#f44336'}`,
                 '& .MuiChip-icon': { color: 'white' }
               }}
             />
@@ -958,7 +1091,8 @@ const AgentDashboardPro: React.FC = () => {
               sx={{
                 bgcolor: 'rgba(255,255,255,0.2)',
                 color: 'white',
-                fontWeight: 600
+                fontWeight: 600,
+                border: '1px solid rgba(255,255,255,0.3)'
               }}
             />
 
@@ -1036,16 +1170,16 @@ const AgentDashboardPro: React.FC = () => {
             width: selectedChat ? '35%' : '100%',
             minWidth: '320px',
             maxWidth: '500px',
-            bgcolor: '#ffffff',
-            borderRight: '1px solid #d1d7db',
+            bgcolor: currentTheme.bg.secondary,
+            borderRight: `1px solid ${currentTheme.border}`,
             display: 'flex',
             flexDirection: 'column',
             transition: 'width 0.3s ease-in-out'
           }}
         >
           {/* Header del panel */}
-          <Box sx={{ p: 2, bgcolor: '#f0f2f5', borderBottom: '1px solid #d1d7db' }}>
-            <Typography variant="h6" sx={{ mb: 1.5, fontWeight: 600, color: '#111b21' }}>
+          <Box sx={{ p: 2, bgcolor: currentTheme.bg.primary, borderBottom: `1px solid ${currentTheme.border}` }}>
+            <Typography variant="h6" sx={{ mb: 1.5, fontWeight: 600, color: currentTheme.text.primary }}>
               Mis Chats Asignados
             </Typography>
             <TextField
@@ -1057,15 +1191,17 @@ const AgentDashboardPro: React.FC = () => {
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <SearchIcon sx={{ color: '#667781' }} />
+                    <SearchIcon sx={{ color: currentTheme.text.secondary }} />
                   </InputAdornment>
                 ),
                 sx: {
                   borderRadius: '10px',
-                  bgcolor: 'white',
-                  '& fieldset': { borderColor: '#d1d7db' },
+                  bgcolor: darkMode ? currentTheme.bg.secondary : 'white',
+                  color: currentTheme.text.primary,
+                  '& fieldset': { borderColor: currentTheme.border },
                   '&:hover fieldset': { borderColor: '#00a884 !important' },
-                  '&.Mui-focused fieldset': { borderColor: '#00a884 !important' }
+                  '&.Mui-focused fieldset': { borderColor: '#00a884 !important' },
+                  '& input': { color: currentTheme.text.primary }
                 }
               }}
             />
@@ -1085,7 +1221,7 @@ const AgentDashboardPro: React.FC = () => {
                     fontSize: '0.8rem',
                     textTransform: 'none',
                     fontWeight: 500,
-                    color: '#667781',
+                    color: currentTheme.text.secondary,
                     '&.Mui-selected': {
                       color: '#00a884',
                       fontWeight: 600
@@ -1107,11 +1243,11 @@ const AgentDashboardPro: React.FC = () => {
           <List sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
             {filteredChats.length === 0 ? (
               <Box sx={{ p: 4, textAlign: 'center' }}>
-                <ChatIcon sx={{ fontSize: 60, color: '#d1d7db', mb: 2 }} />
-                <Typography variant="body1" color="text.secondary" gutterBottom>
+                <ChatIcon sx={{ fontSize: 60, color: currentTheme.border, mb: 2 }} />
+                <Typography variant="body1" sx={{ color: currentTheme.text.secondary }} gutterBottom>
                   No hay chats asignados
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" sx={{ color: currentTheme.text.secondary }}>
                   Espera a que el admin te asigne chats
                 </Typography>
               </Box>
@@ -1123,9 +1259,9 @@ const AgentDashboardPro: React.FC = () => {
                   selected={selectedChat?.id === chat.id}
                   onClick={() => handleChatClick(chat)}
                   sx={{
-                    borderBottom: '1px solid #f0f0f0',
-                    bgcolor: selectedChat?.id === chat.id ? '#f0f2f5' : 'transparent',
-                    '&:hover': { bgcolor: '#f5f5f5' },
+                    borderBottom: `1px solid ${currentTheme.border}`,
+                    bgcolor: selectedChat?.id === chat.id ? currentTheme.hover : 'transparent',
+                    '&:hover': { bgcolor: currentTheme.hover },
                     py: 2,
                     px: 2,
                     transition: 'background-color 0.2s'
@@ -1211,11 +1347,11 @@ const AgentDashboardPro: React.FC = () => {
                         <Typography
                           variant="subtitle1"
                           fontWeight={chat.unreadCount > 0 ? 600 : 400}
-                          sx={{ color: '#111b21' }}
+                          sx={{ color: currentTheme.text.primary }}
                         >
                           {chat.name || chat.phoneNumber}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        <Typography variant="caption" sx={{ color: currentTheme.text.secondary }}>
                           {formatTime(chat.timestamp)}
                         </Typography>
                       </Box>
@@ -1224,14 +1360,13 @@ const AgentDashboardPro: React.FC = () => {
                       <Box>
                         <Typography
                           variant="body2"
-                          color="text.secondary"
                           sx={{
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
                             fontWeight: chat.unreadCount > 0 ? 500 : 400,
                             fontStyle: chat.isTyping ? 'italic' : 'normal',
-                            color: chat.isTyping ? '#00a884' : 'text.secondary'
+                            color: chat.isTyping ? '#00a884' : currentTheme.text.secondary
                           }}
                         >
                           {chat.isTyping ? 'Escribiendo...' : (chat.lastMessage || 'Sin mensajes')}
@@ -1247,17 +1382,18 @@ const AgentDashboardPro: React.FC = () => {
 
         {/* ==================== PANEL DERECHO: CHAT SELECCIONADO ==================== */}
         {selectedChat ? (
-          <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', bgcolor: '#efeae2', position: 'relative' }}>
+          <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', bgcolor: currentTheme.bg.chat, position: 'relative' }}>
             {/* Header del chat */}
             <Paper
-              elevation={2}
+              elevation={0}
               sx={{
                 display: 'flex',
                 alignItems: 'center',
                 p: 2,
-                bgcolor: '#f0f2f5',
-                borderBottom: '1px solid #d1d7db',
-                zIndex: 10
+                bgcolor: currentTheme.bg.primary,
+                borderBottom: `1px solid ${currentTheme.border}`,
+                zIndex: 10,
+                boxShadow: darkMode ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 2px rgba(0,0,0,0.1)'
               }}
             >
               <Avatar
@@ -1267,10 +1403,10 @@ const AgentDashboardPro: React.FC = () => {
                 {selectedChat.name?.[0]?.toUpperCase() || '?'}
               </Avatar>
               <Box sx={{ flexGrow: 1 }}>
-                <Typography variant="subtitle1" fontWeight={600} sx={{ color: '#111b21' }}>
+                <Typography variant="subtitle1" fontWeight={600} sx={{ color: currentTheme.text.primary }}>
                   {selectedChat.name || 'Sin nombre'}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{ color: currentTheme.text.secondary }}>
                   {selectedChat.phoneNumber || selectedChat.id.replace('@s.whatsapp.net', '')}
                 </Typography>
                 {selectedChat.isTyping && (
@@ -1364,14 +1500,15 @@ const AgentDashboardPro: React.FC = () => {
 
             {/* Área de envío */}
             <Paper
-              elevation={3}
+              elevation={darkMode ? 2 : 3}
               sx={{
                 p: 1.5,
                 display: 'flex',
                 gap: 1,
                 alignItems: 'flex-end',
-                bgcolor: '#f0f2f5',
-                borderTop: '1px solid #d1d7db'
+                bgcolor: currentTheme.bg.primary,
+                borderTop: `1px solid ${currentTheme.border}`,
+                boxShadow: darkMode ? '0 -2px 4px rgba(0,0,0,0.3)' : '0 -1px 2px rgba(0,0,0,0.1)'
               }}
             >
               <input
@@ -1387,7 +1524,7 @@ const AgentDashboardPro: React.FC = () => {
                 <IconButton
                   size="small"
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  sx={{ color: '#54656f' }}
+                  sx={{ color: currentTheme.text.secondary }}
                 >
                   <EmojiIcon />
                 </IconButton>
@@ -1397,7 +1534,7 @@ const AgentDashboardPro: React.FC = () => {
                 <IconButton
                   size="small"
                   onClick={() => fileInputRef.current?.click()}
-                  sx={{ color: '#54656f' }}
+                  sx={{ color: currentTheme.text.secondary }}
                 >
                   <AttachFileIcon />
                 </IconButton>
@@ -1420,11 +1557,13 @@ const AgentDashboardPro: React.FC = () => {
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     borderRadius: '20px',
-                    bgcolor: 'white',
-                    '& fieldset': { borderColor: '#d1d7db' },
+                    bgcolor: darkMode ? currentTheme.bg.secondary : 'white',
+                    color: currentTheme.text.primary,
+                    '& fieldset': { borderColor: currentTheme.border },
                     '&:hover fieldset': { borderColor: '#00a884' },
                     '&.Mui-focused fieldset': { borderColor: '#00a884' }
-                  }
+                  },
+                  '& textarea': { color: currentTheme.text.primary }
                 }}
               />
 

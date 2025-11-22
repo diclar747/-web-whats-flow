@@ -983,56 +983,60 @@ module.exports = function(app, pool) {
         try {
             const agentId = parseInt(req.params.agentId);
             const { sessionId } = req.query;
-            
+
             // Verificar que el usuario tiene permiso (es el agente mismo o es admin/supervisor)
             if (req.user.id !== agentId && !['admin', 'supervisor'].includes(req.user.role)) {
                 return res.status(403).json({ success: false, error: 'Sin permisos' });
             }
-            
+
             const connection = await pool.getConnection();
             try {
                 console.log('[AGENT-CHATS-BY-ID] 🔍 Agente:', agentId, 'SessionId:', sessionId);
 
-                // Si se proporciona sessionId, intentar obtener el sessionId real desde user_sessions
-                let actualSessionId = sessionId;
+                // IMPORTANTE: Resolver sessionId (UUID) a phoneNumber
+                // En user_sessions: session_id es UUID (ej: "4cb89fbf75edf117")
+                // En chat_assignments: session_id es phoneNumber (ej: "595985768793")
+                let phoneNumberForQuery = sessionId;
+
                 if (sessionId) {
-                    // Verificar si sessionId es un phoneNumber (solo números) y convertirlo
+                    // Intentar obtener phoneNumber desde user_sessions usando el UUID
                     const [sessionInfo] = await connection.execute(
-                        `SELECT session_id FROM user_sessions WHERE session_id = ? OR phone_number = ? LIMIT 1`,
-                        [sessionId, sessionId]
+                        `SELECT phone_number FROM user_sessions WHERE session_id = ? AND is_active = 1 LIMIT 1`,
+                        [sessionId]
                     );
+
                     if (sessionInfo.length > 0) {
-                        actualSessionId = sessionInfo[0].session_id;
-                        console.log('[AGENT-CHATS-BY-ID] ✅ SessionId resuelto:', actualSessionId);
+                        phoneNumberForQuery = sessionInfo[0].phone_number;
+                        console.log('[AGENT-CHATS-BY-ID] ✅ SessionId UUID resuelto a phoneNumber:', phoneNumberForQuery);
+                    } else {
+                        // Si no se encuentra, asumir que sessionId ya es el phoneNumber
+                        console.log('[AGENT-CHATS-BY-ID] ⚠️ No se encontró UUID, usando como phoneNumber:', sessionId);
                     }
                 }
 
                 // Obtener chats asignados con información completa
                 let query = `
                     SELECT
-                        ca.chat_jid,
+                        ca.chat_jid as chatJid,
                         ca.session_id,
                         ca.user_id,
-                        ca.assigned_at,
+                        ca.assigned_at as assignedAt,
                         ca.status,
-                        COALESCE(c.name, cg.name, SUBSTRING_INDEX(ca.chat_jid, '@', 1)) as contact_name,
-                        COALESCE(c.avatar_url, cg.avatar_url, '') as avatar_url,
-                        COALESCE(c.is_group, cg.jid IS NOT NULL, 0) as is_group,
-                        (SELECT COUNT(*) FROM messages m
-                         WHERE m.chat_jid = ca.chat_jid
-                         AND m.session_id = ca.session_id) as message_count,
+                        COALESCE(c.name, cg.name, SUBSTRING_INDEX(ca.chat_jid, '@', 1)) as name,
+                        COALESCE(c.avatar_url, cg.avatar_url, '') as avatar,
+                        COALESCE(c.is_group, cg.jid IS NOT NULL, 0) as isGroup,
                         (SELECT MAX(m.timestamp) FROM messages m
                          WHERE m.chat_jid = ca.chat_jid
-                         AND m.session_id = ca.session_id) as last_message_time,
+                         AND m.session_id = ca.session_id) as lastMessageTimestamp,
                         (SELECT m.text_content FROM messages m
                          WHERE m.chat_jid = ca.chat_jid
                          AND m.session_id = ca.session_id
-                         ORDER BY m.timestamp DESC LIMIT 1) as last_message_text,
+                         ORDER BY m.timestamp DESC LIMIT 1) as lastMessage,
                         (SELECT COUNT(*) FROM messages m
                          WHERE m.chat_jid = ca.chat_jid
                          AND m.session_id = ca.session_id
                          AND m.from_me = 0
-                         AND (m.is_read = 0 OR m.is_read IS NULL)) as unread_count
+                         AND (m.is_read = 0 OR m.is_read IS NULL)) as unreadCount
                     FROM chat_assignments ca
                     LEFT JOIN contacts c ON ca.chat_jid = c.jid AND ca.session_id = c.session_id
                     LEFT JOIN contact_groups cg ON ca.chat_jid = cg.jid AND ca.session_id = cg.session_id
@@ -1041,39 +1045,48 @@ module.exports = function(app, pool) {
 
                 const params = [agentId];
 
-                if (actualSessionId) {
+                if (phoneNumberForQuery) {
                     query += ' AND ca.session_id = ?';
-                    params.push(actualSessionId);
+                    params.push(phoneNumberForQuery);
                 }
-                
-                query += ' ORDER BY last_message_time DESC';
-                
+
+                query += ' ORDER BY lastMessageTimestamp DESC';
+
+                console.log('[AGENT-CHATS-BY-ID] 📝 Query final:', query);
+                console.log('[AGENT-CHATS-BY-ID] 📝 Params:', params);
+
                 const [chats] = await connection.execute(query, params);
 
                 console.log('[AGENT-CHATS-BY-ID] ✅ Chats encontrados:', chats.length);
-
-                // Usar actualSessionId o detectarlo de los chats encontrados
-                let finalSessionId = actualSessionId;
-                if (!finalSessionId && chats.length > 0) {
-                    finalSessionId = chats[0].session_id;
+                if (chats.length > 0) {
+                    console.log('[AGENT-CHATS-BY-ID] 📋 Primer chat:', JSON.stringify(chats[0]));
+                } else {
+                    console.log('[AGENT-CHATS-BY-ID] ⚠️ No se encontraron chats');
+                    // Verificar si hay assignments sin filtro de session_id
+                    const [allAssignments] = await connection.execute(
+                        'SELECT COUNT(*) as total FROM chat_assignments WHERE user_id = ? AND status = ?',
+                        [agentId, 'active']
+                    );
+                    console.log('[AGENT-CHATS-BY-ID] 🔍 Total assignments sin filtro de session:', allAssignments[0].total);
                 }
 
+                // Retornar el sessionId UUID original para compatibilidad con frontend
                 res.json({
                     success: true,
-                    sessionId: finalSessionId,
+                    sessionId: sessionId, // Mantener el UUID original
                     chats: chats,
                     count: chats.length
                 });
-                
+
             } finally {
                 connection.release();
             }
         } catch (error) {
             console.error('[AGENT-CHATS-BY-ID] ❌ Error:', error);
-            res.status(500).json({ 
-                success: false, 
+            res.status(500).json({
+                success: false,
                 error: 'Error obteniendo chats del agente',
-                details: error.message 
+                details: error.message
             });
         }
     });

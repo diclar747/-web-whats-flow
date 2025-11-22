@@ -891,16 +891,18 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
               </Grid>
             </Box>
 
+              <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexDirection: { xs: 'column', sm: 'row' } }}>
               <Button
                 variant="contained"
                 size="large"
-              startIcon={<QrCode sx={{ fontSize: 28 }} />}
-              onClick={handleConnect}
+                startIcon={<QrCode sx={{ fontSize: 28 }} />}
+                onClick={handleConnect}
                 sx={{
-                bgcolor: 'white',
-                color: '#075E54',
-                px: 6,
-                py: 2.5,
+                  bgcolor: 'white',
+                  color: '#075E54',
+                  minWidth: '280px',
+                  px: 4,
+                  py: 2.5,
                   fontSize: '1.3rem',
                   fontWeight: 700,
                   borderRadius: 4,
@@ -908,15 +910,44 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
                   boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
                   border: '2px solid rgba(255,255,255,0.3)',
                   '&:hover': {
-                  bgcolor: '#f8f9fa',
-                  transform: 'translateY(-4px) scale(1.02)',
-                  boxShadow: '0 12px 32px rgba(0,0,0,0.35)',
-                },
-                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-              }}
-            >
-              Conectar WhatsApp Ahora
-            </Button>
+                    bgcolor: '#f8f9fa',
+                    transform: 'translateY(-4px) scale(1.02)',
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.35)',
+                  },
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                }}
+              >
+                Conectar WhatsApp
+              </Button>
+
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<Person sx={{ fontSize: 28 }} />}
+                onClick={() => window.location.href = '/login'}
+                sx={{
+                  bgcolor: 'white',
+                  color: '#075E54',
+                  minWidth: '280px',
+                  px: 4,
+                  py: 2.5,
+                  fontSize: '1.3rem',
+                  fontWeight: 700,
+                  borderRadius: 4,
+                  textTransform: 'none',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+                  border: '2px solid rgba(255,255,255,0.3)',
+                  '&:hover': {
+                    bgcolor: '#f8f9fa',
+                    transform: 'translateY(-4px) scale(1.02)',
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.35)',
+                  },
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                }}
+              >
+                Conectar Agente
+              </Button>
+            </Box>
           </Box>
                   </Box>
 

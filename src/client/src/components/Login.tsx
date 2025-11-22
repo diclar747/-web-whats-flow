@@ -136,34 +136,110 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        p: 2
+        background: 'linear-gradient(135deg, #075E54 0%, #128C7E 50%, #25D366 100%)',
+        p: 2,
+        position: 'relative',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundImage: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.05"%3E%3Cpath d="M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
+          opacity: 0.3
+        }
       }}
     >
-      <Card sx={{ maxWidth: 400, width: '100%', boxShadow: 3 }}>
-        <CardContent sx={{ p: 4 }}>
-          <Box sx={{ textAlign: 'center', mb: 4 }}>
+      <Card sx={{ 
+        maxWidth: 480, 
+        width: '100%', 
+        boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+        borderRadius: 4,
+        overflow: 'hidden',
+        position: 'relative',
+        zIndex: 1
+      }}>
+        {/* Header con gradiente */}
+        <Box sx={{
+          background: 'linear-gradient(135deg, #075E54 0%, #128C7E 100%)',
+          py: 5,
+          px: 4,
+          textAlign: 'center',
+          position: 'relative',
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: '4px',
+            background: 'linear-gradient(90deg, #25D366 0%, #128C7E 100%)'
+          }
+        }}>
+          {/* Logo de WhatsApp */}
+          <Box
+            sx={{
+              width: 100,
+              height: 100,
+              borderRadius: '50%',
+              background: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 20px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+              border: '4px solid rgba(255,255,255,0.3)'
+            }}
+          >
             <Box
-              sx={{
-                width: 80,
-                height: 80,
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 20px',
-              }}
-            >
-              <LoginIcon sx={{ fontSize: 40, color: 'white' }} />
-            </Box>
-            <Typography variant="h4" component="h1" gutterBottom>
-              WhatsFlow
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Inicia sesión en tu cuenta
-            </Typography>
+              component="img"
+              src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg"
+              alt="WhatsApp"
+              sx={{ width: 60, height: 60 }}
+            />
           </Box>
+          
+          {/* Título */}
+          <Typography 
+            variant="h3" 
+            component="h1" 
+            sx={{ 
+              color: 'white',
+              fontWeight: 800,
+              mb: 1,
+              textShadow: '0 2px 4px rgba(0,0,0,0.2)',
+              letterSpacing: '-0.5px'
+            }}
+          >
+            WhatsFlow
+          </Typography>
+          
+          {/* Subtítulo */}
+          <Typography 
+            variant="h6" 
+            sx={{ 
+              color: 'rgba(255,255,255,0.95)',
+              fontWeight: 500,
+              letterSpacing: '0.5px'
+            }}
+          >
+            Acceso Agente
+          </Typography>
+        </Box>
+
+        <CardContent sx={{ p: 5 }}>
+          <Typography 
+            variant="body1" 
+            sx={{ 
+              textAlign: 'center',
+              color: 'text.secondary',
+              mb: 4,
+              fontWeight: 500
+            }}
+          >
+            Inicia sesión para gestionar tus conversaciones
+          </Typography>
 
           {error && (
             <Alert severity="error" sx={{ mb: 3 }}>
@@ -181,10 +257,24 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               margin="normal"
               required
               disabled={loading}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                  '&:hover fieldset': {
+                    borderColor: '#25D366',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#25D366',
+                  }
+                },
+                '& .MuiInputLabel-root.Mui-focused': {
+                  color: '#25D366'
+                }
+              }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Email />
+                    <Email sx={{ color: '#128C7E' }} />
                   </InputAdornment>
                 ),
               }}
@@ -199,10 +289,24 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               margin="normal"
               required
               disabled={loading}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: 2,
+                  '&:hover fieldset': {
+                    borderColor: '#25D366',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#25D366',
+                  }
+                },
+                '& .MuiInputLabel-root.Mui-focused': {
+                  color: '#25D366'
+                }
+              }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Lock />
+                    <Lock sx={{ color: '#128C7E' }} />
                   </InputAdornment>
                 ),
                 endAdornment: (
@@ -211,6 +315,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                       onClick={() => setShowPassword(!showPassword)}
                       edge="end"
                       disabled={loading}
+                      sx={{ color: '#128C7E' }}
                     >
                       {showPassword ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
@@ -254,13 +359,28 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               variant="contained"
               size="large"
               disabled={loading}
+              startIcon={loading ? <CircularProgress size={20} sx={{ color: 'white' }} /> : <LoginIcon />}
               sx={{
-                mt: 1,
+                mt: 3,
                 mb: 2,
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                py: 1.8,
+                fontSize: '1.1rem',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
+                color: 'white',
+                textTransform: 'none',
+                borderRadius: 3,
+                boxShadow: '0 8px 20px rgba(37, 211, 102, 0.3)',
                 '&:hover': {
-                  background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
+                  background: 'linear-gradient(135deg, #20c55a 0%, #0f7a6b 100%)',
+                  boxShadow: '0 12px 28px rgba(37, 211, 102, 0.4)',
+                  transform: 'translateY(-2px)',
                 },
+                '&:disabled': {
+                  background: 'linear-gradient(135deg, #90EE90 0%, #76c7c0 100%)',
+                  color: 'white'
+                },
+                transition: 'all 0.3s ease'
               }}
             >
               {loading ? <CircularProgress size={24} /> : 'Iniciar Sesión'}
