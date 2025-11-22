@@ -3667,11 +3667,21 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 sessionTokenMap.delete(oldSessionId);
                                 sessionDeviceMap.delete(oldSessionId);
 
-                                // Notificar al cliente que su sesión fue cerrada
-                                io.to(`session-${oldSessionId}`).emit('session-invalidated', {
-                                    message: 'Tu sesión se cerró porque iniciaste sesión desde otro dispositivo',
-                                    newSessionId: sessionId
-                                });
+                                // Notificar SOLO a clientes admin (no a agentes) que su sesión fue cerrada
+                                // Buscar todos los sockets en la sala y emitir solo a los que NO son agentes
+                                const socketsInRoom = io.sockets.adapter.rooms.get(`session-${oldSessionId}`);
+                                if (socketsInRoom) {
+                                    socketsInRoom.forEach(socketId => {
+                                        const socket = io.sockets.sockets.get(socketId);
+                                        // Solo emitir a sockets que NO sean agentes o supervisores
+                                        if (socket && socket.userRole !== 'agent' && socket.userRole !== 'supervisor') {
+                                            socket.emit('session-invalidated', {
+                                                message: 'Tu sesión se cerró porque iniciaste sesión desde otro dispositivo',
+                                                newSessionId: sessionId
+                                            });
+                                        }
+                                    });
+                                }
 
                                 invalidatedCount++;
                             }
@@ -6348,6 +6358,8 @@ app.post('/api/send/message', async (req, res) => {
             chat_jid: jid,
             sender_jid: ownJid, // Our own JID
             from_me: true,
+            agent_id: sentBy || null,
+            agent_name: sentByName || null,
             message_type: 'text',
             text_content: message,
             timestamp: new Date(Number(sentResult.messageTimestamp) * 1000 || Date.now()),
@@ -6386,7 +6398,9 @@ app.post('/api/send/message', async (req, res) => {
             type: dbMessage.message_type,
             isFromMe: true, // Indica que lo enviaste tú
             status: dbMessage.status,
-            sentBy: sentByName // Agregar nombre del agente
+            agent_id: sentBy,
+            agent_name: sentByName,
+            sentBy: sentByName // Agregar nombre del agente (legacy)
         };
         io.to(`session-${sessionId}`).emit('message', clientMessage);
         // NO emitir globalmente - solo a la sesión específica
@@ -6843,7 +6857,7 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
 
 // Enviar archivo multimedia (imagen, video, audio, documento)
 app.post('/api/send/media', upload.single('file'), async (req, res) => {
-    const { sessionId, number } = req.body;
+    const { sessionId, number, sentBy, sentByName } = req.body;
     const file = req.file;
 
     if (!sessionId || !number || !file) {
@@ -6944,6 +6958,8 @@ app.post('/api/send/media', upload.single('file'), async (req, res) => {
             chat_jid: jid,
             sender_jid: ownJid,
             from_me: true,
+            agent_id: sentBy || null,
+            agent_name: sentByName || null,
             message_type: messageType,
             text_content: req.body.caption || file.originalname,
             media_url: `/uploads/${file.filename}`, // URL relativa para el frontend
@@ -7671,7 +7687,8 @@ app.get('/api/history/messages', async (req, res) => {
                      FROM messages m
                      LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id IN (${placeholders})
                      LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id IN (${placeholders})
-                     WHERE m.session_id IN (${placeholders})`;
+                     WHERE m.session_id IN (${placeholders})
+                     AND m.chat_jid NOT LIKE '%@g.us'`;
         const queryParams = [...sessionIds, ...sessionIds, ...sessionIds];
 
         if (chatJid) {
@@ -7725,7 +7742,7 @@ app.get('/api/history/messages', async (req, res) => {
             type: msg.message_type,
             status: msg.status,
             agentId: msg.agent_id,
-            agentName: msg.agent_name || (msg.from_me ? 'Sistema' : '-')
+            agentName: msg.agent_name || (msg.from_me && msg.agent_id ? 'Agente' : (msg.from_me ? 'Sistema' : '-'))
         }));
         
         console.log(`[API-HISTORY] Returning ${historyMessages.length} messages, total: ${totalMessages}`);
@@ -9787,11 +9804,13 @@ const sessionConnectionsMap = new Map();
 
 io.on('connection', (socket) => {
     const sessionId = socket.handshake.query.sessionId;
+    const userRole = socket.handshake.query.userRole || socket.handshake.auth?.userRole; // Obtener rol del usuario
     
     // LOG DETALLADO PARA DEBUG
     console.log(`🔌 Nueva conexión Socket.IO:`);
     console.log(`   - Socket ID: ${socket.id}`);
     console.log(`   - SessionId recibido: ${sessionId || 'NO RECIBIDO'}`);
+    console.log(`   - User Role: ${userRole || 'NO ESPECIFICADO'}`);
     console.log(`   - Query completo:`, socket.handshake.query);
     console.log(`   - Headers:`, {
         'user-agent': socket.handshake.headers['user-agent'],
@@ -9800,6 +9819,9 @@ io.on('connection', (socket) => {
         'x-forwarded-for': socket.handshake.headers['x-forwarded-for']
     });
     console.log(`   - Transporte: ${socket.conn.transport.name}`);
+    
+    // Guardar rol en el socket para uso posterior
+    socket.userRole = userRole;
     
     // Limitar conexiones por sessionId
     // Guardar timeout para poder cancelarlo
@@ -14971,7 +14993,7 @@ app.get('/api/agents/:userId/chats', async (req, res) => {
 // Obtener historial de chats de un agente
 app.get('/api/agents/:id/history', async (req, res) => {
     const { id } = req.params;
-    const { limit = 50, offset = 0 } = req.query;
+    const { limit = 50, offset = 0, sessionId } = req.query;
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible' });
@@ -14980,15 +15002,31 @@ app.get('/api/agents/:id/history', async (req, res) => {
     try {
         const connection = await pool.getConnection();
         try {
+            // Get chat assignments for this agent
             const [assignments] = await connection.execute(
                 `SELECT ca.*,
-                 (SELECT COUNT(*) FROM messages m WHERE m.chat_jid = ca.chat_jid AND m.session_id = ca.session_id) as messages_count
+                 (SELECT COUNT(*) FROM messages m WHERE m.chat_jid = ca.chat_jid AND m.session_id = ca.session_id) as messages_count,
+                 (SELECT COUNT(*) FROM messages m WHERE m.chat_jid = ca.chat_jid AND m.session_id = ca.session_id AND m.agent_id = ?) as agent_messages_count
                  FROM chat_assignments ca
                  WHERE ca.user_id = ?
                  ORDER BY ca.created_at DESC
                  LIMIT ? OFFSET ?`,
-                [id, parseInt(limit), parseInt(offset)]
+                [id, id, parseInt(limit), parseInt(offset)]
             );
+
+            // For each assignment, get the last few messages with agent info
+            for (let assignment of assignments) {
+                const [recentMessages] = await connection.execute(
+                    `SELECT m.id, m.text_content, m.from_me, m.agent_id, m.agent_name, 
+                            m.timestamp, m.message_type, m.status
+                     FROM messages m
+                     WHERE m.chat_jid = ? AND m.session_id = ?
+                     ORDER BY m.timestamp DESC
+                     LIMIT 10`,
+                    [assignment.chat_jid, assignment.session_id]
+                );
+                assignment.recent_messages = recentMessages;
+            }
 
             const [total] = await connection.execute(
                 'SELECT COUNT(*) as total FROM chat_assignments WHERE user_id = ?',
@@ -15007,6 +15045,71 @@ app.get('/api/agents/:id/history', async (req, res) => {
         }
     } catch (error) {
         console.error('[AGENTS] Error getting history:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Obtener todos los mensajes enviados por un agente específico (para su historial)
+app.get('/api/agents/:id/messages', async (req, res) => {
+    const { id } = req.params;
+    const { limit = 100, offset = 0, sessionId } = req.query;
+
+    if (!pool) {
+        return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible' });
+    }
+
+    try {
+        const connection = await pool.getConnection();
+        try {
+            // Obtener todos los mensajes enviados por este agente
+            const [messages] = await connection.execute(
+                `SELECT m.id, m.session_id, m.chat_jid, m.sender_jid,
+                        m.from_me, m.agent_id, m.agent_name, m.message_type, 
+                        m.text_content, m.media_url, m.timestamp, m.status,
+                        COALESCE(c.name, c.notify_name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as contact_name,
+                        c.avatar_url as contact_avatar
+                 FROM messages m
+                 LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = m.session_id
+                 WHERE m.agent_id = ?
+                 ORDER BY m.timestamp DESC
+                 LIMIT ? OFFSET ?`,
+                [id, parseInt(limit), parseInt(offset)]
+            );
+
+            const [total] = await connection.execute(
+                'SELECT COUNT(*) as total FROM messages WHERE agent_id = ?',
+                [id]
+            );
+
+            console.log(`[AGENTS-MESSAGES] ✅ Encontrados ${messages.length} mensajes del agente ${id}`);
+
+            res.json({
+                success: true,
+                messages: messages.map(msg => ({
+                    id: msg.id,
+                    sessionId: msg.session_id,
+                    chatJid: msg.chat_jid,
+                    contactName: msg.contact_name,
+                    contactAvatar: msg.contact_avatar,
+                    senderJid: msg.sender_jid,
+                    from_me: msg.from_me,
+                    agent_id: msg.agent_id,
+                    agent_name: msg.agent_name,
+                    message_type: msg.message_type,
+                    text_content: msg.text_content,
+                    media_url: msg.media_url,
+                    timestamp: msg.timestamp,
+                    status: msg.status
+                })),
+                total: total[0].total,
+                limit: parseInt(limit),
+                offset: parseInt(offset)
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[AGENTS-MESSAGES] Error getting agent messages:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

@@ -82,7 +82,17 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     mountedRef.current = true;
   }
   
-  const { isDarkMode } = useTheme();
+  // Modo oscuro específico para el chat (independiente del tema global)
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('whatsflow-chat-darkmode');
+    return saved ? saved === 'true' : true; // Por defecto oscuro solo en chat
+  });
+
+  // Guardar preferencia cuando cambie
+  useEffect(() => {
+    localStorage.setItem('whatsflow-chat-darkmode', isDarkMode.toString());
+  }, [isDarkMode]);
+
   const {
     chats = [],
     activeChat,
@@ -848,8 +858,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     header: isDarkMode ? '#1f2c34' : '#f8f9fa',
     chatBg: isDarkMode ? '#0c1317' : '#e5ddd5',
     
-    myMessage: isDarkMode ? '#005c4b' : '#d9fdd3',
-    myMessageHover: isDarkMode ? '#006d57' : '#cdf4d6',
+    myMessage: isDarkMode ? '#1f2c34' : '#ffffff', // Mismo color que mensajes recibidos
+    myMessageHover: isDarkMode ? '#2a3942' : '#f5f6f6', // Mismo hover
     theirMessage: isDarkMode ? '#1f2c34' : '#ffffff',
     theirMessageHover: isDarkMode ? '#2a3942' : '#f5f6f6',
     

@@ -54,7 +54,9 @@ interface Message {
   timestamp: string;
   media_type?: string;
   media_url?: string;
-  sentBy?: string;  // Nombre del agente que envió el mensaje
+  agent_id?: number;
+  agent_name?: string;
+  sentBy?: string;  // Nombre del agente que envió el mensaje (legacy)
 }
 
 interface OptimizedChatSystemProps {
@@ -290,11 +292,17 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
     setTimeout(() => scrollToBottom(), 100);
     
     try {
+      // Obtener datos del usuario actual
+      const userId = sessionStorage.getItem('userId');
+      const userName = sessionStorage.getItem('userName');
+      
       const formData = new FormData();
       formData.append('file', file);
       formData.append('sessionId', sessionId);
       formData.append('number', selectedChat.jid);
       formData.append('caption', '');
+      formData.append('sentBy', userId || '');
+      formData.append('sentByName', userName || '');
 
       const response = await fetch(`${apiUrl}/api/send/media`, {
         method: 'POST',
@@ -883,16 +891,17 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                           <Typography variant="body2" sx={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
                             {renderTextWithLinks(message.text_content)}
                           </Typography>
-                          {/* Badge del agente que envió el mensaje */}
-                          {message.sentBy && isFromMe && (
+                          {/* Badge del agente/admin que envió el mensaje */}
+                          {isFromMe && (message.agent_name || message.sentBy) && (
                             <Chip 
-                              label={`📨 ${message.sentBy}`}
+                              label={`Respondido por: ${message.agent_name || message.sentBy}`}
                               size="small"
-                              color="primary"
                               sx={{ 
                                 mt: 0.5,
-                                height: 18,
-                                fontSize: '0.65rem',
+                                height: 20,
+                                fontSize: '0.7rem',
+                                bgcolor: '#00a884',
+                                color: 'white',
                                 '& .MuiChip-label': {
                                   px: 1
                                 }

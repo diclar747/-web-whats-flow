@@ -34,11 +34,13 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
     // Obtener sessionId de sessionStorage primero (para agentes) o localStorage (para admins)
     const sessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+    const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole') || 'admin'; // Obtener rol del usuario
 
     console.log('🔌 Conectando a Socket.IO en:', socketURL);
     console.log('🔌 SessionId para conexión:', sessionId);
+    console.log('🔌 UserRole para conexión:', userRole);
 
-    // Inicializar conexión Socket.IO CON sessionId en query
+    // Inicializar conexión Socket.IO CON sessionId y userRole en query
     const newSocket = io(socketURL, {
       transports: ['websocket', 'polling'], // Priorizar websocket, fallback a polling
       autoConnect: true,
@@ -53,13 +55,16 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       path: '/socket.io/',
       withCredentials: true,
       query: {
-        sessionId: sessionId || '' // Pasar sessionId al servidor
+        sessionId: sessionId || '', // Pasar sessionId al servidor
+        userRole: userRole // Pasar rol del usuario
       },
       auth: {
-        sessionId: sessionId || ''
+        sessionId: sessionId || '',
+        userRole: userRole
       },
       extraHeaders: {
-        'X-Session-Id': sessionId || ''
+        'X-Session-Id': sessionId || '',
+        'X-User-Role': userRole
       }
     });
 

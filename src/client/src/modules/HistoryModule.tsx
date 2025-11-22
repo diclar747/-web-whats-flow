@@ -132,6 +132,7 @@ interface MessageHistory {
   timestamp: string;
   isFromMe: boolean;
   status: 'sent' | 'delivered' | 'read' | 'failed';
+  agentId?: number;
   agentName?: string;
   campaignId?: string;
   labels: string[];
@@ -406,17 +407,14 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       }
 
       const cacheKey = `history_${sessionId}`;
-      const contactsCacheKey = `contacts_${sessionId}`;
       const cachedData = localStorage.getItem(cacheKey);
-      const cachedContacts = localStorage.getItem(contactsCacheKey);
 
-      if (!forceReload && cachedData && cachedContacts) {
+      if (!forceReload && cachedData) {
         const parsedData = JSON.parse(cachedData);
-        const parsedContacts = JSON.parse(cachedContacts);
 
         const cacheTime = parsedData.timestamp;
         const now = Date.now();
-        const fiveMinutes = 5 * 60 * 100;
+        const fiveMinutes = 5 * 60 * 1000; // 5 minutos en milisegundos (corregido)
 
         if (now - cacheTime < fiveMinutes) {
           setMessages(parsedData.messages);
@@ -426,95 +424,67 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         }
       }
 
-      // Primero cargar contactos desde la BD usando el sessionId directo
-      const contactsResponse = await fetch(`${getAPIBaseURL()}/api/contacts/${sessionId}`);
-      const contactsData = await contactsResponse.json();
-
-      let contactsMap = new Map();
-      if (contactsData.success && contactsData.contacts) {
-        contactsData.contacts.forEach((contact: any) => {
-          contactsMap.set(contact.jid, {
-            name: contact.name,
-            avatar: contact.avatar,
-            isGroup: contact.isGroup
-          });
-        });
-        console.log('📋 Contactos cargados en historial:', contactsMap.size);
-      }
-
-      // Cargar también grupos usando el sessionId directo
-      const groupsResponse = await fetch(`${getAPIBaseURL()}/api/groups/${sessionId}`);
-      const groupsData = await groupsResponse.json();
-
-      if (groupsData.success && groupsData.groups) {
-        groupsData.groups.forEach((group: any) => {
-          contactsMap.set(group.id, {
-            name: group.name,
-            avatar: group.avatar,
-            isGroup: true
-          });
-        });
-        console.log('👥 Grupos cargados en historial:', groupsData.groups.length);
-      }
-
-      // Aumentar el límite de mensajes para cargar más datos
-      const response = await fetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${sessionId}&limit=50000&offset=0`);
+      // Cargar solo mensajes (NO grupos) - optimizado para velocidad
+      // Reducido a 1000 mensajes iniciales para carga rápida
+      const response = await fetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${sessionId}&limit=1000&offset=0`);
       const data = await response.json();
 
       console.log('📦 Respuesta de la API /api/history/messages:', data);
       console.log('📊 Total de mensajes recibidos:', data.messages?.length || 0);
 
       if (data.success && data.messages && Array.isArray(data.messages)) {
-        const apiMessages: MessageHistory[] = data.messages.map((msg: any) => {
-          const chatJid = msg.chatJid || msg.chat_jid || 'unknown';
-          const contactInfo = contactsMap.get(chatJid);
+        // Filtrar grupos inmediatamente - SOLO chats individuales
+        const apiMessages: MessageHistory[] = data.messages
+          .filter((msg: any) => {
+            const chatJid = msg.chatJid || msg.chat_jid || '';
+            return !chatJid.includes('@g.us'); // Excluir grupos
+          })
+          .map((msg: any) => {
+            const chatJid = msg.chatJid || msg.chat_jid || 'unknown';
 
-          return {
-            id: msg.id || `msg_${Date.now()}`,
-            conversationId: chatJid,
-            contactName: msg.contactName || contactInfo?.name || msg.chatName || msg.chat_name || msg.senderName || chatJid.split('@')[0] || 'Desconocido',
-            contactPhone: chatJid.split('@')[0] || 'unknown',
-            contactAvatar: msg.contactAvatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chatJid}`,
-            isGroup: msg.isGroup !== undefined ? msg.isGroup : (contactInfo?.isGroup || chatJid.includes('@g.us')),
-            messageType: msg.type || msg.message_type || 'text',
-            content: getMessageContent(msg),
-            mediaUrl: msg.mediaUrl || msg.media_url || null,
-            fileName: msg.fileName || msg.file_name || null,
-            timestamp: msg.timestamp || new Date().toISOString(),
-            isFromMe: msg.fromMe || msg.from_me || false,
-            status: msg.status || 'sent',
-            agentName: msg.agentName || msg.agent_name || 'Sistema',
-            labels: [],
-            priority: 'medium',
-            sentiment: 'neutral',
-            isStarred: false,
-            isArchived: false
-          };
-        });
+            return {
+              id: msg.id || `msg_${Date.now()}`,
+              conversationId: chatJid,
+              contactName: msg.contactName || msg.chatName || msg.chat_name || msg.senderName || chatJid.split('@')[0] || 'Desconocido',
+              contactPhone: chatJid.split('@')[0] || 'unknown',
+              contactAvatar: msg.contactAvatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chatJid}`,
+              isGroup: false, // Ya filtramos grupos arriba
+              messageType: msg.type || msg.message_type || 'text',
+              content: getMessageContent(msg),
+              mediaUrl: msg.mediaUrl || msg.media_url || null,
+              fileName: msg.fileName || msg.file_name || null,
+              timestamp: msg.timestamp || new Date().toISOString(),
+              isFromMe: msg.fromMe || msg.from_me || false,
+              status: msg.status || 'sent',
+              agentId: msg.agentId || msg.agent_id,
+              agentName: msg.agentName || msg.agent_name || (msg.from_me ? (msg.agentId || msg.agent_id ? 'Agente' : 'Sistema') : '-'),
+              labels: [],
+              priority: 'medium',
+              sentiment: 'neutral',
+              isStarred: false,
+              isArchived: false
+            };
+          });
 
+        // Crear conversaciones agrupadas por chat (ya sin grupos)
         const conversationMap = new Map<string, ConversationSummary>();
 
         apiMessages.forEach((msg) => {
           const convId = msg.conversationId || 'unknown';
-          const contactInfo = contactsMap.get(convId);
-
-          if (msg.isGroup || convId.includes('@g.us')) {
-            return;
-          }
 
           if (!conversationMap.has(convId)) {
             conversationMap.set(convId, {
               id: convId,
-              contactName: contactInfo?.name || msg.contactName || 'Desconocido',
+              contactName: msg.contactName || 'Desconocido',
               contactPhone: msg.contactPhone || 'unknown',
               contactAvatar: `${getAPIBaseURL()}/api/avatar/${sessionId}/${convId}`,
-              isGroup: contactInfo?.isGroup || msg.isGroup || false,
+              isGroup: false, // Ya no hay grupos
               messageCount: 0,
               lastMessage: msg.content || 'Sin mensaje',
               lastMessageTime: msg.timestamp || new Date().toISOString(),
               duration: 0,
               status: 'active',
-              agentName: msg.agentName || 'Sistema',
+              agentName: msg.agentName || (msg.agentId ? 'Agente' : 'Sistema'),
               labels: [],
               responseTime: 0
             });
@@ -525,7 +495,6 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           if (new Date(msg.timestamp || 0) > new Date(conv.lastMessageTime || 0)) {
             conv.lastMessage = msg.content || 'Sin mensaje';
             conv.lastMessageTime = msg.timestamp || new Date().toISOString();
-            // Actualizar agentName si el mensaje más reciente tiene uno
             if (msg.agentName) {
               conv.agentName = msg.agentName;
             }
@@ -616,7 +585,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
             timestamp: Date.now()
           };
           localStorage.setItem(cacheKey, JSON.stringify(cacheData));
-          localStorage.setItem(contactsCacheKey, JSON.stringify(Array.from(contactsMap.entries())));
+          // Ya no guardamos contactsMap en caché (no lo necesitamos)
           console.log('💾 Datos guardados en caché con sessionId:', sessionId);
         } catch (cacheError) {
           console.warn('Error guardando caché:', cacheError);
@@ -667,10 +636,10 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
 
   useEffect(() => {
     if (sessionId) {
-      // Obtener el sessionId activo primero
+      // Ya NO cargamos grupos - solo campañas y estados si es necesario
       diagnoseSession().then((activeSessionId) => {
         const currentSessionId = activeSessionId || sessionId;
-        loadGroups(currentSessionId);
+        // loadGroups(currentSessionId); // ❌ ELIMINADO - No cargar grupos
         loadStatuses(currentSessionId);
         loadCampaigns(); // Cargar campañas
       });

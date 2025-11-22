@@ -149,7 +149,7 @@ const AgentDashboardPro: React.FC = () => {
   // Nuevo: Estado para modo oscuro/claro
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('agentDashboardTheme');
-    return saved ? saved === 'dark' : false;
+    return saved ? saved === 'dark' : false; // Por defecto modo claro en dashboard agente
   });
 
   // Referencias
@@ -167,8 +167,8 @@ const AgentDashboardPro: React.FC = () => {
         primary: '#f0f2f5',
         secondary: '#ffffff',
         chat: '#efeae2',
-        header: '#00a884',
-        messageOwn: '#d9fdd3',
+        header: '#2c3e50', // Azul oscuro elegante
+        messageOwn: '#ffffff', // Mismo color que mensajes recibidos
         messageOther: '#ffffff'
       },
       text: {
@@ -185,8 +185,8 @@ const AgentDashboardPro: React.FC = () => {
         primary: '#111b21',
         secondary: '#202c33',
         chat: '#0b141a',
-        header: '#00a884',
-        messageOwn: '#005c4b',
+        header: '#1a252f', // Gris azulado oscuro
+        messageOwn: '#202c33', // Mismo color que mensajes recibidos
         messageOther: '#202c33'
       },
       text: {
@@ -459,7 +459,7 @@ const AgentDashboardPro: React.FC = () => {
     };
 
     const handleNewMessage = (data: any) => {
-      console.log('💬 Nuevo mensaje:', data);
+      console.log('💬 [AGENT-PRO] Nuevo mensaje recibido:', data);
 
       // Si es del chat actual, agregar mensaje
       if (selectedChat && data.chatJid === selectedChat.id) {
@@ -467,8 +467,8 @@ const AgentDashboardPro: React.FC = () => {
           id: data.id || Date.now().toString(),
           chatJid: data.chatJid,
           senderJid: data.senderJid || data.chatJid,
-          from_me: data.from_me || false,
-          message_type: data.message_type || 'conversation',
+          from_me: data.from_me || data.isFromMe || false,
+          message_type: data.message_type || data.type || 'conversation',
           text_content: data.message || data.text_content,
           timestamp: data.timestamp || new Date().toISOString(),
           status: data.status || 'received',
@@ -476,17 +476,30 @@ const AgentDashboardPro: React.FC = () => {
           caption: data.caption,
           file_name: data.file_name,
           sender_name: data.sender_name,
-          sender_avatar: data.sender_avatar
+          sender_avatar: data.sender_avatar,
+          agent_id: data.agent_id,
+          agent_name: data.agent_name  // Incluir nombre del agente
         };
 
         setMessages(prev => {
-          if (prev.some(m => m.id === newMsg.id)) return prev;
+          // Si ya existe (mensaje temp), reemplazarlo con el real
+          const existingIndex = prev.findIndex(m => 
+            m.id === newMsg.id || 
+            (m.id.toString().startsWith('temp-') && m.text_content === newMsg.text_content && m.chatJid === newMsg.chatJid)
+          );
+          
+          if (existingIndex >= 0) {
+            const updated = [...prev];
+            updated[existingIndex] = newMsg;
+            return updated;
+          }
+          
           return [...prev, newMsg];
         });
       }
 
       // Reproducir sonido solo si no es del chat actual o es mensaje entrante
-      if (!selectedChat || data.chatJid !== selectedChat.id) {
+      if (!selectedChat || data.chatJid !== selectedChat.id || !data.from_me) {
         playNotificationSound();
       }
 
@@ -508,14 +521,46 @@ const AgentDashboardPro: React.FC = () => {
     on('message', handleNewMessage);
 
     on('message-sent', (data: any) => {
-      console.log('✅ Mensaje enviado confirmado:', data);
+      console.log('✅ [AGENT-PRO] Mensaje enviado confirmado:', data);
       if (selectedChat && data.chatJid === selectedChat.id) {
-        setMessages(prev => prev.map(msg => {
-          if (msg.status === 'pending' && msg.chatJid === data.chatJid) {
-            return { ...msg, status: 'sent', id: data.id || msg.id };
+        setMessages(prev => {
+          // Buscar mensaje pendiente con el mismo contenido
+          const pendingIndex = prev.findIndex(msg => 
+            msg.status === 'pending' && 
+            msg.chatJid === data.chatJid &&
+            msg.id.toString().startsWith('temp-')
+          );
+
+          if (pendingIndex >= 0) {
+            const updated = [...prev];
+            updated[pendingIndex] = {
+              ...updated[pendingIndex],
+              status: 'sent',
+              id: data.id || updated[pendingIndex].id,
+              agent_id: data.agent_id || updated[pendingIndex].agent_id,
+              agent_name: data.agent_name || updated[pendingIndex].agent_name
+            };
+            return updated;
           }
-          return msg;
-        }));
+
+          // Si no existe mensaje pendiente, agregarlo (por si acaso)
+          if (!prev.some(m => m.id === data.id)) {
+            return [...prev, {
+              id: data.id || Date.now().toString(),
+              chatJid: data.chatJid,
+              senderJid: data.senderJid || sessionId,
+              from_me: true,
+              message_type: data.message_type || 'conversation',
+              text_content: data.message || data.text_content,
+              timestamp: data.timestamp || new Date().toISOString(),
+              status: 'sent',
+              agent_id: data.agent_id,
+              agent_name: data.agent_name
+            }];
+          }
+
+          return prev;
+        });
       }
     });
 
@@ -879,7 +924,7 @@ const AgentDashboardPro: React.FC = () => {
               p: 1.5,
               bgcolor: msg.from_me ? currentTheme.bg.messageOwn : currentTheme.bg.messageOther,
               color: msg.from_me && darkMode ? '#e9edef' : currentTheme.text.primary,
-              borderRadius: msg.from_me ? '8px 0px 8px 8px' : '0px 8px 8px 8px',
+              borderRadius: '4px', // Sin bordes redondeados
               boxShadow: darkMode ? '0 2px 4px rgba(0,0,0,0.4)' : '0 1px 0.5px rgba(0,0,0,0.13)',
               position: 'relative'
             }}
@@ -928,7 +973,7 @@ const AgentDashboardPro: React.FC = () => {
                     sx={{
                       maxWidth: '100%',
                       maxHeight: '300px',
-                      borderRadius: '8px',
+                      borderRadius: '4px',
                       cursor: 'pointer',
                       objectFit: 'contain'
                     }}
@@ -968,7 +1013,7 @@ const AgentDashboardPro: React.FC = () => {
                       style={{
                         maxWidth: '100%',
                         maxHeight: '300px',
-                        borderRadius: '8px'
+                        borderRadius: '4px'
                       }}
                     />
                   </Box>
@@ -1195,7 +1240,7 @@ const AgentDashboardPro: React.FC = () => {
                   </InputAdornment>
                 ),
                 sx: {
-                  borderRadius: '10px',
+                  borderRadius: '4px',
                   bgcolor: darkMode ? currentTheme.bg.secondary : 'white',
                   color: currentTheme.text.primary,
                   '& fieldset': { borderColor: currentTheme.border },
@@ -1556,7 +1601,7 @@ const AgentDashboardPro: React.FC = () => {
                 }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
-                    borderRadius: '20px',
+                    borderRadius: '4px',
                     bgcolor: darkMode ? currentTheme.bg.secondary : 'white',
                     color: currentTheme.text.primary,
                     '& fieldset': { borderColor: currentTheme.border },
@@ -1599,7 +1644,7 @@ const AgentDashboardPro: React.FC = () => {
                     left: 20,
                     zIndex: 1000,
                     boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                    borderRadius: '12px',
+                    borderRadius: '4px',
                     overflow: 'hidden'
                   }}
                 >
