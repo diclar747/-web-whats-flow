@@ -164,12 +164,7 @@ export interface WhatsAppChat {
   lastSeen?: string;
   description?: string;
   participantsCount?: number;
-}
-
-interface MessageReaction {
-  userJid: string;
-  reaction: string;
-  timestamp: string;
+  assigned_agent_name?: string;
 }
 
 interface WhatsAppMessage {
@@ -319,7 +314,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
               lastSeen: chat.lastSeen || null,
               isPinned: chat.isPinned || false,
               isMuted: chat.isMuted || false,
-              isArchived: chat.isArchived || false
+              isArchived: chat.isArchived || false,
+              assigned_agent_name: chat.assigned_to || chat.assigned_agent_name
             });
           }
         });
@@ -334,7 +330,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
         setChats(individualChats);
         setConnectionStatus('connected');
-        
+
       } else if (data.source === 'database_fallback') {
         console.log('📦 Usando datos de fallback de base de datos');
 
@@ -489,7 +485,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       newSocket.on('message', (newMessage: WhatsAppMessage) => {
         console.log('🎉🎉🎉 MENSAJE RECIBIDO - INICIANDO PROCESAMIENTO');
-        
+
         // Normalizar chatJid - puede venir en diferentes formatos
         const rawChatJid = newMessage.chatJid || (newMessage as any).chat_jid || newMessage.to || newMessage.from;
         const normalizedChatJid = rawChatJid?.includes('@') ? rawChatJid : `${rawChatJid}@s.whatsapp.net`;
@@ -516,29 +512,29 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
         // Notificaciones para mensajes entrantes - SIEMPRE mostrar
         if (!mappedMessage.isFromMe) {
-            console.log('🔔 [NOTIFICACIONES] Procesando notificación para mensaje entrante');
+          console.log('🔔 [NOTIFICACIONES] Procesando notificación para mensaje entrante');
 
-            const chat = chatsRef.current.find(c => c.id === mappedMessage.chatJid);
-            const senderName = chat?.name || mappedMessage.from?.split('@')[0] || 'Contacto';
-            const messagePreview = mappedMessage.message || 'Nuevo mensaje multimedia';
+          const chat = chatsRef.current.find(c => c.id === mappedMessage.chatJid);
+          const senderName = chat?.name || mappedMessage.from?.split('@')[0] || 'Contacto';
+          const messagePreview = mappedMessage.message || 'Nuevo mensaje multimedia';
 
-            // SIEMPRE mostrar notificación y reproducir sonido
-            console.log('🔔 [NOTIFICACIONES] Mostrando notificación para:', senderName);
-            showBrowserNotification({
-                title: `💬 ${senderName}`,
-                body: messagePreview.length > 50 ? messagePreview.substring(0, 50) + '...' : messagePreview,
-                icon: chat?.avatar || '/favicon.ico',
-                tag: `chat-${mappedMessage.chatJid}`,
-                requireInteraction: false,
-                silent: false
-            });
+          // SIEMPRE mostrar notificación y reproducir sonido
+          console.log('🔔 [NOTIFICACIONES] Mostrando notificación para:', senderName);
+          showBrowserNotification({
+            title: `💬 ${senderName}`,
+            body: messagePreview.length > 50 ? messagePreview.substring(0, 50) + '...' : messagePreview,
+            icon: chat?.avatar || '/favicon.ico',
+            tag: `chat-${mappedMessage.chatJid}`,
+            requireInteraction: false,
+            silent: false
+          });
 
-            // Actualizar contador en el título
-            const currentTitle = document.title;
-            if (!currentTitle.startsWith('(')) {
-                const unreadCount = chatsRef.current.reduce((total, c) => total + (c.unreadCount || 0), 0) + 1;
-                document.title = `(${unreadCount}) ${currentTitle}`;
-            }
+          // Actualizar contador en el título
+          const currentTitle = document.title;
+          if (!currentTitle.startsWith('(')) {
+            const unreadCount = chatsRef.current.reduce((total, c) => total + (c.unreadCount || 0), 0) + 1;
+            document.title = `(${unreadCount}) ${currentTitle}`;
+          }
         }
 
         // Actualizar mensajes solo si es del chat activo
@@ -586,7 +582,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         console.log('🔄🔄🔄 ACTUALIZANDO LISTA DE CHATS');
         console.log('📊 Chats actuales:', chatsRef.current.length);
         console.log('💬 Mensaje a agregar:', mappedMessage.chatJid);
-        
+
         setChats(prev => {
           console.log('🔥 setChats EJECUTÁNDOSE con', prev.length, 'chats');
           let chatExists = false;
@@ -626,7 +622,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
               avatar: undefined
             };
             updatedChats.unshift(newChat);
-            
+
             // Recargar chats completos desde el servidor para obtener información actualizada
             console.log('🔄 Recargando lista completa de chats desde el servidor...');
             if (loadChats && session?.sessionId) {
@@ -647,15 +643,15 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         console.log('📬 Actualización de estado recibida:', update);
         const { messageId, id, status, chatJid } = update;
         const msgId = messageId || id;
-        
+
         if (msgId && status) {
           // Actualizar estado del mensaje en la lista de mensajes actual
-          setMessages(prevMessages => 
-            prevMessages.map(msg => 
+          setMessages(prevMessages =>
+            prevMessages.map(msg =>
               msg.id === msgId ? { ...msg, status } : msg
             )
           );
-          
+
           console.log(`✅ Estado de mensaje ${msgId} actualizado a: ${status}`);
         }
       });
@@ -704,10 +700,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     try {
       setIsLoading(true);
       setError(null);
-      
+
       const response = await fetch(`${API_BASE}/api/qr-status`);
       const data = await response.json();
-      
+
       if (data.success) {
         if (data.isConnected && data.sessionId) {
           connectSession(data.sessionId);
@@ -762,7 +758,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       console.log(`🗑️ Limpiando mensajes anteriores antes de cargar chat: ${chatId}`);
       setMessages([]);
       setIsLoading(true);
-      
+
       console.log(`🔄 Cargando TODOS los mensajes para chat: ${chatId}`);
 
       // Cargar TODOS los mensajes sin límite
@@ -1097,7 +1093,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     try {
       const response = await fetch(`${API_BASE}/api/messages/${messageId}/reactions?sessionId=${session.sessionId}`);
       const data = await response.json();
-      
+
       if (data.success) {
         return data.reactions;
       }
@@ -1232,4 +1228,3 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     </WhatsAppContext.Provider>
   );
 };
- 
