@@ -1042,14 +1042,16 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
           <>
             {/* Header del chat */}
             <Box sx={{
-              height: 60,
+              height: 70,
               bgcolor: colors.header,
               display: 'flex',
               alignItems: 'center',
               px: 3,
               gap: 2,
               borderBottom: `1px solid ${colors.divider}`,
-              position: 'relative'
+              position: 'relative',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+              backdropFilter: 'blur(10px)'
             }}>
               <Avatar
                 src={activeChat.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${activeChat.id}`}
@@ -1059,20 +1061,54 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                     e.target.onerror = null;
                   }
                 }}
-                sx={{ bgcolor: activeChat.isGroup ? '#9c27b0' : colors.primary }}
+                sx={{ 
+                  bgcolor: activeChat.isGroup ? '#9c27b0' : colors.primary,
+                  width: 45,
+                  height: 45,
+                  border: `2px solid ${colors.divider}`,
+                  transition: 'transform 0.2s ease',
+                  '&:hover': {
+                    transform: 'scale(1.05)',
+                    cursor: 'pointer'
+                  }
+                }}
               >
                 {activeChat.name ? activeChat.name.charAt(0).toUpperCase() : activeChat.id.split('@')[0].charAt(0)}
               </Avatar>
               <Box sx={{ flex: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   {activeChat.isGroup && <People sx={{ fontSize: 18, color: '#9c27b0' }} />}
-                  <Typography variant="body1" sx={{ fontWeight: 500, color: colors.text }}>
+                  <Typography 
+                    variant="h6" 
+                    sx={{ 
+                      fontWeight: 600, 
+                      color: colors.text,
+                      fontSize: '16px',
+                      letterSpacing: '0.01em'
+                    }}
+                  >
                     {activeChat.name || activeChat.id.split('@')[0]}
                   </Typography>
                 </Box>
-                <Typography variant="caption" sx={{ color: colors.textSecondary }}>
-                  {activeChat.isGroup ? 'Grupo de WhatsApp' : 'Toca para ver info'}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.3 }}>
+                  <Typography variant="caption" sx={{ color: colors.textSecondary, fontSize: '12.5px' }}>
+                    {activeChat.isGroup ? `Grupo · ${messages.length} mensajes` : `${activeChat.id.split('@')[0]}`}
+                  </Typography>
+                  {activeChat.unreadCount > 0 && (
+                    <Chip 
+                      label={`${activeChat.unreadCount} sin leer`}
+                      size="small"
+                      sx={{
+                        height: 18,
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        bgcolor: colors.primary,
+                        color: 'white',
+                        '& .MuiChip-label': { px: 1 }
+                      }}
+                    />
+                  )}
+                </Box>
               </Box>
               
               {/* Indicador de sincronización */}
@@ -1236,15 +1272,19 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                     sx={{
                       maxWidth: '65%',
                       bgcolor: msg.isFromMe ? colors.myMessage : colors.theirMessage,
-                      p: '6px 7px 8px 9px',
-                      borderRadius: '7.5px',
+                      p: '8px 10px 9px 10px',
+                      borderRadius: '8px',
                       position: 'relative',
-                      boxShadow: colors.shadow,
+                      boxShadow: isDarkMode 
+                        ? '0 1px 3px rgba(0,0,0,0.5)' 
+                        : '0 1px 2px rgba(0,0,0,0.12)',
                       // 🎨 FASE 1: Hover effect mejorado
                       transition: 'all 0.2s ease-in-out',
                       '&:hover': {
                         bgcolor: msg.isFromMe ? colors.myMessageHover : colors.theirMessageHover,
-                        boxShadow: colors.shadowStrong,
+                        boxShadow: isDarkMode 
+                          ? '0 2px 8px rgba(0,0,0,0.7)' 
+                          : '0 2px 6px rgba(0,0,0,0.15)',
                         transform: 'translateY(-1px)'
                       },
                       // Cola triangular
@@ -1495,15 +1535,45 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                     ) : (
                       <Typography
                         variant="body2"
+                        component="div"
                         sx={{
                           color: colors.text,
                           wordBreak: 'break-word',
-                          lineHeight: 1.4,
-                          fontSize: '14.2px'
+                          lineHeight: 1.5,
+                          fontSize: '14.5px',
+                          fontWeight: 400,
+                          letterSpacing: '0.01em',
+                          '& a': {
+                            color: msg.isFromMe ? '#4fc3f7' : '#00a884',
+                            textDecoration: 'none',
+                            fontWeight: 500,
+                            wordBreak: 'break-all',
+                            display: 'inline-block',
+                            transition: 'all 0.2s ease',
+                            '&:hover': {
+                              textDecoration: 'underline',
+                              opacity: 0.8
+                            }
+                          }
                         }}
-                      >
-                        {msg.message}
-                      </Typography>
+                        dangerouslySetInnerHTML={{
+                          __html: msg.message
+                            ? msg.message
+                                // Detectar URLs y convertirlas en enlaces clicables
+                                .replace(
+                                  /(https?:\/\/[^\s]+)/g,
+                                  '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+                                )
+                                // Detectar emails
+                                .replace(
+                                  /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/gi,
+                                  '<a href="mailto:$1">$1</a>'
+                                )
+                                // Saltos de línea
+                                .replace(/\n/g, '<br/>')
+                            : ''
+                        }}
+                      />
                     )}
 
                     {/* Barra de acciones debajo del mensaje */}

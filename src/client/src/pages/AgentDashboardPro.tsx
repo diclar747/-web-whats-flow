@@ -160,8 +160,8 @@ const AgentDashboardPro: React.FC = () => {
 
       if (!token || !userId) {
         console.log('❌ No hay sesión de agente');
-        showSnackbar('Sesión expirada. Por favor, inicia sesión nuevamente', 'error');
-        setTimeout(() => navigate('/login'), 2000);
+        sessionStorage.clear();
+        navigate('/login');
         return;
       }
 
