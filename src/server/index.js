@@ -15452,7 +15452,7 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
             );
 
             const [agentsResult] = await connection.execute(
-                'SELECT COUNT(*) as total FROM users WHERE status = \'active\''
+                'SELECT COUNT(*) as total FROM users WHERE status = \'active\' AND role = \'agent\''
             );
 
             const [activeLinesResult] = await connection.execute(
@@ -15474,9 +15474,9 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                 `SELECT COUNT(*) as total FROM campaigns WHERE status = 'active' OR status = 'running'`
             );
 
-            // Kanbans activos
+            // Kanbans activos - contar todos los tableros sin filtro de is_active
             const [kanbansResult] = await connection.execute(
-                `SELECT COUNT(*) as total FROM kanban_boards WHERE is_active = 1`
+                `SELECT COUNT(*) as total FROM kanban_boards`
             );
 
             res.json({

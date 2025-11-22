@@ -215,19 +215,19 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
   // Nuevos estados para funcionalidades avanzadas
   const [contacts, setContacts] = useState<any[]>([]);
-  const [groups, setGroups] = useState<any[]>([]);
+
   const [kanbanBoards, setKanbanBoards] = useState<any[]>([]);
   const [kanbanBoardContacts, setKanbanBoardContacts] = useState<Record<string, any[]>>({});
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
-  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
-  const [groupParticipants, setGroupParticipants] = useState<Record<string, any[]>>({});
+
+
   const [selectedKanbanBoards, setSelectedKanbanBoards] = useState<string[]>([]);
   const [manualContacts, setManualContacts] = useState<Array<{phone: string, name: string}>>([]);
   const [manualContactText, setManualContactText] = useState('');
   const [selectedMedia, setSelectedMedia] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [contactSelectionType, setContactSelectionType] = useState<'segments' | 'individual' | 'groups' | 'manual' | 'kanban'>('segments');
+  const [contactSelectionType, setContactSelectionType] = useState<'segments' | 'individual' | 'manual' | 'kanban'>('segments');
   const [contactSearchTerm, setContactSearchTerm] = useState('');
 
   useEffect(() => {
@@ -260,26 +260,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
         setContacts([]);
       }
 
-      // Cargar grupos
-      console.log('👥 Cargando grupos...');
-      const groupsResponse = await fetch(`${getAPIBaseURL()}/api/groups/${sessionId}`);
-      const groupsData = await groupsResponse.json();
-
-      if (groupsData.success && groupsData.groups) {
-        console.log(`✅ ${groupsData.groups.length} grupos cargados para campañas`);
-        setGroups(groupsData.groups.map((group: any) => ({
-          id: group.id || group.jid,
-          jid: group.jid || group.id,
-          name: group.name || group.subject || group.id.split('@')[0],
-          participantsCount: group.memberCount || group.member_count || 0,
-          description: group.description,
-          avatar: group.avatar || group.avatar_url,
-          isActive: true
-        })));
-      } else {
-        console.warn('⚠️ No se pudieron cargar grupos:', groupsData.error);
-        setGroups([]);
-      }
+      // No cargar grupos de WhatsApp
 
       // Cargar tableros Kanban
       console.log('📊 Cargando tableros Kanban...');
@@ -314,9 +295,8 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
       console.log('✅ Carga de contactos, grupos y Kanban completada');
     } catch (error) {
-      console.error('❌ Error loading contacts and groups:', error);
+      console.error('❌ Error loading contacts:', error);
       setContacts([]);
-      setGroups([]);
       setKanbanBoards([]);
     }
   };
@@ -338,64 +318,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
   };
 
   // Función para cargar participantes de un grupo
-  const loadGroupParticipants = async (groupId: string) => {
 
-    try {
-      console.log(`📥 Cargando participantes del grupo ${groupId}...`);
-
-      // Verificar que tenemos sessionId válido
-      if (!sessionId) {
-        console.warn(`⚠️ No hay sessionId válido para cargar participantes del grupo ${groupId}`);
-        setGroupParticipants(prev => ({
-          ...prev,
-          [groupId]: []
-        }));
-        return;
-      }
-
-      const response = await fetch(`${getAPIBaseURL()}/api/group/participants/${sessionId}/${groupId}`);
-      const data = await response.json();
-      console.log(`📥 Respuesta completa para grupo ${groupId}:`, JSON.stringify(data, null, 2));
-
-      if (response.ok && data.success && data.participants) {
-        console.log(`👥 ${data.participants.length} participantes cargados para grupo ${data.groupName || groupId}`);
-        console.log(`👥 Datos de participantes (primeros 5):`, data.participants.slice(0, 5).map((p: any) => ({
-          jid: p.jid,
-          phone: p.phone,
-          name: p.name,
-          id: p.id
-        })));
-
-        // VERIFICAR QUE LOS PARTICIPANTES TENGAN phone
-        const participantesConPhone = data.participants.filter((p: any) => p.phone);
-        const participantesSinPhone = data.participants.filter((p: any) => !p.phone);
-
-        console.log(`✅ Participantes CON phone: ${participantesConPhone.length}`);
-        console.log(`❌ Participantes SIN phone: ${participantesSinPhone.length}`);
-
-        if (participantesSinPhone.length > 0) {
-          console.warn(`⚠️ Participantes sin phone (primeros 3):`, participantesSinPhone.slice(0, 3));
-        }
-
-        setGroupParticipants(prev => ({
-          ...prev,
-          [groupId]: data.participants
-        }));
-      } else {
-        console.warn(`⚠️ No se pudieron cargar participantes del grupo ${groupId}:`, data.error || data);
-        setGroupParticipants(prev => ({
-          ...prev,
-          [groupId]: []
-        }));
-      }
-    } catch (error) {
-      console.error(`❌ Error cargando participantes del grupo ${groupId}:`, error);
-      setGroupParticipants(prev => ({
-        ...prev,
-        [groupId]: []
-      }));
-    }
-  };
 
   // Función para manejar archivos multimedia
   const handleMediaUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -783,20 +706,6 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
       }
 
       // Extraer participantes individuales de los grupos seleccionados
-      let groupContactsList: any[] = [];
-      if (contactSelectionType === 'groups' && selectedGroups.length > 0) {
-        selectedGroups.forEach(groupId => {
-          const participants = groupParticipants[groupId] || [];
-          console.log(`📋 Grupo ${groupId}: ${participants.length} participantes`, participants);
-          groupContactsList = groupContactsList.concat(participants.map(p => ({
-            jid: p.jid || p.id,
-            phone: p.phone,
-            name: p.name
-          })));
-        });
-        console.log(`✅ Total de participantes de grupos: ${groupContactsList.length}`, groupContactsList);
-      }
-
       // Construir lista de recipients según el tipo de selección
       let recipients: any[] = [];
       if (contactSelectionType === 'individual') {
@@ -809,9 +718,6 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
             name: contact?.name || contactId.split('@')[0]
           };
         });
-      } else if (contactSelectionType === 'groups') {
-        // Participantes de grupos
-        recipients = groupContactsList;
       } else if (contactSelectionType === 'manual') {
         // Contactos manuales
         recipients = manualContacts.map(c => ({
@@ -837,7 +743,6 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
         mediaType,
         contactSelectionType,
         selectedContacts,
-        selectedGroups,
         selectedKanbanBoards,
         recipients,
         kanbanContacts: kanbanContacts.map(c => ({
@@ -891,8 +796,6 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                   .reduce((sum, s) => sum + (s.count || 0), 0);
               } else if (campaignData.contactSelectionType === 'individual') {
                 recipientCount = campaignData.selectedContacts?.length || 0;
-              } else if (campaignData.contactSelectionType === 'groups') {
-                recipientCount = campaignData.selectedGroups?.length || 0;
               } else if (campaignData.contactSelectionType === 'manual') {
                 recipientCount = campaignData.manualContacts?.length || 0;
               } else if (campaignData.contactSelectionType === 'kanban') {
@@ -927,7 +830,6 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
           segments: []
         });
         setSelectedContacts([]);
-        setSelectedGroups([]);
         setSelectedKanbanBoards([]);
         setManualContacts([]);
         setSelectedMedia(null);
@@ -1261,16 +1163,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                     </Box>
                   }
                 />
-                <FormControlLabel
-                  value="groups"
-                  control={<Radio />}
-                  label={
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <GroupOutlined fontSize="small" />
-                      Grupos de WhatsApp
-                    </Box>
-                  }
-                />
+
                 <FormControlLabel
                   value="manual"
                   control={<Radio />}
@@ -1390,62 +1283,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
               </Box>
             )}
 
-            {contactSelectionType === 'groups' && (
-              <Box>
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  Selecciona grupos de WhatsApp para enviar tu campaña.
-                </Alert>
-                <Paper sx={{ maxHeight: 400, overflow: 'auto' }}>
-                  <List>
-                    {groups.map((group) => (
-                      <ListItem key={group.id || group.jid} disablePadding>
-                        <ListItemButton
-                          onClick={async () => {
-    
-                            const groupId = group.id || group.jid;
-                            const isSelected = selectedGroups.includes(groupId);
-                            if (isSelected) {
-                              setSelectedGroups(prev => prev.filter(id => id !== groupId));
-                              // Remover participantes del estado
-                              setGroupParticipants(prev => {
-                                const newState = { ...prev };
-                                delete newState[groupId];
-                                return newState;
-                              });
-                            } else {
-                              setSelectedGroups(prev => [...prev, groupId]);
-                              // Cargar participantes del grupo
-                              await loadGroupParticipants(groupId);
-                            }
-                          }}
-                        >
-                          <ListItemIcon>
-                            <Checkbox
-                              edge="start"
-                              checked={selectedGroups.includes(group.id || group.jid)}
-                              tabIndex={-1}
-                              disableRipple
-                            />
-                          </ListItemIcon>
-                          <ListItemIcon>
-                            <Avatar src={group.avatar} sx={{ width: 32, height: 32 }}>
-                              <GroupOutlined />
-                            </Avatar>
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={group.name}
-                            secondary={`${group.participantsCount || 0} miembros`}
-                          />
-                        </ListItemButton>
-                      </ListItem>
-                    ))}
-                  </List>
-                </Paper>
-                <Typography variant="caption" color="textSecondary" sx={{ mt: 1 }}>
-                  {selectedGroups.length} grupos seleccionados
-                </Typography>
-              </Box>
-            )}
+
 
             {contactSelectionType === 'manual' && (
               <Box>
@@ -1612,15 +1450,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                   {selectedContacts.length} contactos individuales seleccionados
                 </Typography>
               )}
-              {contactSelectionType === 'groups' && (
-                <Typography variant="body2">
-                  {selectedGroups.length} grupo{selectedGroups.length !== 1 ? 's' : ''} seleccionado{selectedGroups.length !== 1 ? 's' : ''} •{' '}
-                  {selectedGroups.reduce((total, groupId) => {
-                    const participants = groupParticipants[groupId] || [];
-                    return total + participants.length;
-                  }, 0)} contactos únicos
-                </Typography>
-              )}
+
               {contactSelectionType === 'manual' && (
                 <Typography variant="body2">
                   {manualContacts.length} contactos manuales cargados

@@ -109,6 +109,17 @@ const modernThemeBase: ThemeOptions = {
         },
         contained: {
           background: modernColors.primary.gradient,
+          color: '#FFFFFF',
+          '&:hover': {
+            background: modernColors.primary.gradient,
+          },
+        },
+        containedPrimary: {
+          background: modernColors.primary.gradient,
+          color: '#FFFFFF',
+          '&:hover': {
+            background: 'linear-gradient(135deg, #1DA851 0%, #0D6F63 100%)',
+          },
         },
       },
     },
@@ -155,9 +166,11 @@ export const modernLightTheme = createTheme({
       main: modernColors.primary.main,
       light: modernColors.primary.light,
       dark: modernColors.primary.dark,
+      contrastText: '#FFFFFF',
     },
     secondary: {
       main: modernColors.secondary.main,
+      contrastText: '#FFFFFF',
     },
     background: {
       default: modernColors.background.light.default,
@@ -173,9 +186,11 @@ export const modernDarkTheme = createTheme({
     mode: 'dark',
     primary: {
       main: modernColors.primary.main,
+      contrastText: '#FFFFFF',
     },
     secondary: {
       main: modernColors.secondary.main,
+      contrastText: '#FFFFFF',
     },
     background: {
       default: modernColors.background.dark.default,
