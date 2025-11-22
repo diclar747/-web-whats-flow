@@ -6655,9 +6655,15 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
             id: dbMessage.id,
             chatJid: jid,
             message: message,
+            text_content: message,
             timestamp: dbMessage.timestamp.toISOString(),
             from_me: true,
-            status: 'sent'
+            isFromMe: true,
+            status: 'sent',
+            message_type: messageType,
+            media_url: mediaUrl,
+            agent_id: agentId,
+            agent_name: agentName
         });
         
         // Si es un agente, emitir también al agente específico
@@ -6666,7 +6672,10 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
                 id: dbMessage.id,
                 chatJid: jid,
                 message: message,
-                timestamp: dbMessage.timestamp.toISOString()
+                text_content: message,
+                timestamp: dbMessage.timestamp.toISOString(),
+                agent_id: agentId,
+                agent_name: agentName
             });
         }
         
@@ -9899,6 +9908,16 @@ io.on('connection', (socket) => {
             console.log(`🔌 [Socket.IO] Cliente ${socket.id} abandonó session-${sid}`);
         }
     });
+
+    // Unirse a sala específica del agente
+    socket.on('join-agent-room', (data) => {
+        const agentId = data?.agentId || data;
+        if (agentId) {
+            socket.join(`agent-${agentId}`);
+            console.log(`🔌 [Socket.IO] Agente ${agentId} (${socket.id}) unido a sala agent-${agentId}`);
+            socket.emit('joined-agent-room', { agentId, success: true });
+        }
+    });
     
     socket.on('disconnect', () => {
         console.log('Cliente desconectado:', socket.id);
@@ -13083,6 +13102,61 @@ app.post('/api/auth/logout', async (req, res) => {
     const sessionToken = req.headers['x-session-token'] || req.body.sessionToken;
     
     if (sessionToken) {
+        // Obtener la sesión para ver quién está cerrando sesión
+        const session = getSession(sessionToken);
+        
+        if (session && session.userId) {
+            try {
+                // Verificar si es un admin cerrando sesión
+                const [userRows] = await db.promise().query(
+                    'SELECT role, id FROM users WHERE id = ?',
+                    [session.userId]
+                );
+                
+                if (userRows.length > 0 && userRows[0].role === 'admin') {
+                    const adminId = userRows[0].id;
+                    console.log('[AUTH] 👮 Admin cerrando sesión, ID:', adminId);
+                    
+                    // Buscar todos los agentes relacionados a este admin
+                    const [agentRows] = await db.promise().query(
+                        'SELECT id FROM users WHERE role = ? AND created_by = ?',
+                        ['agent', adminId]
+                    );
+                    
+                    if (agentRows.length > 0) {
+                        console.log(`[AUTH] 🔐 Cerrando sesiones de ${agentRows.length} agentes relacionados al admin`);
+                        
+                        // Cerrar sesiones de todos los agentes relacionados
+                        const agentIds = agentRows.map(agent => agent.id);
+                        
+                        // Destruir todas las sesiones activas de estos agentes
+                        for (const agentId of agentIds) {
+                            // Buscar y destruir sesiones del agente
+                            Object.keys(activeSessions).forEach(token => {
+                                const agentSession = activeSessions[token];
+                                if (agentSession && agentSession.userId === agentId) {
+                                    destroySession(token);
+                                    console.log(`[AUTH] ❌ Sesión cerrada para agente ID: ${agentId}`);
+                                }
+                            });
+                        }
+                        
+                        // Emitir evento de cierre forzado a los agentes
+                        io.emit('force-logout', {
+                            userIds: agentIds,
+                            reason: 'Admin cerró sesión',
+                            timestamp: new Date().toISOString()
+                        });
+                        
+                        console.log('[AUTH] ✅ Todas las sesiones de agentes relacionados han sido cerradas');
+                    }
+                }
+            } catch (error) {
+                console.error('[AUTH] ❌ Error al cerrar sesiones de agentes:', error);
+            }
+        }
+        
+        // Cerrar la sesión del admin
         destroySession(sessionToken);
         console.log('[AUTH] 👋 Sesión cerrada correctamente');
     }

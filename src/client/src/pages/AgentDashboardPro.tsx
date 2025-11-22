@@ -146,6 +146,9 @@ const AgentDashboardPro: React.FC = () => {
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [chatFilter, setChatFilter] = useState<'all' | 'unread'>('all');
 
+  // Estado para minimizar/maximizar lista de chats (por defecto minimizado)
+  const [chatListMinimized, setChatListMinimized] = useState(true);
+
   // Nuevo: Estado para modo oscuro/claro
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('agentDashboardTheme');
@@ -200,6 +203,20 @@ const AgentDashboardPro: React.FC = () => {
   };
 
   const currentTheme = darkMode ? theme.dark : theme.light;
+
+  // Función para generar color basado en el nombre del contacto
+  const getAvatarColor = (name: string) => {
+    const colors = [
+      '#E91E63', '#9C27B0', '#673AB7', '#3F51B5', '#2196F3',
+      '#00BCD4', '#009688', '#4CAF50', '#FF9800', '#FF5722',
+      '#F44336', '#795548', '#607D8B', '#1976D2', '#D32F2F'
+    ];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
+  };
 
   // Manejar cambio de tema
   const toggleTheme = () => {
@@ -447,6 +464,12 @@ const AgentDashboardPro: React.FC = () => {
     if (!socket || !isConnected || !agentId) return;
 
     console.log('🔌 [AGENT-PRO] Socket conectado, escuchando eventos...');
+    
+    // Unirse a la sala específica del agente para recibir eventos personalizados
+    if (socket) {
+      socket.emit('join-agent-room', { agentId });
+      console.log('🔌 [AGENT-PRO] Uniéndose a sala agent-' + agentId);
+    }
 
     const handleNewChat = (data: any) => {
       console.log('📨 🎉 Nuevo chat asignado:', data);
@@ -611,6 +634,27 @@ const AgentDashboardPro: React.FC = () => {
       }
     });
 
+    // 🔐 Cierre de sesión forzado por admin
+    on('force-logout', (data: any) => {
+      console.log('🔐 [AGENT-PRO] Cierre de sesión forzado:', data);
+      
+      // Verificar si este agente está en la lista de usuarios a cerrar
+      const userId = parseInt(sessionStorage.getItem('userId') || '0');
+      if (data.userIds && data.userIds.includes(userId)) {
+        showSnackbar(`Tu administrador cerró sesión. Debes iniciar sesión nuevamente.`, 'info');
+        
+        // Cerrar sesión después de 3 segundos
+        setTimeout(() => {
+          // Limpiar sessionStorage
+          sessionStorage.clear();
+          localStorage.removeItem('agentDashboardTheme');
+          
+          // Redirigir al login
+          window.location.href = '/login';
+        }, 3000);
+      }
+    });
+
     return () => {
       off(`agent-${agentId}-new-chat`);
       off('chat-assignment-changed');
@@ -621,6 +665,7 @@ const AgentDashboardPro: React.FC = () => {
       off('user-typing');
       off('session-updated');
       off('chat:transferred');
+      off('force-logout');
     };
   }, [socket, isConnected, agentId, on, off, loadAgentChats, selectedChat, setSessionId]);
 
@@ -944,8 +989,8 @@ const AgentDashboardPro: React.FC = () => {
               </Typography>
             )}
 
-            {/* Etiqueta de agente (cuando un agente responde) */}
-            {msg.from_me && msg.agent_name && (
+            {/* Etiqueta de agente (cuando OTRO agente o admin responde, no cuando yo respondo) */}
+            {msg.from_me && msg.agent_name && msg.agent_id !== agentId && (
               <Chip
                 label={`Respondido por: ${msg.agent_name}`}
                 size="small"
@@ -1212,21 +1257,36 @@ const AgentDashboardPro: React.FC = () => {
         {/* ==================== PANEL IZQUIERDO: LISTA DE CHATS ==================== */}
         <Box
           sx={{
-            width: selectedChat ? '35%' : '100%',
-            minWidth: '320px',
-            maxWidth: '500px',
+            width: chatListMinimized ? '80px' : (selectedChat ? '35%' : '100%'),
+            minWidth: chatListMinimized ? '80px' : '320px',
+            maxWidth: chatListMinimized ? '80px' : '500px',
             bgcolor: currentTheme.bg.secondary,
             borderRight: `1px solid ${currentTheme.border}`,
             display: 'flex',
             flexDirection: 'column',
-            transition: 'width 0.3s ease-in-out'
+            transition: 'all 0.3s ease-in-out'
           }}
         >
           {/* Header del panel */}
-          <Box sx={{ p: 2, bgcolor: currentTheme.bg.primary, borderBottom: `1px solid ${currentTheme.border}` }}>
-            <Typography variant="h6" sx={{ mb: 1.5, fontWeight: 600, color: currentTheme.text.primary }}>
-              Mis Chats Asignados
-            </Typography>
+          <Box sx={{ p: 2, bgcolor: currentTheme.bg.primary, borderBottom: `1px solid ${currentTheme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {!chatListMinimized && (
+              <Typography variant="h6" sx={{ mb: 1.5, fontWeight: 600, color: currentTheme.text.primary }}>
+                Mis Chats Asignados
+              </Typography>
+            )}
+            <Tooltip title={chatListMinimized ? "Expandir" : "Minimizar"}>
+              <IconButton
+                size="small"
+                onClick={() => setChatListMinimized(!chatListMinimized)}
+                sx={{ color: currentTheme.text.primary }}
+              >
+                {chatListMinimized ? '☰' : '«'}
+              </IconButton>
+            </Tooltip>
+          </Box>
+          
+          {!chatListMinimized && (
+            <Box sx={{ px: 2, pt: 0, pb: 2 }}>
             <TextField
               fullWidth
               size="small"
@@ -1283,19 +1343,22 @@ const AgentDashboardPro: React.FC = () => {
               </Tabs>
             </Box>
           </Box>
+          )}
 
           {/* Lista de chats */}
           <List sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
             {filteredChats.length === 0 ? (
-              <Box sx={{ p: 4, textAlign: 'center' }}>
-                <ChatIcon sx={{ fontSize: 60, color: currentTheme.border, mb: 2 }} />
-                <Typography variant="body1" sx={{ color: currentTheme.text.secondary }} gutterBottom>
-                  No hay chats asignados
-                </Typography>
-                <Typography variant="body2" sx={{ color: currentTheme.text.secondary }}>
-                  Espera a que el admin te asigne chats
-                </Typography>
-              </Box>
+              !chatListMinimized && (
+                <Box sx={{ p: 4, textAlign: 'center' }}>
+                  <ChatIcon sx={{ fontSize: 60, color: currentTheme.border, mb: 2 }} />
+                  <Typography variant="body1" sx={{ color: currentTheme.text.secondary }} gutterBottom>
+                    No hay chats asignados
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: currentTheme.text.secondary }}>
+                    Espera a que el admin te asigne chats
+                  </Typography>
+                </Box>
+              )
             ) : (
               filteredChats.map((chat) => (
                 <ListItem
@@ -1307,86 +1370,74 @@ const AgentDashboardPro: React.FC = () => {
                     borderBottom: `1px solid ${currentTheme.border}`,
                     bgcolor: selectedChat?.id === chat.id ? currentTheme.hover : 'transparent',
                     '&:hover': { bgcolor: currentTheme.hover },
-                    py: 2,
-                    px: 2,
-                    transition: 'background-color 0.2s'
+                    py: chatListMinimized ? 1 : 2,
+                    px: chatListMinimized ? 1 : 2,
+                    transition: 'all 0.2s',
+                    justifyContent: chatListMinimized ? 'center' : 'flex-start'
                   }}
                 >
-                  <ListItemAvatar>
-                    {chat.unreadCount > 0 ? (
+                  {chatListMinimized ? (
+                    // Vista minimizada: solo avatar con badge
+                    <Tooltip title={`${chat.name}${chat.unreadCount > 0 ? ` (${chat.unreadCount})` : ''}`} placement="right">
                       <Badge
                         badgeContent={chat.unreadCount}
                         color="error"
                         overlap="circular"
-                        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-                      >
-                        <Badge
-                          overlap="circular"
-                          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                          variant="dot"
-                          sx={{
-                            '& .MuiBadge-badge': {
-                              backgroundColor: chat.isOnline ? '#44b700' : 'transparent',
-                              color: '#44b700',
-                              boxShadow: `0 0 0 2px white`,
-                              '&::after': chat.isOnline ? {
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
-                                width: '100%',
-                                height: '100%',
-                                borderRadius: '50%',
-                                animation: 'ripple 1.2s infinite ease-in-out',
-                                border: '1px solid currentColor',
-                                content: '""',
-                              } : {}
-                            },
-                          }}
-                        >
-                          <Avatar
-                            src={chat.avatar}
-                            alt={chat.name}
-                            sx={{ width: 50, height: 50 }}
-                          >
-                            {chat.name?.[0]?.toUpperCase() || '?'}
-                          </Avatar>
-                        </Badge>
-                      </Badge>
-                    ) : (
-                      <Badge
-                        overlap="circular"
-                        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                        variant="dot"
-                        sx={{
-                          '& .MuiBadge-badge': {
-                            backgroundColor: chat.isOnline ? '#44b700' : 'transparent',
-                            color: '#44b700',
-                            boxShadow: `0 0 0 2px white`,
-                            '&::after': chat.isOnline ? {
-                              position: 'absolute',
-                              top: 0,
-                              left: 0,
-                              width: '100%',
-                              height: '100%',
-                              borderRadius: '50%',
-                              animation: 'ripple 1.2s infinite ease-in-out',
-                              border: '1px solid currentColor',
-                              content: '""',
-                            } : {}
-                          },
-                        }}
                       >
                         <Avatar
                           src={chat.avatar}
                           alt={chat.name}
-                          sx={{ width: 50, height: 50 }}
+                          sx={{ 
+                            width: 48, 
+                            height: 48,
+                            border: `3px solid ${getAvatarColor(chat.name || chat.phoneNumber || 'unknown')}`,
+                            boxShadow: `0 0 0 2px ${currentTheme.bg.secondary}`
+                          }}
                         >
                           {chat.name?.[0]?.toUpperCase() || '?'}
                         </Avatar>
                       </Badge>
-                    )}
-                  </ListItemAvatar>
-                  <ListItemText
+                    </Tooltip>
+                  ) : (
+                    // Vista expandida: avatar + info
+                    <>
+                      <ListItemAvatar>
+                        {chat.unreadCount > 0 ? (
+                          <Badge
+                            badgeContent={chat.unreadCount}
+                            color="error"
+                            overlap="circular"
+                            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+                          >
+                            <Avatar
+                              src={chat.avatar}
+                              alt={chat.name}
+                              sx={{ 
+                                width: 50, 
+                                height: 50,
+                                border: `3px solid ${getAvatarColor(chat.name || chat.phoneNumber || 'unknown')}`,
+                                boxShadow: `0 0 0 2px ${currentTheme.bg.secondary}`
+                              }}
+                            >
+                              {chat.name?.[0]?.toUpperCase() || '?'}
+                            </Avatar>
+                          </Badge>
+                        ) : (
+                          <Avatar
+                            src={chat.avatar}
+                            alt={chat.name}
+                            sx={{ 
+                              width: 50, 
+                              height: 50,
+                              border: `3px solid ${getAvatarColor(chat.name || chat.phoneNumber || 'unknown')}`,
+                              boxShadow: `0 0 0 2px ${currentTheme.bg.secondary}`
+                            }}
+                          >
+                            {chat.name?.[0]?.toUpperCase() || '?'}
+                          </Avatar>
+                        )}
+                      </ListItemAvatar>
+                      <ListItemText
                     primary={
                       <Box display="flex" justifyContent="space-between" alignItems="center">
                         <Typography
@@ -1418,7 +1469,9 @@ const AgentDashboardPro: React.FC = () => {
                         </Typography>
                       </Box>
                     }
-                  />
+                      />
+                    </>
+                  )}
                 </ListItem>
               ))
             )}
@@ -1757,17 +1810,19 @@ const AgentDashboardPro: React.FC = () => {
               flexDirection: 'column',
               justifyContent: 'center',
               alignItems: 'center',
-              bgcolor: '#f0f2f5',
-              background: 'linear-gradient(135deg, #f0f2f5 0%, #e4e9eb 100%)'
+              bgcolor: currentTheme.bg.chat,
+              background: darkMode 
+                ? 'linear-gradient(135deg, #0b141a 0%, #111b21 100%)'
+                : 'linear-gradient(135deg, #f0f2f5 0%, #e4e9eb 100%)'
             }}
           >
             <Fade in timeout={800}>
               <Box sx={{ textAlign: 'center' }}>
-                <ChatIcon sx={{ fontSize: 120, color: '#d1d7db', mb: 3 }} />
-                <Typography variant="h4" color="text.primary" gutterBottom fontWeight={600}>
+                <ChatIcon sx={{ fontSize: 120, color: darkMode ? '#2a3942' : '#d1d7db', mb: 3 }} />
+                <Typography variant="h4" sx={{ color: currentTheme.text.primary }} gutterBottom fontWeight={600}>
                   WhatsFlow Panel de Agente
                 </Typography>
-                <Typography variant="h6" color="text.secondary" gutterBottom>
+                <Typography variant="h6" sx={{ color: currentTheme.text.secondary }} gutterBottom>
                   Selecciona un chat para comenzar a responder
                 </Typography>
                 <Box sx={{ mt: 4, display: 'flex', gap: 2, justifyContent: 'center', flexWrap: 'wrap' }}>
