@@ -1824,10 +1824,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                         label="WhatsApp Contactos"
                         icon={<WhatsApp />}
                       />
-                      <Tab
-                        label="WhatsApp Grupos"
-                        icon={<Group />}
-                      />
+
                       <Tab
                         label="Tableros Kanban"
                         icon={<ViewColumn />}
@@ -1923,65 +1920,8 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                     </Box>
                   )}
 
-                  {/* Tab 2: WhatsApp Grupos */}
+                  {/* Tab 2: Tableros Kanban */}
                   {contactSelectionTab === 2 && (
-                    <Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                        <Typography variant="subtitle1">
-                          Grupos de WhatsApp ({whatsappGroups.length})
-                        </Typography>
-                        <Button
-                          size="small"
-                          startIcon={selectedWhatsAppGroups.length === whatsappGroups.length ? <CheckBox /> : <CheckBoxOutlineBlank />}
-                          onClick={handleSelectAllWhatsAppGroups}
-                        >
-                          {selectedWhatsAppGroups.length === whatsappGroups.length ? 'Deseleccionar Todos' : 'Seleccionar Todos'}
-                        </Button>
-                      </Box>
-                      <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
-                        <Grid container spacing={1}>
-                          {whatsappGroups.map((group) => (
-                            <Grid item xs={12} sm={6} key={group.id}>
-                              <Paper
-                                sx={{
-                                  p: 1.5,
-                                  cursor: 'pointer',
-                                  bgcolor: selectedWhatsAppGroups.includes(group.id) ? 'action.selected' : 'background.paper',
-                                  '&:hover': { bgcolor: 'action.hover' },
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 1
-                                }}
-                                onClick={() => handleWhatsAppGroupSelection(group.id)}
-                              >
-                                <Checkbox checked={selectedWhatsAppGroups.includes(group.id)} />
-                                <Group sx={{ color: '#25d366', fontSize: 20 }} />
-                                <Box sx={{ flex: 1, minWidth: 0 }}>
-                                  <Typography variant="body2" noWrap fontWeight="medium">
-                                    {group.name || group.subject || 'Sin nombre'}
-                                  </Typography>
-                                  <Typography variant="caption" color="text.secondary">
-                                    {group.memberCount} miembros
-                                  </Typography>
-                                </Box>
-                              </Paper>
-                            </Grid>
-                          ))}
-                        </Grid>
-                        {whatsappGroups.length === 0 && (
-                          <Paper sx={{ p: 4, textAlign: 'center' }}>
-                            <Group sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-                            <Typography variant="body2" color="text.secondary">
-                              No hay grupos de WhatsApp sincronizados
-                            </Typography>
-                          </Paper>
-                        )}
-                      </Box>
-                    </Box>
-                  )}
-
-                  {/* Tab 3: Tableros Kanban */}
-                  {contactSelectionTab === 3 && (
                     <Box>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                         <Typography variant="subtitle1">

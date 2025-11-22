@@ -813,7 +813,6 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
            <Tab label="Contactos" />
            <Tab label="Grupos" />
            <Tab label={`WhatsApp Contactos (${syncedContacts.length})`} />
-           <Tab label={`WhatsApp Grupos (${syncedGroups.length})`} />
          </Tabs>
       </Paper>
 
