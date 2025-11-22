@@ -14762,6 +14762,16 @@ app.post('/api/chats/transfer', async (req, res) => {
                 chatJid,
                 action: 'assigned'
             });
+            
+            // Emitir evento de transferencia completo para ambos agentes
+            io.emit('chat:transferred', {
+                chatJid,
+                chatName,
+                fromAgentId,
+                toAgentId,
+                agentId: toAgentId,
+                timestamp: new Date().toISOString()
+            });
 
             console.log(`[TRANSFER] ✅ Chat ${chatJid} transferido al agente ${agentName} (ID: ${toAgentId})`);
             console.log(`[TRANSFER] 📧 Notificación enviada al agente`);

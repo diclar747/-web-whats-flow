@@ -59,6 +59,7 @@ interface Agent {
   total_unread: number;
   total_assigned: number;
   completed_today: number;
+  is_online?: boolean;
 }
 
 interface UnassignedChat {
@@ -616,7 +617,21 @@ const AdminAgentManagement: React.FC = () => {
             >
               {agents.filter(a => a.status === 'active' && a.id !== transferFromAgentId).map((agent) => (
                 <MenuItem key={agent.id} value={agent.id}>
-                  {agent.name} - {agent.active_chats} chats
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                    <Box
+                      sx={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: '50%',
+                        backgroundColor: agent.is_online ? '#44b700' : '#9e9e9e',
+                        boxShadow: agent.is_online ? '0 0 4px #44b700' : 'none'
+                      }}
+                    />
+                    <Box sx={{ flex: 1 }}>
+                      {agent.name} - {agent.active_chats} chats
+                      {agent.is_online && <Chip label="En línea" size="small" color="success" sx={{ ml: 1, height: 20 }} />}
+                    </Box>
+                  </Box>
                 </MenuItem>
               ))}
             </Select>

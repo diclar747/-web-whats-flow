@@ -27,7 +27,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Button
+  Button,
+  Chip
 } from '@mui/material';
 import {
   Search,
@@ -220,6 +221,23 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     const interval = setInterval(checkConnection, 10000);
     return () => clearInterval(interval);
   }, [sessionId]);
+
+  // Recargar mensajes cada 5 segundos para asegurar sincronización
+  useEffect(() => {
+    if (!activeChat || !loadMessages) return;
+
+    console.log('🔄 Configurando recarga automática de mensajes para:', activeChat.name);
+    
+    const reloadInterval = setInterval(() => {
+      console.log('🔄 Recargando mensajes automáticamente...');
+      loadMessages(activeChat.id);
+    }, 5000);
+
+    return () => {
+      console.log('🛑 Deteniendo recarga automática de mensajes');
+      clearInterval(reloadInterval);
+    };
+  }, [activeChat, loadMessages]);
 
   // Socket.IO: DESHABILITADO - WhatsAppContext ya maneja la conexión Socket.IO
   // Tener múltiples conexiones causa conflictos y desconexiones
@@ -853,7 +871,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
         display: 'flex',
         flexDirection: 'column',
         bgcolor: colors.sidebar,
-        borderRight: `1px solid ${colors.divider}`
+        borderRight: `1px solid ${colors.divider}`,
+        boxShadow: '2px 0 8px rgba(0,0,0,0.04)'
       }}>
         {/* Header del sidebar */}
         <Box sx={{
@@ -862,9 +881,12 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
           display: 'flex',
           alignItems: 'center',
           px: 2,
-          gap: 1
+          gap: 1,
+          borderBottom: `1px solid ${colors.divider}`
         }}>
-          <Box sx={{ flex: 1 }} />
+          <Typography variant="h6" sx={{ flex: 1, fontWeight: 600, color: colors.text }}>
+            Chats
+          </Typography>
           <Tooltip title="Comunidades">
             <IconButton 
               sx={{ 
@@ -901,7 +923,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
         </Box>
 
         {/* Buscador */}
-        <Box sx={{ p: 1.5, bgcolor: colors.sidebar }}>
+        <Box sx={{ p: 2, bgcolor: colors.sidebar }}>
           <TextField
             fullWidth
             size="small"
@@ -911,8 +933,28 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
             sx={{
               '& .MuiOutlinedInput-root': {
                 bgcolor: colors.background,
-                borderRadius: 2,
-                '& fieldset': { border: 'none' }
+                borderRadius: '10px',
+                fontSize: '14px',
+                transition: 'all 0.2s ease',
+                '& fieldset': { 
+                  border: `1px solid ${colors.divider}`
+                },
+                '&:hover': {
+                  bgcolor: colors.hover,
+                  '& fieldset': {
+                    borderColor: colors.primary
+                  }
+                },
+                '&.Mui-focused': {
+                  bgcolor: colors.inputBg,
+                  boxShadow: `0 0 0 2px ${colors.primary}25`,
+                  '& fieldset': {
+                    borderColor: colors.primary
+                  }
+                },
+                '& input': {
+                  padding: '10px 12px'
+                }
               }
             }}
             InputProps={{
@@ -1094,7 +1136,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                   <Typography variant="caption" sx={{ color: colors.textSecondary, fontSize: '12.5px' }}>
                     {activeChat.isGroup ? `Grupo · ${messages.length} mensajes` : `${activeChat.id.split('@')[0]}`}
                   </Typography>
-                  {activeChat.unreadCount > 0 && (
+                  {activeChat.unreadCount && activeChat.unreadCount > 0 && (
                     <Chip 
                       label={`${activeChat.unreadCount} sin leer`}
                       size="small"
@@ -1203,7 +1245,22 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 backgroundImage: isDarkMode ? 'none' : 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")',
                 backgroundColor: colors.chatBg,
                 p: 3,
-                position: 'relative'
+                position: 'relative',
+                // Custom scrollbar
+                '&::-webkit-scrollbar': {
+                  width: '6px'
+                },
+                '&::-webkit-scrollbar-track': {
+                  bgcolor: 'transparent'
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  bgcolor: colors.divider,
+                  borderRadius: '10px',
+                  transition: 'background-color 0.2s ease',
+                  '&:hover': {
+                    bgcolor: colors.textSecondary
+                  }
+                }
               }}
             >
               {/* Indicador de carga */}
@@ -1576,30 +1633,41 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                       />
                     )}
 
-                    {/* Barra de acciones debajo del mensaje */}
-                    <Box sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: msg.isFromMe ? 'flex-end' : 'flex-start',
-                      gap: 0.5,
-                      mt: 0.5
-                    }}>
-                      <Tooltip title="Responder">
-                        <IconButton size="small" onClick={() => setReplyMessage?.(msg)} sx={{ color: colors.textSecondary, '&:hover': { color: colors.text } }}>
-                          <Reply fontSize="small" />
+                    {/* Botón de opciones - Solo visible en hover */}
+                    {hoveredMessageId === msg.id && (
+                      <Box sx={{
+                        position: 'absolute',
+                        top: 4,
+                        right: msg.isFromMe ? 8 : 'auto',
+                        left: msg.isFromMe ? 'auto' : 8,
+                        animation: 'fadeIn 0.2s ease-in',
+                        '@keyframes fadeIn': {
+                          from: { opacity: 0, transform: 'scale(0.8)' },
+                          to: { opacity: 1, transform: 'scale(1)' }
+                        }
+                      }}>
+                        <IconButton 
+                          size="small" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedMessage(msg);
+                            setMessageMenuAnchor(e.currentTarget);
+                          }} 
+                          sx={{ 
+                            bgcolor: 'rgba(0,0,0,0.1)',
+                            color: colors.text,
+                            padding: '4px',
+                            transition: 'all 0.2s ease',
+                            '&:hover': { 
+                              bgcolor: 'rgba(0,0,0,0.2)',
+                              transform: 'scale(1.1)'
+                            }
+                          }}
+                        >
+                          <MoreVert sx={{ fontSize: 16 }} />
                         </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Reenviar">
-                        <IconButton size="small" onClick={() => { setMessageToForward(msg); setForwardDialogOpen(true); }} sx={{ color: colors.textSecondary, '&:hover': { color: colors.text } }}>
-                          <Forward fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Transferir a agente">
-                        <IconButton size="small" onClick={() => setTransferAgentDialogOpen(true)} sx={{ color: colors.textSecondary, '&:hover': { color: colors.text } }}>
-                          <People fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
+                      </Box>
+                    )}
 
                     {/* Hora y estado */}
                     <Box sx={{
@@ -1714,10 +1782,12 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
             {/* Barra de entrada */}
             <Box sx={{
               bgcolor: colors.header,
-              p: '10px 16px',
+              p: '12px 20px',
               display: 'flex',
               alignItems: 'center',
-              gap: 1.5
+              gap: 1.5,
+              borderTop: `1px solid ${colors.divider}`,
+              boxShadow: '0 -1px 3px rgba(0,0,0,0.06)'
             }}>
               <Tooltip title="Emojis">
                 <IconButton
@@ -1775,22 +1845,34 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     bgcolor: colors.inputBg,
-                    borderRadius: '8px',
+                    borderRadius: '10px',
                     fontSize: '15px',
+                    fontWeight: 400,
                     // 🎨 FASE 1: Transiciones suaves
                     transition: 'all 0.2s ease',
-                    '& fieldset': { border: 'none' },
+                    '& fieldset': { 
+                      border: `1px solid ${colors.divider}`,
+                      transition: 'all 0.2s ease'
+                    },
                     '&:hover': {
                       bgcolor: colors.hover,
-                      boxShadow: colors.shadow
+                      '& fieldset': {
+                        borderColor: colors.primary,
+                        borderWidth: '1px'
+                      }
                     },
                     '&.Mui-focused': {
                       bgcolor: colors.inputBg,
-                      boxShadow: colors.shadowStrong
+                      boxShadow: `0 0 0 2px ${colors.primary}25`,
+                      '& fieldset': {
+                        borderColor: colors.primary,
+                        borderWidth: '1px'
+                      }
                     },
                     '& textarea': {
-                      padding: '9px 12px',
-                      lineHeight: 1.5
+                      padding: '11px 14px',
+                      lineHeight: 1.5,
+                      letterSpacing: '0.01em'
                     }
                   }
                 }}
@@ -1837,43 +1919,74 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               )}
             </Box>
 
-            {/* Menú contextual de mensajes */}
+            {/* Menú contextual de mensajes - Mejorado */}
             <Menu
               anchorEl={messageMenuAnchor}
               open={Boolean(messageMenuAnchor)}
               onClose={() => setMessageMenuAnchor(null)}
+              anchorOrigin={{
+                vertical: 'top',
+                horizontal: 'center',
+              }}
+              transformOrigin={{
+                vertical: 'top',
+                horizontal: 'center',
+              }}
+              PaperProps={{
+                elevation: 8,
+                sx: {
+                  minWidth: 200,
+                  borderRadius: '12px',
+                  mt: 0.5,
+                  bgcolor: colors.sidebar,
+                  border: `1px solid ${colors.divider}`,
+                  '& .MuiMenuItem-root': {
+                    px: 2,
+                    py: 1.2,
+                    borderRadius: '8px',
+                    mx: 1,
+                    my: 0.3,
+                    fontSize: '14px',
+                    transition: 'all 0.2s ease',
+                    '&:hover': {
+                      bgcolor: colors.hover,
+                      transform: 'translateX(4px)'
+                    }
+                  }
+                }
+              }}
             >
               <MenuItem onClick={() => { setReplyMessage?.(selectedMessage); setMessageMenuAnchor(null); }}>
-                <Reply sx={{ mr: 2, color: colors.primary }} /> Responder
+                <Reply sx={{ mr: 1.5, fontSize: 20, color: colors.primary }} /> Responder
               </MenuItem>
               <MenuItem onClick={() => {
                 setMessageToForward(selectedMessage);
                 setForwardDialogOpen(true);
                 setMessageMenuAnchor(null);
               }}>
-                <Forward sx={{ mr: 2, color: '#2196f3' }} /> Reenviar
+                <Forward sx={{ mr: 1.5, fontSize: 20, color: '#2196f3' }} /> Reenviar
               </MenuItem>
-              <Divider />
+              <Divider sx={{ my: 0.5 }} />
               <MenuItem onClick={() => { setShowKanbanModal(true); setMessageMenuAnchor(null); }}>
-                <ViewKanban sx={{ mr: 2, color: '#673ab7' }} /> Enviar a Kanban
+                <ViewKanban sx={{ mr: 1.5, fontSize: 20, color: '#673ab7' }} /> Enviar a Kanban
               </MenuItem>
               <MenuItem onClick={() => { setTransferAgentDialogOpen(true); setMessageMenuAnchor(null); }}>
-                <People sx={{ mr: 2, color: '#ff9800' }} /> Transferir a Agente
+                <People sx={{ mr: 1.5, fontSize: 20, color: '#ff9800' }} /> Transferir a Agente
               </MenuItem>
-              <Divider />
+              <Divider sx={{ my: 0.5 }} />
               <MenuItem onClick={() => setMessageMenuAnchor(null)}>
-                <Star sx={{ mr: 2, color: '#ffc107' }} /> Destacar
+                <Star sx={{ mr: 1.5, fontSize: 20, color: '#ffc107' }} /> Destacar
               </MenuItem>
               {selectedMessage?.isFromMe && (
                 <>
-                  <Divider />
+                  <Divider sx={{ my: 0.5 }} />
                   <MenuItem onClick={() => {
                     if (selectedMessage) {
                       handleDeleteMessage(selectedMessage.id, selectedMessage.isFromMe);
                     }
                     setMessageMenuAnchor(null);
                   }} sx={{ color: '#f44336' }}>
-                    <Delete sx={{ mr: 2 }} /> Eliminar
+                    <Delete sx={{ mr: 1.5, fontSize: 20 }} /> Eliminar
                   </MenuItem>
                 </>
               )}

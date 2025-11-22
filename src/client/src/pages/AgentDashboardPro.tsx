@@ -488,6 +488,22 @@ const AgentDashboardPro: React.FC = () => {
       }, 1000);
     });
 
+    // 🔔 Transferencias en tiempo real
+    on('chat:transferred', (data: any) => {
+      console.log('📨 Chat transferido recibido:', data);
+      if (data.toAgentId === agentId) {
+        showDesktopNotification('📨 Chat Transferido', `Nuevo chat de ${data.chatName || 'un contacto'}`);
+        showSnackbar(`Chat transferido: ${data.chatName}`, 'info');
+        loadAgentChats();
+      } else if (data.fromAgentId === agentId) {
+        showSnackbar(`Chat transferido a otro agente`, 'info');
+        setChats(prevChats => prevChats.filter(c => c.id !== data.chatJid));
+        if (selectedChat?.id === data.chatJid) {
+          setSelectedChat(null);
+        }
+      }
+    });
+
     return () => {
       off(`agent-${agentId}-new-chat`);
       off('chat-assignment-changed');
@@ -497,6 +513,7 @@ const AgentDashboardPro: React.FC = () => {
       off('message-sent');
       off('user-typing');
       off('session-updated');
+      off('chat:transferred');
     };
   }, [socket, isConnected, agentId, on, off, loadAgentChats, selectedChat, setSessionId]);
 
@@ -654,6 +671,15 @@ const AgentDashboardPro: React.FC = () => {
     setSelectedChat(chat);
     setMessages([]);
     setShowChatInfo(false);
+    
+    // Marcar mensajes como leídos
+    if (chat.unreadCount > 0) {
+      setChats(prevChats => 
+        prevChats.map(c => 
+          c.id === chat.id ? { ...c, unreadCount: 0 } : c
+        )
+      );
+    }
   };
 
   const handleEmojiClick = (emojiData: any) => {
@@ -1106,12 +1132,46 @@ const AgentDashboardPro: React.FC = () => {
                   }}
                 >
                   <ListItemAvatar>
-                    <Badge
-                      badgeContent={chat.unreadCount}
-                      color="error"
-                      overlap="circular"
-                      anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-                    >
+                    {chat.unreadCount > 0 ? (
+                      <Badge
+                        badgeContent={chat.unreadCount}
+                        color="error"
+                        overlap="circular"
+                        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+                      >
+                        <Badge
+                          overlap="circular"
+                          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                          variant="dot"
+                          sx={{
+                            '& .MuiBadge-badge': {
+                              backgroundColor: chat.isOnline ? '#44b700' : 'transparent',
+                              color: '#44b700',
+                              boxShadow: `0 0 0 2px white`,
+                              '&::after': chat.isOnline ? {
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                height: '100%',
+                                borderRadius: '50%',
+                                animation: 'ripple 1.2s infinite ease-in-out',
+                                border: '1px solid currentColor',
+                                content: '""',
+                              } : {}
+                            },
+                          }}
+                        >
+                          <Avatar
+                            src={chat.avatar}
+                            alt={chat.name}
+                            sx={{ width: 50, height: 50 }}
+                          >
+                            {chat.name?.[0]?.toUpperCase() || '?'}
+                          </Avatar>
+                        </Badge>
+                      </Badge>
+                    ) : (
                       <Badge
                         overlap="circular"
                         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
@@ -1143,7 +1203,7 @@ const AgentDashboardPro: React.FC = () => {
                           {chat.name?.[0]?.toUpperCase() || '?'}
                         </Avatar>
                       </Badge>
-                    </Badge>
+                    )}
                   </ListItemAvatar>
                   <ListItemText
                     primary={
