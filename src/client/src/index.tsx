@@ -5,6 +5,8 @@ import './styles/modern.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
+// Version 2.0.0 - WhatsApp Groups Removed
+
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
 );

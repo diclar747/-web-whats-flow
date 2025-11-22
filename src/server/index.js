@@ -7282,8 +7282,16 @@ app.post('/api/send/document', async (req, res) => {
 app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 app.use('/media', express.static(path.join(__dirname, '../../media')));
 
-// Servir archivos estáticos del frontend React
-app.use(express.static(path.join(__dirname, '../../public')));
+// Servir archivos estáticos del frontend React con headers no-cache
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filepath) => {
+    if (filepath.endsWith('.html') || filepath.endsWith('.js')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 
 // Obtener mensajes
 app.get('/api/messages/:sessionId', async (req, res) => {

@@ -1757,3 +1757,4 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
 };
 
 export default CRMModule;
+// Version: 2.0.0 - WhatsApp Groups Removed - 2025-11-22
