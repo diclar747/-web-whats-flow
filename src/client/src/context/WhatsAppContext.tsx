@@ -167,6 +167,13 @@ export interface WhatsAppChat {
   assigned_agent_name?: string;
 }
 
+interface MessageReaction {
+  userJid: string;
+  reaction: string;
+  timestamp: string;
+}
+
+
 interface WhatsAppMessage {
   id: string;
   from: string;
