@@ -73,18 +73,30 @@ self.addEventListener('fetch', (event) => {
     }
 
     // Static assets - Cache First
+    // 🚫 FILTER: Ignorar requests que no sean GET o que sean de esquemas no soportados (chrome-extension)
+    if (request.method !== 'GET' || !url.protocol.startsWith('http')) {
+        return;
+    }
+
     event.respondWith(
         caches.match(request).then(cachedResponse => {
             if (cachedResponse) {
                 return cachedResponse;
             }
             return fetch(request).then(response => {
-                if (response && response.status === 200) {
-                    const responseClone = response.clone();
-                    caches.open(CACHE_NAME).then(cache => {
-                        cache.put(request, responseClone);
-                    });
+                // Check if we received a valid response
+                if (!response || response.status !== 200 || response.type !== 'basic') {
+                    return response;
                 }
+
+                // Clone the response
+                const responseToCache = response.clone();
+
+                caches.open(CACHE_NAME)
+                    .then((cache) => {
+                        cache.put(request, responseToCache);
+                    });
+
                 return response;
             });
         })
