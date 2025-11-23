@@ -315,10 +315,14 @@ async function initializeDatabase() {
         global.dbPool = pool; // También global para fácil acceso
         console.log('[DB-INIT] Pool made available to routes');
 
+        // Hacer pool accesible globalmente en app
+        app.set('pool', pool);
+        console.log('[DB-INIT] Pool registered in app');
+
         const connection = await pool.getConnection();
-        console.log('[DB-INIT] Successfully got a connection from pool.');
+        console.log('[DB-INIT] Successfully got a connection from pool. Database is ready.');
         connection.release();
-        console.log('[DB-INIT] Connection from pool released. Calling createTables().');
+        console.log('[DB-INIT] Connection released back to pool. Database initialization complete.');
         await createTables();
         console.log('[DB-INIT] createTables() finished.');
         console.log('[DB-INIT] Running migrations...');
@@ -17364,7 +17368,7 @@ app.use('/api/rest', apiRestRouter);
 // ============= FIN ENDPOINTS DE API REST =============
 
 // ============= ENDPOINTS DE ESTADOS DE WHATSAPP =============
-const statusesRouter = require('./routes/statuses')(pool, io);
+const statusesRouter = require('./routes/statuses')(app, io);
 app.use('/api/statuses', statusesRouter);
 console.log('✅ Sistema de Estados de WhatsApp cargado correctamente');
 // ============= FIN ENDPOINTS DE ESTADOS DE WHATSAPP =============

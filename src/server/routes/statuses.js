@@ -42,7 +42,16 @@ const upload = multer({
     }
 });
 
-module.exports = (pool, io) => {
+module.exports = (app, io) => {
+
+    // Helper para obtener pool de forma lazy
+    const getPool = () => {
+        const pool = app.get('pool');
+        if (!pool) {
+            throw new Error('Base de datos no disponible');
+        }
+        return pool;
+    };
 
     // ==================== CREAR ESTADO ====================
     /**
@@ -51,6 +60,7 @@ module.exports = (pool, io) => {
      */
     router.post('/create', upload.single('mediaFile'), async (req, res) => {
         try {
+            const pool = getPool();
             const { sessionId, textContent, backgroundColor, fontStyle } = req.body;
 
             if (!sessionId) {
@@ -65,7 +75,7 @@ module.exports = (pool, io) => {
                 mediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
             }
 
-            const [result] = await pool.query(
+            const [result] = await getPool().query(
                 `INSERT INTO whatsapp_statuses 
         (session_id, text_content, media_url, media_type, background_color, font_style, status) 
         VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
@@ -90,6 +100,7 @@ module.exports = (pool, io) => {
      */
     router.get('/:sessionId', async (req, res) => {
         try {
+            const pool = getPool();
             const { sessionId } = req.params;
             const { status } = req.query;
 
@@ -106,10 +117,10 @@ module.exports = (pool, io) => {
 
             statusQuery += ` ORDER BY created_at DESC`;
 
-            const [statuses] = await pool.query(statusQuery, params);
+            const [statuses] = await getPool().query(statusQuery, params);
 
             // Obtener programaciones activas
-            const [schedules] = await pool.query(
+            const [schedules] = await getPool().query(
                 `SELECT s.*, 
          (SELECT COUNT(*) FROM status_schedule_items WHERE schedule_id = s.id) as total_items
          FROM status_schedules s
@@ -120,7 +131,7 @@ module.exports = (pool, io) => {
 
             // Para cada schedule, obtener sus items
             for (let schedule of schedules) {
-                const [items] = await pool.query(
+                const [items] = await getPool().query(
                     `SELECT si.*, ws.text_content, ws.media_url, ws.media_type 
            FROM status_schedule_items si
            JOIN whatsapp_statuses ws ON si.status_id = ws.id
@@ -132,7 +143,7 @@ module.exports = (pool, io) => {
             }
 
             // Obtener historial de estados publicados (últimos 30)
-            const [history] = await pool.query(
+            const [history] = await getPool().query(
                 `SELECT * FROM whatsapp_statuses 
          WHERE session_id = ? AND status = 'published'
          ORDER BY published_at DESC
@@ -193,7 +204,7 @@ module.exports = (pool, io) => {
 
             updateValues.push(id);
 
-            await pool.query(
+            await getPool().query(
                 `UPDATE whatsapp_statuses SET ${updateFields.join(', ')} WHERE id = ?`,
                 updateValues
             );
@@ -215,7 +226,7 @@ module.exports = (pool, io) => {
             const { id } = req.params;
 
             // Obtener info del estado para eliminar archivo multimedia
-            const [status] = await pool.query('SELECT media_url FROM whatsapp_statuses WHERE id = ?', [id]);
+            const [status] = await getPool().query('SELECT media_url FROM whatsapp_statuses WHERE id = ?', [id]);
 
             if (status.length > 0 && status[0].media_url) {
                 const filePath = path.join(__dirname, 'public', status[0].media_url);
@@ -226,7 +237,7 @@ module.exports = (pool, io) => {
                 }
             }
 
-            await pool.query('DELETE FROM whatsapp_statuses WHERE id = ?', [id]);
+            await getPool().query('DELETE FROM whatsapp_statuses WHERE id = ?', [id]);
 
             res.json({ success: true, message: 'Estado eliminado exitosamente' });
         } catch (error) {
@@ -254,7 +265,7 @@ module.exports = (pool, io) => {
             // Calcular próxima publicación
             const nextPublishAt = new Date(Date.now() + (intervalMinutes || 60) * 60 * 1000);
 
-            const [result] = await pool.query(
+            const [result] = await getPool().query(
                 `INSERT INTO status_schedules 
         (session_id, name, interval_minutes, rotation_days, is_active, next_publish_at) 
         VALUES (?, ?, ?, ?, TRUE, ?)`,
@@ -265,14 +276,14 @@ module.exports = (pool, io) => {
 
             // Insertar items de la programación
             for (let i = 0; i < statusIds.length; i++) {
-                await pool.query(
+                await getPool().query(
                     `INSERT INTO status_schedule_items (schedule_id, status_id, order_index) 
            VALUES (?, ?, ?)`,
                     [scheduleId, statusIds[i], i]
                 );
 
                 // Actualizar estados a 'scheduled'
-                await pool.query(
+                await getPool().query(
                     `UPDATE whatsapp_statuses SET status = 'scheduled' WHERE id = ?`,
                     [statusIds[i]]
                 );
@@ -299,7 +310,7 @@ module.exports = (pool, io) => {
             const { id } = req.params;
             const { isActive } = req.body;
 
-            await pool.query(
+            await getPool().query(
                 `UPDATE status_schedules SET is_active = ? WHERE id = ?`,
                 [isActive, id]
             );
@@ -329,7 +340,7 @@ module.exports = (pool, io) => {
             }
 
             // Obtener el estado
-            const [statuses] = await pool.query('SELECT * FROM whatsapp_statuses WHERE id = ?', [id]);
+            const [statuses] = await getPool().query('SELECT * FROM whatsapp_statuses WHERE id = ?', [id]);
 
             if (statuses.length === 0) {
                 return res.status(404).json({ success: false, error: 'Estado no encontrado' });
@@ -347,7 +358,7 @@ module.exports = (pool, io) => {
             const publishedAt = new Date();
             const expiresAt = new Date(publishedAt.getTime() + 24 * 60 * 60 * 1000); // 24 horas
 
-            await pool.query(
+            await getPool().query(
                 `UPDATE whatsapp_statuses 
          SET status = 'published', published_at = ?, expires_at = ? 
          WHERE id = ?`,
@@ -362,7 +373,7 @@ module.exports = (pool, io) => {
             });
         } catch (error) {
             console.error('Error publicando estado:', error);
-            await pool.query(
+            await getPool().query(
                 `UPDATE whatsapp_statuses SET status = 'failed', error_message = ? WHERE id = ?`,
                 [error.message, req.params.id]
             );
@@ -379,7 +390,7 @@ module.exports = (pool, io) => {
         try {
             const { sessionId } = req.params;
 
-            const [stats] = await pool.query(
+            const [stats] = await getPool().query(
                 `SELECT 
           COUNT(*) as total,
           SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published,
@@ -392,7 +403,7 @@ module.exports = (pool, io) => {
                 [sessionId]
             );
 
-            const [recentPublished] = await pool.query(
+            const [recentPublished] = await getPool().query(
                 `SELECT * FROM whatsapp_statuses 
          WHERE session_id = ? AND status = 'published'
          ORDER BY published_at DESC
