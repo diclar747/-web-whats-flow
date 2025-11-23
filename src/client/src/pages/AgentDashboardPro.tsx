@@ -149,6 +149,7 @@ const AgentDashboardPro: React.FC = () => {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [chatFilter, setChatFilter] = useState<'all' | 'unread'>('all');
+  const [messageDateFilter, setMessageDateFilter] = useState<string>('today'); // 'today', 'week', 'month', 'all'
 
   // Estado para minimizar/maximizar lista de chats (por defecto minimizado)
   const [chatListMinimized, setChatListMinimized] = useState(true);
@@ -442,19 +443,32 @@ const AgentDashboardPro: React.FC = () => {
     }
   }, [agentId, sessionId]);
 
-  const loadMessages = useCallback(async () => {
+  const loadMessages = useCallback(async (dateFilter: string = 'today') => {
     if (!selectedChat || !sessionId) return;
 
     setLoading(true);
+    setMessageDateFilter(dateFilter); // Actualizar el filtro actual
+    
     try {
       const token = sessionStorage.getItem('token');
-      const response = await fetch(`/api/messages/${sessionId}/${selectedChat.id}`, {
+      // Por defecto cargar solo mensajes de HOY para velocidad
+      const response = await fetch(`/api/messages/${sessionId}/${selectedChat.id}?dateFilter=${dateFilter}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
       const data = await response.json();
       if (data.success) {
         setMessages(data.messages || []);
+        console.log(`[AGENT-PRO] ✅ Mensajes cargados (${dateFilter}):`, data.messages?.length || 0);
+        
+        // Mostrar notificación según el filtro
+        const filterNames: { [key: string]: string } = {
+          today: 'de hoy',
+          week: 'de la semana',
+          month: 'del mes',
+          all: 'todos'
+        };
+        showSnackbar(`Mostrando ${data.messages?.length || 0} mensajes ${filterNames[dateFilter] || ''}`, 'info');
       }
     } catch (error) {
       console.error('Error cargando mensajes:', error);
@@ -1727,9 +1741,19 @@ const AgentDashboardPro: React.FC = () => {
               open={Boolean(anchorEl)}
               onClose={handleMenuClose}
             >
-              <MenuItem onClick={() => { loadMessages(); handleMenuClose(); }}>
-                <RefreshIcon sx={{ mr: 1 }} /> Recargar mensajes
+              <MenuItem onClick={() => { loadMessages('today'); handleMenuClose(); }}>
+                <RefreshIcon sx={{ mr: 1 }} /> Mensajes de hoy
               </MenuItem>
+              <MenuItem onClick={() => { loadMessages('week'); handleMenuClose(); }}>
+                <PendingIcon sx={{ mr: 1 }} /> Última semana
+              </MenuItem>
+              <MenuItem onClick={() => { loadMessages('month'); handleMenuClose(); }}>
+                <PendingIcon sx={{ mr: 1 }} /> Este mes
+              </MenuItem>
+              <MenuItem onClick={() => { loadMessages('all'); handleMenuClose(); }}>
+                <PendingIcon sx={{ mr: 1 }} /> Todos los mensajes
+              </MenuItem>
+              <Divider />
               <MenuItem 
                 onClick={handleCloseConversation}
                 disabled={selectedChat?.status === 'closed'}
@@ -1741,6 +1765,38 @@ const AgentDashboardPro: React.FC = () => {
                 <ArchiveIcon sx={{ mr: 1 }} /> Archivar chat
               </MenuItem>
             </Menu>
+
+            {/* Indicador de filtro de fecha */}
+            {messageDateFilter !== 'all' && (
+              <Box 
+                sx={{ 
+                  p: 1, 
+                  textAlign: 'center', 
+                  bgcolor: currentTheme.bg.secondary,
+                  borderBottom: `1px solid ${currentTheme.border}`
+                }}
+              >
+                <Chip
+                  size="small"
+                  icon={<PendingIcon sx={{ fontSize: 16 }} />}
+                  label={
+                    messageDateFilter === 'today' ? '📅 Mostrando mensajes de hoy' :
+                    messageDateFilter === 'week' ? '📅 Mostrando última semana' :
+                    messageDateFilter === 'month' ? '📅 Mostrando este mes' : ''
+                  }
+                  sx={{ 
+                    bgcolor: '#00a884', 
+                    color: 'white',
+                    fontWeight: 500,
+                    fontSize: '0.75rem'
+                  }}
+                  onDelete={() => {
+                    loadMessages('all');
+                  }}
+                  deleteIcon={<CloseIcon sx={{ color: 'white !important', fontSize: 16 }} />}
+                />
+              </Box>
+            )}
 
             {/* Área de mensajes */}
             <Box
@@ -1760,10 +1816,15 @@ const AgentDashboardPro: React.FC = () => {
                 <Box display="flex" justifyContent="center" alignItems="center" height="100%" flexDirection="column">
                   <ChatIcon sx={{ fontSize: 80, color: '#d1d7db', mb: 2 }} />
                   <Typography variant="body1" color="text.secondary">
-                    No hay mensajes en este chat
+                    No hay mensajes {
+                      messageDateFilter === 'today' ? 'hoy' :
+                      messageDateFilter === 'week' ? 'esta semana' :
+                      messageDateFilter === 'month' ? 'este mes' :
+                      'en este chat'
+                    }
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Envía el primer mensaje
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    {messageDateFilter !== 'all' && 'Usa el menú (⋮) para ver otros períodos'}
                   </Typography>
                 </Box>
               ) : (
@@ -1993,7 +2054,7 @@ const AgentDashboardPro: React.FC = () => {
                         fullWidth
                         variant="outlined"
                         startIcon={<RefreshIcon />}
-                        onClick={loadMessages}
+                        onClick={() => loadMessages(messageDateFilter)}
                         sx={{ mb: 1, justifyContent: 'flex-start' }}
                       >
                         Recargar mensajes

@@ -6522,9 +6522,9 @@ app.post('/api/send/message', async (req, res) => {
 // Endpoint específico para agentes - obtener mensajes de un chat
 app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
     const { sessionId, chatJid } = req.params;
-    const { limit = 10000 } = req.query; // Aumentado a 10000 por defecto
+    const { limit, dateFilter = 'today' } = req.query; // dateFilter: 'today', 'week', 'all', o fecha específica
 
-    console.log('[AGENT-MESSAGES] 📥 Obteniendo mensajes:', { sessionId, chatJid, limit });
+    console.log('[AGENT-MESSAGES] 📥 Obteniendo mensajes:', { sessionId, chatJid, dateFilter, limit });
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'DB no disponible' });
@@ -6539,33 +6539,51 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            // Cargar TODOS los mensajes sin límite si limit es muy grande
-            const query = parseInt(limit, 10) >= 10000
-                ? `SELECT
-                    m.id, m.session_id, m.chat_jid, m.sender_jid,
-                    m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url,
-                    m.timestamp, m.status, m.sender_name, m.sender_avatar
-                FROM messages m
-                WHERE (m.session_id = ? OR m.phone_number = ?)
-                  AND m.chat_jid = ?
-                ORDER BY m.timestamp ASC`
-                : `SELECT
-                    m.id, m.session_id, m.chat_jid, m.sender_jid,
-                    m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url,
-                    m.timestamp, m.status, m.sender_name, m.sender_avatar
-                FROM messages m
-                WHERE (m.session_id = ? OR m.phone_number = ?)
-                  AND m.chat_jid = ?
-                ORDER BY m.timestamp ASC
-                LIMIT ?`;
+            // Construir filtro de fecha según el parámetro
+            let dateCondition = '';
+            let queryParams = [phoneNumber, phoneNumber, chatJid];
 
-            const params = parseInt(limit, 10) >= 10000
-                ? [phoneNumber, phoneNumber, chatJid]
-                : [phoneNumber, phoneNumber, chatJid, parseInt(limit, 10)];
+            if (dateFilter === 'today') {
+                // Solo mensajes de hoy (desde las 00:00:00 de hoy)
+                dateCondition = 'AND DATE(m.timestamp) = CURDATE()';
+                console.log('[AGENT-MESSAGES] 📅 Cargando solo mensajes de HOY');
+            } else if (dateFilter === 'week') {
+                // Mensajes de los últimos 7 días
+                dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de la SEMANA');
+            } else if (dateFilter === 'month') {
+                // Mensajes del mes actual
+                dateCondition = 'AND MONTH(m.timestamp) = MONTH(CURDATE()) AND YEAR(m.timestamp) = YEAR(CURDATE())';
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes del MES');
+            } else if (dateFilter && dateFilter !== 'all') {
+                // Fecha específica en formato YYYY-MM-DD
+                dateCondition = 'AND DATE(m.timestamp) = ?';
+                queryParams.push(dateFilter);
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de fecha específica:', dateFilter);
+            } else {
+                // 'all' o sin filtro - cargar todos (solo si se solicita explícitamente)
+                console.log('[AGENT-MESSAGES] 📅 Cargando TODOS los mensajes');
+            }
 
-            const [messages] = await connection.execute(query, params);
+            // Query con filtro de fecha
+            const query = `SELECT
+                m.id, m.session_id, m.chat_jid, m.sender_jid,
+                m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url,
+                m.timestamp, m.status, m.sender_name, m.sender_avatar
+            FROM messages m
+            WHERE (m.session_id = ? OR m.phone_number = ?)
+              AND m.chat_jid = ?
+              ${dateCondition}
+            ORDER BY m.timestamp ASC
+            ${limit ? 'LIMIT ?' : ''}`;
 
-            console.log('[AGENT-MESSAGES] ✅ Encontrados:', messages.length, 'mensajes');
+            if (limit) {
+                queryParams.push(parseInt(limit, 10));
+            }
+
+            const [messages] = await connection.execute(query, queryParams);
+
+            console.log('[AGENT-MESSAGES] ✅ Encontrados:', messages.length, 'mensajes para', dateFilter || 'sin filtro');
 
             // Marcar como leídos los mensajes recibidos
             await connection.execute(
@@ -15239,7 +15257,7 @@ app.get('/api/agents/:userId/chats', async (req, res) => {
                 LEFT JOIN contact_groups cg ON cg.jid = ca.chat_jid AND cg.session_id = ?
                 WHERE ca.user_id = ?
                 AND ca.session_id = ?
-                AND ca.status = 'active'
+                AND ca.status IN ('pending', 'accepted', 'active')
                 GROUP BY ca.chat_jid, ca.session_id
                 ORDER BY last_message_time DESC`,
                 [phoneNumber, phoneNumber, userId, phoneNumber]  // ← Usar phoneNumber en lugar de sessionId
