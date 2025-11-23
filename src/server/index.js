@@ -3834,6 +3834,45 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                 console.log(`[${sessionId}] 🚀 EMITIENDO eventos connection-update con newSessionId: ${newSessionId}, phoneNumber: ${userPhoneNumber}`);
 
+                // 🔥 ASIGNAR SESSION_ID A TODOS LOS AGENTES DEL ADMIN
+                try {
+                    if (pool) {
+                        const connection = await pool.getConnection();
+                        try {
+                            // Actualizar session_id de todos los agentes relacionados con este admin
+                            const [updateResult] = await connection.execute(
+                                `UPDATE users 
+                                 SET session_id = ? 
+                                 WHERE admin_phone = ? 
+                                 AND role IN ('agent', 'supervisor')`,
+                                [newSessionId, userPhoneNumber]
+                            );
+                            
+                            console.log(`[${newSessionId}] ✅ Session_id asignado a ${updateResult.affectedRows} agentes del admin ${userPhoneNumber}`);
+                            
+                            // Obtener lista de agentes actualizados para notificarles
+                            const [agents] = await connection.execute(
+                                `SELECT id, name, email FROM users WHERE admin_phone = ? AND role IN ('agent', 'supervisor')`,
+                                [userPhoneNumber]
+                            );
+                            
+                            // Notificar a cada agente sobre la actualización de sesión
+                            agents.forEach(agent => {
+                                io.emit(`agent-${agent.id}-session-updated`, {
+                                    sessionId: newSessionId,
+                                    phoneNumber: userPhoneNumber,
+                                    message: 'Admin reconectó WhatsApp - sesión actualizada'
+                                });
+                                console.log(`[${newSessionId}] 📢 Notificado agente ${agent.name} (${agent.email}) sobre nueva sesión`);
+                            });
+                        } finally {
+                            connection.release();
+                        }
+                    }
+                } catch (agentUpdateError) {
+                    console.error(`[${newSessionId}] ❌ Error actualizando agentes:`, agentUpdateError);
+                }
+
                 // Emitir evento global de conexión actualizada
                 io.emit('connection-update', {
                     status: 'connected',

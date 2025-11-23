@@ -568,6 +568,7 @@ const AgentDashboardPro: React.FC = () => {
 
     // Escuchar eventos específicos del agente
     on(`agent-${agentId}-new-chat`, handleNewChat);
+    on(`agent-${agentId}-assignment`, handleNewChat); // Evento correcto del backend
     on('chat:assigned', handleNewChat);
     on('chat-assignment-changed', (data: any) => {
       if (data.agentId === agentId) {
@@ -654,6 +655,26 @@ const AgentDashboardPro: React.FC = () => {
       }, 1000);
     });
 
+    // 🔥 Escuchar evento específico del agente cuando admin reconecta
+    on(`agent-${agentId}-session-updated`, async (data: any) => {
+      console.log('🔄 [AGENT-PRO] Session actualizada para este agente:', data);
+      showSnackbar(`✅ ${data.message}`, 'success');
+
+      // Actualizar sessionId local
+      if (data.sessionId) {
+        setSessionId(data.sessionId);
+        setWhatsappConnected(true);
+        sessionStorage.setItem('adminSessionId', data.sessionId);
+        sessionStorage.setItem('whatsflow_session', data.sessionId);
+        console.log('✅ [AGENT-PRO] SessionId actualizado a:', data.sessionId);
+      }
+
+      // Recargar chats
+      setTimeout(() => {
+        loadAgentChats();
+      }, 500);
+    });
+
     // 🔔 Transferencias en tiempo real
     on('chat:transferred', (data: any) => {
       console.log('📨 Chat transferido recibido:', data);
@@ -693,6 +714,8 @@ const AgentDashboardPro: React.FC = () => {
 
     return () => {
       off(`agent-${agentId}-new-chat`);
+      off(`agent-${agentId}-assignment`);
+      off(`agent-${agentId}-session-updated`);
       off('chat-assignment-changed');
       off('chat:assigned');
       off('message:received');
