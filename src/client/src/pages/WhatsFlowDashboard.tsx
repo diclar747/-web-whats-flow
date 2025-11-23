@@ -347,20 +347,32 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     }
 
     // 🔒 VALIDACIÓN DE TOKEN LOCAL (Fix Auto-login)
+    // IMPORTANTE: Admin por QR NO requiere token de usuario, solo sessionId de WhatsApp
     const localToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const userType = sessionStorage.getItem('whatsflow_user_type') || localStorage.getItem('whatsflow_user_type');
+    
     if (!localToken) {
-      console.warn('[AUTH] 🚫 Sin token local. Verificando si acabamos de hacer login...');
+      console.warn('[AUTH] 🚫 Sin token local. Verificando tipo de usuario...');
       
-      // Dar un pequeño delay para que el token se guarde después del login
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      const tokenAfterDelay = localStorage.getItem('token') || sessionStorage.getItem('token');
-      if (!tokenAfterDelay) {
-        console.warn('[AUTH] 🚫 Sesión sin token local. Bloqueando acceso.');
-        frontendLogger.log('SESSION_INVALID', { reason: 'No local token found (Auto-login prevention)' });
-        setSessionValid(false);
-        setWhatsappStatus('disconnected');
-        return;
+      // Si es admin por QR, NO requiere token de usuario
+      if (userType === 'admin' && !isAgent) {
+        console.log('[AUTH] ✅ Admin por QR - No requiere token de usuario, validando sessionId...');
+        // Continuar con la validación del sessionId de WhatsApp
+      } else {
+        // Para agentes/supervisores SÍ se requiere token
+        console.warn('[AUTH] 🚫 Usuario agente/supervisor sin token. Verificando si acabamos de hacer login...');
+        
+        // Dar un pequeño delay para que el token se guarde después del login
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        const tokenAfterDelay = localStorage.getItem('token') || sessionStorage.getItem('token');
+        if (!tokenAfterDelay) {
+          console.warn('[AUTH] 🚫 Sesión sin token local. Bloqueando acceso.');
+          frontendLogger.log('SESSION_INVALID', { reason: 'No local token found (Auto-login prevention)' });
+          setSessionValid(false);
+          setWhatsappStatus('disconnected');
+          return;
+        }
       }
     }
 
@@ -413,24 +425,33 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     }
 
     // 🔒 VALIDACIÓN DE TOKEN LOCAL (Fix Auto-login)
+    // IMPORTANTE: Admin por QR NO requiere token de usuario
     const localToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const userType = sessionStorage.getItem('whatsflow_user_type') || localStorage.getItem('whatsflow_user_type');
+    
     if (!localToken) {
-      console.warn('[AUTH] ⏳ Token no encontrado, esperando...');
-      
-      // Dar tiempo para que el token se guarde después del login
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      const tokenAfterDelay = localStorage.getItem('token') || sessionStorage.getItem('token');
-      if (!tokenAfterDelay) {
-        console.warn('[AUTH] 🚫 Sin token después del delay');
-        setSessionValid(false);
-        setWhatsappStatus('disconnected');
-        return;
+      // Si es admin por QR, NO requiere token
+      if (userType === 'admin' && !isAgent) {
+        console.log('[AUTH] ✅ Admin por QR - No requiere token, continuando...');
+        // Continuar sin validar token
+      } else {
+        console.warn('[AUTH] ⏳ Token no encontrado, esperando...');
+        
+        // Dar tiempo para que el token se guarde después del login
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        const tokenAfterDelay = localStorage.getItem('token') || sessionStorage.getItem('token');
+        if (!tokenAfterDelay) {
+          console.warn('[AUTH] 🚫 Sin token después del delay');
+          setSessionValid(false);
+          setWhatsappStatus('disconnected');
+          return;
+        }
       }
     }
 
     // ... (resto de la función)
-  }, [sessionId, sessionValid, isAuthenticating]);
+  }, [sessionId, sessionValid, isAuthenticating, isAgent]);
 
   // ... (dentro de handleConnectionUpdate)
   const handleConnectionUpdate = (data: any) => {
