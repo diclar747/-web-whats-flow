@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
+import { sessionFetch } from '../utils/sessionFetch';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useWhatsApp } from '../context/WhatsAppContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -58,7 +59,8 @@ import {
   ViewKanban as KanbanIcon,
   Security as SecurityIcon,
   Brightness4,
-  Brightness7
+  Brightness7,
+  Schedule
 } from '@mui/icons-material';
 
 // Componente de llamada entrante (cargado inmediatamente por ser crítico)
@@ -81,6 +83,7 @@ const UsersModule = lazy(() => import('../modules/UsersModule'));
 const AgentsStatusModule = lazy(() => import('../modules/AgentsStatusModule'));
 const KanbanContactsModule = lazy(() => import('../modules/KanbanContactsModule'));
 const AgentPermissionsManager = lazy(() => import('../components/AgentPermissionsManager'));
+const WhatsAppStatusModule = lazy(() => import('../modules/WhatsAppStatusModule'));
 
 // Componente de loading para Suspense con animación mejorada
 const ModuleLoadingFallback = () => (
@@ -260,6 +263,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       path: '/dashboard/calendar',
       color: '#2196f3'
     },
+    // Estados de WhatsApp removido - funcionalidad no soportada por WhatsApp Web/Baileys
     {
       id: 'analytics',
       label: 'Analytics',
@@ -331,6 +335,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     }
   }, [sessionId, location.pathname, userRole, userId]);
 
+
+
   // Función para verificar si la sesión es válida
   const checkSessionValidity = useCallback(async (currentSessionId: string) => {
     if (!currentSessionId) {
@@ -339,10 +345,20 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       return;
     }
 
+    // 🔒 VALIDACIÓN DE TOKEN LOCAL (Fix Auto-login)
+    const localToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!localToken) {
+      console.warn('[AUTH] 🚫 Sesión activa en servidor pero sin token local. Bloqueando acceso.');
+      frontendLogger.log('SESSION_INVALID', { reason: 'No local token found (Auto-login prevention)' });
+      setSessionValid(false);
+      setWhatsappStatus('disconnected'); // Forzar estado desconectado para mostrar QR/Login
+      return;
+    }
+
     try {
       frontendLogger.log('CHECKING_SESSION_VALIDITY', { sessionId: currentSessionId });
 
-      const response = await fetch(`/api/session/${currentSessionId}/status`);
+      const response = await sessionFetch(`/api/session/${currentSessionId}/status`);
       const data = await response.json();
 
       if (data.success && data.isConnected && data.phoneNumber) {
@@ -379,8 +395,16 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   const checkWhatsappStatus = useCallback(async () => {
     if (sessionValid === false) return; // No verificar si ya sabemos que la sesión es inválida
 
+    // 🔒 VALIDACIÓN DE TOKEN LOCAL (Fix Auto-login)
+    const localToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (!localToken) {
+      setSessionValid(false);
+      setWhatsappStatus('disconnected');
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/session/${sessionId}/status`);
+      const response = await sessionFetch(`/api/session/${sessionId}/status`);
       const data = await response.json();
 
       if (data.success) {
@@ -543,6 +567,30 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       // Escuchar evento de sesión cerrada desde el teléfono (múltiples formas)
       ioSocket.on('session-logged-out', handleSessionLoggedOut);
       ioSocket.on(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
+
+      // Escuchar evento de token de autenticación (Admin)
+      ioSocket.on('auth_token', (data: any) => {
+        console.log('[SOCKET] 🔐 Token recibido:', data);
+        if (data.token) {
+          localStorage.setItem('token', data.token);
+          sessionStorage.setItem('token', data.token);
+          // También guardar info del usuario si viene
+          if (data.user) {
+            localStorage.setItem('userRole', data.user.role);
+            sessionStorage.setItem('userRole', data.user.role);
+          }
+        }
+      });
+
+      // Escuchar evento de logout forzado para agentes
+      ioSocket.on('agent-force-logout', (data: any) => {
+        console.log('[SOCKET] 🚫 Logout forzado de agente:', data);
+        // Si soy agente, cerrar sesión
+        const currentRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+        if (currentRole === 'agent') {
+          handleSessionLoggedOut(data);
+        }
+      });
 
       console.log(`[SOCKET] ✅ Escuchando actualizaciones en tiempo real para sesión: ${sessionId}`);
       console.log('[SOCKET] 🚫 POLLING ELIMINADO - Solo eventos de socket en tiempo real');
@@ -1076,6 +1124,9 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                       <ProtectedRoute module="calendar" action="view">
                         <CalendarModule sessionId={sessionId} />
                       </ProtectedRoute>
+                    } />
+                    <Route path="/whatsapp-status/*" element={
+                      <WhatsAppStatusModule sessionId={sessionId} />
                     } />
                     <Route path="/analytics/*" element={
                       <ProtectedRoute module="analytics" action="view">

@@ -325,34 +325,146 @@ module.exports = (app, io) => {
         }
     });
 
+    // ==================== TEST ENDPOINT ====================
+    router.get('/test', (req, res) => {
+        console.log('🧪 [TEST-ENDPOINT] Router de estados funcionando correctamente');
+        res.json({ success: true, message: 'Router de estados activo' });
+    });
+
     // ==================== PUBLICAR ESTADO MANUALMENTE ====================
     /**
      * POST /api/statuses/publish/:id
      * Publica un estado inmediatamente en WhatsApp
      */
     router.post('/publish/:id', async (req, res) => {
+        console.log(`🚀 [PUBLISH-ENDPOINT] Solicitud recibida para publicar estado`);
+        console.log(`📋 [PUBLISH-ENDPOINT] ID: ${req.params.id}, SessionId: ${req.body.sessionId}`);
+
         try {
             const { id } = req.params;
             const { sessionId } = req.body;
 
             if (!sessionId) {
+                console.log(`❌ [PUBLISH-ENDPOINT] sessionId no proporcionado`);
                 return res.status(400).json({ success: false, error: 'sessionId es requerido' });
             }
 
             // Obtener el estado
+            console.log(`🔍 [PUBLISH-ENDPOINT] Buscando estado ID ${id} en base de datos...`);
             const [statuses] = await getPool().query('SELECT * FROM whatsapp_statuses WHERE id = ?', [id]);
 
             if (statuses.length === 0) {
+                console.log(`❌ [PUBLISH-ENDPOINT] Estado ${id} no encontrado`);
                 return res.status(404).json({ success: false, error: 'Estado no encontrado' });
             }
 
             const status = statuses[0];
+            console.log(`✅ [PUBLISH-ENDPOINT] Estado encontrado: ${status.text_content || 'multimedia'}`);
 
-            // TODO: Integrar con API de WhatsApp para publicar estado
-            // Por ahora simulamos la publicación
-            console.log(`📱 Publicando estado ${id} en WhatsApp para sesión ${sessionId}`);
-            console.log(`Contenido: ${status.text_content || 'Sin texto'}`);
-            console.log(`Media: ${status.media_url || 'Sin media'}`);
+            // Obtener sesión de WhatsApp
+            console.log(`🔍 [PUBLISH-ENDPOINT] Buscando sesión ${sessionId}...`);
+            const sessions = app.get('sessions');
+            if (!sessions) {
+                console.log(`❌ [PUBLISH-ENDPOINT] Sistema de sesiones no disponible`);
+                return res.status(500).json({ success: false, error: 'Sistema de sesiones no disponible' });
+            }
+
+            const session = sessions.get(sessionId);
+            console.log(`📊 [PUBLISH-ENDPOINT] Sesión encontrada:`, session ? 'SÍ' : 'NO');
+            console.log(`📊 [PUBLISH-ENDPOINT] Sock disponible:`, session?.sock ? 'SÍ' : 'NO');
+            console.log(`📊 [PUBLISH-ENDPOINT] isConnected:`, session?.isConnected);
+
+            if (!session || !session.sock || !session.isConnected) {
+                console.log(`❌ [PUBLISH-ENDPOINT] WhatsApp no conectado para sesión ${sessionId}`);
+                return res.status(400).json({
+                    success: false,
+                    error: 'WhatsApp no está conectado. Por favor, conecta tu sesión primero.'
+                });
+            }
+
+            const sock = session.sock;
+            console.log(`✅ [PUBLISH-ENDPOINT] Sock obtenido, procediendo a publicar...`);
+
+            // Preparar contenido del estado
+            let statusContent = {};
+
+            if (status.media_url && status.media_type !== 'text') {
+                // Estado con imagen o video
+                const path = require('path');
+                const fs = require('fs');
+                const mediaPath = path.join(__dirname, '..', 'public', status.media_url);
+
+                if (!fs.existsSync(mediaPath)) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Archivo multimedia no encontrado'
+                    });
+                }
+
+                const mediaBuffer = fs.readFileSync(mediaPath);
+
+                statusContent = {
+                    [status.media_type]: mediaBuffer,
+                    caption: status.text_content || ''
+                };
+            } else {
+                // Estado solo texto - Estructura específica para estados
+                statusContent = {
+                    text: status.text_content || '📱 Estado de WhatsFlow',
+                    backgroundColor: status.background_color || '#315594', // Color azul por defecto
+                    font: 1 // 1 = SERIF, 2 = NORICAN, 3 = BRYNDAN_WRITE, 4 = BEBASNEUE, 5 = OSWALD
+                };
+            }
+
+            // Publicar estado en WhatsApp usando Baileys
+            console.log(`📱 [DEBUG] Intentando publicar estado ${id} para sesión ${sessionId}`);
+
+
+            try {
+                // PASO 1: Inicializar el chat status@broadcast (recomendación de Baileys)
+                console.log(`📱 [DEBUG] Inicializando chat status@broadcast...`);
+                try {
+                    await sock.sendMessage('status@broadcast', {});
+                    console.log(`✅ [DEBUG] Chat status@broadcast inicializado`);
+                } catch (initError) {
+                    console.log(`⚠️ [DEBUG] No se pudo inicializar status@broadcast (puede ser normal):`, initError.message);
+                }
+
+                // PASO 2: Preparar contenido
+                let messageContent;
+
+                if (status.media_url && status.media_type !== 'text') {
+                    // Estado con imagen o video - EXACTAMENTE como el ejemplo de Baileys
+                    messageContent = statusContent;
+                } else {
+                    // Estado de texto - EXACTAMENTE como el ejemplo de Baileys
+                    messageContent = {
+                        text: status.text_content || '📱 Estado de WhatsFlow'
+                    };
+                }
+
+                console.log(`📦 [DEBUG] Enviando mensaje a status@broadcast...`);
+                console.log(`📦 [DEBUG] Contenido:`, messageContent);
+
+                // PASO 3: Enviar estado y capturar respuesta completa
+                const result = await sock.sendMessage('status@broadcast', messageContent);
+
+                // PASO 4: Logging detallado de la respuesta
+                console.log(`✅ [DEBUG] Resultado Baileys completo:`, JSON.stringify(result, null, 2));
+
+                if (result && result.key && result.key.id) {
+                    console.log(`✅ [DEBUG] MessageID recibido: ${result.key.id}`);
+                    console.log(`✅ [DEBUG] RemoteJid: ${result.key.remoteJid}`);
+                    console.log(`✅ [DEBUG] Status: ${result.status || 'N/A'}`);
+                } else {
+                    console.log(`⚠️ [DEBUG] Respuesta sin messageID - posible bloqueo de WhatsApp`);
+                }
+
+                console.log(`✅ Estado publicado exitosamente en WhatsApp`);
+            } catch (baileysError) {
+                console.error(`❌ [DEBUG] Error Baileys sendMessage:`, baileysError);
+                throw baileysError;
+            }
 
             // Actualizar estado a 'published'
             const publishedAt = new Date();
@@ -367,17 +479,20 @@ module.exports = (app, io) => {
 
             res.json({
                 success: true,
-                message: 'Estado publicado exitosamente',
+                message: 'Estado publicado exitosamente en WhatsApp',
                 publishedAt,
                 expiresAt
             });
         } catch (error) {
-            console.error('Error publicando estado:', error);
+            console.error('❌ Error publicando estado:', error);
             await getPool().query(
                 `UPDATE whatsapp_statuses SET status = 'failed', error_message = ? WHERE id = ?`,
                 [error.message, req.params.id]
             );
-            res.status(500).json({ success: false, error: error.message });
+            res.status(500).json({
+                success: false,
+                error: 'Error al publicar estado: ' + error.message
+            });
         }
     });
 

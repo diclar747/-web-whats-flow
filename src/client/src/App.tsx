@@ -22,6 +22,7 @@ import FloatingWhatsAppButton from './components/FloatingWhatsAppButton';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
+import { MobileStatusPublisher } from './modules/MobileStatusPublisher';
 
 
 
@@ -92,7 +93,7 @@ const AppContent: React.FC<{
       {/* Gestión de Agentes con Privilegios */}
       <Route path="/agents-permissions" element={
         user && token ? (
-            <AgentPermissionsManager />
+          <AgentPermissionsManager />
         ) : (
           <Navigate to="/login" replace />
         )
@@ -187,11 +188,14 @@ const AppContent: React.FC<{
       {/* Dashboard de administrador */}
       <Route path="/admin/dashboard" element={
         admin && adminToken ? (
-            <AdminDashboard onLogout={handleLogout} admin={admin} adminToken={adminToken} />
+          <AdminDashboard onLogout={handleLogout} admin={admin} adminToken={adminToken} />
         ) : (
           <Navigate to="/admin" replace />
         )
       } />
+
+      {/* Ruta para PWA Móvil - Publicador de Estados */}
+      <Route path="/mobile/status-publisher" element={<MobileStatusPublisher />} />
 
       {/* Ruta por defecto - para cualquier otra ruta no definida */}
       <Route path="*" element={
@@ -225,7 +229,7 @@ const App: React.FC = () => {
         return crypto.randomUUID();
       }
       // Fallback para navegadores antiguos
-      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
         const r = Math.random() * 16 | 0;
         const v = c === 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
@@ -234,9 +238,9 @@ const App: React.FC = () => {
 
     const initializeSession = async () => {
       // 🔒 SEGURIDAD: Limpiar localStorage SIEMPRE al inicio para forzar sesiones únicas
-      const localStorageKeys = ['whatsflow_session', 'whatsflow_token', 'whatsflow_user_id', 'whatsflow_user_type', 
-                                'whatsflow_session_device_id', 'whatsflow_session_token', 'whatsflow_device_id',
-                                'token', 'userId', 'userRole', 'userName', 'sessionToken', 'device_id'];
+      const localStorageKeys = ['whatsflow_session', 'whatsflow_token', 'whatsflow_user_id', 'whatsflow_user_type',
+        'whatsflow_session_device_id', 'whatsflow_session_token', 'whatsflow_device_id',
+        'token', 'userId', 'userRole', 'userName', 'sessionToken', 'device_id'];
       let localStorageHadData = false;
       localStorageKeys.forEach(key => {
         if (localStorage.getItem(key)) localStorageHadData = true;
@@ -284,9 +288,9 @@ const App: React.FC = () => {
             console.log('⚠️ Sesión sin deviceId, asignando actual...');
             sessionStorage.setItem('whatsflow_session_device_id', deviceId);
           }
-          
+
           console.log('✅ Dispositivo verificado correctamente');
-          
+
           // Ahora sí, verificar si la sesión está activa
           console.log('🔍 Verificando sessionId guardado:', savedSessionId);
 
@@ -394,25 +398,25 @@ const App: React.FC = () => {
                 console.log('✅ Sesión de WhatsApp activa, tipo de usuario:', savedUserType || 'admin');
               }
 
-            console.log('✅ Sesión de WhatsApp activa, manteniendo sesión');
-            setLoading(false);
-            return;
-          } else {
-            console.log('⚠️ SessionId guardado ya no está activo');
-            console.log('📊 [APP-INIT] Datos recibidos:', JSON.stringify(checkData));
-            // NO LIMPIAR INMEDIATAMENTE - Dar tiempo a que el servidor reconecte
-            // Solo limpiar si definitivamente no está conectado
-            if (checkData.success === false) {
-              console.log('❌ API reporta error, limpiando sesión');
-              sessionStorage.removeItem('whatsflow_session');
-              sessionStorage.removeItem('whatsflow_session_device_id');
+              console.log('✅ Sesión de WhatsApp activa, manteniendo sesión');
+              setLoading(false);
+              return;
             } else {
-              console.log('⚠️ Sesión no conectada pero API responde OK - mantener y recargar');
-              // Mantener la sesión y permitir que el usuario intente de nuevo
-              setSessionId(savedSessionId);
-              setUserType(savedUserType || 'admin');
+              console.log('⚠️ SessionId guardado ya no está activo');
+              console.log('📊 [APP-INIT] Datos recibidos:', JSON.stringify(checkData));
+              // NO LIMPIAR INMEDIATAMENTE - Dar tiempo a que el servidor reconecte
+              // Solo limpiar si definitivamente no está conectado
+              if (checkData.success === false) {
+                console.log('❌ API reporta error, limpiando sesión');
+                sessionStorage.removeItem('whatsflow_session');
+                sessionStorage.removeItem('whatsflow_session_device_id');
+              } else {
+                console.log('⚠️ Sesión no conectada pero API responde OK - mantener y recargar');
+                // Mantener la sesión y permitir que el usuario intente de nuevo
+                setSessionId(savedSessionId);
+                setUserType(savedUserType || 'admin');
+              }
             }
-          }
           } catch (verifyError) {
             console.error('❌ [APP-INIT] Error verificando sesión:', verifyError);
             // Si hay error de red, mantener la sesión y permitir retry
@@ -478,14 +482,14 @@ const App: React.FC = () => {
 
       const handleSessionClosed = (data: any) => {
         console.log('🔐 [APP] Sesión cerrada en otro dispositivo:', data);
-        
+
         // Verificar si es nuestra sesión la que fue cerrada
         const currentUserId = parseInt(sessionStorage.getItem('userId') || '0');
         const currentSessionToken = sessionStorage.getItem('sessionToken');
-        
+
         if (data.userId === currentUserId || (data.oldTokens && data.oldTokens.includes(currentSessionToken))) {
           alert(`Tu sesión ha sido cerrada porque iniciaste sesión en otro dispositivo.\n\nRazón: ${data.reason}`);
-          
+
           // Limpiar todo y redirigir
           sessionStorage.clear();
           localStorage.clear();
@@ -754,41 +758,41 @@ const App: React.FC = () => {
         <SocketProvider>
           <CustomThemeProvider>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
-            {/* Toaster para notificaciones visuales */}
-            <Toaster
-              position="top-right"
-              toastOptions={{
-                duration: 15000,
-                style: {
-                  background: '#fff',
-                  color: '#363636',
-                },
-                success: {
-                  duration: 5000,
-                },
-              }}
-            />
+              {/* Toaster para notificaciones visuales */}
+              <Toaster
+                position="top-right"
+                toastOptions={{
+                  duration: 15000,
+                  style: {
+                    background: '#fff',
+                    color: '#363636',
+                  },
+                  success: {
+                    duration: 5000,
+                  },
+                }}
+              />
 
-            {/* Listener de notificaciones de transferencia */}
-            {user && <TransferNotificationListener />}
+              {/* Listener de notificaciones de transferencia */}
+              {user && <TransferNotificationListener />}
 
-            {/* Botón flotante de WhatsApp para soporte (NO mostrar en panel de agentes) */}
-            {user?.role !== 'agent' && <FloatingWhatsAppButton />}
+              {/* Botón flotante de WhatsApp para soporte (NO mostrar en panel de agentes) */}
+              {user?.role !== 'agent' && <FloatingWhatsAppButton />}
 
-            <AppContent
-              sessionId={sessionId}
-              user={user}
-              token={token}
-              userType={userType}
-              admin={admin}
-              adminToken={adminToken}
-              loading={loading}
-              handleLoginSuccess={handleLoginSuccess}
-              handleAdminLogin={handleAdminLogin}
-              handleLogout={handleLogout}
-              handleQRSuccess={handleQRSuccess}
-              onNavigate={() => {}}
-            />
+              <AppContent
+                sessionId={sessionId}
+                user={user}
+                token={token}
+                userType={userType}
+                admin={admin}
+                adminToken={adminToken}
+                loading={loading}
+                handleLoginSuccess={handleLoginSuccess}
+                handleAdminLogin={handleAdminLogin}
+                handleLogout={handleLogout}
+                handleQRSuccess={handleQRSuccess}
+                onNavigate={() => { }}
+              />
             </LocalizationProvider>
           </CustomThemeProvider>
         </SocketProvider>

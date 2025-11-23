@@ -9,7 +9,9 @@ import {
 } from '@mui/material';
 import {
   OpenInNew as OpenLinkIcon,
-  Download as DownloadIcon
+  Download as DownloadIcon,
+  Check as CheckIcon,
+  Schedule as ScheduleIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -24,6 +26,8 @@ interface Message {
   media_type?: string;
   media_url?: string;
   status?: 'pending' | 'sent' | 'delivered' | 'read';
+  sender_name?: string;
+  sender_jid?: string;
 }
 
 interface ImprovedMessagesViewProps {
@@ -165,7 +169,9 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
           from_me: Boolean(data.isFromMe || data.from_me),
           timestamp: data.timestamp || new Date().toISOString(),
           media_type: data.media_type || data.type,
-          media_url: data.media_url || data.mediaUrl
+          media_url: data.media_url || data.mediaUrl,
+          sender_name: data.sender_name || data.senderName,
+          sender_jid: data.sender_jid || data.senderJid
         };
 
         // Scroll to bottom después de agregar mensaje
@@ -178,7 +184,7 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
     // Evento para actualizaciones de estado de mensajes
     const handleMessageStatusUpdate = (data: any) => {
       console.log('📊 [MESSAGES-VIEW] Actualización de estado:', data);
-      
+
       // Verificar si el mensaje es de este chat
       const messageChatJid = data.chatJid || data.chat_jid;
       if (messageChatJid && messageChatJid !== chatJid) {
@@ -186,15 +192,40 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
         return;
       }
 
-      setMessages(prev => prev.map(msg => {
-        // Coincidir por ID o messageId
-        const matchById = msg.id === data.id || msg.id === data.messageId;
-        if (matchById) {
-          console.log('✅ [MESSAGES-VIEW] Actualizando estado de mensaje:', msg.id, '->', data.status);
-          return { ...msg, status: data.status };
+      setMessages(prev => {
+        let updated = false;
+        const newMessages = prev.map(msg => {
+          // Coincidir por ID exacto
+          const matchById = msg.id === data.id || msg.id === data.messageId;
+          if (matchById) {
+            console.log('✅ [MESSAGES-VIEW] Actualizando estado por ID:', msg.id, '->', data.status);
+            updated = true;
+            return { ...msg, status: data.status };
+          }
+
+          // Fallback: coincidir por chat y timestamp reciente (últimos 60 segundos)
+          if (!updated && msg.from_me && data.chatJid === chatJid) {
+            const msgTime = new Date(msg.timestamp).getTime();
+            const updateTime = new Date(data.timestamp || Date.now()).getTime();
+            const timeDiff = Math.abs(updateTime - msgTime);
+
+            // Si el mensaje fue enviado en los últimos 60 segundos y aún está pending/sent
+            if (timeDiff < 60000 && (msg.status === 'pending' || msg.status === 'sent')) {
+              console.log('⚠️ [MESSAGES-VIEW] Actualizando estado por proximidad temporal:', msg.id, '->', data.status);
+              updated = true;
+              return { ...msg, status: data.status };
+            }
+          }
+
+          return msg;
+        });
+
+        if (!updated) {
+          console.log('⚠️ [MESSAGES-VIEW] No se encontró mensaje para actualizar con ID:', data.messageId || data.id);
         }
-        return msg;
-      }));
+
+        return newMessages;
+      });
     };
 
     // Suscribirse a los eventos
@@ -396,6 +427,21 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
                   position: 'relative'
                 }}
               >
+                {/* Nombre del remitente (solo para mensajes entrantes) */}
+                {!isFromMe && message.sender_name && (
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: '#00a884',
+                      fontWeight: 600,
+                      display: 'block',
+                      mb: 0.5
+                    }}
+                  >
+                    {message.sender_name}
+                  </Typography>
+                )}
+
                 {/* Media */}
                 {renderMedia(message)}
 
@@ -424,23 +470,29 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
                   >
                     {format(new Date(message.timestamp), 'HH:mm', { locale: es })}
                   </Typography>
-                  
+
                   {/* Estado del mensaje (solo para mensajes propios) */}
                   {isFromMe && message.status && (
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        fontSize: '0.8rem',
-                        color: message.status === 'read' ? '#4fc3f7' : 
-                               message.status === 'delivered' ? '#90a4ae' : 
-                               message.status === 'sent' ? '#90a4ae' : '#ff9800'
-                      }}
-                    >
-                      {message.status === 'pending' && '🕐'}
-                      {message.status === 'sent' && '✓'}
-                      {message.status === 'delivered' && '✓✓'}
-                      {message.status === 'read' && '✓✓'}
-                    </Typography>
+                    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                      {message.status === 'pending' && (
+                        <ScheduleIcon fontSize="small" sx={{ fontSize: 16, color: '#667781' }} />
+                      )}
+                      {message.status === 'sent' && (
+                        <CheckIcon fontSize="small" sx={{ fontSize: 16, color: '#667781' }} />
+                      )}
+                      {message.status === 'delivered' && (
+                        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                          <CheckIcon fontSize="small" sx={{ fontSize: 16, color: '#667781', mr: -0.7 }} />
+                          <CheckIcon fontSize="small" sx={{ fontSize: 16, color: '#667781' }} />
+                        </Box>
+                      )}
+                      {message.status === 'read' && (
+                        <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                          <CheckIcon fontSize="small" sx={{ fontSize: 16, color: '#53bdeb', mr: -0.7 }} />
+                          <CheckIcon fontSize="small" sx={{ fontSize: 16, color: '#53bdeb' }} />
+                        </Box>
+                      )}
+                    </Box>
                   )}
                 </Box>
               </Paper>

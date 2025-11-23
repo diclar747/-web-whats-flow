@@ -195,8 +195,9 @@ class StatusScheduler {
 
             if (status.media_url && status.media_type !== 'text') {
                 // Estado con imagen o video
-                const mediaPath = `${__dirname}/public${status.media_url}`;
+                const path = require('path');
                 const fs = require('fs');
+                const mediaPath = path.join(__dirname, '..', 'routes', 'public', status.media_url);
 
                 if (!fs.existsSync(mediaPath)) {
                     console.log(`[STATUS-SCHEDULER] ⚠️ Archivo multimedia no encontrado: ${mediaPath}`);
@@ -212,18 +213,15 @@ class StatusScheduler {
             } else {
                 // Estado solo texto
                 statusContent = {
-                    text: status.text_content || '📱 Estado de WhatsFlow',
-                    backgroundColor: status.background_color || '#075E54',
-                    font: status.font_style || 'default'
+                    text: status.text_content || '📱 Estado de WhatsFlow'
                 };
             }
 
             // Publicar estado usando la API de Baileys
-            // NOTA: La API de estados de WhatsApp puede variar según la versión de Baileys
-            // await sock.sendMessage('status@broadcast', statusContent);
+            console.log(`[STATUS-SCHEDULER] 📤 Enviando estado a WhatsApp...`);
+            await sock.sendMessage('status@broadcast', statusContent);
 
-            // Por ahora simulamos la publicación
-            console.log(`[STATUS-SCHEDULER] 📱 Estado publicado en WhatsApp:`, {
+            console.log(`[STATUS-SCHEDULER] ✅ Estado publicado exitosamente en WhatsApp:`, {
                 sessionId,
                 type: status.media_type,
                 hasMedia: !!status.media_url,
@@ -232,7 +230,7 @@ class StatusScheduler {
 
             return true;
         } catch (error) {
-            console.error(`[STATUS-SCHEDULER] Error publicando en WhatsApp:`, error);
+            console.error(`[STATUS-SCHEDULER] ❌ Error publicando en WhatsApp:`, error);
             return false;
         }
     }

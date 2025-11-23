@@ -1,25 +1,47 @@
 {
   "short_name": "WhatsFlow",
-  "name": "WhatsFlow - WhatsApp CRM",
+  "name": "WhatsFlow - WhatsApp Business Platform",
+  "description": "Plataforma completa de gestión de WhatsApp Business con publicación automática de estados",
   "icons": [
     {
-      "src": "whatsapp-icon.png",
+      "src": "favicon.ico",
       "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/png"
+      "type": "image/x-icon"
     },
     {
-      "src": "whatsapp-icon.png",
+      "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any maskable"
     },
     {
-      "src": "whatsapp-icon.png",
+      "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "whatsapp-icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "badge"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
-  "theme_color": "#25D366",
-  "background_color": "#ffffff"
+  "theme_color": "#075e54",
+  "background_color": "#ffffff",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "categories": [
+    "business",
+    "productivity",
+    "utilities"
+  ],
+  "prefer_related_applications": false,
+  "permissions": [
+    "notifications",
+    "background-sync",
+    "storage"
+  ]
 }

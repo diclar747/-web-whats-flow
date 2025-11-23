@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">WhatsFlow Auto</string>
+    <string name="accessibility_service_description">Permite a WhatsFlow publicar estados de WhatsApp automáticamente.</string>
+</resources>

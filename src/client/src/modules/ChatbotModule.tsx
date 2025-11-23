@@ -454,23 +454,22 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', borderRadius: 3, p: 3, color: 'white' }}>
+      <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderRadius: 3, p: 3 }}>
         <Box>
           <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>🤖 Chatbot Inteligente</Typography>
-          <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>Respuestas Automáticas • Flujos Personalizados • IA</Typography>
+          <Typography variant="h6" sx={{ fontWeight: 300 }}>Respuestas Automáticas • Flujos Personalizados • IA</Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <Chip 
-            icon={settings.enabled ? <CheckCircle/> : <Pause/>} 
-            label={settings.enabled ? 'Activo' : 'Pausado'} 
-            color={settings.enabled ? 'success' : 'default'} 
-            sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}
+          <Chip
+            icon={settings.enabled ? <CheckCircle/> : <Pause/>}
+            label={settings.enabled ? 'Activo' : 'Pausado'}
+            color={settings.enabled ? 'success' : 'default'}
           />
-          <Button 
-            variant="contained" 
-            startIcon={<Add/>} 
-            onClick={handleOpenCreateDialog} 
-            sx={{ bgcolor: 'rgba(255,255,255,0.2)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}
+          <Button
+            variant="contained"
+            startIcon={<Add/>}
+            onClick={handleOpenCreateDialog}
+            color="primary"
           >
             Crear Flujo
           </Button>

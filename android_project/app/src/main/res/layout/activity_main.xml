@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="WhatsFlow Automatización"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="32dp"/>
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Estado: Inactivo"
+        android:textSize="18sp"
+        android:layout_marginBottom="24dp"/>
+
+    <Button
+        android:id="@+id/btnEnableAccessibility"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Activar Servicio de Accesibilidad"
+        android:backgroundTint="#25D366"
+        android:textColor="#FFFFFF"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Es necesario activar el servicio para permitir la publicación automática de estados."
+        android:gravity="center"
+        android:layout_marginTop="16dp"
+        android:alpha="0.7"/>
+
+</LinearLayout>

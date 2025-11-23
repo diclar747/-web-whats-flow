@@ -240,6 +240,7 @@ if (!process.env.JWT_SECRET) {
     process.exit(1);
 }
 const JWT_SECRET = process.env.JWT_SECRET;
+const { generateToken } = require('./utils/tokenManager');
 
 // Almacenamiento en memoria (cuando no hay DB)
 const memoryStorage = {
@@ -2622,7 +2623,15 @@ async function performFullSync(sessionId, sock, userSessionId) {
             const allChats = sock.store?.chats || new Map();
             let chatArray = Array.from(allChats.values());
 
-            console.log(`[FULL-SYNC] - Chats en store: ${chatArray.length}`);
+            // 🚫 FILTRAR STATUS/BROADCAST ANTES DE PROCESAR
+            chatArray = chatArray.filter(chat => {
+                const chatId = chat.id || '';
+                return !chatId.includes('@broadcast') && 
+                       !chatId.includes('status@') && 
+                       !chatId.includes('@lid');
+            });
+
+            console.log(`[FULL-SYNC] - Chats en store: ${chatArray.length} (sin estados ni broadcasts)`);
 
             // Si el store está vacío, obtener de la tabla contacts existente
             if (chatArray.length === 0) {
@@ -2647,6 +2656,13 @@ async function performFullSync(sessionId, sock, userSessionId) {
             for (const chat of chatArray) {
                 try {
                     const chatId = chat.id;
+                    
+                    // 🚫 DOBLE CHECK: Ignorar status/broadcast
+                    if (chatId.includes('@broadcast') || chatId.includes('status@') || chatId.includes('@lid')) {
+                        console.log(`[FULL-SYNC] 🚫 Ignorando status/broadcast: ${chatId}`);
+                        continue;
+                    }
+                    
                     const isGroup = chatId.endsWith('@g.us');
 
                     if (!isGroup) {
@@ -2821,7 +2837,15 @@ async function performFullSync(sessionId, sock, userSessionId) {
             const contacts = sock.store?.contacts || {};
             let contactList = Object.values(contacts);
 
-            console.log(`[FULL-SYNC] - Contactos en store: ${contactList.length}`);
+            // 🚫 FILTRAR STATUS/BROADCAST DE CONTACTOS
+            contactList = contactList.filter(contact => {
+                const contactId = contact.id || '';
+                return !contactId.includes('@broadcast') && 
+                       !contactId.includes('status@') && 
+                       !contactId.includes('@lid');
+            });
+
+            console.log(`[FULL-SYNC] - Contactos en store: ${contactList.length} (sin estados ni broadcasts)`);
 
             // Si el store está vacío, obtener contactos de los participantes de grupos
             if (contactList.length === 0) {
@@ -2848,6 +2872,15 @@ async function performFullSync(sessionId, sock, userSessionId) {
 
             for (const contact of contactList) {
                 try {
+                    // 🚫 DOBLE CHECK: Ignorar status/broadcast/grupos
+                    if (!contact.id || 
+                        contact.id.includes('@g.us') || 
+                        contact.id.includes('@broadcast') || 
+                        contact.id.includes('status@') || 
+                        contact.id.includes('@lid')) {
+                        continue;
+                    }
+                    
                     if (contact.id && !contact.id.includes('@g.us')) {
                         const [existing] = await connection.query(
                             'SELECT id FROM contacts WHERE jid = ? AND session_id = ?',
@@ -4340,6 +4373,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             // ═══════════════════════════════════════════════════════════
             const phoneNumber = await getUserPhoneNumber(sessionId);
 
+            // 🚫 CAPTURA DE LIDs DE GRUPOS DESHABILITADA - No procesar grupos
+            // Los grupos están completamente bloqueados, no necesitamos capturar LIDs de grupos
+            /* BLOQUEADO - NO SINCRONIZAR GRUPOS
             for (const msg of m.messages) {
                 // Si es mensaje de grupo y el participante es LID
                 if (msg.key?.remoteJid?.includes('@g.us') && msg.key?.participant?.includes('@lid')) {
@@ -4379,6 +4415,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     }
                 }
             }
+            */
+            console.log(`[${sessionId}] 🚫 Captura de LIDs de grupos deshabilitada - Solo chats individuales`);
 
             // ═══════════════════════════════════════════════════════════
             // FILTRO DE MENSAJES NO DESEADOS
@@ -4390,7 +4428,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             const statusMessages = m.messages.filter(msg => msg.key?.remoteJid?.includes('@broadcast') || msg.key?.remoteJid?.includes('status@'));
 
             if (statusMessages.length > 0) {
-                console.log(`[${sessionId}] 🚫 IGNORANDO ${statusMessages.length} mensajes de STATUS`);
+                console.log(`[${sessionId}] 🚫 BLOQUEADO: ${statusMessages.length} ESTADOS/STATUS DE WHATSAPP - NO SE DESCARGAN NI SINCRONIZAN`);
+                statusMessages.forEach(msg => {
+                    console.log(`[${sessionId}] 🚫 Status ignorado de: ${msg.key?.remoteJid}`);
+                });
             }
 
             // Filtrar SOLO mensajes individuales (sin grupos, sin status)
@@ -4404,8 +4445,14 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 // Rechazar @lid (canales)
                 if (jid.includes('@lid')) return false;
 
+                // 🚫 RECHAZAR GRUPOS - Solo aceptar mensajes individuales
+                if (jid.includes('@g.us')) {
+                    console.log(`[${sessionId}] 🚫 IGNORANDO mensaje de grupo: ${jid}`);
+                    return false;
+                }
+
                 // Aceptar solo mensajes individuales (terminan en @s.whatsapp.net)
-                return jid.includes('@s.whatsapp.net') || jid.includes('@g.us');
+                return jid.includes('@s.whatsapp.net');
             });
 
             if (m.messages.length === 0) {
@@ -4471,8 +4518,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     console.log(`[${sessionId}] 🚫 @lid ignorado`);
                     continue;
                 }
-                // COMENTADO: Ya NO ignoramos grupos
-                // if (msg.key.remoteJid.includes('@g.us')) continue;
+                // 🚫 IGNORAR GRUPOS COMPLETAMENTE
+                if (msg.key.remoteJid.includes('@g.us')) {
+                    console.log(`[${sessionId}] 🚫 GRUPO ignorado en emisión: ${msg.key.remoteJid}`);
+                    continue;
+                }
 
                 const messageId = msg.key.id;
                 const rawSenderJid = msg.key.remoteJid;
@@ -4567,8 +4617,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             console.error(`[${sessionId}] Error guardando contacto:`, contactErr);
                         }
                     } else if (senderJid && senderJid.includes('@g.us')) {
-                        // Para grupos, solo registrar pero no guardar automáticamente
-                        console.log(`[${sessionId}] 📭 Mensaje de grupo ${senderJid.split('@')[0]} - Los grupos se sincronizan manualmente`);
+                        // 🚫 RECHAZAR GRUPOS COMPLETAMENTE - No procesar ni guardar
+                        console.log(`[${sessionId}] 🚫 IGNORANDO mensaje de grupo ${senderJid.split('@')[0]} - Grupos bloqueados`);
+                        continue; // Saltar al siguiente mensaje
                     }
 
                     // 2. Procesar y guardar mensaje en la DB
@@ -4993,9 +5044,19 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         timestamp: new Date().toISOString()
                     };
 
-                    // Emitir a la sala de la sesión
+                    // Obtener phoneNumber para emitir también a esa sala
+                    const phoneNumber = await getUserPhoneNumber(sessionId);
+
+                    // Emitir a la sala de la sesión temporal
                     io.to(`session-${sessionId}`).emit('message-status-update', statusUpdate);
-                    // También emitir globalmente para asegurar que el cliente lo reciba
+
+                    // También emitir a la sala del phoneNumber (para agentes y usuarios persistentes)
+                    if (phoneNumber) {
+                        io.to(`session-${phoneNumber}`).emit('message-status-update', statusUpdate);
+                        console.log(`[${sessionId}] ✅ Estado emitido a session-${phoneNumber}: ${messageId} -> ${newStatus}`);
+                    }
+
+                    // Emitir globalmente como fallback
                     io.emit('message-status-update', statusUpdate);
 
                     console.log(`[${sessionId}] ✅ Estado de mensaje emitido: ${messageId} -> ${newStatus}`);
@@ -5092,7 +5153,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     if (chatJid.includes('@s.whatsapp.net')) {
                         await getOrInsertContact(chatJid, chatName, chatName, phoneNumber, sock);
                     } else if (chatJid.includes('@g.us')) {
-                        await getOrInsertWhatsAppGroup(chatJid, chatName, chatName, phoneNumber, null, sock);
+                        // 🚫 GRUPOS BLOQUEADOS - No guardar grupos
+                        console.log(`[${sessionId}] 🚫 Ignorando grupo: ${chatName}`);
                     } else if (chatJid.includes('status@broadcast') || chatJid.includes('@broadcast')) {
                         await getOrInsertBroadcast(chatJid, chatName || 'Status', phoneNumber, 'status');
                     } else if (chatJid.includes('@lid')) {
@@ -5155,8 +5217,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                         await getOrInsertContact(contactJid, nameToUse, notifyToUse, phoneNumber, sock);
                     } else if (contactJid.includes('@g.us')) {
-                        // Para grupos, usar la lógica existente
-                        await getOrInsertWhatsAppGroup(contactJid, contact.name, contact.subject, phoneNumber, contact, sock);
+                        // 🚫 GRUPOS BLOQUEADOS - No guardar grupos
+                        console.log(`[${sessionId}] 🚫 Ignorando grupo en contacts.set: ${contact.name || contactJid.split('@')[0]}`);
                     } else if (contactJid.includes('status@broadcast') || contactJid.includes('@broadcast')) {
                         await getOrInsertBroadcast(contactJid, contact.name || 'Status', phoneNumber, 'status');
                     } else if (contactJid.includes('@lid')) {
@@ -6654,6 +6716,23 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
         await saveMessageToDB(actualSessionId, dbMessage);
         console.log('[AGENT-SEND] 💾 Mensaje guardado en BD');
 
+        // Si es un agente enviando, actualizar estado de 'pending' a 'active' automáticamente
+        if (agentId && pool) {
+            try {
+                const connection = await pool.getConnection();
+                await connection.execute(
+                    `UPDATE chat_assignments 
+                     SET status = 'active', accepted_at = NOW()
+                     WHERE user_id = ? AND chat_jid = ? AND session_id = ? AND status = 'pending'`,
+                    [agentId, jid, actualSessionId]
+                );
+                connection.release();
+                console.log('[AGENT-SEND] ✅ Estado actualizado de pending a active');
+            } catch (err) {
+                console.log('[AGENT-SEND] ⚠️ Error actualizando estado:', err.message);
+            }
+        }
+
         // Emitir evento Socket.IO para actualización en tiempo real a todas las salas
         io.to(`session-${actualSessionId}`).emit('message', {
             id: dbMessage.id,
@@ -7374,6 +7453,7 @@ app.post('/api/send/document', async (req, res) => {
 // Middleware para servir archivos estáticos
 app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 app.use('/media', express.static(path.join(__dirname, '../../media')));
+app.use('/status-media', express.static(path.join(__dirname, 'public/status-media')));
 
 // Servir archivos estáticos del frontend React con headers no-cache
 app.use(express.static(path.join(__dirname, 'public'), {
@@ -7567,7 +7647,8 @@ app.post('/api/force-sync/:sessionId', async (req, res) => {
 // Obtener chats/contactos
 app.get('/api/chats/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
-    const { includeGroups } = req.query; // Parámetro opcional para incluir grupos
+    // 🚫 GRUPOS BLOQUEADOS - Siempre false, no permitir incluir grupos
+    const includeGroups = false; // Forzado a false - No sincronizar grupos
     const phoneNumber = await getUserPhoneNumber(sessionId);
     const session = sessions.get(sessionId) || (phoneNumber ? sessions.get(phoneNumber) : undefined);
 
@@ -7575,9 +7656,9 @@ app.get('/api/chats/:sessionId', async (req, res) => {
     const isConnected = !!(session && session.isConnected);
 
     try {
-        console.log(`[API][${sessionId}] Solicitud para cargar lista de chats. includeGroups: ${includeGroups}`);
-        const chats = await loadChatListFromDB(sessionId, includeGroups === 'true');
-        console.log(`[API][${sessionId}] Devolviendo ${chats.length} chats. Conectado: ${isConnected}`);
+        console.log(`[API][${sessionId}] Solicitud para cargar lista de chats. includeGroups: ${includeGroups} (FORZADO - grupos bloqueados)`);
+        const chats = await loadChatListFromDB(sessionId, includeGroups);
+        console.log(`[API][${sessionId}] Devolviendo ${chats.length} chats individuales. Conectado: ${isConnected}`);
         res.json({
             success: true,
             sessionId,
@@ -8922,8 +9003,12 @@ app.delete('/api/segments/:segmentId', async (req, res) => {
 });
 
 // ============================================================================
-// SISTEMA MODERNO DE ESTADOS DE WHATSAPP
+// SISTEMA MODERNO DE ESTADOS DE WHATSAPP - OBSOLETO (usar /routes/statuses.js)
 // ============================================================================
+/*
+// NOTA: Estos endpoints están DESACTIVADOS porque usan un esquema de tabla obsoleto
+// El sistema correcto está en /routes/statuses.js y se carga en la línea 17371
+// NO descomentar este bloque - causará errores de SQL
 
 // GET: Obtener todos los estados pendientes y programados
 app.get('/api/statuses/:sessionId', async (req, res) => {
@@ -9288,6 +9373,13 @@ app.post('/api/publish-statuses', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+*/
+// FIN DEL BLOQUE OBSOLETO DE ESTADOS - El sistema correcto está en /routes/statuses.js
+
+// ============================================================================
+// SINCRONIZACIÓN FORZADA
+// ============================================================================
 
 // Endpoint POST para sincronización forzada desde SettingsModule
 app.post('/api/sync/force/:sessionId', async (req, res) => {
@@ -14069,7 +14161,7 @@ app.get('/api/agent/:userId/chats', async (req, res) => {
                 }
             }
 
-            // Obtener chats asignados activos para este agente
+            // Obtener chats asignados para este agente (activos y cerrados)
             // Incluye tanto contacts como contact_groups
             const [assignments] = await connection.execute(`
                 SELECT 
@@ -14077,6 +14169,7 @@ app.get('/api/agent/:userId/chats', async (req, res) => {
                     ca.session_id,
                     ca.status,
                     ca.assigned_at,
+                    ca.closed_at,
                     ca.notes,
                     COALESCE(
                         CASE WHEN ca.chat_jid LIKE '%@g.us' THEN cg.name ELSE c.name END,
@@ -14102,9 +14195,16 @@ app.get('/api/agent/:userId/chats', async (req, res) => {
                 LEFT JOIN contacts c ON ca.chat_jid = c.jid
                 LEFT JOIN contact_groups cg ON ca.chat_jid = cg.jid AND cg.session_id = ca.session_id
                 WHERE ca.user_id = ? 
-                AND ca.status = 'active'
+                AND ca.status IN ('active', 'closed', 'pending')
                 ${sessionId ? 'AND ca.session_id = ?' : ''}
-                ORDER BY ca.assigned_at DESC
+                ORDER BY 
+                    CASE 
+                        WHEN ca.status = 'pending' THEN 1
+                        WHEN ca.status = 'active' THEN 2
+                        WHEN ca.status = 'closed' THEN 3
+                        ELSE 4
+                    END,
+                    ca.assigned_at DESC
             `, sessionId ?
                 [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, userId, sessionId] :
                 [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, userId]);
@@ -14858,9 +14958,10 @@ app.post('/api/chats/transfer', async (req, res) => {
             }
 
             // Crear nueva asignación para el agente destino usando el sessionId del admin
+            // Status 'pending' para que aparezca como nueva asignación (verde) en el dashboard del agente
             await connection.execute(
                 `INSERT INTO chat_assignments (chat_jid, session_id, user_id, assigned_by, status, notes)
-                 VALUES (?, ?, ?, ?, 'active', ?)`,
+                 VALUES (?, ?, ?, ?, 'pending', ?)`,
                 [
                     chatJid,
                     sessionId,  // ← Usar el sessionId del admin/sistema activo
@@ -14967,6 +15068,76 @@ app.post('/api/chats/transfer', async (req, res) => {
         }
     } catch (error) {
         console.error('[TRANSFER] Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Cerrar conversación de un agente
+app.post('/api/agent/close-conversation', async (req, res) => {
+    const { agentId, chatJid, sessionId } = req.body;
+
+    if (!agentId || !chatJid || !sessionId) {
+        return res.status(400).json({
+            success: false,
+            error: 'Faltan parámetros requeridos: agentId, chatJid, sessionId'
+        });
+    }
+
+    if (!pool) {
+        return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible' });
+    }
+
+    try {
+        const connection = await pool.getConnection();
+        try {
+            // Actualizar el estado en chat_assignments
+            const [result] = await connection.execute(
+                `UPDATE chat_assignments 
+                 SET status = 'closed', closed_at = NOW()
+                 WHERE user_id = ? AND chat_jid = ? AND session_id = ? AND status = 'active'`,
+                [agentId, chatJid, sessionId]
+            );
+
+            if (result.affectedRows === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Conversación no encontrada o ya cerrada'
+                });
+            }
+
+            // También actualizar en agent_chat_history si existe
+            await connection.execute(
+                `UPDATE agent_chat_history 
+                 SET status = 'closed', closed_at = NOW()
+                 WHERE agent_id = ? AND chat_jid = ? AND session_id = ? AND status = 'active'`,
+                [agentId, chatJid, sessionId]
+            );
+
+            // Emitir evento Socket.IO para notificar al agente y admin
+            io.emit(`agent-${agentId}-conversation-closed`, {
+                chatJid,
+                sessionId,
+                closedAt: new Date().toISOString()
+            });
+
+            io.emit('conversation-status-changed', {
+                agentId,
+                chatJid,
+                sessionId,
+                status: 'closed'
+            });
+
+            console.log(`[AGENT] ✅ Conversación cerrada: agente ${agentId}, chat ${chatJid}`);
+
+            res.json({
+                success: true,
+                message: 'Conversación cerrada exitosamente'
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[AGENT] Error cerrando conversación:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -17368,10 +17539,17 @@ app.use('/api/rest', apiRestRouter);
 // ============= FIN ENDPOINTS DE API REST =============
 
 // ============= ENDPOINTS DE ESTADOS DE WHATSAPP =============
+// Registrar sessions en app para que las rutas de estados puedan acceder
+app.set('sessions', sessions);
 const statusesRouter = require('./routes/statuses')(app, io);
 app.use('/api/statuses', statusesRouter);
 console.log('✅ Sistema de Estados de WhatsApp cargado correctamente');
-// ============= FIN ENDPOINTS DE ESTADOS DE WHATSAPP =============
+
+// ============= ENDPOINTS DE PWA (Progressive Web App) =============
+const pwaRouter = require('./routes/pwa')(app, io);
+app.use('/api/pwa', pwaRouter);
+console.log('✅ Sistema PWA de publicación de estados cargado correctamente');
+// ============= FIN ENDPOINTS DE PWA =============
 
 
 // Endpoint para obtener/actualizar la configuración de sincronización
@@ -17773,14 +17951,20 @@ server.listen(PORT, '0.0.0.0', async () => {
     await initializeDatabase();
 
     // Inicializar Scheduler de Estados de WhatsApp
-    console.log(`\n📱 Inicializando Scheduler de Estados de WhatsApp...`);
+    console.log(`\n📱 [DEBUG] Inicializando Scheduler de Estados de WhatsApp...`);
+    console.log(`\n📱 [DEBUG] Pool disponible:`, !!pool);
+    console.log(`\n📱 [DEBUG] Sessions disponible:`, !!sessions);
+    console.log(`\n📱 [DEBUG] IO disponible:`, !!io);
     try {
         const StatusScheduler = require('./services/statusScheduler');
+        console.log(`\n📱 [DEBUG] StatusScheduler requerido correctamente`);
         const statusScheduler = new StatusScheduler(pool, sessions, io);
+        console.log(`\n📱 [DEBUG] StatusScheduler instanciado`);
         statusScheduler.start();
-        console.log(`✅ Scheduler de Estados iniciado correctamente`);
+        console.log(`✅ [DEBUG] Scheduler de Estados iniciado correctamente`);
     } catch (error) {
-        console.error(`❌ Error al iniciar Scheduler de Estados:`, error);
+        console.error(`❌ [DEBUG] Error al iniciar Scheduler de Estados:`, error);
+        console.error(`❌ [DEBUG] Stack:`, error.stack);
     }
 
 

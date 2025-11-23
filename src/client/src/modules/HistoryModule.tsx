@@ -1592,7 +1592,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         <Paper sx={{ mb: 3 }}>
           <Tabs value={selectedTab} onChange={(_, newValue) => setSelectedTab(newValue)}>
             <Tab label={`💬 Chat (${getChatOnlyMessages().length})`} />
-            <Tab label={`📊 Estados WhatsApp`} />
+            {/* Estados WhatsApp tab removido - funcionalidad no soportada */}
             <Tab label={`📎 Multimedia (${getMediaMessages('image').length + getMediaMessages('video').length + getMediaMessages('audio').length + getMediaMessages('document').length})`} />
             <Tab label={`👥 Grupos (${getGroupMessages().length})`} />
             <Tab label={`📢 Campañas`} />

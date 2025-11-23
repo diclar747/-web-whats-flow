@@ -61,7 +61,9 @@ import {
   Refresh as RefreshIcon,
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
-  WhatsApp as WhatsAppIcon
+  WhatsApp as WhatsAppIcon,
+  FiberManualRecord as StatusIcon,
+  Block as BlockIcon
 } from '@mui/icons-material';
 import { format, formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -82,6 +84,8 @@ interface AgentChat {
   phoneNumber?: string;
   isOnline?: boolean;
   isTyping?: boolean;
+  status?: 'active' | 'closed' | 'transferred' | 'new_assignment';
+  closedAt?: string;
 }
 
 interface Message {
@@ -159,6 +163,9 @@ const AgentDashboardPro: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // API URL
+  const apiUrl = process.env.REACT_APP_API_URL || window.location.origin;
 
   // ==================== TEMA Y COLORES ====================
 
@@ -392,18 +399,35 @@ const AgentDashboardPro: React.FC = () => {
       if (data.success) {
         const mappedChats = (data.chats || [])
           .filter((chat: any) => chat.chatJid)
-          .map((chat: any) => ({
-            id: chat.chatJid,
-            name: chat.name || chat.chatJid?.replace('@s.whatsapp.net', '') || 'Sin nombre',
-            avatar: chat.avatar || '',
-            lastMessage: chat.lastMessage || 'Sin mensajes',
-            timestamp: chat.lastMessageTimestamp || chat.assignedAt,
-            unreadCount: chat.unreadCount || 0,
-            assignedAt: chat.assignedAt,
-            phoneNumber: chat.chatJid?.replace('@s.whatsapp.net', '') || '',
-            isOnline: false,
-            isTyping: false
-          }));
+          .map((chat: any) => {
+            let status: 'active' | 'closed' | 'transferred' | 'new_assignment' = 'active';
+            
+            // Mapear estado de DB a estado del frontend
+            if (chat.status === 'pending') {
+              status = 'new_assignment';
+            } else if (chat.status === 'closed') {
+              status = 'closed';
+            } else if (chat.status === 'transferred') {
+              status = 'transferred';
+            } else {
+              status = 'active';
+            }
+
+            return {
+              id: chat.chatJid,
+              name: chat.name || chat.chatJid?.replace('@s.whatsapp.net', '') || 'Sin nombre',
+              avatar: chat.avatar || '',
+              lastMessage: chat.lastMessage || 'Sin mensajes',
+              timestamp: chat.lastMessageTimestamp || chat.assignedAt,
+              unreadCount: chat.unreadCount || 0,
+              assignedAt: chat.assignedAt,
+              phoneNumber: chat.chatJid?.replace('@s.whatsapp.net', '') || '',
+              isOnline: false,
+              isTyping: false,
+              status,
+              closedAt: chat.closedAt
+            };
+          });
 
         console.log('[AGENT-PRO] Chats mapeados:', mappedChats.length);
         setChats(mappedChats);
@@ -477,6 +501,18 @@ const AgentDashboardPro: React.FC = () => {
       showDesktopNotification('✨ Nuevo chat asignado', `Chat con ${data.chatName || 'un contacto'}`);
       showSnackbar(`✨ Nuevo chat asignado: ${data.chatName || 'contacto'}`, 'success');
       setNotifications(prev => [...prev, { type: 'new_chat', data, timestamp: new Date() }]);
+      
+      // Actualizar el chat con estado de nueva asignación
+      setChats(prevChats => {
+        const existingChat = prevChats.find(c => c.id === data.chatJid);
+        if (existingChat) {
+          return prevChats.map(c =>
+            c.id === data.chatJid ? { ...c, status: 'new_assignment' as const } : c
+          );
+        }
+        return prevChats;
+      });
+      
       // Recargar chats inmediatamente
       setTimeout(() => loadAgentChats(), 500);
     };
@@ -883,6 +919,49 @@ const AgentDashboardPro: React.FC = () => {
     }
   };
 
+  const handleCloseConversation = async () => {
+    if (!selectedChat || !agentId || !sessionId) return;
+
+    try {
+      const token = sessionStorage.getItem('token');
+      const response = await fetch('/api/agent/close-conversation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          agentId,
+          chatJid: selectedChat.id,
+          sessionId
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        showSnackbar('Conversación cerrada', 'success');
+        
+        // Actualizar estado del chat
+        setChats(prevChats =>
+          prevChats.map(chat =>
+            chat.id === selectedChat.id
+              ? { ...chat, status: 'closed' as const, closedAt: new Date().toISOString() }
+              : chat
+          )
+        );
+        
+        // Actualizar chat seleccionado
+        setSelectedChat(prev => prev ? { ...prev, status: 'closed' as const } : null);
+        handleMenuClose();
+      } else {
+        showSnackbar(data.error || 'Error al cerrar conversación', 'error');
+      }
+    } catch (error) {
+      console.error('Error cerrando conversación:', error);
+      showSnackbar('Error al cerrar conversación', 'error');
+    }
+  };
+
   // ==================== FUNCIONES DE FORMATO ====================
 
   const formatTime = (timestamp: string) => {
@@ -915,6 +994,36 @@ const AgentDashboardPro: React.FC = () => {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  const getConversationStatusColor = (status?: string) => {
+    switch (status) {
+      case 'active':
+        return '#FFC107'; // Amarillo - conversación activa
+      case 'closed':
+        return '#F44336'; // Rojo - conversación cerrada
+      case 'new_assignment':
+        return '#4CAF50'; // Verde - nueva asignación/transferencia
+      case 'transferred':
+        return '#2196F3'; // Azul - transferida
+      default:
+        return '#FFC107'; // Amarillo por defecto
+    }
+  };
+
+  const getConversationStatusTooltip = (status?: string) => {
+    switch (status) {
+      case 'active':
+        return 'Conversación activa';
+      case 'closed':
+        return 'Conversación cerrada';
+      case 'new_assignment':
+        return 'Nueva asignación';
+      case 'transferred':
+        return 'Conversación transferida';
+      default:
+        return 'Estado desconocido';
+    }
   };
 
   const getMessageStatusIcon = (status: string) => {
@@ -1008,70 +1117,97 @@ const AgentDashboardPro: React.FC = () => {
             )}
 
             {/* Contenido de media */}
-            {isMedia && msg.media_url && (
-              <Box sx={{ mb: 1 }}>
-                {msg.message_type === 'image' && (
-                  <CardMedia
-                    component="img"
-                    image={msg.media_url}
-                    alt="Imagen"
-                    sx={{
-                      maxWidth: '100%',
-                      maxHeight: '300px',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      objectFit: 'contain'
-                    }}
-                    onClick={() => window.open(msg.media_url, '_blank')}
-                  />
-                )}
+            {isMedia && msg.media_url && (() => {
+              const mediaUrl = msg.media_url.startsWith('http')
+                ? msg.media_url
+                : `${apiUrl}${msg.media_url}`;
 
-                {msg.message_type === 'document' && (
-                  <Card sx={{ display: 'flex', alignItems: 'center', p: 1, bgcolor: darkMode ? currentTheme.bg.primary : '#f0f2f5' }}>
-                    <DocumentIcon sx={{ fontSize: 40, color: '#667781', mr: 1 }} />
-                    <Box sx={{ flexGrow: 1 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {msg.file_name || 'Documento'}
-                      </Typography>
-                      {msg.file_size && (
-                        <Typography variant="caption" color="text.secondary">
-                          {formatFileSize(msg.file_size)}
-                        </Typography>
-                      )}
-                    </Box>
-                    <IconButton
-                      size="small"
-                      href={msg.media_url}
-                      download
-                      target="_blank"
-                    >
-                      <DownloadIcon />
-                    </IconButton>
-                  </Card>
-                )}
-
-                {msg.message_type === 'video' && (
-                  <Box sx={{ position: 'relative' }}>
-                    <video
-                      src={msg.media_url}
-                      controls
-                      style={{
+              return (
+                <Box sx={{ mb: 1 }}>
+                  {msg.message_type === 'image' && (
+                    <CardMedia
+                      component="img"
+                      image={mediaUrl}
+                      alt="Imagen"
+                      sx={{
                         maxWidth: '100%',
                         maxHeight: '300px',
-                        borderRadius: '4px'
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        objectFit: 'contain'
+                      }}
+                      onClick={() => window.open(mediaUrl, '_blank')}
+                      onError={(e: any) => {
+                        console.error('Error cargando imagen:', mediaUrl);
+                        e.currentTarget.style.display = 'none';
                       }}
                     />
-                  </Box>
-                )}
+                  )}
 
-                {(msg.message_type === 'audio' || msg.message_type === 'ptt') && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <AudioIcon sx={{ color: '#667781' }} />
-                    <audio src={msg.media_url} controls style={{ width: '100%' }} />
-                  </Box>
-                )}
-              </Box>
-            )}
+                  {msg.message_type === 'document' && (
+                    <Card sx={{ display: 'flex', alignItems: 'center', p: 1, bgcolor: darkMode ? currentTheme.bg.primary : '#f0f2f5', cursor: 'pointer' }} onClick={() => window.open(mediaUrl, '_blank')}>
+                      <DocumentIcon sx={{ fontSize: 40, color: '#00a884', mr: 1 }} />
+                      <Box sx={{ flexGrow: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {msg.file_name || 'Documento'}
+                        </Typography>
+                        {msg.file_size && (
+                          <Typography variant="caption" color="text.secondary">
+                            {formatFileSize(msg.file_size)}
+                          </Typography>
+                        )}
+                      </Box>
+                      <IconButton
+                        size="small"
+                        component="a"
+                        href={mediaUrl}
+                        download
+                        target="_blank"
+                        sx={{ color: '#00a884' }}
+                      >
+                        <DownloadIcon />
+                      </IconButton>
+                    </Card>
+                  )}
+
+                  {msg.message_type === 'video' && (
+                    <Box sx={{ position: 'relative' }}>
+                      <video
+                        src={mediaUrl}
+                        controls
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '300px',
+                          borderRadius: '4px',
+                          backgroundColor: '#000'
+                        }}
+                        onError={(e) => {
+                          console.error('Error cargando video:', mediaUrl);
+                        }}
+                      >
+                        Tu navegador no soporta la reproducción de video.
+                      </video>
+                    </Box>
+                  )}
+
+                  {(msg.message_type === 'audio' || msg.message_type === 'ptt') && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 250 }}>
+                      <AudioIcon sx={{ color: '#00a884' }} />
+                      <audio
+                        src={mediaUrl}
+                        controls
+                        style={{ width: '100%', height: '32px' }}
+                        onError={(e) => {
+                          console.error('Error cargando audio:', mediaUrl);
+                        }}
+                      >
+                        Tu navegador no soporta la reproducción de audio.
+                      </audio>
+                    </Box>
+                  )}
+                </Box>
+              );
+            })()}
 
             {/* Texto o caption */}
             {(msg.text_content || msg.caption) && (
@@ -1378,37 +1514,68 @@ const AgentDashboardPro: React.FC = () => {
                 >
                   {chatListMinimized ? (
                     // Vista minimizada: solo avatar con badge
-                    <Tooltip title={`${chat.name}${chat.unreadCount > 0 ? ` (${chat.unreadCount})` : ''}`} placement="right">
-                      <Badge
-                        badgeContent={chat.unreadCount}
-                        color="error"
-                        overlap="circular"
-                      >
-                        <Avatar
-                          src={chat.avatar}
-                          alt={chat.name}
-                          sx={{ 
-                            width: 48, 
-                            height: 48,
-                            border: `3px solid ${getAvatarColor(chat.name || chat.phoneNumber || 'unknown')}`,
-                            boxShadow: `0 0 0 2px ${currentTheme.bg.secondary}`
-                          }}
+                    <Tooltip title={`${chat.name}${chat.unreadCount > 0 ? ` (${chat.unreadCount})` : ''}\n${getConversationStatusTooltip(chat.status)}`} placement="right">
+                      <Box position="relative">
+                        <Badge
+                          badgeContent={chat.unreadCount}
+                          color="error"
+                          overlap="circular"
                         >
-                          {chat.name?.[0]?.toUpperCase() || '?'}
-                        </Avatar>
-                      </Badge>
+                          <Avatar
+                            src={chat.avatar}
+                            alt={chat.name}
+                            sx={{ 
+                              width: 48, 
+                              height: 48,
+                              border: `3px solid ${getAvatarColor(chat.name || chat.phoneNumber || 'unknown')}`,
+                              boxShadow: `0 0 0 2px ${currentTheme.bg.secondary}`
+                            }}
+                          >
+                            {chat.name?.[0]?.toUpperCase() || '?'}
+                          </Avatar>
+                        </Badge>
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            bottom: 0,
+                            right: 0,
+                            width: 14,
+                            height: 14,
+                            borderRadius: '50%',
+                            backgroundColor: getConversationStatusColor(chat.status),
+                            border: `2px solid ${currentTheme.bg.secondary}`,
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                            zIndex: 1
+                          }}
+                        />
+                      </Box>
                     </Tooltip>
                   ) : (
                     // Vista expandida: avatar + info
                     <>
                       <ListItemAvatar>
-                        {chat.unreadCount > 0 ? (
-                          <Badge
-                            badgeContent={chat.unreadCount}
-                            color="error"
-                            overlap="circular"
-                            anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-                          >
+                        <Box position="relative">
+                          {chat.unreadCount > 0 ? (
+                            <Badge
+                              badgeContent={chat.unreadCount}
+                              color="error"
+                              overlap="circular"
+                              anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+                            >
+                              <Avatar
+                                src={chat.avatar}
+                                alt={chat.name}
+                                sx={{ 
+                                  width: 50, 
+                                  height: 50,
+                                  border: `3px solid ${getAvatarColor(chat.name || chat.phoneNumber || 'unknown')}`,
+                                  boxShadow: `0 0 0 2px ${currentTheme.bg.secondary}`
+                                }}
+                              >
+                                {chat.name?.[0]?.toUpperCase() || '?'}
+                              </Avatar>
+                            </Badge>
+                          ) : (
                             <Avatar
                               src={chat.avatar}
                               alt={chat.name}
@@ -1421,21 +1588,24 @@ const AgentDashboardPro: React.FC = () => {
                             >
                               {chat.name?.[0]?.toUpperCase() || '?'}
                             </Avatar>
-                          </Badge>
-                        ) : (
-                          <Avatar
-                            src={chat.avatar}
-                            alt={chat.name}
-                            sx={{ 
-                              width: 50, 
-                              height: 50,
-                              border: `3px solid ${getAvatarColor(chat.name || chat.phoneNumber || 'unknown')}`,
-                              boxShadow: `0 0 0 2px ${currentTheme.bg.secondary}`
-                            }}
-                          >
-                            {chat.name?.[0]?.toUpperCase() || '?'}
-                          </Avatar>
-                        )}
+                          )}
+                          <Tooltip title={getConversationStatusTooltip(chat.status)} arrow>
+                            <Box
+                              sx={{
+                                position: 'absolute',
+                                bottom: 0,
+                                right: 0,
+                                width: 16,
+                                height: 16,
+                                borderRadius: '50%',
+                                backgroundColor: getConversationStatusColor(chat.status),
+                                border: `2px solid ${currentTheme.bg.secondary}`,
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                                zIndex: 1
+                              }}
+                            />
+                          </Tooltip>
+                        </Box>
                       </ListItemAvatar>
                       <ListItemText
                     primary={
@@ -1517,13 +1687,13 @@ const AgentDashboardPro: React.FC = () => {
               {/* Botones de acción */}
               <Tooltip title="Información del contacto">
                 <IconButton onClick={() => setShowChatInfo(!showChatInfo)}>
-                  <InfoIcon />
+                  <InfoIcon sx={{ color: currentTheme.text.primary }} />
                 </IconButton>
               </Tooltip>
 
               <Tooltip title="Más opciones">
                 <IconButton onClick={handleMenuOpen}>
-                  <MoreIcon />
+                  <MoreIcon sx={{ color: currentTheme.text.primary }} />
                 </IconButton>
               </Tooltip>
             </Paper>
@@ -1536,6 +1706,13 @@ const AgentDashboardPro: React.FC = () => {
             >
               <MenuItem onClick={() => { loadMessages(); handleMenuClose(); }}>
                 <RefreshIcon sx={{ mr: 1 }} /> Recargar mensajes
+              </MenuItem>
+              <MenuItem 
+                onClick={handleCloseConversation}
+                disabled={selectedChat?.status === 'closed'}
+              >
+                <BlockIcon sx={{ mr: 1 }} /> 
+                {selectedChat?.status === 'closed' ? 'Conversación cerrada' : 'Cerrar conversación'}
               </MenuItem>
               <MenuItem onClick={() => { handleMenuClose(); }}>
                 <ArchiveIcon sx={{ mr: 1 }} /> Archivar chat
@@ -1618,24 +1795,30 @@ const AgentDashboardPro: React.FC = () => {
                 onChange={handleFileUpload}
               />
 
-              <Tooltip title="Emojis">
-                <IconButton
-                  size="small"
-                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  sx={{ color: currentTheme.text.secondary }}
-                >
-                  <EmojiIcon />
-                </IconButton>
+              <Tooltip title={selectedChat?.status === 'closed' ? 'Conversación cerrada' : 'Emojis'}>
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    sx={{ color: currentTheme.text.secondary }}
+                    disabled={selectedChat?.status === 'closed'}
+                  >
+                    <EmojiIcon />
+                  </IconButton>
+                </span>
               </Tooltip>
 
-              <Tooltip title="Adjuntar archivo">
-                <IconButton
-                  size="small"
-                  onClick={() => fileInputRef.current?.click()}
-                  sx={{ color: currentTheme.text.secondary }}
-                >
-                  <AttachFileIcon />
-                </IconButton>
+              <Tooltip title={selectedChat?.status === 'closed' ? 'Conversación cerrada' : 'Adjuntar archivo'}>
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={() => fileInputRef.current?.click()}
+                    sx={{ color: currentTheme.text.secondary }}
+                    disabled={selectedChat?.status === 'closed'}
+                  >
+                    <AttachFileIcon />
+                  </IconButton>
+                </span>
               </Tooltip>
 
               <TextField
@@ -1644,10 +1827,11 @@ const AgentDashboardPro: React.FC = () => {
                 maxRows={4}
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
-                placeholder="Escribe un mensaje..."
+                placeholder={selectedChat?.status === 'closed' ? 'Conversación cerrada' : 'Escribe un mensaje...'}
                 size="small"
+                disabled={selectedChat?.status === 'closed'}
                 onKeyPress={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.key === 'Enter' && !e.shiftKey && selectedChat?.status !== 'closed') {
                     e.preventDefault();
                     handleSendMessage();
                   }
@@ -1665,16 +1849,20 @@ const AgentDashboardPro: React.FC = () => {
                 }}
               />
 
-              <Tooltip title={messageText.trim() ? 'Enviar mensaje' : 'Escribe un mensaje primero'}>
+              <Tooltip title={
+                selectedChat?.status === 'closed' 
+                  ? 'Conversación cerrada. Solicita al admin que la transfiera de nuevo.' 
+                  : messageText.trim() ? 'Enviar mensaje' : 'Escribe un mensaje primero'
+              }>
                 <span>
                   <IconButton
                     onClick={handleSendMessage}
-                    disabled={sending || !messageText.trim()}
+                    disabled={sending || !messageText.trim() || selectedChat?.status === 'closed'}
                     sx={{
-                      bgcolor: messageText.trim() && !sending ? '#00a884' : '#e9edef',
-                      color: messageText.trim() && !sending ? 'white' : '#667781',
+                      bgcolor: messageText.trim() && !sending && selectedChat?.status !== 'closed' ? '#00a884' : '#e9edef',
+                      color: messageText.trim() && !sending && selectedChat?.status !== 'closed' ? 'white' : '#667781',
                       '&:hover': {
-                        bgcolor: messageText.trim() && !sending ? '#008c6d' : '#e9edef'
+                        bgcolor: messageText.trim() && !sending && selectedChat?.status !== 'closed' ? '#008c6d' : '#e9edef'
                       },
                       '&:disabled': { bgcolor: '#e9edef', color: '#667781' },
                       width: 48,

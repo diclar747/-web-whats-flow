@@ -1,6 +1,4 @@
-// API service configuration
-// This file centralizes all API endpoint configurations
-// Using relative URLs to work with both HTTP and HTTPS
+import { sessionFetch } from '../utils/sessionFetch';
 
 const API_BASE_URL = '';
 
@@ -38,7 +36,7 @@ export const API = {
   reactMessage: `${API_BASE_URL}/api/message/react`,
   deleteMessage: `${API_BASE_URL}/api/message/delete`,
   forwardMessage: `${API_BASE_URL}/api/message/forward`,
-  getReactions: (messageId: string, sessionId: string) => 
+  getReactions: (messageId: string, sessionId: string) =>
     `${API_BASE_URL}/api/messages/${messageId}/reactions/details?sessionId=${sessionId}`,
 
   // Chats
@@ -53,15 +51,15 @@ export const API = {
   syncContacts: `${API_BASE_URL}/api/sync/contacts`,
   syncGroups: `${API_BASE_URL}/api/sync/groups`,
   syncGroupMembers: `${API_BASE_URL}/api/sync/group-members`,
-  groupParticipants: (sessionId: string, groupId: string) => 
+  groupParticipants: (sessionId: string, groupId: string) =>
     `${API_BASE_URL}/api/group/participants/${sessionId}/${groupId}`,
-  groupContacts: (sessionId: string, groupId: string) => 
+  groupContacts: (sessionId: string, groupId: string) =>
     `${API_BASE_URL}/api/group/contacts/${sessionId}/${groupId}`,
-  campaignGroupContacts: (sessionId: string) => 
+  campaignGroupContacts: (sessionId: string) =>
     `${API_BASE_URL}/api/campaigns/group-contacts/${sessionId}`,
 
   // Avatars
-  avatar: (sessionId: string, jid: string) => 
+  avatar: (sessionId: string, jid: string) =>
     `${API_BASE_URL}/api/avatar/${sessionId}/${jid}`,
 
   // Campaigns
@@ -78,7 +76,7 @@ export const API = {
   moveKanbanContact: `${API_BASE_URL}/api/kanban/contacts/move`,
   moveContactToBoard: `${API_BASE_URL}/api/kanban/move-contact`,
   moveContactsBulk: `${API_BASE_URL}/api/kanban/move-contacts-bulk`,
-  deleteKanbanContact: (boardId: string, contactJid: string) => 
+  deleteKanbanContact: (boardId: string, contactJid: string) =>
     `${API_BASE_URL}/api/kanban/contacts/${boardId}/${contactJid}`,
   deleteKanbanBoard: (boardId: string) => `${API_BASE_URL}/api/kanban/boards/${boardId}`,
 
@@ -104,9 +102,9 @@ export const API = {
   chatAssignments: (sessionId: string) => `${API_BASE_URL}/api/chat-assignments/${sessionId}`,
 
   // Analytics
-  analyticsMessages: (sessionId: string) => 
+  analyticsMessages: (sessionId: string) =>
     `${API_BASE_URL}/api/analytics/messages/${sessionId}`,
-  analyticsCampaigns: (sessionId: string) => 
+  analyticsCampaigns: (sessionId: string) =>
     `${API_BASE_URL}/api/analytics/campaigns/${sessionId}`,
 
   // Appointments / Calendar
@@ -124,7 +122,7 @@ export const whatsappAPI = {
   // Function to get QR status
   getQRStatus: async (sessionId: string) => {
     try {
-      const response = await fetch(`${API.qrStatus}?sessionId=${sessionId}`);
+      const response = await sessionFetch(`${API.qrStatus}?sessionId=${sessionId}`);
       return await response.json();
     } catch (error) {
       console.error('Error getting QR status:', error);
@@ -135,7 +133,7 @@ export const whatsappAPI = {
   // Function to create a WhatsApp session
   createSession: async (sessionId: string) => {
     try {
-      const response = await fetch(API.createSession, {
+      const response = await sessionFetch(API.createSession, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -152,7 +150,7 @@ export const whatsappAPI = {
   // Function to get session status
   getSessionStatus: async (sessionId: string) => {
     try {
-      const response = await fetch(API.sessionStatus(sessionId));
+      const response = await sessionFetch(API.sessionStatus(sessionId));
       return await response.json();
     } catch (error) {
       console.error('Error getting session status:', error);
@@ -163,7 +161,7 @@ export const whatsappAPI = {
   // Function to send a message
   sendMessage: async (sessionId: string, number: string, message: string) => {
     try {
-      const response = await fetch(API.sendMessage, {
+      const response = await sessionFetch(API.sendMessage, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -180,7 +178,7 @@ export const whatsappAPI = {
   // Function to send an image
   sendImage: async (sessionId: string, number: string, url: string, caption?: string) => {
     try {
-      const response = await fetch(API.sendImage, {
+      const response = await sessionFetch(API.sendImage, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -201,7 +199,7 @@ export const whatsappAPI = {
       if (number) {
         url += `?number=${encodeURIComponent(number)}`;
       }
-      const response = await fetch(url);
+      const response = await sessionFetch(url);
       return await response.json();
     } catch (error) {
       console.error('Error getting messages:', error);
@@ -212,7 +210,7 @@ export const whatsappAPI = {
   // Function to get chats
   getChats: async (sessionId: string) => {
     try {
-      const response = await fetch(API.chats(sessionId));
+      const response = await sessionFetch(API.chats(sessionId));
       return await response.json();
     } catch (error) {
       console.error('Error getting chats:', error);
@@ -223,7 +221,7 @@ export const whatsappAPI = {
   // Function to get contacts
   getContacts: async (sessionId: string) => {
     try {
-      const response = await fetch(API.contacts(sessionId));
+      const response = await sessionFetch(API.contacts(sessionId));
       return await response.json();
     } catch (error) {
       console.error('Error getting contacts:', error);
@@ -234,7 +232,7 @@ export const whatsappAPI = {
   // Function to get groups
   getGroups: async (sessionId: string) => {
     try {
-      const response = await fetch(API.groups(sessionId));
+      const response = await sessionFetch(API.groups(sessionId));
       return await response.json();
     } catch (error) {
       console.error('Error getting groups:', error);
@@ -262,11 +260,11 @@ export const initializeSocket = (sessionId?: string) => {
   const options: any = {
     transports: ['websocket', 'polling'], // Specify transport methods
   };
-  
+
   if (sessionId) {
     options.query = { sessionId };
   }
-  
+
   return io(socketUrl, options);
 };
 
@@ -372,7 +370,7 @@ export const socketEvents = {
       console.warn('socketEvents.onWhatsAppDisconnected: expected (socket, callback) or (socket, sessionId, callback)');
     }
   },
-  
+
   // Additional method needed based on error
   onChatsUpdate: (socket: any, sessionIdOrCallback: any, callback?: () => void) => {
     if (socket && callback) {
@@ -387,7 +385,7 @@ export const socketEvents = {
       console.warn('socketEvents.onChatsUpdate: expected (socket, sessionId, callback) or (socket, callback) with known sessionId');
     }
   },
-  
+
   removeAllListeners: (socket?: any) => {
     if (socket) {
       socket.removeAllListeners();
