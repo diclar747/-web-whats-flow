@@ -249,7 +249,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
 
   const [statuses, setStatuses] = useState<any[]>([]);
   const [statusHistory, setStatusHistory] = useState<any[]>([]);
-  
+
   // Estados para crear estados de WhatsApp programados - MODERNIZADO
   const [showCreateStatusDialog, setShowCreateStatusDialog] = useState(false);
   const [statusText, setStatusText] = useState('');
@@ -259,7 +259,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   const [statusInterval, setStatusInterval] = useState<number>(60); // Minutos
   const [statusIntervalUnit, setStatusIntervalUnit] = useState<'minutos' | 'horas'>('minutos');
   const [editingStatusId, setEditingStatusId] = useState<number | null>(null);
-  
+
   // Snackbar para notificaciones modernas
   const [snackbar, setSnackbar] = useState({
     open: false,
@@ -280,10 +280,10 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     if (msg.message || msg.text_content || msg.text) {
       return msg.message || msg.text_content || msg.text;
     }
-    
+
     // Si no hay contenido de texto, determinar basado en tipo
     const messageType = msg.type || msg.message_type || 'text';
-    
+
     switch (messageType) {
       case 'image': return msg.caption || '🖼️ Imagen';
       case 'video': return msg.caption || '🎥 Video';
@@ -311,7 +311,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         }
         return 'Mensaje sin contenido';
     }
- };
+  };
 
   // Función de diagnóstico para verificar el sessionId y estado del servidor
   const diagnoseSession = useCallback(async () => {
@@ -388,7 +388,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     }
   }, [sessionId]);
 
-   const loadHistoryData = useCallback(async (forceReload = false) => {
+  const loadHistoryData = useCallback(async (forceReload = false) => {
     try {
       setLoading(true);
       setError(null);
@@ -744,7 +744,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   const handleUpdateScheduledStatus = () => {
     if (editingStatusId === null) return;
 
-    setScheduledStatuses(scheduledStatuses.map(s => 
+    setScheduledStatuses(scheduledStatuses.map(s =>
       s.id === editingStatusId
         ? { ...s, text: statusText, image: statusImagePreview, imageFile: statusImage }
         : s
@@ -782,10 +782,10 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     try {
       setLoading(true);
       showSnackbar('Preparando estados para publicación...', 'info');
-      
+
       // Calcular intervalo en minutos
-      const intervalMinutes = statusIntervalUnit === 'horas' 
-        ? statusInterval * 60 
+      const intervalMinutes = statusIntervalUnit === 'horas'
+        ? statusInterval * 60
         : statusInterval;
 
       // Primero guardar los estados en DB
@@ -813,7 +813,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           throw new Error('El archivo o conjunto de imágenes es demasiado grande (413). Reduce tamaño o cantidad.');
         }
         const rawText = await saveResponse.text();
-        throw new Error(`Error HTTP ${saveResponse.status}: ${rawText.slice(0,200)}`);
+        throw new Error(`Error HTTP ${saveResponse.status}: ${rawText.slice(0, 200)}`);
       }
 
       let saveData: any;
@@ -841,7 +841,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           throw new Error('Publicación demasiado grande (413).');
         }
         const rawText = await publishResponse.text();
-        throw new Error(`Error HTTP ${publishResponse.status}: ${rawText.slice(0,200)}`);
+        throw new Error(`Error HTTP ${publishResponse.status}: ${rawText.slice(0, 200)}`);
       }
 
       let publishData: any;
@@ -854,10 +854,9 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       if (publishData.success) {
         const message = scheduledStatuses.length === 1
           ? '✅ Estado publicado exitosamente'
-          : `✅ ${publishData.published} estado publicado, ${publishData.scheduled} programados cada ${statusInterval} ${statusIntervalUnit}${
-              publishData.nextPublish ? `\n\n⏰ Próximo: ${publishData.nextPublish}` : ''
-            }`;
-        
+          : `✅ ${publishData.published} estado publicado, ${publishData.scheduled} programados cada ${statusInterval} ${statusIntervalUnit}${publishData.nextPublish ? `\n\n⏰ Próximo: ${publishData.nextPublish}` : ''
+          }`;
+
         showSnackbar(message, 'success');
         setShowCreateStatusDialog(false);
         setScheduledStatuses([]);
@@ -1016,7 +1015,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   };
 
   // ============ FUNCIONES DE FILTRADO MEJORADAS ============
-  
+
   // Filtrar solo mensajes de chat (sin grupos)
   const getChatOnlyMessages = () => {
     // Filtrar solo mensajes de chat (excluir grupos Y estados de WhatsApp)
@@ -1070,8 +1069,8 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     const contactPhone = message.contactPhone || '';
 
     const matchesSearch = content.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          contactName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          contactPhone.includes(searchTerm);
+      contactName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contactPhone.includes(searchTerm);
     const matchesType = selectedType === 'all' || message.messageType === selectedType;
     const matchesStatus = selectedStatus === 'all' || message.status === selectedStatus;
     const matchesAgent = selectedAgent === 'all' || message.agentName === selectedAgent;
@@ -1079,7 +1078,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       (selectedDirection === 'sent' && message.isFromMe) ||
       (selectedDirection === 'received' && !message.isFromMe);
     const withinDateRange = (!dateFrom || dayjs(message.timestamp).isAfter(dateFrom)) &&
-                           (!dateTo || dayjs(message.timestamp).isBefore(dateTo.add(1, 'day')));
+      (!dateTo || dayjs(message.timestamp).isBefore(dateTo.add(1, 'day')));
 
     return matchesSearch && matchesType && matchesStatus && matchesAgent && matchesDirection && withinDateRange;
   });
@@ -1089,10 +1088,10 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     const contactPhone = conversation.contactPhone || '';
 
     const matchesSearch = contactName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          contactPhone.includes(searchTerm);
+      contactPhone.includes(searchTerm);
     const matchesAgent = selectedAgent === 'all' || conversation.agentName === selectedAgent;
     const withinDateRange = (!dateFrom || dayjs(conversation.lastMessageTime).isAfter(dateFrom)) &&
-                           (!dateTo || dayjs(conversation.lastMessageTime).isBefore(dateTo.add(1, 'day')));
+      (!dateTo || dayjs(conversation.lastMessageTime).isBefore(dateTo.add(1, 'day')));
 
     return matchesSearch && matchesAgent && withinDateRange;
   });
@@ -1106,19 +1105,19 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     console.log(`🔍 selectedTab: ${selectedTab}, Total messages: ${messages.length}, Filtered messages: ${filteredMessages.length}`);
 
     let result: MessageHistory[] = [];
-    
+
     switch (selectedTab) {
       case 0: // 💬 Chat - Mensajes enviados y recibidos
         result = getChatOnlyMessages();
         console.log(`📊 Tab 0 (Chat): ${result.length} mensajes`);
         break;
-        
+
       case 1: // 📊 Estados WhatsApp - Estados de mensajes (✓✓ leído, ✓ entregado, etc.)
         // Retorna todos los mensajes para ver sus estados
         result = getChatOnlyMessages();
         console.log(`📊 Tab 1 (Estados WhatsApp): ${result.length} mensajes con estado`);
         break;
-        
+
       case 2: // 📎 Multimedia - Archivos por tipo
         if (mediaSubTab === 0) result = getMediaMessages('image');
         else if (mediaSubTab === 1) result = getMediaMessages('video');
@@ -1126,22 +1125,22 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         else result = getMediaMessages('document');
         console.log(`📊 Tab 2 (Multimedia): ${result.length} archivos`);
         break;
-        
+
       case 3: // 👥 Grupos - Mensajes de grupos
         result = getGroupMessages();
         console.log(`📊 Tab 3 (Grupos): ${result.length} mensajes de grupos`);
         break;
-        
+
       case 4: // 📢 Campañas - Historial de campañas (se maneja diferente, retorna vacío)
         result = [];
         console.log(`📊 Tab 4 (Campañas): Se muestra historial de campañas`);
         break;
-        
+
       case 5: // 📊 Analytics - Análisis de estados de envío
         result = getChatOnlyMessages(); // Todos los mensajes para analizar
         console.log(`📊 Tab 5 (Analytics): ${result.length} mensajes para análisis`);
         break;
-        
+
       default:
         result = filteredMessages;
         console.log(`📊 Tab default: ${result.length} mensajes`);
@@ -1220,8 +1219,8 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         alert(`❌ Error: ${data.error}`);
       }
     } catch (error) {
-        console.error('Error en sincronización:', error);
-        alert('❌ Error al sincronizar grupos');
+      console.error('Error en sincronización:', error);
+      alert('❌ Error al sincronizar grupos');
     } finally {
       setSyncLoading(false);
     }
@@ -1292,7 +1291,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   const confirmDelete = async () => {
     try {
       setDeleteLoading(true);
-  
+
       let response;
       switch (deleteType) {
         case 'single':
@@ -1320,13 +1319,13 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           });
           break;
       }
-  
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-  
+
       const data = await response.json();
-  
+
       if (data.success) {
         alert(`✅ ${data.message || 'Eliminación exitosa'}`);
         setShowDeleteDialog(false);
@@ -1354,326 +1353,326 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
 
   // Siempre mostrar la interfaz completa del historial
   return (
-      <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <Box sx={{ p: 3 }}>
-
-          
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      <Box sx={{ p: 3 }}>
 
 
-          {/* Header */}
-          <Box sx={{
-            mb: 4,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            background: 'linear-gradient(135deg, #9c27b0 0%, #673ab7 100%)',
-            borderRadius: 3,
-            p: 3,
-            color: 'white'
-          }}>
-            <Box>
-              <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>
-                📚 Historial Completo
-              </Typography>
-              <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>
-                Búsqueda Avanzada • Analytics • Exportación • Auditoría Completa
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-              <Button
-                variant="contained"
-                startIcon={<Download />}
-                onClick={() => setShowExportDialog(true)}
-                sx={{
-                  bgcolor: 'rgba(255,255,255,0.2)',
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }
-                }}
-              >
-                Exportar
-              </Button>
-              <Button
-                variant="contained"
-                startIcon={<Refresh />}
-                onClick={handleRefreshData}
-                sx={{
-                  bgcolor: 'rgba(255,0.2)',
-                  '&:hover': { bgcolor: 'rgba(255,255,0.3)' }
-                }}
-              >
-                Refrescar
-              </Button>
-              {selectedMessages.length > 0 && (
-                <Button
-                  variant="contained"
-                  startIcon={<Delete />}
-                  onClick={handleDeleteMultiple}
-                  sx={{
-                    bgcolor: '#f44336',
-                    '&:hover': { bgcolor: '#d32f2f' }
-                  }}
-                >
-                  Eliminar Seleccionados ({selectedMessages.length})
-                </Button>
-              )}
-              <Button
-                variant="contained"
-                startIcon={<DeleteForever />}
-                onClick={handleDeleteAllHistory}
-                sx={{
-                  bgcolor: '#d32f2f',
-                  '&:hover': { bgcolor: '#b71c1c' }
-                }}
-              >
-                Eliminar Todo el Historial
-              </Button>
-            </Box>
+
+
+        {/* Header */}
+        <Box sx={{
+          mb: 4,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: 'linear-gradient(135deg, #9c27b0 0%, #673ab7 100%)',
+          borderRadius: 3,
+          p: 3,
+          color: 'white'
+        }}>
+          <Box>
+            <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>
+              📚 Historial Completo
+            </Typography>
+            <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>
+              Búsqueda Avanzada • Analytics • Exportación • Auditoría Completa
+            </Typography>
           </Box>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <Button
+              variant="contained"
+              startIcon={<Download />}
+              onClick={() => setShowExportDialog(true)}
+              sx={{
+                bgcolor: 'rgba(255,255,255,0.2)',
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }
+              }}
+            >
+              Exportar
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<Refresh />}
+              onClick={handleRefreshData}
+              sx={{
+                bgcolor: 'rgba(255,0.2)',
+                '&:hover': { bgcolor: 'rgba(255,255,0.3)' }
+              }}
+            >
+              Refrescar
+            </Button>
+            {selectedMessages.length > 0 && (
+              <Button
+                variant="contained"
+                startIcon={<Delete />}
+                onClick={handleDeleteMultiple}
+                sx={{
+                  bgcolor: '#f44336',
+                  '&:hover': { bgcolor: '#d32f2f' }
+                }}
+              >
+                Eliminar Seleccionados ({selectedMessages.length})
+              </Button>
+            )}
+            <Button
+              variant="contained"
+              startIcon={<DeleteForever />}
+              onClick={handleDeleteAllHistory}
+              sx={{
+                bgcolor: '#d32f2f',
+                '&:hover': { bgcolor: '#b71c1c' }
+              }}
+            >
+              Eliminar Todo el Historial
+            </Button>
+          </Box>
+        </Box>
 
-          {/* Filtros avanzados */}
-          <Card sx={{ mb: 3 }}>
-            <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                  🔍 Filtros y Búsqueda
-                </Typography>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={showAdvancedFilters}
-                      onChange={(e) => setShowAdvancedFilters(e.target.checked)}
-                    />
-                  }
-                  label="Filtros Avanzados"
+        {/* Filtros avanzados */}
+        <Card sx={{ mb: 3 }}>
+          <CardContent sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                🔍 Filtros y Búsqueda
+              </Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={showAdvancedFilters}
+                    onChange={(e) => setShowAdvancedFilters(e.target.checked)}
+                  />
+                }
+                label="Filtros Avanzados"
+              />
+            </Box>
+
+            <Grid container spacing={3}>
+              {/* Búsqueda principal */}
+              <Grid item xs={12} md={4}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Buscar en mensajes, contactos..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <Search sx={{ color: '#64748b' }} />
+                      </InputAdornment>
+                    ),
+                  }}
                 />
-              </Box>
-
-              <Grid container spacing={3}>
-                {/* Búsqueda principal */}
-                <Grid item xs={12} md={4}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    placeholder="Buscar en mensajes, contactos..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <Search sx={{ color: '#64748b' }} />
-                        </InputAdornment>
-                      ),
-                    }}
-                  />
-                </Grid>
-
-                {/* Rango de fechas */}
-                <Grid item xs={12} md={3}>
-                  <DatePicker
-                    label="Desde"
-                    value={dateFrom}
-                    onChange={(newValue) => setDateFrom(newValue)}
-                    slotProps={{ textField: { size: 'small', fullWidth: true } }}
-                  />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <DatePicker
-                    label="Hasta"
-                    value={dateTo}
-                    onChange={(newValue) => setDateTo(newValue)}
-                    slotProps={{ textField: { size: 'small', fullWidth: true } }}
-                  />
-                </Grid>
-
-                {/* Vista */}
-                <Grid item xs={12} md={2}>
-                  <ToggleButtonGroup
-                    value={viewMode}
-                    exclusive
-                    onChange={(_, newValue) => newValue && setViewMode(newValue)}
-                    size="small"
-                    fullWidth
-                  >
-                    <ToggleButton value="conversations">
-                      Conversaciones
-                    </ToggleButton>
-                    <ToggleButton value="messages">
-                      Mensajes
-                    </ToggleButton>
-                  </ToggleButtonGroup>
-                </Grid>
-
-                {/* Filtros avanzados */}
-                {showAdvancedFilters && (
-                  <>
-                    <Grid item xs={12} md={3}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Tipo de Mensaje</InputLabel>
-                        <Select
-                          value={selectedType}
-                          label="Tipo de Mensaje"
-                          onChange={(e) => setSelectedType(e.target.value)}
-                        >
-                          <MenuItem value="all">Todos</MenuItem>
-                          <MenuItem value="text">Texto</MenuItem>
-                          <MenuItem value="image">Imagen</MenuItem>
-                          <MenuItem value="audio">Audio</MenuItem>
-                          <MenuItem value="video">Video</MenuItem>
-                          <MenuItem value="document">Documento</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={12} md={3}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Estado</InputLabel>
-                        <Select
-                          value={selectedStatus}
-                          label="Estado"
-                          onChange={(e) => setSelectedStatus(e.target.value)}
-                        >
-                          <MenuItem value="all">Todos</MenuItem>
-                          <MenuItem value="sent">Enviado</MenuItem>
-                          <MenuItem value="delivered">Entregado</MenuItem>
-                          <MenuItem value="read">Visto</MenuItem>
-                          <MenuItem value="failed">Fallido</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={12} md={3}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Dirección</InputLabel>
-                        <Select
-                          value={selectedDirection}
-                          label="Dirección"
-                          onChange={(e) => setSelectedDirection(e.target.value)}
-                        >
-                          <MenuItem value="all">Todos</MenuItem>
-                          <MenuItem value="sent">📤 Enviados</MenuItem>
-                          <MenuItem value="received">📥 Recibidos</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={12} md={3}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Agente</InputLabel>
-                        <Select
-                          value={selectedAgent}
-                          label="Agente"
-                          onChange={(e) => setSelectedAgent(e.target.value)}
-                        >
-                          <MenuItem value="all">Todos</MenuItem>
-                          <MenuItem value="María González">María González</MenuItem>
-                          <MenuItem value="Carlos Rivera">Carlos Rivera</MenuItem>
-                          <MenuItem value="Ana Martínez">Ana Martínez</MenuItem>
-                          <MenuItem value="Luis Hernández">Luis Hernández</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                  </>
-                )}
               </Grid>
 
-              {/* Resumen de filtros */}
-              <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                <Chip
-                  label={`${viewMode === 'messages' ? filteredMessages.length : filteredConversations.length} registros`}
-                  color="primary"
+              {/* Rango de fechas */}
+              <Grid item xs={12} md={3}>
+                <DatePicker
+                  label="Desde"
+                  value={dateFrom}
+                  onChange={(newValue) => setDateFrom(newValue)}
+                  slotProps={{ textField: { size: 'small', fullWidth: true } }}
                 />
-                {searchTerm && <Chip label={`Búsqueda: "${searchTerm}"`} onDelete={() => setSearchTerm('')} />}
-                {selectedType !== 'all' && <Chip label={`Tipo: ${selectedType}`} onDelete={() => setSelectedType('all')} />}
-                {selectedStatus !== 'all' && <Chip label={`Estado: ${selectedStatus}`} onDelete={() => setSelectedStatus('all')} />}
-                {selectedDirection !== 'all' && <Chip label={`Dirección: ${selectedDirection === 'sent' ? 'Enviados' : 'Recibidos'}`} onDelete={() => setSelectedDirection('all')} />}
-                {selectedAgent !== 'all' && <Chip label={`Agente: ${selectedAgent}`} onDelete={() => setSelectedAgent('all')} />}
-              </Box>
-            </CardContent>
-          </Card>
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <DatePicker
+                  label="Hasta"
+                  value={dateTo}
+                  onChange={(newValue) => setDateTo(newValue)}
+                  slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                />
+              </Grid>
 
-          {/* Tabs */}
-          <Paper sx={{ mb: 3 }}>
-            <Tabs value={selectedTab} onChange={(_, newValue) => setSelectedTab(newValue)}>
-              <Tab label={`💬 Chat (${getChatOnlyMessages().length})`} />
-              <Tab label={`📊 Estados WhatsApp`} />
-              <Tab label={`📎 Multimedia (${getMediaMessages('image').length + getMediaMessages('video').length + getMediaMessages('audio').length + getMediaMessages('document').length})`} />
-              <Tab label={`👥 Grupos (${getGroupMessages().length})`} />
-              <Tab label={`📢 Campañas`} />
-              <Tab label={`📊 Analytics`} />
-            </Tabs>
-          </Paper>
+              {/* Vista */}
+              <Grid item xs={12} md={2}>
+                <ToggleButtonGroup
+                  value={viewMode}
+                  exclusive
+                  onChange={(_, newValue) => newValue && setViewMode(newValue)}
+                  size="small"
+                  fullWidth
+                >
+                  <ToggleButton value="conversations">
+                    Conversaciones
+                  </ToggleButton>
+                  <ToggleButton value="messages">
+                    Mensajes
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Grid>
 
-          {/* Contenido de las tabs */}
-          {selectedTab === 0 && (
-            <Box>
-              {viewMode === 'messages' ? (
-                // Vista de mensajes
-                <Card>
-                  <CardContent sx={{ p: 0 }}>
-                    <TableContainer>
-                      <Table>
-                        <TableHead sx={{ bgcolor: '#f8fafc' }}>
-                          <TableRow>
-                            <TableCell padding="checkbox">
-                              <Checkbox />
-                            </TableCell>
-                            <TableCell>Contacto</TableCell>
-                            <TableCell>Mensaje</TableCell>
-                            <TableCell>Tipo</TableCell>
-                            <TableCell>Estado</TableCell>
-                            <TableCell>Agente</TableCell>
-                            <TableCell>Fecha</TableCell>
-                            <TableCell>Acciones</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {getCurrentTabMessages()
-                            .slice((page - 1) * rowsPerPage, page * rowsPerPage)
-                            .map((message) => (
+              {/* Filtros avanzados */}
+              {showAdvancedFilters && (
+                <>
+                  <Grid item xs={12} md={3}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Tipo de Mensaje</InputLabel>
+                      <Select
+                        value={selectedType}
+                        label="Tipo de Mensaje"
+                        onChange={(e) => setSelectedType(e.target.value)}
+                      >
+                        <MenuItem value="all">Todos</MenuItem>
+                        <MenuItem value="text">Texto</MenuItem>
+                        <MenuItem value="image">Imagen</MenuItem>
+                        <MenuItem value="audio">Audio</MenuItem>
+                        <MenuItem value="video">Video</MenuItem>
+                        <MenuItem value="document">Documento</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Estado</InputLabel>
+                      <Select
+                        value={selectedStatus}
+                        label="Estado"
+                        onChange={(e) => setSelectedStatus(e.target.value)}
+                      >
+                        <MenuItem value="all">Todos</MenuItem>
+                        <MenuItem value="sent">Enviado</MenuItem>
+                        <MenuItem value="delivered">Entregado</MenuItem>
+                        <MenuItem value="read">Visto</MenuItem>
+                        <MenuItem value="failed">Fallido</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Dirección</InputLabel>
+                      <Select
+                        value={selectedDirection}
+                        label="Dirección"
+                        onChange={(e) => setSelectedDirection(e.target.value)}
+                      >
+                        <MenuItem value="all">Todos</MenuItem>
+                        <MenuItem value="sent">📤 Enviados</MenuItem>
+                        <MenuItem value="received">📥 Recibidos</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Agente</InputLabel>
+                      <Select
+                        value={selectedAgent}
+                        label="Agente"
+                        onChange={(e) => setSelectedAgent(e.target.value)}
+                      >
+                        <MenuItem value="all">Todos</MenuItem>
+                        <MenuItem value="María González">María González</MenuItem>
+                        <MenuItem value="Carlos Rivera">Carlos Rivera</MenuItem>
+                        <MenuItem value="Ana Martínez">Ana Martínez</MenuItem>
+                        <MenuItem value="Luis Hernández">Luis Hernández</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </>
+              )}
+            </Grid>
+
+            {/* Resumen de filtros */}
+            <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              <Chip
+                label={`${viewMode === 'messages' ? filteredMessages.length : filteredConversations.length} registros`}
+                color="primary"
+              />
+              {searchTerm && <Chip label={`Búsqueda: "${searchTerm}"`} onDelete={() => setSearchTerm('')} />}
+              {selectedType !== 'all' && <Chip label={`Tipo: ${selectedType}`} onDelete={() => setSelectedType('all')} />}
+              {selectedStatus !== 'all' && <Chip label={`Estado: ${selectedStatus}`} onDelete={() => setSelectedStatus('all')} />}
+              {selectedDirection !== 'all' && <Chip label={`Dirección: ${selectedDirection === 'sent' ? 'Enviados' : 'Recibidos'}`} onDelete={() => setSelectedDirection('all')} />}
+              {selectedAgent !== 'all' && <Chip label={`Agente: ${selectedAgent}`} onDelete={() => setSelectedAgent('all')} />}
+            </Box>
+          </CardContent>
+        </Card>
+
+        {/* Tabs */}
+        <Paper sx={{ mb: 3 }}>
+          <Tabs value={selectedTab} onChange={(_, newValue) => setSelectedTab(newValue)}>
+            <Tab label={`💬 Chat (${getChatOnlyMessages().length})`} />
+            <Tab label={`📊 Estados WhatsApp`} />
+            <Tab label={`📎 Multimedia (${getMediaMessages('image').length + getMediaMessages('video').length + getMediaMessages('audio').length + getMediaMessages('document').length})`} />
+            <Tab label={`👥 Grupos (${getGroupMessages().length})`} />
+            <Tab label={`📢 Campañas`} />
+            <Tab label={`📊 Analytics`} />
+          </Tabs>
+        </Paper>
+
+        {/* Contenido de las tabs */}
+        {selectedTab === 0 && (
+          <Box>
+            {viewMode === 'messages' ? (
+              // Vista de mensajes
+              <Card>
+                <CardContent sx={{ p: 0 }}>
+                  <TableContainer>
+                    <Table>
+                      <TableHead sx={{ bgcolor: '#f8fafc' }}>
+                        <TableRow>
+                          <TableCell padding="checkbox">
+                            <Checkbox />
+                          </TableCell>
+                          <TableCell>Contacto</TableCell>
+                          <TableCell>Mensaje</TableCell>
+                          <TableCell>Tipo</TableCell>
+                          <TableCell>Estado</TableCell>
+                          <TableCell>Agente</TableCell>
+                          <TableCell>Fecha</TableCell>
+                          <TableCell>Acciones</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {getCurrentTabMessages()
+                          .slice((page - 1) * rowsPerPage, page * rowsPerPage)
+                          .map((message) => (
                             <TableRow key={message.id} hover>
-                            <TableCell padding="checkbox">
-                              <Checkbox
-                                checked={selectedMessages.includes(message.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedMessages([...selectedMessages, message.id]);
-                                  } else {
-                                    setSelectedMessages(selectedMessages.filter(id => id !== message.id));
-                                  }
-                                }}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                <Badge
-                                  overlap="circular"
-                                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                                  badgeContent={
-                                    message.isGroup ? (
-                                      <Group sx={{ fontSize: 12, color: '#9c27b0' }} />
-                                    ) : (
-                                      <Person sx={{ fontSize: 12, color: '#00a884' }} />
-                                    )
-                                  }
-                                >
-                                  <Avatar
-                                    src={message.contactAvatar || undefined}
-                                    sx={{
-                                      bgcolor: message.isGroup ? '#9c27b0' : '#00a884',
-                                      width: 32,
-                                      height: 32,
-                                      mr: 2
-                                    }}
+                              <TableCell padding="checkbox">
+                                <Checkbox
+                                  checked={selectedMessages.includes(message.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedMessages([...selectedMessages, message.id]);
+                                    } else {
+                                      setSelectedMessages(selectedMessages.filter(id => id !== message.id));
+                                    }
+                                  }}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                                  <Badge
+                                    overlap="circular"
+                                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                                    badgeContent={
+                                      message.isGroup ? (
+                                        <Group sx={{ fontSize: 12, color: '#9c27b0' }} />
+                                      ) : (
+                                        <Person sx={{ fontSize: 12, color: '#00a884' }} />
+                                      )
+                                    }
                                   >
-                                    {message.contactName.charAt(0).toUpperCase()}
-                                  </Avatar>
-                                </Badge>
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                    {message.contactName}
-                                  </Typography>
-                                  <Typography variant="caption" sx={{ color: '#64748b' }}>
-                                    {message.contactPhone}
-                                  </Typography>
+                                    <Avatar
+                                      src={message.contactAvatar || undefined}
+                                      sx={{
+                                        bgcolor: message.isGroup ? '#9c27b0' : '#00a884',
+                                        width: 32,
+                                        height: 32,
+                                        mr: 2
+                                      }}
+                                    >
+                                      {message.contactName.charAt(0).toUpperCase()}
+                                    </Avatar>
+                                  </Badge>
+                                  <Box>
+                                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                      {message.contactName}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ color: '#64748b' }}>
+                                      {message.contactPhone}
+                                    </Typography>
+                                  </Box>
                                 </Box>
-                              </Box>
-                            </TableCell>
+                              </TableCell>
                               <TableCell>
                                 <Box>
                                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
@@ -1805,29 +1804,29 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                               </TableCell>
                             </TableRow>
                           ))}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
 
-                    <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="body2" sx={{ color: '#64748b' }}>
-                        Mostrando {(page - 1) * rowsPerPage + 1} - {Math.min(page * rowsPerPage, getCurrentTabMessages().length)} de {getCurrentTabMessages().length} mensajes
-                      </Typography>
-                      <Pagination
-                        count={Math.ceil(getCurrentTabMessages().length / rowsPerPage)}
-                        page={page}
-                        onChange={(_, newPage) => setPage(newPage)}
-                        color="primary"
-                      />
-                    </Box>
-                  </CardContent>
-                </Card>
-              ) : (
-                // Vista de conversaciones originales
-                <Grid container spacing={3}>
-                  {getCurrentTabConversations()
-                    .slice((page - 1) * rowsPerPage, page * rowsPerPage)
-                    .map((conversation) => (
+                  <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="body2" sx={{ color: '#64748b' }}>
+                      Mostrando {(page - 1) * rowsPerPage + 1} - {Math.min(page * rowsPerPage, getCurrentTabMessages().length)} de {getCurrentTabMessages().length} mensajes
+                    </Typography>
+                    <Pagination
+                      count={Math.ceil(getCurrentTabMessages().length / rowsPerPage)}
+                      page={page}
+                      onChange={(_, newPage) => setPage(newPage)}
+                      color="primary"
+                    />
+                  </Box>
+                </CardContent>
+              </Card>
+            ) : (
+              // Vista de conversaciones originales
+              <Grid container spacing={3}>
+                {getCurrentTabConversations()
+                  .slice((page - 1) * rowsPerPage, page * rowsPerPage)
+                  .map((conversation) => (
                     <Grid item xs={12} md={6} lg={4} key={conversation.id}>
                       <Card elevation={3} sx={{
                         borderRadius: 3,
@@ -1915,11 +1914,11 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                               size="small"
                               sx={{
                                 bgcolor: conversation.status === 'resolved' ? '#e8f5e8' :
-                                        conversation.status === 'active' ? '#e3f2fd' :
-                                        conversation.status === 'pending' ? '#fff3e0' : '#f3e5f5',
+                                  conversation.status === 'active' ? '#e3f2fd' :
+                                    conversation.status === 'pending' ? '#fff3e0' : '#f3e5f5',
                                 color: conversation.status === 'resolved' ? '#2e7d32' :
-                                       conversation.status === 'active' ? '#1976d2' :
-                                       conversation.status === 'pending' ? '#ef6c00' : '#7b1fa2'
+                                  conversation.status === 'active' ? '#1976d2' :
+                                    conversation.status === 'pending' ? '#ef6c00' : '#7b1fa2'
                               }}
                             />
                             {conversation.labels.slice(0, 2).map((label: string) => (
@@ -1949,45 +1948,45 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                       </Card>
                     </Grid>
                   ))}
-                </Grid>
-              )}
-            </Box>
-          )}
+              </Grid>
+            )}
+          </Box>
+        )}
 
-          {selectedTab === 3 && (
-            <Box>
-              {/* Vista específica de grupos mejorada */}
-              {groups.length === 0 ? (
-                <Grid container spacing={3}>
-                  <Grid item xs={12}>
-                    <Card sx={{ p: 4, textAlign: 'center' }}>
-                      <Group sx={{ fontSize: 80, color: '#9c27b0', mb: 2 }} />
-                      <Typography variant="h5" sx={{ mb: 2, fontWeight: 600 }}>
-                        No hay grupos disponibles
-                      </Typography>
-                      <Typography variant="body1" sx={{ mb: 3, color: '#666' }}>
-                        Los grupos se cargan automáticamente desde tu WhatsApp.
-                        Si no ves grupos aquí, es posible que no hayas participado en ningún grupo aún.
-                      </Typography>
-                      <Button
-                        variant="contained"
-                        startIcon={<Refresh />}
-                        onClick={() => loadGroups()}
-                        sx={{
-                          bgcolor: '#9c27b0',
-                          '&:hover': { bgcolor: '#7b1fa2' }
-                        }}
-                      >
-                        Recargar Grupos
-                      </Button>
-                    </Card>
-                  </Grid>
+        {selectedTab === 3 && (
+          <Box>
+            {/* Vista específica de grupos mejorada */}
+            {groups.length === 0 ? (
+              <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <Card sx={{ p: 4, textAlign: 'center' }}>
+                    <Group sx={{ fontSize: 80, color: '#9c27b0', mb: 2 }} />
+                    <Typography variant="h5" sx={{ mb: 2, fontWeight: 600 }}>
+                      No hay grupos disponibles
+                    </Typography>
+                    <Typography variant="body1" sx={{ mb: 3, color: '#666' }}>
+                      Los grupos se cargan automáticamente desde tu WhatsApp.
+                      Si no ves grupos aquí, es posible que no hayas participado en ningún grupo aún.
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      startIcon={<Refresh />}
+                      onClick={() => loadGroups()}
+                      sx={{
+                        bgcolor: '#9c27b0',
+                        '&:hover': { bgcolor: '#7b1fa2' }
+                      }}
+                    >
+                      Recargar Grupos
+                    </Button>
+                  </Card>
                 </Grid>
-              ) : (
-                <Grid container spacing={3}>
-                  {groups
-                    .slice((page - 1) * rowsPerPage, page * rowsPerPage)
-                    .map((group) => (
+              </Grid>
+            ) : (
+              <Grid container spacing={3}>
+                {groups
+                  .slice((page - 1) * rowsPerPage, page * rowsPerPage)
+                  .map((group) => (
                     <Grid item xs={12} md={6} lg={4} key={group.id || group.jid}>
                       <Card elevation={3} sx={{
                         borderRadius: 3,
@@ -2104,685 +2103,708 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                     </Grid>
                   ))}
 
-                  {/* Paginación para grupos */}
-                  {groups.length > rowsPerPage && (
-                    <Grid item xs={12}>
-                      <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
-                        <Pagination
-                          count={Math.ceil(groups.length / rowsPerPage)}
-                          page={page}
-                          onChange={(_, newPage) => setPage(newPage)}
-                          color="primary"
-                          size="large"
-                        />
-                      </Box>
-                    </Grid>
-                  )}
-                </Grid>
-              )}
-            </Box>
-          )}
-
-          {selectedTab === 1 && (
-            <Box>
-              {/* Pestaña de Estados de WhatsApp mejorada */}
-              <Grid container spacing={3}>
-                {/* Header con estadísticas */}
-                <Grid item xs={12}>
-                  <Card sx={{ background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)', color: 'white' }}>
-                    <CardContent sx={{ p: 3 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <WhatsApp sx={{ fontSize: 48, mr: 2 }} />
-                        <Box>
-                          <Typography variant="h4" sx={{ fontWeight: 600, mb: 0.5 }}>
-                            Estados de WhatsApp
-                          </Typography>
-                          <Typography variant="body1" sx={{ opacity: 0.9 }}>
-                            Visualiza y gestiona los estados de tus contactos
-                          </Typography>
-                        </Box>
-                      </Box>
-                      <Grid container spacing={3}>
-                        <Grid item xs={12} md={4}>
-                          <Box sx={{ textAlign: 'center' }}>
-                            <Visibility sx={{ fontSize: 32, mb: 1 }} />
-                            <Typography variant="h5" sx={{ fontWeight: 600 }}>
-                              {statuses.filter(s => s.viewed).length}
-                            </Typography>
-                            <Typography variant="body2">Estados Vistos</Typography>
-                          </Box>
-                        </Grid>
-                        <Grid item xs={12} md={4}>
-                          <Box sx={{ textAlign: 'center' }}>
-                            <Schedule sx={{ fontSize: 32, mb: 1 }} />
-                            <Typography variant="h5" sx={{ fontWeight: 600 }}>
-                              {statuses.length}
-                            </Typography>
-                            <Typography variant="body2">Estados Disponibles</Typography>
-                          </Box>
-                        </Grid>
-                        <Grid item xs={12} md={4}>
-                          <Box sx={{ textAlign: 'center' }}>
-                            <Star sx={{ fontSize: 32, mb: 1 }} />
-                            <Typography variant="h5" sx={{ fontWeight: 600 }}>
-                              {statuses.filter(s => s.is_own).length}
-                            </Typography>
-                            <Typography variant="body2">Estados Propios</Typography>
-                          </Box>
-                        </Grid>
-                      </Grid>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* Ejemplo de estados con imágenes de perfil */}
-                <Grid item xs={12}>
-                  <Card>
-                    <CardContent>
-                      <Typography variant="h6" sx={{ mb: 3, display: 'flex', alignItems: 'center' }}>
-                        <Timeline sx={{ mr: 1 }} />
-                        Estados Recientes
-                      </Typography>
-
-                      {/* Estados reales desde la base de datos */}
-                      {statuses.length > 0 ? (
-                        <Grid container spacing={2}>
-                          {statuses.map((status, index) => (
-                            <Grid item xs={12} md={6} lg={3} key={status.id || index}>
-                              <Card
-                                elevation={2}
-                                sx={{
-                                  cursor: 'pointer',
-                                  transition: 'all 0.3s ease',
-                                  border: status.viewed ? '2px solid #e0e0e0' : '2px solid #25d366',
-                                  '&:hover': {
-                                    transform: 'translateY(-2px)',
-                                    boxShadow: '0 8px 24px rgba(37,211,102,0.15)'
-                                  }
-                                }}
-                              >
-                                <CardContent sx={{ p: 2, textAlign: 'center' }}>
-                                  <Box sx={{ position: 'relative', display: 'inline-block', mb: 2 }}>
-                                    <Avatar
-                                      src={status.contact_avatar || undefined}
-                                      sx={{
-                                        width: 56,
-                                        height: 56,
-                                        bgcolor: status.is_own ? '#25d366' : '#2196f3',
-                                        fontSize: '1.2rem',
-                                        fontWeight: 600
-                                      }}
-                                    >
-                                      {status.contact_name.charAt(0).toUpperCase()}
-                                    </Avatar>
-                                    {!status.viewed && (
-                                      <Box
-                                        sx={{
-                                          position: 'absolute',
-                                          top: -2,
-                                          left: -2,
-                                          right: -2,
-                                          bottom: -2,
-                                          border: '3px solid #25d366',
-                                          borderRadius: '50%'
-                                        }}
-                                      />
-                                    )}
-                                    {status.is_own && (
-                                      <Box
-                                        sx={{
-                                          position: 'absolute',
-                                          bottom: 2,
-                                          right: 2,
-                                          bgcolor: '#ffc107',
-                                          borderRadius: '50%',
-                                          width: 16,
-                                          height: 16,
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'center'
-                                        }}
-                                      >
-                                        <Person sx={{ fontSize: 10, color: 'white' }} />
-                                      </Box>
-                                    )}
-
-                                    {/* Indicador de tipo de estado */}
-                                    <Box
-                                      sx={{
-                                        position: 'absolute',
-                                        top: -4,
-                                        right: -4,
-                                        bgcolor: getStatusTypeColor(status.status_type),
-                                        borderRadius: '50%',
-                                        width: 20,
-                                        height: 20,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        border: '2px solid white'
-                                      }}
-                                    >
-                                      {getStatusTypeIcon(status.status_type)}
-                                    </Box>
-                                  </Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                                    {status.contact_name}
-                                  </Typography>
-                                  <Typography variant="caption" color="textSecondary">
-                                    {new Date(status.status_time).toLocaleString()}
-                                  </Typography>
-                                  {status.viewed && (
-                                    <Typography variant="caption" sx={{ display: 'block', color: '#666', mt: 0.5 }}>
-                                      ✓ Visto
-                                    </Typography>
-                                  )}
-                                </CardContent>
-                              </Card>
-                            </Grid>
-                          ))}
-                        </Grid>
-                      ) : (
-                        <Box sx={{ textAlign: 'center', py: 6 }}>
-                          <WhatsApp sx={{ fontSize: 80, color: '#ccc', mb: 2 }} />
-                          <Typography variant="h6" color="textSecondary" sx={{ mb: 1 }}>
-                            No hay estados disponibles
-                          </Typography>
-                          <Typography variant="body2" color="textSecondary">
-                            Los estados de tus contactos aparecerán aquí cuando estén disponibles.
-                          </Typography>
-                          <Button
-                            variant="outlined"
-                            startIcon={<Refresh />}
-                            onClick={() => loadStatuses()}
-                            sx={{ mt: 2 }}
-                          >
-                            Recargar Estados
-                          </Button>
-                        </Box>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* Botón flotante para crear estados */}
-                <Fab
-                  color="primary"
-                  aria-label="add"
-                  onClick={() => setShowCreateStatusDialog(true)}
-                  sx={{
-                    position: 'fixed',
-                    bottom: 24,
-                    right: 24,
-                    background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)',
-                    '&:hover': {
-                      background: 'linear-gradient(135deg, #128c7e 0%, #075e54 100%)',
-                    }
-                  }}
-                >
-                  <Add />
-                </Fab>
-
-                {/* Estadísticas de sincronización */}
-                <Grid item xs={12}>
-                  <Card>
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom>📊 Estados de Mensajes</Typography>
-                      <Grid container spacing={2}>
-                        <Grid item xs={6} sm={3}>
-                          <Card sx={{ bgcolor: '#fff3e0' }}>
-                            <CardContent sx={{ textAlign: 'center' }}>
-                              <Check sx={{ fontSize: 40, color: '#ff9800', mb: 1 }} />
-                              <Typography variant="h5" sx={{ fontWeight: 700, color: '#ff9800' }}>
-                                {analytics?.statusCounts.sent || 0}
-                              </Typography>
-                              <Typography variant="body2">Enviado</Typography>
-                            </CardContent>
-                          </Card>
-                        </Grid>
-                        <Grid item xs={6} sm={3}>
-                          <Card sx={{ bgcolor: '#e8f5e8' }}>
-                            <CardContent sx={{ textAlign: 'center' }}>
-                              <DoneAll sx={{ fontSize: 40, color: '#4caf50', mb: 1 }} />
-                              <Typography variant="h5" sx={{ fontWeight: 700, color: '#4caf50' }}>
-                                {analytics?.statusCounts.delivered || 0}
-                              </Typography>
-                              <Typography variant="body2">Entregado</Typography>
-                            </CardContent>
-                          </Card>
-                        </Grid>
-                        <Grid item xs={6} sm={3}>
-                          <Card sx={{ bgcolor: '#e3f2fd' }}>
-                            <CardContent sx={{ textAlign: 'center' }}>
-                              <DoneAll sx={{ fontSize: 40, color: '#2196f3', mb: 1 }} />
-                              <Typography variant="h5" sx={{ fontWeight: 700, color: '#2196f3' }}>
-                                {analytics?.statusCounts.read || 0}
-                              </Typography>
-                              <Typography variant="body2">Visto</Typography>
-                            </CardContent>
-                          </Card>
-                        </Grid>
-                        <Grid item xs={6} sm={3}>
-                          <Card sx={{ bgcolor: '#ffebee' }}>
-                            <CardContent sx={{ textAlign: 'center' }}>
-                              <ErrorIcon sx={{ fontSize: 40, color: '#f44336', mb: 1 }} />
-                              <Typography variant="h5" sx={{ fontWeight: 700, color: '#f44336' }}>
-                                {analytics?.statusCounts.failed || 0}
-                              </Typography>
-                              <Typography variant="body2">Fallido</Typography>
-                            </CardContent>
-                          </Card>
-                        </Grid>
-                      </Grid>
-                    </CardContent>
-                  </Card>
-                </Grid>
-
-                {/* Análisis de sentimientos */}
-                <Grid item xs={12} md={6}>
-                  <Card>
-                    <CardContent>
-                      <Typography variant="h6" gutterBottom>Análisis de Sentimientos</Typography>
-                      <Grid container spacing={2}>
-                        <Grid item xs={4}>
-                          <Box sx={{ textAlign: 'center' }}>
-                            <Typography variant="h5" sx={{ color: '#4caf50', fontWeight: 700 }}>
-                              {analytics?.sentimentAnalysis.positive}%
-                            </Typography>
-                            <Typography variant="body2">Positivo</Typography>
-                          </Box>
-                        </Grid>
-                        <Grid item xs={4}>
-                          <Box sx={{ textAlign: 'center' }}>
-                            <Typography variant="h5" sx={{ color: '#ff9800', fontWeight: 700 }}>
-                              {analytics?.sentimentAnalysis.neutral}%
-                            </Typography>
-                            <Typography variant="body2">Neutral</Typography>
-                          </Box>
-                        </Grid>
-                        <Grid item xs={4}>
-                          <Box sx={{ textAlign: 'center' }}>
-                            <Typography variant="h5" sx={{ color: '#f44336', fontWeight: 700 }}>
-                              {analytics?.sentimentAnalysis.negative}%
-                            </Typography>
-                            <Typography variant="body2">Negativo</Typography>
-                          </Box>
-                        </Grid>
-                      </Grid>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              </Grid>
-            </Box>
-          )}
-
-          {selectedTab === 2 && (
-            <Box>
-              <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-                📎 Multimedia
-              </Typography>
-              <ToggleButtonGroup
-                exclusive
-                value={mediaSubTab}
-                onChange={(_, v) => v !== null && setMediaSubTab(v)}
-                size="small"
-                sx={{ mb: 2 }}
-              >
-                <ToggleButton value={0}>🖼️ Imágenes</ToggleButton>
-                <ToggleButton value={1}>🎥 Videos</ToggleButton>
-                <ToggleButton value={2}>🎵 Audio</ToggleButton>
-                <ToggleButton value={3}>📄 Documentos</ToggleButton>
-              </ToggleButtonGroup>
-
-              <Grid container spacing={2}>
-                {getCurrentTabMessages().map((m) => (
-                  <Grid item xs={12} md={6} lg={4} key={m.id}>
-                    <Card>
-                      <CardContent>
-                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                          {getMessageTypeIcon(m.messageType)}
-                          <Typography variant="subtitle2">
-                            {getMessageTypeLabel(m.messageType, (m as any).fileName)}
-                          </Typography>
-                        </Stack>
-                        {m.messageType === 'image' && m.mediaUrl && (
-                          <Box sx={{ mt: 1 }}>
-                            <img src={m.mediaUrl} alt="Imagen" style={{ maxWidth: '100%', borderRadius: 8 }} />
-                          </Box>
-                        )}
-                        <Typography variant="caption" color="text.secondary">
-                          {new Date(m.timestamp).toLocaleString()}
-                        </Typography>
-                      </CardContent>
-                    </Card>
+                {/* Paginación para grupos */}
+                {groups.length > rowsPerPage && (
+                  <Grid item xs={12}>
+                    <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
+                      <Pagination
+                        count={Math.ceil(groups.length / rowsPerPage)}
+                        page={page}
+                        onChange={(_, newPage) => setPage(newPage)}
+                        color="primary"
+                        size="large"
+                      />
+                    </Box>
                   </Grid>
-                ))}
+                )}
               </Grid>
-            </Box>
-          )}
+            )}
+          </Box>
+        )}
 
-          {/* Tab 4: Historial de Campañas */}
-          {selectedTab === 4 && (
-            <Box>
+        {selectedTab === 1 && (
+          <Box>
+            {/* 📱 SISTEMA COMPLETO DE ESTADOS DE WHATSAPP */}
+
+            {/* Header con estadísticas */}
+            <Card sx={{ mb: 3, background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)', color: 'white' }}>
+              <CardContent sx={{ p: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <WhatsApp sx={{ fontSize: 48, mr: 2 }} />
+                    <Box>
+                      <Typography variant="h4" sx={{ fontWeight: 600, mb: 0.5 }}>
+                        Estados de WhatsApp
+                      </Typography>
+                      <Typography variant="body1" sx={{ opacity: 0.9 }}>
+                        Crea y programa estados automáticos para tu WhatsApp
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Button
+                    variant="contained"
+                    startIcon={<Add />}
+                    onClick={() => setShowCreateStatusDialog(true)}
+                    sx={{
+                      bgcolor: 'white',
+                      color: '#25d366',
+                      '&:hover': { bgcolor: '#f5f5f5' }
+                    }}
+                  >
+                    Crear Estado
+                  </Button>
+                </Box>
+
+                {/* Estadísticas rápidas */}
+                <Grid container spacing={3}>
+                  <Grid item xs={12} md={3}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="h3" sx={{ fontWeight: 600 }}>
+                        {scheduledStatuses.length}
+                      </Typography>
+                      <Typography variant="body2">Estados Creados</Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="h3" sx={{ fontWeight: 600 }}>
+                        {statusHistory.length}
+                      </Typography>
+                      <Typography variant="body2">Publicados</Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="h3" sx={{ fontWeight: 600 }}>
+                        {statusHistory.reduce((sum, s) => sum + (s.views_count || 0), 0)}
+                      </Typography>
+                      <Typography variant="body2">Vistas Totales</Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="h3" sx={{ fontWeight: 600 }}>
+                        {statusInterval} {statusIntervalUnit}
+                      </Typography>
+                      <Typography variant="body2">Intervalo</Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </CardContent>
+            </Card>
+
+            {/* Lista de Estados Programados */}
+            {scheduledStatuses.length > 0 && (
               <Card sx={{ mb: 3 }}>
                 <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                    <Typography variant="h5" sx={{ fontWeight: 600 }}>
-                      📢 Historial de Campañas
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      📋 Estados en Cola ({scheduledStatuses.length})
                     </Typography>
                     <Button
                       variant="contained"
-                      startIcon={<Refresh />}
-                      onClick={loadCampaigns}
-                      size="small"
+                      color="success"
+                      startIcon={<Send />}
+                      onClick={handlePublishStatuses}
+                      disabled={loading}
                     >
-                      Actualizar
+                      Publicar Ahora
                     </Button>
                   </Box>
 
-                  {/* Estadísticas de campañas */}
-                  <Grid container spacing={2} sx={{ mb: 3 }}>
-                    <Grid item xs={12} md={3}>
-                      <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#e3f2fd' }}>
-                        <CampaignOutlined sx={{ fontSize: 32, color: '#1976d2', mb: 1 }} />
-                        <Typography variant="h4" sx={{ fontWeight: 600 }}>
-                          {campaigns.length}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">Total Campañas</Typography>
-                      </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={3}>
-                      <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#e8f5e9' }}>
-                        <Send sx={{ fontSize: 32, color: '#2e7d32', mb: 1 }} />
-                        <Typography variant="h4" sx={{ fontWeight: 600 }}>
-                          {campaigns.reduce((sum, c) => sum + c.sent_count, 0)}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">Total Enviados</Typography>
-                      </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={3}>
-                      <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#fff3e0' }}>
-                        <Visibility sx={{ fontSize: 32, color: '#f57c00', mb: 1 }} />
-                        <Typography variant="h4" sx={{ fontWeight: 600 }}>
-                          {campaigns.reduce((sum, c) => sum + (c.read_count || 0), 0)}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">Total Vistos</Typography>
-                      </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={3}>
-                      <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#ffebee' }}>
-                        <ErrorIcon sx={{ fontSize: 32, color: '#c62828', mb: 1 }} />
-                        <Typography variant="h4" sx={{ fontWeight: 600 }}>
-                          {campaigns.reduce((sum, c) => sum + (c.failed_count || 0), 0)}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">Total Fallidos</Typography>
-                      </Paper>
-                    </Grid>
+                  <Grid container spacing={2}>
+                    {scheduledStatuses.map((status, index) => (
+                      <Grid item xs={12} md={6} lg={4} key={status.id}>
+                        <Card
+                          elevation={2}
+                          sx={{
+                            border: editingStatusId === status.id ? '2px solid #25d366' : '1px solid #e0e0e0',
+                            transition: 'all 0.3s ease',
+                            '&:hover': {
+                              transform: 'translateY(-2px)',
+                              boxShadow: '0 8px 24px rgba(37,211,102,0.15)'
+                            }
+                          }}
+                        >
+                          <CardContent>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
+                              <Chip
+                                label={`#${index + 1}`}
+                                size="small"
+                                sx={{ bgcolor: '#25d366', color: 'white', fontWeight: 600 }}
+                              />
+                              <Box>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleEditScheduledStatus(status.id)}
+                                  sx={{ mr: 0.5 }}
+                                >
+                                  <InsertEmoticon />
+                                </IconButton>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleRemoveScheduledStatus(status.id)}
+                                  color="error"
+                                >
+                                  <Close />
+                                </IconButton>
+                              </Box>
+                            </Box>
+
+                            {status.image && (
+                              <Box
+                                component="img"
+                                src={status.image}
+                                alt="Preview"
+                                sx={{
+                                  width: '100%',
+                                  height: 200,
+                                  objectFit: 'cover',
+                                  borderRadius: 2,
+                                  mb: 2
+                                }}
+                              />
+                            )}
+
+                            {status.text && (
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  mb: 2,
+                                  p: 2,
+                                  bgcolor: '#f5f5f5',
+                                  borderRadius: 2,
+                                  minHeight: 60
+                                }}
+                              >
+                                {status.text}
+                              </Typography>
+                            )}
+
+                            <Typography variant="caption" color="text.secondary">
+                              Creado: {new Date(status.createdAt).toLocaleString()}
+                            </Typography>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    ))}
                   </Grid>
 
-                  {/* Lista de campañas */}
-                  {campaigns.length === 0 ? (
-                    <Paper sx={{ p: 8, textAlign: 'center' }} variant="outlined">
-                      <CampaignOutlined sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                      <Typography variant="h6" color="text.secondary" gutterBottom>
-                        No hay campañas aún
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                        Las campañas que crees aparecerán aquí con su historial detallado
-                      </Typography>
-                      <Button
-                        variant="contained"
-                        startIcon={<CampaignOutlined />}
-                        onClick={() => window.location.href = '/dashboard/campaigns'}
-                      >
-                        Crear Primera Campaña
-                      </Button>
-                    </Paper>
-                  ) : (
-                    <TableContainer component={Paper} variant="outlined">
-                      <Table>
-                        <TableHead sx={{ bgcolor: '#f8fafc' }}>
-                          <TableRow>
-                            <TableCell width="25%">Nombre de Campaña</TableCell>
-                            <TableCell width="12%">Estado</TableCell>
-                            <TableCell width="10%">Total</TableCell>
-                            <TableCell width="10%">Enviados</TableCell>
-                            <TableCell width="10%">Entregados</TableCell>
-                            <TableCell width="8%">Vistos</TableCell>
-                            <TableCell width="8%">Fallidos</TableCell>
-                            <TableCell width="12%">Fecha Creación</TableCell>
-                            <TableCell width="5%">Acciones</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {campaigns.map((campaign) => (
-                            <TableRow key={campaign.id} hover>
-                              <TableCell>
-                                <Box>
-                                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                    {campaign.name}
-                                  </Typography>
-                                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                                    {campaign.message_template.substring(0, 50)}{campaign.message_template.length > 50 ? '...' : ''}
-                                  </Typography>
-                                </Box>
-                              </TableCell>
-                              <TableCell>
-                                <Chip
-                                  label={campaign.status}
-                                  size="small"
-                                  color={
-                                    campaign.status === 'completed' ? 'success' :
-                                    campaign.status === 'active' ? 'primary' :
-                                    campaign.status === 'failed' ? 'error' :
-                                    campaign.status === 'paused' ? 'warning' : 'default'
-                                  }
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                  {campaign.total_recipients}
-                                </Typography>
-                              </TableCell>
-                              <TableCell>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  <Check sx={{ fontSize: 16, color: '#2e7d32' }} />
-                                  <Typography variant="body2">{campaign.sent_count}</Typography>
-                                </Box>
-                              </TableCell>
-                              <TableCell>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  <DoneAll sx={{ fontSize: 16, color: '#1976d2' }} />
-                                  <Typography variant="body2">{campaign.delivered_count || 0}</Typography>
-                                </Box>
-                              </TableCell>
-                              <TableCell>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  <Visibility sx={{ fontSize: 16, color: '#f57c00' }} />
-                                  <Typography variant="body2">{campaign.read_count || 0}</Typography>
-                                </Box>
-                              </TableCell>
-                              <TableCell>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                  <ErrorIcon sx={{ fontSize: 16, color: '#c62828' }} />
-                                  <Typography variant="body2">{campaign.failed_count || 0}</Typography>
-                                </Box>
-                              </TableCell>
-                              <TableCell>
-                                <Typography variant="caption" color="text.secondary">
-                                  {new Date(campaign.created_at).toLocaleDateString('es-ES', {
-                                    day: '2-digit',
-                                    month: 'short',
-                                    year: 'numeric'
-                                  })}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                  {new Date(campaign.created_at).toLocaleTimeString('es-ES', {
-                                    hour: '2-digit',
-                                    minute: '2-digit'
-                                  })}
-                                </Typography>
-                              </TableCell>
-                              <TableCell>
-                                <Tooltip title="Ver detalles">
-                                  <IconButton
-                                    size="small"
-                                    onClick={() => loadCampaignDetails(campaign.id)}
-                                  >
-                                    <Visibility fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                  )}
+                  {/* Configuración de Programación */}
+                  <Box sx={{ mt: 3, p: 3, bgcolor: '#f8f9fa', borderRadius: 2 }}>
+                    <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                      ⚙️ Configuración de Publicación
+                    </Typography>
+                    <Grid container spacing={2} alignItems="center">
+                      <Grid item xs={12} md={4}>
+                        <TextField
+                          fullWidth
+                          type="number"
+                          label="Intervalo"
+                          value={statusInterval}
+                          onChange={(e) => setStatusInterval(parseInt(e.target.value) || 1)}
+                          InputProps={{
+                            inputProps: { min: 1, max: 1440 }
+                          }}
+                        />
+                      </Grid>
+                      <Grid item xs={12} md={4}>
+                        <FormControl fullWidth>
+                          <InputLabel>Unidad</InputLabel>
+                          <Select
+                            value={statusIntervalUnit}
+                            label="Unidad"
+                            onChange={(e) => setStatusIntervalUnit(e.target.value as any)}
+                          >
+                            <MenuItem value="minutos">Minutos</MenuItem>
+                            <MenuItem value="horas">Horas</MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                      <Grid item xs={12} md={4}>
+                        <Typography variant="body2" color="text.secondary">
+                          📅 Próxima publicación en {statusInterval} {statusIntervalUnit}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Rotación automática de 30 días
+                        </Typography>
+                      </Grid>
+                    </Grid>
+                  </Box>
                 </CardContent>
               </Card>
-            </Box>
-          )}
-        </Box>
+            )}
 
-        {/* Diálogo de detalles de campaña */}
-        <Dialog
-          open={showCampaignDetailsDialog}
-          onClose={() => setShowCampaignDetailsDialog(false)}
-          maxWidth="lg"
-          fullWidth
-        >
-          <DialogTitle>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6">
-                📢 Detalles de Campaña: {selectedCampaign?.name}
-              </Typography>
-              <IconButton onClick={() => setShowCampaignDetailsDialog(false)} size="small">
-                <Close />
-              </IconButton>
-            </Box>
-          </DialogTitle>
-          <DialogContent>
-            {selectedCampaign && (
-              <Box>
-                {/* Información general */}
+            {/* Historial de Estados Publicados */}
+            {statusHistory.length > 0 && (
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+                    📊 Historial de Publicaciones
+                  </Typography>
+                  <Grid container spacing={2}>
+                    {statusHistory.slice(0, 6).map((status) => (
+                      <Grid item xs={12} md={6} lg={4} key={status.id}>
+                        <Card variant="outlined">
+                          <CardContent>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                              <Chip
+                                label={status.status}
+                                size="small"
+                                color={status.status === 'published' ? 'success' : 'default'}
+                              />
+                              <Typography variant="caption" color="text.secondary">
+                                {status.views_count || 0} vistas
+                              </Typography>
+                            </Box>
+                            <Typography variant="body2" noWrap>
+                              {status.text_content || '📷 Imagen'}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(status.published_at).toLocaleString()}
+                            </Typography>
+                          </CardContent>
+                        </Card>
+                      </Grid>
+                    ))}
+                  </Grid>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Estado vacío */}
+            {scheduledStatuses.length === 0 && statusHistory.length === 0 && (
+              <Card>
+                <CardContent sx={{ textAlign: 'center', py: 8 }}>
+                  <WhatsApp sx={{ fontSize: 80, color: '#ccc', mb: 2 }} />
+                  <Typography variant="h5" sx={{ mb: 1, fontWeight: 600 }}>
+                    Comienza a Crear Estados
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+                    Crea estados con imágenes, texto y emojis. Programa su publicación automática.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    size="large"
+                    startIcon={<Add />}
+                    onClick={() => setShowCreateStatusDialog(true)}
+                    sx={{
+                      background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)',
+                      px: 4,
+                      py: 1.5
+                    }}
+                  >
+                    Crear Primer Estado
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Dialog para Crear/Editar Estado */}
+            <Dialog
+              open={showCreateStatusDialog}
+              onClose={() => {
+                setShowCreateStatusDialog(false);
+                handleCancelEdit();
+              }}
+              maxWidth="md"
+              fullWidth
+            >
+              <DialogTitle>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <PhotoCamera sx={{ mr: 1, color: '#25d366' }} />
+                    <Typography variant="h6">
+                      {editingStatusId ? 'Editar Estado' : 'Crear Nuevo Estado'}
+                    </Typography>
+                  </Box>
+                  <IconButton onClick={() => {
+                    setShowCreateStatusDialog(false);
+                    handleCancelEdit();
+                  }}>
+                    <Close />
+                  </IconButton>
+                </Box>
+              </DialogTitle>
+              <DialogContent dividers>
+                <Grid container spacing={3}>
+                  {/* Upload de Imagen */}
+                  <Grid item xs={12}>
+                    <input
+                      accept="image/*,video/*"
+                      style={{ display: 'none' }}
+                      id="status-image-upload"
+                      type="file"
+                      onChange={handleStatusImageChange}
+                    />
+                    <label htmlFor="status-image-upload">
+                      <Button
+                        variant="outlined"
+                        component="span"
+                        fullWidth
+                        startIcon={<PhotoCamera />}
+                        sx={{ py: 2 }}
+                      >
+                        {statusImagePreview ? 'Cambiar Imagen/Video' : 'Subir Imagen/Video'}
+                      </Button>
+                    </label>
+                  </Grid>
+
+                  {/* Preview de Imagen */}
+                  {statusImagePreview && (
+                    <Grid item xs={12}>
+                      <Box
+                        sx={{
+                          position: 'relative',
+                          borderRadius: 2,
+                          overflow: 'hidden',
+                          border: '2px solid #e0e0e0'
+                        }}
+                      >
+                        <Box
+                          component="img"
+                          src={statusImagePreview}
+                          alt="Preview"
+                          sx={{
+                            width: '100%',
+                            maxHeight: 400,
+                            objectFit: 'contain'
+                          }}
+                        />
+                        <IconButton
+                          sx={{
+                            position: 'absolute',
+                            top: 8,
+                            right: 8,
+                            bgcolor: 'rgba(0,0,0,0.5)',
+                            color: 'white',
+                            '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' }
+                          }}
+                          onClick={() => {
+                            setStatusImage(null);
+                            setStatusImagePreview(null);
+                          }}
+                        >
+                          <Close />
+                        </IconButton>
+                      </Box>
+                    </Grid>
+                  )}
+
+                  {/* Texto del Estado */}
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      multiline
+                      rows={4}
+                      label="Texto del Estado"
+                      placeholder="Escribe tu mensaje aquí... Puedes usar emojis 😊"
+                      value={statusText}
+                      onChange={(e) => setStatusText(e.target.value)}
+                      helperText={`${statusText.length}/700 caracteres`}
+                      inputProps={{ maxLength: 700 }}
+                    />
+                  </Grid>
+
+                  {/* Botones de Emojis Rápidos */}
+                  <Grid item xs={12}>
+                    <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                      Emojis Rápidos:
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      {['😊', '❤️', '🎉', '🔥', '👍', '✨', '🚀', '💪', '🌟', '🎯', '💯', '🙌'].map((emoji) => (
+                        <Button
+                          key={emoji}
+                          variant="outlined"
+                          size="small"
+                          onClick={() => setStatusText(prev => prev + emoji)}
+                          sx={{ minWidth: 'auto', p: 1 }}
+                        >
+                          {emoji}
+                        </Button>
+                      ))}
+                    </Box>
+                  </Grid>
+
+                  {/* Preview del Estado */}
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                      Vista Previa:
+                    </Typography>
+                    <Box
+                      sx={{
+                        p: 3,
+                        bgcolor: '#075E54',
+                        color: 'white',
+                        borderRadius: 2,
+                        minHeight: 100,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        textAlign: 'center',
+                        backgroundImage: statusImagePreview ? `url(${statusImagePreview})` : 'none',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center'
+                      }}
+                    >
+                      {statusText && (
+                        <Typography
+                          variant="h6"
+                          sx={{
+                            textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                            fontWeight: 600
+                          }}
+                        >
+                          {statusText}
+                        </Typography>
+                      )}
+                      {!statusText && !statusImagePreview && (
+                        <Typography variant="body2" sx={{ opacity: 0.7 }}>
+                          Tu estado aparecerá aquí
+                        </Typography>
+                      )}
+                    </Box>
+                  </Grid>
+                </Grid>
+              </DialogContent>
+              <DialogActions sx={{ p: 2 }}>
+                <Button onClick={() => {
+                  setShowCreateStatusDialog(false);
+                  handleCancelEdit();
+                }}>
+                  Cancelar
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={handleAddScheduledStatus}
+                  disabled={!statusText && !statusImage}
+                  sx={{
+                    background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)'
+                  }}
+                >
+                  {editingStatusId ? 'Actualizar' : 'Agregar a Cola'}
+                </Button>
+              </DialogActions>
+            </Dialog>
+          </Box>
+        )}
+
+        {selectedTab === 2 && (
+          <Box>
+            <Typography variant="h5" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+              📎 Multimedia
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              value={mediaSubTab}
+              onChange={(_, v) => v !== null && setMediaSubTab(v)}
+              size="small"
+              sx={{ mb: 2 }}
+            >
+              <ToggleButton value={0}>🖼️ Imágenes</ToggleButton>
+              <ToggleButton value={1}>🎥 Videos</ToggleButton>
+              <ToggleButton value={2}>🎵 Audio</ToggleButton>
+              <ToggleButton value={3}>📄 Documentos</ToggleButton>
+            </ToggleButtonGroup>
+
+            <Grid container spacing={2}>
+              {getCurrentTabMessages().map((m) => (
+                <Grid item xs={12} md={6} lg={4} key={m.id}>
+                  <Card>
+                    <CardContent>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                        {getMessageTypeIcon(m.messageType)}
+                        <Typography variant="subtitle2">
+                          {getMessageTypeLabel(m.messageType, (m as any).fileName)}
+                        </Typography>
+                      </Stack>
+                      {m.messageType === 'image' && m.mediaUrl && (
+                        <Box sx={{ mt: 1 }}>
+                          <img src={m.mediaUrl} alt="Imagen" style={{ maxWidth: '100%', borderRadius: 8 }} />
+                        </Box>
+                      )}
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(m.timestamp).toLocaleString()}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+        )}
+
+        {/* Tab 4: Historial de Campañas */}
+        {selectedTab === 4 && (
+          <Box>
+            <Card sx={{ mb: 3 }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                  <Typography variant="h5" sx={{ fontWeight: 600 }}>
+                    📢 Historial de Campañas
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={<Refresh />}
+                    onClick={loadCampaigns}
+                    size="small"
+                  >
+                    Actualizar
+                  </Button>
+                </Box>
+
+                {/* Estadísticas de campañas */}
                 <Grid container spacing={2} sx={{ mb: 3 }}>
-                  <Grid item xs={12} md={6}>
-                    <Paper sx={{ p: 2 }}>
-                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                        Mensaje de la campaña
+                  <Grid item xs={12} md={3}>
+                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#e3f2fd' }}>
+                      <CampaignOutlined sx={{ fontSize: 32, color: '#1976d2', mb: 1 }} />
+                      <Typography variant="h4" sx={{ fontWeight: 600 }}>
+                        {campaigns.length}
                       </Typography>
-                      <Typography variant="body2">
-                        {selectedCampaign.message_template}
-                      </Typography>
+                      <Typography variant="body2" color="text.secondary">Total Campañas</Typography>
                     </Paper>
                   </Grid>
-                  <Grid item xs={12} md={6}>
-                    <Grid container spacing={2}>
-                      <Grid item xs={6}>
-                        <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#e3f2fd' }}>
-                          <Typography variant="h5" sx={{ fontWeight: 600 }}>
-                            {selectedCampaign.total_recipients}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Total Destinatarios
-                          </Typography>
-                        </Paper>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#e8f5e9' }}>
-                          <Typography variant="h5" sx={{ fontWeight: 600 }}>
-                            {selectedCampaign.sent_count}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Enviados
-                          </Typography>
-                        </Paper>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#fff3e0' }}>
-                          <Typography variant="h5" sx={{ fontWeight: 600 }}>
-                            {selectedCampaign.read_count || 0}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Vistos
-                          </Typography>
-                        </Paper>
-                      </Grid>
-                      <Grid item xs={6}>
-                        <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#ffebee' }}>
-                          <Typography variant="h5" sx={{ fontWeight: 600 }}>
-                            {selectedCampaign.failed_count || 0}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Fallidos
-                          </Typography>
-                        </Paper>
-                      </Grid>
-                    </Grid>
+                  <Grid item xs={12} md={3}>
+                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#e8f5e9' }}>
+                      <Send sx={{ fontSize: 32, color: '#2e7d32', mb: 1 }} />
+                      <Typography variant="h4" sx={{ fontWeight: 600 }}>
+                        {campaigns.reduce((sum, c) => sum + c.sent_count, 0)}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">Total Enviados</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#fff3e0' }}>
+                      <Visibility sx={{ fontSize: 32, color: '#f57c00', mb: 1 }} />
+                      <Typography variant="h4" sx={{ fontWeight: 600 }}>
+                        {campaigns.reduce((sum, c) => sum + (c.read_count || 0), 0)}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">Total Vistos</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12} md={3}>
+                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#ffebee' }}>
+                      <ErrorIcon sx={{ fontSize: 32, color: '#c62828', mb: 1 }} />
+                      <Typography variant="h4" sx={{ fontWeight: 600 }}>
+                        {campaigns.reduce((sum, c) => sum + (c.failed_count || 0), 0)}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">Total Fallidos</Typography>
+                    </Paper>
                   </Grid>
                 </Grid>
 
-                {/* Lista de destinatarios */}
-                {selectedCampaign.recipients && selectedCampaign.recipients.length > 0 && (
+                {/* Lista de campañas */}
+                {campaigns.length === 0 ? (
+                  <Paper sx={{ p: 8, textAlign: 'center' }} variant="outlined">
+                    <CampaignOutlined sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                    <Typography variant="h6" color="text.secondary" gutterBottom>
+                      No hay campañas aún
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                      Las campañas que crees aparecerán aquí con su historial detallado
+                    </Typography>
+                    <Button
+                      variant="contained"
+                      startIcon={<CampaignOutlined />}
+                      onClick={() => window.location.href = '/dashboard/campaigns'}
+                    >
+                      Crear Primera Campaña
+                    </Button>
+                  </Paper>
+                ) : (
                   <TableContainer component={Paper} variant="outlined">
-                    <Table size="small">
+                    <Table>
                       <TableHead sx={{ bgcolor: '#f8fafc' }}>
                         <TableRow>
-                          <TableCell>Contacto</TableCell>
-                          <TableCell>Estado</TableCell>
-                          <TableCell>Enviado</TableCell>
-                          <TableCell>Entregado</TableCell>
-                          <TableCell>Visto</TableCell>
-                          <TableCell>Error</TableCell>
+                          <TableCell width="25%">Nombre de Campaña</TableCell>
+                          <TableCell width="12%">Estado</TableCell>
+                          <TableCell width="10%">Total</TableCell>
+                          <TableCell width="10%">Enviados</TableCell>
+                          <TableCell width="10%">Entregados</TableCell>
+                          <TableCell width="8%">Vistos</TableCell>
+                          <TableCell width="8%">Fallidos</TableCell>
+                          <TableCell width="12%">Fecha Creación</TableCell>
+                          <TableCell width="5%">Acciones</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {selectedCampaign.recipients.map((recipient) => (
-                          <TableRow key={recipient.id} hover>
+                        {campaigns.map((campaign) => (
+                          <TableRow key={campaign.id} hover>
                             <TableCell>
-                              <Typography variant="body2">
-                                {recipient.contact_name || recipient.contact_jid.split('@')[0]}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                {recipient.contact_jid.split('@')[0]}
-                              </Typography>
+                              <Box>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                  {campaign.name}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                  {campaign.message_template.substring(0, 50)}{campaign.message_template.length > 50 ? '...' : ''}
+                                </Typography>
+                              </Box>
                             </TableCell>
                             <TableCell>
                               <Chip
-                                label={recipient.status}
+                                label={campaign.status}
                                 size="small"
                                 color={
-                                  recipient.status === 'sent' ? 'success' :
-                                  recipient.status === 'delivered' ? 'primary' :
-                                  recipient.status === 'read' ? 'info' :
-                                  recipient.status === 'failed' ? 'error' : 'default'
+                                  campaign.status === 'completed' ? 'success' :
+                                    campaign.status === 'active' ? 'primary' :
+                                      campaign.status === 'failed' ? 'error' :
+                                        campaign.status === 'paused' ? 'warning' : 'default'
                                 }
                               />
                             </TableCell>
                             <TableCell>
-                              <Typography variant="caption" color="text.secondary">
-                                {recipient.sent_at ? new Date(recipient.sent_at).toLocaleTimeString('es-ES') : '-'}
+                              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                {campaign.total_recipients}
                               </Typography>
                             </TableCell>
                             <TableCell>
-                              <Typography variant="caption" color="text.secondary">
-                                {recipient.delivered_at ? new Date(recipient.delivered_at).toLocaleTimeString('es-ES') : '-'}
-                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Check sx={{ fontSize: 16, color: '#2e7d32' }} />
+                                <Typography variant="body2">{campaign.sent_count}</Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <DoneAll sx={{ fontSize: 16, color: '#1976d2' }} />
+                                <Typography variant="body2">{campaign.delivered_count || 0}</Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Visibility sx={{ fontSize: 16, color: '#f57c00' }} />
+                                <Typography variant="body2">{campaign.read_count || 0}</Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <ErrorIcon sx={{ fontSize: 16, color: '#c62828' }} />
+                                <Typography variant="body2">{campaign.failed_count || 0}</Typography>
+                              </Box>
                             </TableCell>
                             <TableCell>
                               <Typography variant="caption" color="text.secondary">
-                                {recipient.read_at ? new Date(recipient.read_at).toLocaleTimeString('es-ES') : '-'}
+                                {new Date(campaign.created_at).toLocaleDateString('es-ES', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric'
+                                })}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                {new Date(campaign.created_at).toLocaleTimeString('es-ES', {
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
                               </Typography>
                             </TableCell>
                             <TableCell>
-                              {recipient.error_message && (
-                                <Tooltip title={recipient.error_message}>
-                                  <IconButton size="small">
-                                    <ErrorIcon fontSize="small" color="error" />
-                                  </IconButton>
-                                </Tooltip>
-                              )}
+                              <Tooltip title="Ver detalles">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => loadCampaignDetails(campaign.id)}
+                                >
+                                  <Visibility fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -2790,291 +2812,442 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                     </Table>
                   </TableContainer>
                 )}
-              </Box>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setShowCampaignDetailsDialog(false)}>
-              Cerrar
-            </Button>
-          </DialogActions>
-        </Dialog>
+              </CardContent>
+            </Card>
+          </Box>
+        )}
+      </Box>
 
-        {/* Diálogo para crear estados programados */}
-        <Dialog
-          open={showCreateStatusDialog}
-          onClose={() => setShowCreateStatusDialog(false)}
-          maxWidth="md"
-          fullWidth
-        >
-          <DialogTitle sx={{ bgcolor: '#25d366', color: 'white', display: 'flex', alignItems: 'center' }}>
-            <WhatsApp sx={{ mr: 1 }} />
-            Publicar Estados de WhatsApp
-          </DialogTitle>
-          <DialogContent sx={{ mt: 2 }}>
-            <Grid container spacing={3}>
-              {/* Crear nuevo estado */}
-              <Grid item xs={12}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Crear Estado
+      {/* Diálogo de detalles de campaña */}
+      <Dialog
+        open={showCampaignDetailsDialog}
+        onClose={() => setShowCampaignDetailsDialog(false)}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">
+              📢 Detalles de Campaña: {selectedCampaign?.name}
+            </Typography>
+            <IconButton onClick={() => setShowCampaignDetailsDialog(false)} size="small">
+              <Close />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {selectedCampaign && (
+            <Box>
+              {/* Información general */}
+              <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid item xs={12} md={6}>
+                  <Paper sx={{ p: 2 }}>
+                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                      Mensaje de la campaña
                     </Typography>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                      <TextField
-                        label="Texto del estado"
-                        multiline
-                        rows={3}
-                        value={statusText}
-                        onChange={(e) => setStatusText(e.target.value)}
-                        placeholder="Escribe el texto de tu estado..."
-                        fullWidth
-                      />
-                      <Box>
-                        <input
-                          accept="image/*"
-                          style={{ display: 'none' }}
-                          id="status-image-upload"
-                          type="file"
-                          onChange={handleStatusImageChange}
-                        />
-                        <label htmlFor="status-image-upload">
-                          <Button
-                            variant="outlined"
-                            component="span"
-                            startIcon={<PhotoCamera />}
-                          >
-                            Subir Imagen
-                          </Button>
-                        </label>
-                        {statusImagePreview && (
-                          <Box sx={{ mt: 2, position: 'relative', display: 'inline-block' }}>
-                            <img
-                              src={statusImagePreview}
-                              alt="Preview"
-                              style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: '8px' }}
-                            />
-                            <IconButton
-                              size="small"
-                              sx={{ position: 'absolute', top: -10, right: -10, bgcolor: 'error.main', color: 'white' }}
-                              onClick={() => {
-                                setStatusImage(null);
-                                setStatusImagePreview(null);
-                              }}
-                            >
-                              <Close fontSize="small" />
-                            </IconButton>
-                          </Box>
-                        )}
-                      </Box>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button
-                          variant="contained"
-                          onClick={handleAddScheduledStatus}
-                          disabled={!statusText && !statusImage}
-                          startIcon={editingStatusId ? <Check /> : <Add />}
-                          sx={{
-                            bgcolor: editingStatusId ? '#2196f3' : '#25d366',
-                            '&:hover': { bgcolor: editingStatusId ? '#1976d2' : '#128c7e' }
-                          }}
-                        >
-                          {editingStatusId ? 'Actualizar Estado' : 'Agregar a la Lista'}
-                        </Button>
-                        {editingStatusId && (
-                          <Button
-                            variant="outlined"
-                            onClick={handleCancelEdit}
-                            color="error"
-                          >
-                            Cancelar
-                          </Button>
-                        )}
-                      </Box>
-                    </Box>
-                  </CardContent>
-                </Card>
+                    <Typography variant="body2">
+                      {selectedCampaign.message_template}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Grid container spacing={2}>
+                    <Grid item xs={6}>
+                      <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#e3f2fd' }}>
+                        <Typography variant="h5" sx={{ fontWeight: 600 }}>
+                          {selectedCampaign.total_recipients}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Total Destinatarios
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#e8f5e9' }}>
+                        <Typography variant="h5" sx={{ fontWeight: 600 }}>
+                          {selectedCampaign.sent_count}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Enviados
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#fff3e0' }}>
+                        <Typography variant="h5" sx={{ fontWeight: 600 }}>
+                          {selectedCampaign.read_count || 0}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Vistos
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Paper sx={{ p: 2, textAlign: 'center', bgcolor: '#ffebee' }}>
+                        <Typography variant="h5" sx={{ fontWeight: 600 }}>
+                          {selectedCampaign.failed_count || 0}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Fallidos
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                  </Grid>
+                </Grid>
               </Grid>
 
-              {/* Lista de estados programados */}
-              <Grid item xs={12}>
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                      Estados Programados ({scheduledStatuses.length})
-                    </Typography>
-                    {scheduledStatuses.length === 0 ? (
-                      <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                        No hay estados agregados. Crea uno arriba y agrégalo a la lista.
-                      </Typography>
-                    ) : (
-                      <List>
-                        {scheduledStatuses.map((status, index) => (
-                          <ListItem
-                            key={status.id}
-                            secondaryAction={
-                              <Box sx={{ display: 'flex', gap: 1 }}>
-                                <Tooltip title="Editar">
-                                  <IconButton 
-                                    size="small" 
-                                    onClick={() => handleEditScheduledStatus(status.id)}
-                                    sx={{ color: '#2196f3' }}
-                                  >
-                                    <IconButton sx={{ fontSize: 20 }}>✏️</IconButton>
-                                  </IconButton>
-                                </Tooltip>
-                                <Tooltip title="Eliminar">
-                                  <IconButton 
-                                    size="small" 
-                                    onClick={() => handleRemoveScheduledStatus(status.id)}
-                                  >
-                                    <Delete color="error" />
-                                  </IconButton>
-                                </Tooltip>
-                              </Box>
-                            }
-                            sx={{ 
-                              border: editingStatusId === status.id ? '2px solid #2196f3' : '1px solid #e0e0e0', 
-                              borderRadius: 2, 
-                              mb: 1.5,
-                              bgcolor: editingStatusId === status.id ? 'rgba(33, 150, 243, 0.05)' : 'transparent',
-                              transition: 'all 0.3s ease'
+              {/* Lista de destinatarios */}
+              {selectedCampaign.recipients && selectedCampaign.recipients.length > 0 && (
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead sx={{ bgcolor: '#f8fafc' }}>
+                      <TableRow>
+                        <TableCell>Contacto</TableCell>
+                        <TableCell>Estado</TableCell>
+                        <TableCell>Enviado</TableCell>
+                        <TableCell>Entregado</TableCell>
+                        <TableCell>Visto</TableCell>
+                        <TableCell>Error</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {selectedCampaign.recipients.map((recipient) => (
+                        <TableRow key={recipient.id} hover>
+                          <TableCell>
+                            <Typography variant="body2">
+                              {recipient.contact_name || recipient.contact_jid.split('@')[0]}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {recipient.contact_jid.split('@')[0]}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={recipient.status}
+                              size="small"
+                              color={
+                                recipient.status === 'sent' ? 'success' :
+                                  recipient.status === 'delivered' ? 'primary' :
+                                    recipient.status === 'read' ? 'info' :
+                                      recipient.status === 'failed' ? 'error' : 'default'
+                              }
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="caption" color="text.secondary">
+                              {recipient.sent_at ? new Date(recipient.sent_at).toLocaleTimeString('es-ES') : '-'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="caption" color="text.secondary">
+                              {recipient.delivered_at ? new Date(recipient.delivered_at).toLocaleTimeString('es-ES') : '-'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="caption" color="text.secondary">
+                              {recipient.read_at ? new Date(recipient.read_at).toLocaleTimeString('es-ES') : '-'}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            {recipient.error_message && (
+                              <Tooltip title={recipient.error_message}>
+                                <IconButton size="small">
+                                  <ErrorIcon fontSize="small" color="error" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowCampaignDetailsDialog(false)}>
+            Cerrar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Diálogo para crear estados programados */}
+      <Dialog
+        open={showCreateStatusDialog}
+        onClose={() => setShowCreateStatusDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: '#25d366', color: 'white', display: 'flex', alignItems: 'center' }}>
+          <WhatsApp sx={{ mr: 1 }} />
+          Publicar Estados de WhatsApp
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Grid container spacing={3}>
+            {/* Crear nuevo estado */}
+            <Grid item xs={12}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Crear Estado
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <TextField
+                      label="Texto del estado"
+                      multiline
+                      rows={3}
+                      value={statusText}
+                      onChange={(e) => setStatusText(e.target.value)}
+                      placeholder="Escribe el texto de tu estado..."
+                      fullWidth
+                    />
+                    <Box>
+                      <input
+                        accept="image/*"
+                        style={{ display: 'none' }}
+                        id="status-image-upload"
+                        type="file"
+                        onChange={handleStatusImageChange}
+                      />
+                      <label htmlFor="status-image-upload">
+                        <Button
+                          variant="outlined"
+                          component="span"
+                          startIcon={<PhotoCamera />}
+                        >
+                          Subir Imagen
+                        </Button>
+                      </label>
+                      {statusImagePreview && (
+                        <Box sx={{ mt: 2, position: 'relative', display: 'inline-block' }}>
+                          <img
+                            src={statusImagePreview}
+                            alt="Preview"
+                            style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: '8px' }}
+                          />
+                          <IconButton
+                            size="small"
+                            sx={{ position: 'absolute', top: -10, right: -10, bgcolor: 'error.main', color: 'white' }}
+                            onClick={() => {
+                              setStatusImage(null);
+                              setStatusImagePreview(null);
                             }}
                           >
-                            <ListItemAvatar>
-                              <Avatar sx={{ bgcolor: '#25d366', fontWeight: 'bold' }}>
-                                {index + 1}
-                              </Avatar>
-                            </ListItemAvatar>
-                            <Box sx={{ flex: 1, display: 'flex', gap: 2, alignItems: 'center' }}>
-                              {status.image && (
-                                <Box
-                                  component="img"
-                                  src={status.image}
-                                  alt={`Preview ${index + 1}`}
-                                  sx={{
-                                    width: 60,
-                                    height: 60,
-                                    borderRadius: 1,
-                                    objectFit: 'cover',
-                                    border: '1px solid #ddd'
-                                  }}
-                                />
-                              )}
-                              <ListItemText
-                                primary={
-                                  <Typography variant="body1" sx={{ fontWeight: status.text ? 500 : 400 }}>
-                                    {status.text || '(Solo imagen)'}
-                                  </Typography>
-                                }
-                                secondary={
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-                                    {status.image && (
-                                      <Chip 
-                                        icon={<PhotoCamera sx={{ fontSize: 16 }} />} 
-                                        label="Con imagen" 
-                                        size="small" 
-                                        sx={{ height: 20, fontSize: '0.7rem', bgcolor: '#e3f2fd' }}
-                                      />
-                                    )}
-                                    {status.text && (
-                                      <Chip 
-                                        label={`${status.text.length} caracteres`} 
-                                        size="small" 
-                                        sx={{ height: 20, fontSize: '0.7rem' }}
-                                      />
-                                    )}
-                                  </Box>
-                                }
-                              />
-                            </Box>
-                          </ListItem>
-                        ))}
-                      </List>
-                    )}
-                  </CardContent>
-                </Card>
-              </Grid>
-
-              {/* Configuración de intervalo */}
-              <Grid item xs={12}>
-                <Card variant="outlined" sx={{ bgcolor: '#f5f5f5' }}>
-                  <CardContent>
-                    <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-                      <Timer sx={{ mr: 1 }} />
-                      Programación Automática
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                      <TextField
-                        label="Intervalo"
-                        type="number"
-                        value={statusInterval}
-                        onChange={(e) => setStatusInterval(Math.max(1, parseInt(e.target.value) || 1))}
-                        inputProps={{ min: 1 }}
-                        sx={{ width: '150px' }}
-                      />
-                      <FormControl sx={{ width: '150px' }}>
-                        <InputLabel>Unidad</InputLabel>
-                        <Select
-                          value={statusIntervalUnit}
-                          label="Unidad"
-                          onChange={(e) => setStatusIntervalUnit(e.target.value as 'minutos' | 'horas')}
-                        >
-                          <MenuItem value="minutos">Minutos</MenuItem>
-                          <MenuItem value="horas">Horas</MenuItem>
-                        </Select>
-                      </FormControl>
+                            <Close fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      )}
                     </Box>
-                    <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
-                      Los estados se publicarán automáticamente cada {statusInterval} {statusIntervalUnit}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button
+                        variant="contained"
+                        onClick={handleAddScheduledStatus}
+                        disabled={!statusText && !statusImage}
+                        startIcon={editingStatusId ? <Check /> : <Add />}
+                        sx={{
+                          bgcolor: editingStatusId ? '#2196f3' : '#25d366',
+                          '&:hover': { bgcolor: editingStatusId ? '#1976d2' : '#128c7e' }
+                        }}
+                      >
+                        {editingStatusId ? 'Actualizar Estado' : 'Agregar a la Lista'}
+                      </Button>
+                      {editingStatusId && (
+                        <Button
+                          variant="outlined"
+                          onClick={handleCancelEdit}
+                          color="error"
+                        >
+                          Cancelar
+                        </Button>
+                      )}
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
             </Grid>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setShowCreateStatusDialog(false)}>
-              Cancelar
-            </Button>
-            <Button
-              variant="contained"
-              onClick={handlePublishStatuses}
-              disabled={scheduledStatuses.length === 0 || loading}
-              startIcon={loading ? <CircularProgress size={20} /> : <Send />}
-              sx={{
-                bgcolor: '#25d366',
-                '&:hover': { bgcolor: '#128c7e' }
-              }}
-            >
-              {loading ? 'Publicando...' : 'Publicar Estados'}
-            </Button>
-          </DialogActions>
-        </Dialog>
 
-        {/* Snackbar para notificaciones modernas */}
-        <Snackbar
-          open={snackbar.open}
-          autoHideDuration={4000}
-          onClose={handleCloseSnackbar}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        >
-          <Alert 
-            onClose={handleCloseSnackbar} 
-            severity={snackbar.severity} 
-            sx={{ 
-              width: '100%',
-              boxShadow: 3,
-              '& .MuiAlert-icon': {
-                fontSize: 24
-              }
+            {/* Lista de estados programados */}
+            <Grid item xs={12}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Estados Programados ({scheduledStatuses.length})
+                  </Typography>
+                  {scheduledStatuses.length === 0 ? (
+                    <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
+                      No hay estados agregados. Crea uno arriba y agrégalo a la lista.
+                    </Typography>
+                  ) : (
+                    <List>
+                      {scheduledStatuses.map((status, index) => (
+                        <ListItem
+                          key={status.id}
+                          secondaryAction={
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Tooltip title="Editar">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleEditScheduledStatus(status.id)}
+                                  sx={{ color: '#2196f3' }}
+                                >
+                                  <IconButton sx={{ fontSize: 20 }}>✏️</IconButton>
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Eliminar">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => handleRemoveScheduledStatus(status.id)}
+                                >
+                                  <Delete color="error" />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          }
+                          sx={{
+                            border: editingStatusId === status.id ? '2px solid #2196f3' : '1px solid #e0e0e0',
+                            borderRadius: 2,
+                            mb: 1.5,
+                            bgcolor: editingStatusId === status.id ? 'rgba(33, 150, 243, 0.05)' : 'transparent',
+                            transition: 'all 0.3s ease'
+                          }}
+                        >
+                          <ListItemAvatar>
+                            <Avatar sx={{ bgcolor: '#25d366', fontWeight: 'bold' }}>
+                              {index + 1}
+                            </Avatar>
+                          </ListItemAvatar>
+                          <Box sx={{ flex: 1, display: 'flex', gap: 2, alignItems: 'center' }}>
+                            {status.image && (
+                              <Box
+                                component="img"
+                                src={status.image}
+                                alt={`Preview ${index + 1}`}
+                                sx={{
+                                  width: 60,
+                                  height: 60,
+                                  borderRadius: 1,
+                                  objectFit: 'cover',
+                                  border: '1px solid #ddd'
+                                }}
+                              />
+                            )}
+                            <ListItemText
+                              primary={
+                                <Typography variant="body1" sx={{ fontWeight: status.text ? 500 : 400 }}>
+                                  {status.text || '(Solo imagen)'}
+                                </Typography>
+                              }
+                              secondary={
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                  {status.image && (
+                                    <Chip
+                                      icon={<PhotoCamera sx={{ fontSize: 16 }} />}
+                                      label="Con imagen"
+                                      size="small"
+                                      sx={{ height: 20, fontSize: '0.7rem', bgcolor: '#e3f2fd' }}
+                                    />
+                                  )}
+                                  {status.text && (
+                                    <Chip
+                                      label={`${status.text.length} caracteres`}
+                                      size="small"
+                                      sx={{ height: 20, fontSize: '0.7rem' }}
+                                    />
+                                  )}
+                                </Box>
+                              }
+                            />
+                          </Box>
+                        </ListItem>
+                      ))}
+                    </List>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Configuración de intervalo */}
+            <Grid item xs={12}>
+              <Card variant="outlined" sx={{ bgcolor: '#f5f5f5' }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Timer sx={{ mr: 1 }} />
+                    Programación Automática
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                    <TextField
+                      label="Intervalo"
+                      type="number"
+                      value={statusInterval}
+                      onChange={(e) => setStatusInterval(Math.max(1, parseInt(e.target.value) || 1))}
+                      inputProps={{ min: 1 }}
+                      sx={{ width: '150px' }}
+                    />
+                    <FormControl sx={{ width: '150px' }}>
+                      <InputLabel>Unidad</InputLabel>
+                      <Select
+                        value={statusIntervalUnit}
+                        label="Unidad"
+                        onChange={(e) => setStatusIntervalUnit(e.target.value as 'minutos' | 'horas')}
+                      >
+                        <MenuItem value="minutos">Minutos</MenuItem>
+                        <MenuItem value="horas">Horas</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
+                  <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
+                    Los estados se publicarán automáticamente cada {statusInterval} {statusIntervalUnit}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowCreateStatusDialog(false)}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handlePublishStatuses}
+            disabled={scheduledStatuses.length === 0 || loading}
+            startIcon={loading ? <CircularProgress size={20} /> : <Send />}
+            sx={{
+              bgcolor: '#25d366',
+              '&:hover': { bgcolor: '#128c7e' }
             }}
-            variant="filled"
           >
-            {snackbar.message}
-          </Alert>
-        </Snackbar>
-      </LocalizationProvider>
-    );
+            {loading ? 'Publicando...' : 'Publicar Estados'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Snackbar para notificaciones modernas */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity={snackbar.severity}
+          sx={{
+            width: '100%',
+            boxShadow: 3,
+            '& .MuiAlert-icon': {
+              fontSize: 24
+            }
+          }}
+          variant="filled"
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+    </LocalizationProvider>
+  );
 };
 
 export default HistoryModule;
