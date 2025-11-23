@@ -25,7 +25,7 @@ import { getAPIBaseURL } from '../utils/socketConfig';
 import { storageManager } from '../utils/storageManager';
 
 interface LoginProps {
-  onLoginSuccess: (user: any, token: string) => void;
+  onLoginSuccess: (user: any, token: string, sessionId?: string) => void;
 }
 
 const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
@@ -98,8 +98,8 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           console.log('✅ SessionId desde BD:', data.sessionId);
         }
 
-        // Llamar al callback con los datos de usuario
-        onLoginSuccess(data.user, data.token);
+        // Llamar al callback con los datos de usuario Y sessionId
+        onLoginSuccess(data.user, data.token, data.sessionId);
 
         // SEGURIDAD: Ya no buscamos sesiones activas de otros usuarios
         // Cada usuario debe tener su propio sessionId vinculado a su cuenta
