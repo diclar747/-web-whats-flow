@@ -781,88 +781,89 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
 
     try {
       setLoading(true);
-      showSnackbar('Preparando estados para publicación...', 'info');
+      showSnackbar('Creando estados en el servidor...', 'info');
 
       // Calcular intervalo en minutos
       const intervalMinutes = statusIntervalUnit === 'horas'
         ? statusInterval * 60
         : statusInterval;
 
-      // Primero guardar los estados en DB
-      const saveFormData = new FormData();
-      saveFormData.append('sessionId', sessionId);
-      saveFormData.append('statuses', JSON.stringify(scheduledStatuses.map(s => ({
-        text: s.text || ''
-      }))));
+      // Paso 1: Crear cada estado en el servidor
+      const createdStatusIds: number[] = [];
 
-      // Agregar imágenes
-      scheduledStatuses.forEach((status, index) => {
+      for (let i = 0; i < scheduledStatuses.length; i++) {
+        const status = scheduledStatuses[i];
+        const formData = new FormData();
+        formData.append('sessionId', sessionId);
+
+        if (status.text) {
+          formData.append('textContent', status.text);
+        }
+
         if (status.imageFile) {
-          saveFormData.append(`status_${index}_image`, status.imageFile);
+          formData.append('mediaFile', status.imageFile);
         }
-      });
 
-      const saveResponse = await fetch(`${getAPIBaseURL()}/api/statuses/save`, {
-        method: 'POST',
-        body: saveFormData
-      });
+        formData.append('backgroundColor', '#075E54');
+        formData.append('fontStyle', 'default');
 
-      if (!saveResponse.ok) {
-        // Manejo específico para 413 (Payload demasiado grande)
-        if (saveResponse.status === 413) {
-          throw new Error('El archivo o conjunto de imágenes es demasiado grande (413). Reduce tamaño o cantidad.');
+        const response = await fetch(`${getAPIBaseURL()}/api/statuses/create`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || `Error creando estado ${i + 1}`);
         }
-        const rawText = await saveResponse.text();
-        throw new Error(`Error HTTP ${saveResponse.status}: ${rawText.slice(0, 200)}`);
+
+        const data = await response.json();
+        if (data.success && data.statusId) {
+          createdStatusIds.push(data.statusId);
+          showSnackbar(`Estado ${i + 1}/${scheduledStatuses.length} creado ✓`, 'info');
+        } else {
+          throw new Error(`Error creando estado ${i + 1}`);
+        }
       }
 
-      let saveData: any;
-      try {
-        saveData = await saveResponse.json();
-      } catch (e) {
-        throw new Error('Respuesta inválida del servidor al guardar (no JSON)');
-      }
+      // Paso 2: Crear programación con los estados creados
+      showSnackbar('Creando programación automática...', 'info');
 
-      if (!saveData.success) {
-        throw new Error(saveData.error || 'Error al guardar estados');
-      }
-
-      // Ahora publicar los estados
-      // Enviar publicación como JSON (endpoint no necesita multipart y esperaba JSON)
-      const publishPayload = { sessionId, interval: intervalMinutes.toString() };
-      const publishResponse = await fetch(`${getAPIBaseURL()}/api/publish-statuses`, {
+      const scheduleResponse = await fetch(`${getAPIBaseURL()}/api/statuses/schedule/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(publishPayload)
+        body: JSON.stringify({
+          sessionId,
+          name: `Programación ${new Date().toLocaleDateString()}`,
+          statusIds: createdStatusIds,
+          intervalMinutes,
+          rotationDays: 30
+        })
       });
 
-      if (!publishResponse.ok) {
-        if (publishResponse.status === 413) {
-          throw new Error('Publicación demasiado grande (413).');
-        }
-        const rawText = await publishResponse.text();
-        throw new Error(`Error HTTP ${publishResponse.status}: ${rawText.slice(0, 200)}`);
+      if (!scheduleResponse.ok) {
+        const errorData = await scheduleResponse.json();
+        throw new Error(errorData.error || 'Error creando programación');
       }
 
-      let publishData: any;
-      try {
-        publishData = await publishResponse.json();
-      } catch (e) {
-        throw new Error('Respuesta inválida del servidor al publicar (no JSON)');
-      }
+      const scheduleData = await scheduleResponse.json();
 
-      if (publishData.success) {
-        const message = scheduledStatuses.length === 1
-          ? '✅ Estado publicado exitosamente'
-          : `✅ ${publishData.published} estado publicado, ${publishData.scheduled} programados cada ${statusInterval} ${statusIntervalUnit}${publishData.nextPublish ? `\n\n⏰ Próximo: ${publishData.nextPublish}` : ''
-          }`;
+      if (scheduleData.success) {
+        showSnackbar(
+          `✅ ${createdStatusIds.length} estados programados!\n` +
+          `⏰ Se publicarán cada ${statusInterval} ${statusIntervalUnit}\n` +
+          `🔄 Rotación de 30 días activada`,
+          'success'
+        );
 
-        showSnackbar(message, 'success');
-        setShowCreateStatusDialog(false);
+        // Limpiar estados locales
         setScheduledStatuses([]);
+        setShowCreateStatusDialog(false);
+
+        // Recargar estados desde el servidor
         loadStatuses();
       } else {
-        throw new Error(publishData.error || 'No se pudieron publicar los estados');
+        throw new Error(scheduleData.error || 'Error en la programación');
       }
     } catch (error: any) {
       console.error('Error publicando estados:', error);
@@ -871,6 +872,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       setLoading(false);
     }
   };
+
 
   const loadCampaigns = async () => {
     try {
