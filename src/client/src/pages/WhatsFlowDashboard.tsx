@@ -783,18 +783,18 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
           position="static"
           elevation={0}
           sx={{
-            bgcolor: isInChatPage ? '#1a1a1a' : 'background.paper',
-            color: isInChatPage ? '#ffffff' : 'text.primary',
+            bgcolor: isInChatPage ? '#1f2c34' : 'background.paper',
+            color: isInChatPage ? '#e9edef' : 'text.primary',
             borderBottom: '1px solid',
-            borderColor: isInChatPage ? 'rgba(255, 255, 255, 0.1)' : 'divider',
+            borderColor: isInChatPage ? '#2a3942' : 'divider',
             backdropFilter: 'blur(20px) saturate(180%)',
             backgroundColor: isInChatPage
-              ? 'rgba(26, 26, 26, 0.95)'
+              ? '#1f2c34'
               : (theme) => theme.palette.mode === 'dark'
                 ? 'rgba(32, 44, 51, 0.8)'
                 : 'rgba(255, 255, 255, 0.8)',
             boxShadow: isInChatPage
-              ? '0 2px 8px rgba(0, 0, 0, 0.3)'
+              ? '0 1px 2px rgba(0,0,0,0.4)'
               : '0 2px 8px rgba(0, 0, 0, 0.04)',
           }}
         >
@@ -835,8 +835,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: isInChatPage ? '#4dd0e1' : '#00bcd4',
-                    color: isInChatPage ? '#4dd0e1' : '#00bcd4'
+                    borderColor: '#00bcd4',
+                    color: '#00bcd4'
                   }}
                 />
               </Tooltip>
@@ -852,8 +852,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: isInChatPage ? '#66bb6a' : '#4caf50',
-                    color: isInChatPage ? '#66bb6a' : '#4caf50'
+                    borderColor: '#4caf50',
+                    color: '#4caf50'
                   }}
                 />
               </Tooltip>
@@ -869,8 +869,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: isInChatPage ? '#42a5f5' : '#2196f3',
-                    color: isInChatPage ? '#42a5f5' : '#2196f3'
+                    borderColor: '#2196f3',
+                    color: '#2196f3'
                   }}
                 />
               </Tooltip>
@@ -886,8 +886,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: isInChatPage ? '#ab47bc' : '#9c27b0',
-                    color: isInChatPage ? '#ab47bc' : '#9c27b0'
+                    borderColor: '#9c27b0',
+                    color: '#9c27b0'
                   }}
                 />
               </Tooltip>
@@ -903,8 +903,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: isInChatPage ? '#ffa726' : '#ff9800',
-                    color: isInChatPage ? '#ffa726' : '#ff9800'
+                    borderColor: '#ff9800',
+                    color: '#ff9800'
                   }}
                 />
               </Tooltip>
@@ -920,8 +920,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                     fontWeight: 600,
                     fontSize: '0.75rem',
                     height: 28,
-                    borderColor: isInChatPage ? '#7e57c2' : '#673ab7',
-                    color: isInChatPage ? '#7e57c2' : '#673ab7'
+                    borderColor: '#673ab7',
+                    color: '#673ab7'
                   }}
                 />
               </Tooltip>
