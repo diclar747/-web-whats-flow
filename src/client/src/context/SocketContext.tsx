@@ -184,11 +184,13 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     // Evento de invalidación de sesión
     newSocket.on('session-invalidated', (data: any) => {
       console.log('🚫 Sesión invalidada:', data.message);
-      alert(data.message || 'Tu sesión se cerró porque iniciaste sesión desde otro dispositivo');
-
-      // Limpiar sesión y recargar
-      localStorage.clear();
-      window.location.href = '/';
+      
+      // Usar evento personalizado para que App.tsx lo maneje con el Dialog
+      window.dispatchEvent(new CustomEvent('session-invalidated', { 
+        detail: { 
+          reason: data.message || 'Tu sesión se cerró porque iniciaste sesión desde otro dispositivo' 
+        } 
+      }));
     });
 
     return () => {

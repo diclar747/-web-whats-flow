@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material/styles';
-import { CircularProgress } from '@mui/material';
+import { CircularProgress, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button } from '@mui/material';
 import { ThemeProvider as CustomThemeProvider } from './contexts/ThemeContext';
 import { WhatsAppProvider } from './context/WhatsAppContext';
 import { LocalizationProvider } from '@mui/x-date-pickers';
@@ -220,6 +220,7 @@ const App: React.FC = () => {
   const [userType, setUserType] = useState<'admin' | 'agent' | null>(null);
   const [admin, setAdmin] = useState<any>(null);
   const [adminToken, setAdminToken] = useState<string | null>(null);
+  const [sessionClosedDialog, setSessionClosedDialog] = useState<{open: boolean; reason: string}>({open: false, reason: ''});
 
   useEffect(() => {
     // Función para generar un ID de dispositivo ÚNICO usando UUID
@@ -488,12 +489,11 @@ const App: React.FC = () => {
         const currentSessionToken = sessionStorage.getItem('sessionToken');
 
         if (data.userId === currentUserId || (data.oldTokens && data.oldTokens.includes(currentSessionToken))) {
-          alert(`Tu sesión ha sido cerrada porque iniciaste sesión en otro dispositivo.\n\nRazón: ${data.reason}`);
-
-          // Limpiar todo y redirigir
-          sessionStorage.clear();
-          localStorage.clear();
-          window.location.href = '/';
+          // Mostrar dialog en lugar de alert
+          setSessionClosedDialog({
+            open: true,
+            reason: data.reason || 'Iniciaste sesión en otro dispositivo'
+          });
         }
       };
 
@@ -505,6 +505,21 @@ const App: React.FC = () => {
       };
     });
   }, [user]);
+
+  // Listener para eventos de sesión invalidada desde SocketContext
+  useEffect(() => {
+    const handleSessionInvalidated = (event: any) => {
+      setSessionClosedDialog({
+        open: true,
+        reason: event.detail.reason
+      });
+    };
+
+    window.addEventListener('session-invalidated', handleSessionInvalidated);
+    return () => {
+      window.removeEventListener('session-invalidated', handleSessionInvalidated);
+    };
+  }, []);
 
   // FUNCIÓN ELIMINADA POR SEGURIDAD
   // fetchActiveSession permitía acceder a sesiones de otros usuarios
@@ -793,6 +808,77 @@ const App: React.FC = () => {
                 handleQRSuccess={handleQRSuccess}
                 onNavigate={() => { }}
               />
+
+              {/* Dialog de sesión cerrada - Diseño mejorado */}
+              <Dialog
+                open={sessionClosedDialog.open}
+                onClose={() => {}}
+                maxWidth="sm"
+                fullWidth
+                PaperProps={{
+                  sx: {
+                    borderRadius: 3,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+                  }
+                }}
+              >
+                <DialogTitle 
+                  sx={{ 
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    color: 'white',
+                    fontSize: '1.5rem',
+                    fontWeight: 600,
+                    pb: 2
+                  }}
+                >
+                  🔒 Sesión Cerrada
+                </DialogTitle>
+                <DialogContent sx={{ mt: 3, pb: 2 }}>
+                  <DialogContentText sx={{ fontSize: '1.1rem', color: 'text.primary', mb: 2 }}>
+                    Tu sesión ha sido cerrada porque iniciaste sesión en otro dispositivo o navegador.
+                  </DialogContentText>
+                  <DialogContentText sx={{ 
+                    fontSize: '0.95rem', 
+                    color: 'text.secondary',
+                    bgcolor: 'grey.100',
+                    p: 2,
+                    borderRadius: 2,
+                    border: '1px solid',
+                    borderColor: 'grey.300'
+                  }}>
+                    <strong>Razón:</strong> {sessionClosedDialog.reason}
+                  </DialogContentText>
+                  <DialogContentText sx={{ fontSize: '0.9rem', color: 'text.secondary', mt: 2 }}>
+                    Por seguridad, solo puedes tener una sesión activa a la vez. Serás redirigido a la página de inicio.
+                  </DialogContentText>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 3 }}>
+                  <Button
+                    onClick={() => {
+                      sessionStorage.clear();
+                      localStorage.clear();
+                      window.location.href = '/';
+                    }}
+                    variant="contained"
+                    size="large"
+                    fullWidth
+                    sx={{
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      color: 'white',
+                      py: 1.5,
+                      fontSize: '1rem',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      borderRadius: 2,
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, #5568d3 0%, #6a3f91 100%)',
+                      }
+                    }}
+                  >
+                    Entendido
+                  </Button>
+                </DialogActions>
+              </Dialog>
             </LocalizationProvider>
           </CustomThemeProvider>
         </SocketProvider>

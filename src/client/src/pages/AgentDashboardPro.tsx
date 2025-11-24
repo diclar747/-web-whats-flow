@@ -150,6 +150,7 @@ const AgentDashboardPro: React.FC = () => {
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [chatFilter, setChatFilter] = useState<'all' | 'unread'>('all');
   const [messageDateFilter, setMessageDateFilter] = useState<string>('today'); // 'today', 'week', 'month', 'all'
+  const [chatListDateFilter, setChatListDateFilter] = useState<string>('today'); // Filtro para lista de chats
 
   // Estado para minimizar/maximizar lista de chats (por defecto minimizado)
   const [chatListMinimized, setChatListMinimized] = useState(true);
@@ -379,17 +380,19 @@ const AgentDashboardPro: React.FC = () => {
 
   // ==================== CARGA DE DATOS ====================
 
-  const loadAgentChats = useCallback(async () => {
+  const loadAgentChats = useCallback(async (dateFilter: string = 'today') => {
     if (!agentId || !sessionId) return;
+
+    setChatListDateFilter(dateFilter); // Actualizar el filtro actual
 
     try {
       const token = sessionStorage.getItem('token');
-      const response = await fetch(`/api/agents/${agentId}/chats?sessionId=${sessionId}`, {
+      const response = await fetch(`/api/agents/${agentId}/chats?sessionId=${sessionId}&dateFilter=${dateFilter}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
       const data = await response.json();
-      console.log('[AGENT-PRO] Chats recibidos:', data);
+      console.log('[AGENT-PRO] Chats recibidos (filtro:', dateFilter, '):', data);
 
       // Debugging: ver primer chat para entender estructura
       if (data.chats && data.chats.length > 0) {
@@ -1441,25 +1444,68 @@ const AgentDashboardPro: React.FC = () => {
           }}
         >
           {/* Header del panel */}
-          <Box sx={{ p: 2, bgcolor: currentTheme.bg.primary, borderBottom: `1px solid ${currentTheme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Box sx={{ p: 2, bgcolor: currentTheme.bg.primary, borderBottom: `1px solid ${currentTheme.border}`, display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: chatListMinimized ? 0 : 1.5 }}>
+              {!chatListMinimized && (
+                <Typography variant="h6" sx={{ fontWeight: 600, color: currentTheme.text.primary }}>
+                  Mis Chats Asignados
+                </Typography>
+              )}
+              <Tooltip title={chatListMinimized ? "Expandir" : "Minimizar"}>
+                <IconButton
+                  size="small"
+                  onClick={() => setChatListMinimized(!chatListMinimized)}
+                  sx={{ color: currentTheme.text.primary }}
+                >
+                  {chatListMinimized ? '☰' : '«'}
+                </IconButton>
+              </Tooltip>
+            </Box>
+            
+            {/* Filtros de fecha para lista de chats */}
             {!chatListMinimized && (
-              <Typography variant="h6" sx={{ mb: 1.5, fontWeight: 600, color: currentTheme.text.primary }}>
-                Mis Chats Asignados
-              </Typography>
+              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                <Chip
+                  label="Hoy"
+                  size="small"
+                  onClick={() => loadAgentChats('today')}
+                  color={chatListDateFilter === 'today' ? 'primary' : 'default'}
+                  sx={{ fontSize: '0.75rem', bgcolor: chatListDateFilter === 'today' ? '#00a884' : undefined, color: chatListDateFilter === 'today' ? 'white' : undefined }}
+                />
+                <Chip
+                  label="Ayer"
+                  size="small"
+                  onClick={() => loadAgentChats('yesterday')}
+                  color={chatListDateFilter === 'yesterday' ? 'primary' : 'default'}
+                  sx={{ fontSize: '0.75rem', bgcolor: chatListDateFilter === 'yesterday' ? '#00a884' : undefined, color: chatListDateFilter === 'yesterday' ? 'white' : undefined }}
+                />
+                <Chip
+                  label="Semana"
+                  size="small"
+                  onClick={() => loadAgentChats('week')}
+                  color={chatListDateFilter === 'week' ? 'primary' : 'default'}
+                  sx={{ fontSize: '0.75rem', bgcolor: chatListDateFilter === 'week' ? '#00a884' : undefined, color: chatListDateFilter === 'week' ? 'white' : undefined }}
+                />
+                <Chip
+                  label="Mes"
+                  size="small"
+                  onClick={() => loadAgentChats('month')}
+                  color={chatListDateFilter === 'month' ? 'primary' : 'default'}
+                  sx={{ fontSize: '0.75rem', bgcolor: chatListDateFilter === 'month' ? '#00a884' : undefined, color: chatListDateFilter === 'month' ? 'white' : undefined }}
+                />
+                <Chip
+                  label="Todos"
+                  size="small"
+                  onClick={() => loadAgentChats('all')}
+                  color={chatListDateFilter === 'all' ? 'primary' : 'default'}
+                  sx={{ fontSize: '0.75rem', bgcolor: chatListDateFilter === 'all' ? '#00a884' : undefined, color: chatListDateFilter === 'all' ? 'white' : undefined }}
+                />
+              </Box>
             )}
-            <Tooltip title={chatListMinimized ? "Expandir" : "Minimizar"}>
-              <IconButton
-                size="small"
-                onClick={() => setChatListMinimized(!chatListMinimized)}
-                sx={{ color: currentTheme.text.primary }}
-              >
-                {chatListMinimized ? '☰' : '«'}
-              </IconButton>
-            </Tooltip>
           </Box>
           
           {!chatListMinimized && (
-            <Box sx={{ px: 2, pt: 0, pb: 2 }}>
+            <Box sx={{ px: 2, pt: 2, pb: 2 }}>
             <TextField
               fullWidth
               size="small"

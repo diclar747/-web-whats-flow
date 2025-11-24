@@ -215,6 +215,10 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
   // Nuevos estados para funcionalidades avanzadas
   const [contacts, setContacts] = useState<any[]>([]);
+  const [contactsPage, setContactsPage] = useState(0);
+  const [contactsHasMore, setContactsHasMore] = useState(true);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [totalContacts, setTotalContacts] = useState(0);
 
   const [kanbanBoards, setKanbanBoards] = useState<any[]>([]);
   const [kanbanBoardContacts, setKanbanBoardContacts] = useState<Record<string, any[]>>({});
@@ -234,72 +238,154 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
     loadCampaignsData();
   }, [sessionId]);
 
-  // Función para cargar contactos desde la API
-  const loadContactsAndGroups = async () => {
-    
+  // Función para cargar contactos desde la API con paginación
+  const loadContactsAndGroups = async (resetContacts = true) => {
+
     try {
       console.log('🔄 Cargando contactos, grupos y tableros Kanban para campañas...');
 
-      // Cargar contactos
-      console.log('📞 Cargando contactos individuales...');
-      const contactsResponse = await fetch(`${getAPIBaseURL()}/api/contacts/${sessionId}`);
+      // Cargar contactos con paginación
+      console.log('📞 Cargando contactos individuales (paginado)...');
+      setContactsLoading(true);
+
+      const page = resetContacts ? 0 : contactsPage;
+      const limit = 20;
+      const search = contactSearchTerm;
+
+      const contactsResponse = await fetch(
+        `${getAPIBaseURL()}/api/contacts/${sessionId}?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`
+      );
       const contactsData = await contactsResponse.json();
 
       if (contactsData.success && contactsData.contacts) {
-        console.log(`✅ ${contactsData.contacts.length} contactos cargados para campañas`);
-        setContacts(contactsData.contacts.map((contact: any) => ({
-          id: contact.whatsapp_id,
-          name: contact.name || contact.whatsapp_id.split('@')[0],
-          phone: contact.whatsapp_id,
-          avatar: contact.avatar_url,
+        console.log(`✅ ${contactsData.contacts.length} contactos cargados (página ${page + 1})`);
+
+        const formattedContacts = contactsData.contacts.map((contact: any) => ({
+          id: contact.jid || contact.whatsapp_id,
+          name: contact.name || contact.notify_name || (contact.jid || contact.whatsapp_id).split('@')[0],
+          phone: contact.phone || (contact.jid || contact.whatsapp_id).split('@')[0],
+          avatar: contact.avatarUrl || contact.avatar_url,
           lastSeen: contact.last_seen,
           isOnline: false
-        })));
+        }));
+
+        if (resetContacts) {
+          setContacts(formattedContacts);
+          setContactsPage(0);
+        } else {
+          setContacts(prev => [...prev, ...formattedContacts]);
+        }
+
+        setContactsHasMore(contactsData.hasMore);
+        setTotalContacts(contactsData.total);
       } else {
         console.warn('⚠️ No se pudieron cargar contactos:', contactsData.error);
-        setContacts([]);
+        if (resetContacts) {
+          setContacts([]);
+        }
       }
+
+      setContactsLoading(false);
 
       // No cargar grupos de WhatsApp
 
-      // Cargar tableros Kanban
-      console.log('📊 Cargando tableros Kanban...');
-      try {
-        const kanbanBoardsResponse = await fetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
-        const kanbanBoardsData = await kanbanBoardsResponse.json();
+      // Cargar tableros Kanban (solo en carga inicial)
+      if (resetContacts) {
+        console.log('📊 Cargando tableros Kanban...');
+        try {
+          const kanbanBoardsResponse = await fetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
+          const kanbanBoardsData = await kanbanBoardsResponse.json();
 
-        if (kanbanBoardsData.success && kanbanBoardsData.boards) {
-          console.log(`✅ ${kanbanBoardsData.boards.length} tableros Kanban cargados`);
-          setKanbanBoards(kanbanBoardsData.boards);
+          if (kanbanBoardsData.success && kanbanBoardsData.boards) {
+            console.log(`✅ ${kanbanBoardsData.boards.length} tableros Kanban cargados`);
+            setKanbanBoards(kanbanBoardsData.boards);
 
-          // Cargar contactos de Kanban
-          const kanbanContactsResponse = await fetch(`${getAPIBaseURL()}/api/kanban/contacts/${sessionId}`);
-          const kanbanContactsData = await kanbanContactsResponse.json();
+            // Cargar contactos de Kanban
+            const kanbanContactsResponse = await fetch(`${getAPIBaseURL()}/api/kanban/contacts/${sessionId}`);
+            const kanbanContactsData = await kanbanContactsResponse.json();
 
-          if (kanbanContactsData.success && kanbanContactsData.contactsByBoard) {
-            console.log(`✅ ${kanbanContactsData.totalContacts} contactos de Kanban cargados`);
-            setKanbanBoardContacts(kanbanContactsData.contactsByBoard);
-            console.log('✅ Contactos de Kanban organizados por tablero');
+            if (kanbanContactsData.success && kanbanContactsData.contactsByBoard) {
+              console.log(`✅ ${kanbanContactsData.totalContacts} contactos de Kanban cargados`);
+              setKanbanBoardContacts(kanbanContactsData.contactsByBoard);
+              console.log('✅ Contactos de Kanban organizados por tablero');
+            } else {
+              console.warn('⚠️ No se pudieron cargar contactos de Kanban');
+              setKanbanBoardContacts({});
+            }
           } else {
-            console.warn('⚠️ No se pudieron cargar contactos de Kanban');
-            setKanbanBoardContacts({});
+            console.warn('⚠️ No se pudieron cargar tableros Kanban:', kanbanBoardsData.error);
+            setKanbanBoards([]);
           }
-        } else {
-          console.warn('⚠️ No se pudieron cargar tableros Kanban:', kanbanBoardsData.error);
+        } catch (kanbanError) {
+          console.warn('⚠️ Error cargando tableros Kanban:', kanbanError);
           setKanbanBoards([]);
         }
-      } catch (kanbanError) {
-        console.warn('⚠️ Error cargando tableros Kanban:', kanbanError);
-        setKanbanBoards([]);
       }
 
       console.log('✅ Carga de contactos, grupos y Kanban completada');
     } catch (error) {
       console.error('❌ Error loading contacts:', error);
-      setContacts([]);
-      setKanbanBoards([]);
+      setContactsLoading(false);
+      if (resetContacts) {
+        setContacts([]);
+        setKanbanBoards([]);
+      }
     }
   };
+
+  // Función para cargar más contactos
+  const loadMoreContacts = async () => {
+    if (contactsLoading || !contactsHasMore) return;
+
+    const nextPage = contactsPage + 1;
+    setContactsPage(nextPage);
+
+    try {
+      console.log(`📞 Cargando más contactos (página ${nextPage + 1})...`);
+      setContactsLoading(true);
+
+      const limit = 20;
+      const search = contactSearchTerm;
+
+      const contactsResponse = await fetch(
+        `${getAPIBaseURL()}/api/contacts/${sessionId}?page=${nextPage}&limit=${limit}&search=${encodeURIComponent(search)}`
+      );
+      const contactsData = await contactsResponse.json();
+
+      if (contactsData.success && contactsData.contacts) {
+        console.log(`✅ ${contactsData.contacts.length} contactos adicionales cargados`);
+
+        const formattedContacts = contactsData.contacts.map((contact: any) => ({
+          id: contact.jid || contact.whatsapp_id,
+          name: contact.name || contact.notify_name || (contact.jid || contact.whatsapp_id).split('@')[0],
+          phone: contact.phone || (contact.jid || contact.whatsapp_id).split('@')[0],
+          avatar: contact.avatarUrl || contact.avatar_url,
+          lastSeen: contact.last_seen,
+          isOnline: false
+        }));
+
+        setContacts(prev => [...prev, ...formattedContacts]);
+        setContactsHasMore(contactsData.hasMore);
+        setTotalContacts(contactsData.total);
+      }
+
+      setContactsLoading(false);
+    } catch (error) {
+      console.error('❌ Error loading more contacts:', error);
+      setContactsLoading(false);
+    }
+  };
+
+  // Effect para buscar contactos cuando cambia el término de búsqueda
+  useEffect(() => {
+    if (contactSelectionType === 'individual') {
+      const delayDebounce = setTimeout(() => {
+        loadContactsAndGroups(true);
+      }, 500);
+
+      return () => clearTimeout(delayDebounce);
+    }
+  }, [contactSearchTerm]);
 
   // Función para procesar contactos manuales
   const parseManualContacts = (text: string) => {
@@ -1241,6 +1327,30 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                 <Alert severity="info" sx={{ mb: 2 }}>
                   Selecciona contactos individuales de tu lista de WhatsApp.
                 </Alert>
+
+                {/* Buscador de contactos */}
+                <TextField
+                  fullWidth
+                  placeholder="Buscar contacto por nombre o teléfono..."
+                  value={contactSearchTerm}
+                  onChange={(e) => setContactSearchTerm(e.target.value)}
+                  sx={{ mb: 2 }}
+                  InputProps={{
+                    startAdornment: <Search sx={{ mr: 1, color: 'text.secondary' }} />,
+                  }}
+                />
+
+                {/* Información de contactos totales */}
+                <Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="body2" color="textSecondary">
+                    Mostrando {contacts.length} de {totalContacts} contactos
+                  </Typography>
+                  <Typography variant="body2" color="primary" fontWeight="bold">
+                    {selectedContacts.length} seleccionados
+                  </Typography>
+                </Box>
+
+                {/* Lista de contactos */}
                 <Paper sx={{ maxHeight: 400, overflow: 'auto' }}>
                   <List>
                     {contacts.map((contact) => (
@@ -1275,11 +1385,41 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                         </ListItemButton>
                       </ListItem>
                     ))}
+
+                    {/* Indicador de carga */}
+                    {contactsLoading && (
+                      <ListItem>
+                        <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', py: 2 }}>
+                          <CircularProgress size={24} />
+                        </Box>
+                      </ListItem>
+                    )}
+
+                    {/* Mensaje cuando no hay contactos */}
+                    {!contactsLoading && contacts.length === 0 && (
+                      <ListItem>
+                        <ListItemText
+                          primary="No se encontraron contactos"
+                          secondary={contactSearchTerm ? "Intenta con otro término de búsqueda" : "No hay contactos disponibles"}
+                          sx={{ textAlign: 'center', py: 3 }}
+                        />
+                      </ListItem>
+                    )}
                   </List>
                 </Paper>
-                <Typography variant="caption" color="textSecondary" sx={{ mt: 1 }}>
-                  {selectedContacts.length} contactos seleccionados
-                </Typography>
+
+                {/* Botón Cargar Más */}
+                {contactsHasMore && !contactsLoading && contacts.length > 0 && (
+                  <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                    <Button
+                      variant="outlined"
+                      onClick={loadMoreContacts}
+                      startIcon={<Add />}
+                    >
+                      Cargar más contactos
+                    </Button>
+                  </Box>
+                )}
               </Box>
             )}
 

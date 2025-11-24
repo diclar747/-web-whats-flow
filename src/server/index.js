@@ -8199,8 +8199,9 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
 // Obtener contactos por sesión (usando el número de teléfono del usuario)
 app.get('/api/contacts/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
+    const { page = 0, limit = 20, search = '' } = req.query;
 
-    console.log(`[API-CONTACTS] Request for sessionId: ${sessionId}`);
+    console.log(`[API-CONTACTS] Request for sessionId: ${sessionId}, page: ${page}, limit: ${limit}, search: ${search}`);
 
     if (!pool) {
         return res.status(503).json({
@@ -8226,8 +8227,8 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
         try {
             // Obtener todos los phone_numbers asociados a estos sessionIds
             const [userSessions] = await connection.execute(
-                `SELECT DISTINCT phone_number FROM user_sessions 
-                 WHERE phone_number IN (${sessionIds.map(() => '?').join(',')}) 
+                `SELECT DISTINCT phone_number FROM user_sessions
+                 WHERE phone_number IN (${sessionIds.map(() => '?').join(',')})
                     OR session_id IN (${sessionIds.map(() => '?').join(',')})`,
                 [...sessionIds, ...sessionIds]
             );
@@ -8245,7 +8246,28 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
             // Construir placeholders para IN clause
             const placeholders = allSessionIds.map(() => '?').join(',');
 
-            // Consultar SOLO contactos individuales (@s.whatsapp.net)
+            // Construir condición de búsqueda
+            let searchCondition = '';
+            let searchParams = [];
+            if (search && search.trim() !== '') {
+                searchCondition = ` AND (name LIKE ? OR notify_name LIKE ? OR jid LIKE ?)`;
+                const searchTerm = `%${search}%`;
+                searchParams = [searchTerm, searchTerm, searchTerm];
+            }
+
+            // Primero obtener el total de contactos (sin paginación)
+            const [totalResult] = await connection.execute(
+                `SELECT COUNT(*) as total
+                FROM contacts
+                WHERE session_id IN (${placeholders}) AND jid LIKE '%@s.whatsapp.net'${searchCondition}`,
+                [...allSessionIds, ...searchParams]
+            );
+            const totalContacts = totalResult[0].total;
+
+            // Calcular offset para paginación
+            const offset = parseInt(page) * parseInt(limit);
+
+            // Consultar SOLO contactos individuales (@s.whatsapp.net) con paginación
             // 🆕 Ordenar por última actualización (updated_at) para mostrar contactos con actividad reciente primero
             const [contacts] = await connection.execute(
                 `SELECT
@@ -8257,9 +8279,10 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
                     created_at,
                     updated_at
                 FROM contacts
-                WHERE session_id IN (${placeholders}) AND jid LIKE '%@s.whatsapp.net'
-                ORDER BY updated_at DESC, created_at DESC, name ASC`,
-                allSessionIds
+                WHERE session_id IN (${placeholders}) AND jid LIKE '%@s.whatsapp.net'${searchCondition}
+                ORDER BY updated_at DESC, created_at DESC, name ASC
+                LIMIT ? OFFSET ?`,
+                [...allSessionIds, ...searchParams, parseInt(limit), offset]
             );
 
             const contactsFormatted = contacts.map(contact => ({
@@ -8279,7 +8302,10 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
             res.json({
                 success: true,
                 contacts: contactsFormatted,
-                total: contactsFormatted.length
+                total: totalContacts,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                hasMore: (offset + contacts.length) < totalContacts
             });
 
         } finally {
@@ -14197,7 +14223,9 @@ app.get('/api/chat-assignments/:sessionId', async (req, res) => {
 // GET - Obtener chats asignados a un agente específico
 app.get('/api/agent/:userId/chats', async (req, res) => {
     const { userId } = req.params;
-    const { sessionId } = req.query;
+    const { sessionId, dateFilter = 'today' } = req.query; // Agregar filtro de fecha
+
+    console.log('[AGENT-CHATS] 📥 Cargando chats con filtro:', { userId, dateFilter });
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'Database not available' });
@@ -14216,6 +14244,40 @@ app.get('/api/agent/:userId/chats', async (req, res) => {
                 if (sessions.length > 0 && sessions[0].phone_number) {
                     phoneNumber = sessions[0].phone_number;
                 }
+            }
+
+            // Construir filtro de fecha para el último mensaje
+            let dateCondition = '';
+            if (dateFilter === 'today') {
+                dateCondition = `AND DATE((SELECT timestamp FROM messages 
+                                  WHERE chat_jid = ca.chat_jid 
+                                  AND (phone_number = ? OR session_id = ?)
+                                  ORDER BY timestamp DESC LIMIT 1)) = CURDATE()`;
+                console.log('[AGENT-CHATS] 📅 Filtrando chats con actividad HOY');
+            } else if (dateFilter === 'yesterday') {
+                dateCondition = `AND DATE((SELECT timestamp FROM messages 
+                                  WHERE chat_jid = ca.chat_jid 
+                                  AND (phone_number = ? OR session_id = ?)
+                                  ORDER BY timestamp DESC LIMIT 1)) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)`;
+                console.log('[AGENT-CHATS] 📅 Filtrando chats con actividad AYER');
+            } else if (dateFilter === 'week') {
+                dateCondition = `AND (SELECT timestamp FROM messages 
+                                  WHERE chat_jid = ca.chat_jid 
+                                  AND (phone_number = ? OR session_id = ?)
+                                  ORDER BY timestamp DESC LIMIT 1) >= DATE_SUB(NOW(), INTERVAL 7 DAY)`;
+                console.log('[AGENT-CHATS] 📅 Filtrando chats con actividad en la SEMANA');
+            } else if (dateFilter === 'month') {
+                dateCondition = `AND MONTH((SELECT timestamp FROM messages 
+                                  WHERE chat_jid = ca.chat_jid 
+                                  AND (phone_number = ? OR session_id = ?)
+                                  ORDER BY timestamp DESC LIMIT 1)) = MONTH(CURDATE())
+                                  AND YEAR((SELECT timestamp FROM messages 
+                                  WHERE chat_jid = ca.chat_jid 
+                                  AND (phone_number = ? OR session_id = ?)
+                                  ORDER BY timestamp DESC LIMIT 1)) = YEAR(CURDATE())`;
+                console.log('[AGENT-CHATS] 📅 Filtrando chats con actividad este MES');
+            } else {
+                console.log('[AGENT-CHATS] 📅 Mostrando TODOS los chats');
             }
 
             // Obtener chats asignados para este agente (activos y cerrados)
@@ -14254,6 +14316,7 @@ app.get('/api/agent/:userId/chats', async (req, res) => {
                 WHERE ca.user_id = ? 
                 AND ca.status IN ('active', 'closed', 'pending')
                 ${sessionId ? 'AND ca.session_id = ?' : ''}
+                ${dateCondition}
                 ORDER BY 
                     CASE 
                         WHEN ca.status = 'pending' THEN 1
@@ -14266,7 +14329,7 @@ app.get('/api/agent/:userId/chats', async (req, res) => {
                 [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, userId, sessionId] :
                 [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, userId]);
 
-            console.log(`[AGENT-CHATS] Agente ${userId} tiene ${assignments.length} chats asignados`);
+            console.log(`[AGENT-CHATS] ✅ Agente ${userId} tiene ${assignments.length} chats (filtro: ${dateFilter})`);
 
             res.json({ success: true, chats: assignments });
         } finally {
