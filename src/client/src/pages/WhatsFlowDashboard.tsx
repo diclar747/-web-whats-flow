@@ -321,7 +321,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   ) || navigationItems[0];
 
   // Detectar si estamos en la página de chat para aplicar modo oscuro completo
-  const isInChatPage = location.pathname.startsWith('/dashboard/chat');
+  // IMPORTANTE: Solo /dashboard/chat, NO /dashboard/chatbot
+  const isInChatPage = location.pathname === '/dashboard/chat' || location.pathname.startsWith('/dashboard/chat/');
 
 
   // Configurar logger con sessionId

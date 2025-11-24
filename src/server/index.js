@@ -7734,8 +7734,8 @@ app.get('/api/chats/:sessionId', async (req, res) => {
 
 // Obtener mensajes de un chat específico
 app.get('/api/messages', async (req, res) => {
-    const { contactId } = req.query;
-    console.log('Solicitud de mensajes para contactId:', contactId);
+    const { contactId, dateFilter = 'today' } = req.query;
+    console.log('Solicitud de mensajes para contactId:', contactId, 'dateFilter:', dateFilter);
 
     if (!contactId) {
         return res.status(400).json({
@@ -7767,7 +7767,32 @@ app.get('/api/messages', async (req, res) => {
             });
         }
 
-        console.log('Ejecutando query para obtener mensajes');
+        // Construir filtro de fecha
+        let dateCondition = '';
+        let queryParams = [contactId];
+
+        if (dateFilter === 'today') {
+            dateCondition = 'AND DATE(timestamp) = CURDATE()';
+            console.log('[MESSAGES] 📅 Cargando solo mensajes de HOY');
+        } else if (dateFilter === 'yesterday') {
+            dateCondition = 'AND DATE(timestamp) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)';
+            console.log('[MESSAGES] 📅 Cargando mensajes de AYER');
+        } else if (dateFilter === 'week') {
+            dateCondition = 'AND timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
+            console.log('[MESSAGES] 📅 Cargando mensajes de la SEMANA');
+        } else if (dateFilter === 'month') {
+            dateCondition = 'AND MONTH(timestamp) = MONTH(CURDATE()) AND YEAR(timestamp) = YEAR(CURDATE())';
+            console.log('[MESSAGES] 📅 Cargando mensajes del MES');
+        } else if (dateFilter && dateFilter !== 'all') {
+            // Fecha específica en formato YYYY-MM-DD
+            dateCondition = 'AND DATE(timestamp) = ?';
+            queryParams.push(dateFilter);
+            console.log('[MESSAGES] 📅 Cargando mensajes de fecha específica:', dateFilter);
+        } else {
+            console.log('[MESSAGES] 📅 Cargando TODOS los mensajes');
+        }
+
+        console.log('Ejecutando query para obtener mensajes con filtro:', dateFilter);
         const [messages] = await connection.execute(
             `SELECT
                 id as messageId,
@@ -7784,8 +7809,9 @@ app.get('/api/messages', async (req, res) => {
                 status
             FROM messages
             WHERE chat_jid = ?
+            ${dateCondition}
             ORDER BY timestamp ASC`,
-            [contactId]
+            queryParams
         );
 
         console.log(`Encontrados ${messages.length} mensajes para ${contactId}`);

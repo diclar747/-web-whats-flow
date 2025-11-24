@@ -135,6 +135,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
   const [selectedTab, setSelectedTab] = useState(0);
   const [chatFilterTab, setChatFilterTab] = useState('all'); // all, sent, received, pending
   const [showChatInfo, setShowChatInfo] = useState(false);
+  const [messageDateFilter, setMessageDateFilter] = useState<string>('today'); // Filtro de fecha para mensajes
 
   // File upload states
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -335,7 +336,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
 
         if (contactsData.length > 0 && !activeContact) {
           setActiveContact(contactsData[0]);
-          loadContactMessages(contactsData[0].id);
+          loadContactMessages(contactsData[0].id, messageDateFilter);
         }
       } else {
         console.error('❌ [ChatModule] Error al cargar chats:', chatsData.error);
@@ -347,13 +348,13 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     }
   };
 
-  const loadContactMessages = async (contactId: string) => {
+  const loadContactMessages = async (contactId: string, dateFilter: string = 'today') => {
     try {
-      console.log(`📡 [ChatModule] Cargando mensajes para: ${contactId}`);
+      console.log(`📡 [ChatModule] Cargando mensajes para: ${contactId} (filtro: ${dateFilter})`);
 
-      // Cargar mensajes reales del contacto desde la API
+      // Cargar mensajes reales del contacto desde la API con filtro de fecha
       const messagesResponse = await fetch(
-        `${getAPIBaseURL()}/api/messages?contactId=${encodeURIComponent(contactId)}`,
+        `${getAPIBaseURL()}/api/messages?contactId=${encodeURIComponent(contactId)}&dateFilter=${dateFilter}`,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -363,7 +364,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
       const messagesData = await messagesResponse.json();
 
       if (messagesData.success && messagesData.data) {
-        console.log(`✅ [ChatModule] ${messagesData.data.length} mensajes cargados`);
+        console.log(`✅ [ChatModule] ${messagesData.data.length} mensajes cargados (${dateFilter})`);
 
         const formattedMessages: Message[] = messagesData.data.map((msg: any) => ({
           id: msg.messageId || msg.id,
@@ -396,8 +397,8 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     setContacts(prev => prev.map(c =>
       c.id === contact.id ? { ...c, unreadCount: 0 } : c
     ));
-    // Cargar mensajes del contacto
-    loadContactMessages(contact.id);
+    // Cargar mensajes del contacto con filtro actual
+    loadContactMessages(contact.id, messageDateFilter);
   };
 
   const sendMessage = async () => {
@@ -551,7 +552,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
   const handleRefresh = () => {
     loadChatData();
     if (activeContact) {
-      loadContactMessages(activeContact.id);
+      loadContactMessages(activeContact.id, messageDateFilter);
     }
   };
 

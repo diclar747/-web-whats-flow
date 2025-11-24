@@ -33,7 +33,11 @@ import {
   Alert,
   Snackbar,
   Tabs,
-  Tab
+  Tab,
+  FormControl,
+  InputLabel,
+  Select,
+  Stack
 } from '@mui/material';
 import {
   Chat as ChatIcon,
@@ -63,7 +67,10 @@ import {
   Brightness7 as LightModeIcon,
   WhatsApp as WhatsAppIcon,
   FiberManualRecord as StatusIcon,
-  Block as BlockIcon
+  Block as BlockIcon,
+  FilterList as FilterListIcon,
+  Sync as SyncIcon,
+  CalendarToday as CalendarIcon
 } from '@mui/icons-material';
 import { format, formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -151,6 +158,13 @@ const AgentDashboardPro: React.FC = () => {
   const [chatFilter, setChatFilter] = useState<'all' | 'unread'>('all');
   const [messageDateFilter, setMessageDateFilter] = useState<string>('today'); // 'today', 'week', 'month', 'all'
   const [chatListDateFilter, setChatListDateFilter] = useState<string>('today'); // Filtro para lista de chats
+  
+  // Estado para dialog de filtros avanzados
+  const [filterDialogOpen, setFilterDialogOpen] = useState(false);
+  const [filterType, setFilterType] = useState<'quick' | 'range' | 'specific'>('quick');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [specificDate, setSpecificDate] = useState<string>('');
 
   // Estado para minimizar/maximizar lista de chats (por defecto minimizado)
   const [chatListMinimized, setChatListMinimized] = useState(true);
@@ -1462,44 +1476,52 @@ const AgentDashboardPro: React.FC = () => {
               </Tooltip>
             </Box>
             
-            {/* Filtros de fecha para lista de chats */}
+            {/* Botones de acción para lista de chats */}
             {!chatListMinimized && (
-              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                <Chip
-                  label="Hoy"
-                  size="small"
-                  onClick={() => loadAgentChats('today')}
-                  color={chatListDateFilter === 'today' ? 'primary' : 'default'}
-                  sx={{ fontSize: '0.75rem', bgcolor: chatListDateFilter === 'today' ? '#00a884' : undefined, color: chatListDateFilter === 'today' ? 'white' : undefined }}
-                />
-                <Chip
-                  label="Ayer"
-                  size="small"
-                  onClick={() => loadAgentChats('yesterday')}
-                  color={chatListDateFilter === 'yesterday' ? 'primary' : 'default'}
-                  sx={{ fontSize: '0.75rem', bgcolor: chatListDateFilter === 'yesterday' ? '#00a884' : undefined, color: chatListDateFilter === 'yesterday' ? 'white' : undefined }}
-                />
-                <Chip
-                  label="Semana"
-                  size="small"
-                  onClick={() => loadAgentChats('week')}
-                  color={chatListDateFilter === 'week' ? 'primary' : 'default'}
-                  sx={{ fontSize: '0.75rem', bgcolor: chatListDateFilter === 'week' ? '#00a884' : undefined, color: chatListDateFilter === 'week' ? 'white' : undefined }}
-                />
-                <Chip
-                  label="Mes"
-                  size="small"
-                  onClick={() => loadAgentChats('month')}
-                  color={chatListDateFilter === 'month' ? 'primary' : 'default'}
-                  sx={{ fontSize: '0.75rem', bgcolor: chatListDateFilter === 'month' ? '#00a884' : undefined, color: chatListDateFilter === 'month' ? 'white' : undefined }}
-                />
-                <Chip
-                  label="Todos"
-                  size="small"
-                  onClick={() => loadAgentChats('all')}
-                  color={chatListDateFilter === 'all' ? 'primary' : 'default'}
-                  sx={{ fontSize: '0.75rem', bgcolor: chatListDateFilter === 'all' ? '#00a884' : undefined, color: chatListDateFilter === 'all' ? 'white' : undefined }}
-                />
+              <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                <Tooltip title="Sincronizar chats">
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<SyncIcon />}
+                    onClick={() => loadAgentChats(chatListDateFilter)}
+                    sx={{ 
+                      borderColor: '#00a884',
+                      color: '#00a884',
+                      '&:hover': { borderColor: '#008c6d', bgcolor: 'rgba(0,168,132,0.04)' },
+                      textTransform: 'none',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    Sincronizar
+                  </Button>
+                </Tooltip>
+                
+                <Tooltip title="Filtrar por fecha">
+                  <Button
+                    size="small"
+                    variant={chatListDateFilter !== 'today' ? 'contained' : 'outlined'}
+                    startIcon={<FilterListIcon />}
+                    onClick={() => setFilterDialogOpen(true)}
+                    sx={{ 
+                      borderColor: '#00a884',
+                      bgcolor: chatListDateFilter !== 'today' ? '#00a884' : 'transparent',
+                      color: chatListDateFilter !== 'today' ? 'white' : '#00a884',
+                      '&:hover': { 
+                        borderColor: '#008c6d', 
+                        bgcolor: chatListDateFilter !== 'today' ? '#008c6d' : 'rgba(0,168,132,0.04)' 
+                      },
+                      textTransform: 'none',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    {chatListDateFilter === 'today' && 'Hoy'}
+                    {chatListDateFilter === 'yesterday' && 'Ayer'}
+                    {chatListDateFilter === 'week' && 'Semana'}
+                    {chatListDateFilter === 'month' && 'Mes'}
+                    {chatListDateFilter === 'all' && 'Todos'}
+                  </Button>
+                </Tooltip>
               </Box>
             )}
           </Box>
@@ -2185,6 +2207,168 @@ const AgentDashboardPro: React.FC = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* ==================== DIALOG DE FILTROS AVANZADOS ==================== */}
+      <Dialog 
+        open={filterDialogOpen} 
+        onClose={() => setFilterDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: '#00a884', color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <FilterListIcon />
+          Filtrar Chats por Fecha
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Stack spacing={3}>
+            {/* Tipo de filtro */}
+            <FormControl fullWidth>
+              <InputLabel>Tipo de filtro</InputLabel>
+              <Select
+                value={filterType}
+                label="Tipo de filtro"
+                onChange={(e) => setFilterType(e.target.value as any)}
+              >
+                <MenuItem value="quick">Filtros Rápidos</MenuItem>
+                <MenuItem value="specific">Fecha Específica</MenuItem>
+                <MenuItem value="range">Rango de Fechas</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Filtros Rápidos */}
+            {filterType === 'quick' && (
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                <Chip
+                  label="Hoy"
+                  onClick={() => setChatListDateFilter('today')}
+                  color={chatListDateFilter === 'today' ? 'primary' : 'default'}
+                  sx={{ bgcolor: chatListDateFilter === 'today' ? '#00a884' : undefined }}
+                />
+                <Chip
+                  label="Ayer"
+                  onClick={() => setChatListDateFilter('yesterday')}
+                  color={chatListDateFilter === 'yesterday' ? 'primary' : 'default'}
+                  sx={{ bgcolor: chatListDateFilter === 'yesterday' ? '#00a884' : undefined }}
+                />
+                <Chip
+                  label="Última Semana"
+                  onClick={() => setChatListDateFilter('week')}
+                  color={chatListDateFilter === 'week' ? 'primary' : 'default'}
+                  sx={{ bgcolor: chatListDateFilter === 'week' ? '#00a884' : undefined }}
+                />
+                <Chip
+                  label="Este Mes"
+                  onClick={() => setChatListDateFilter('month')}
+                  color={chatListDateFilter === 'month' ? 'primary' : 'default'}
+                  sx={{ bgcolor: chatListDateFilter === 'month' ? '#00a884' : undefined }}
+                />
+                <Chip
+                  label="Todos"
+                  onClick={() => setChatListDateFilter('all')}
+                  color={chatListDateFilter === 'all' ? 'primary' : 'default'}
+                  sx={{ bgcolor: chatListDateFilter === 'all' ? '#00a884' : undefined }}
+                />
+              </Box>
+            )}
+
+            {/* Fecha Específica */}
+            {filterType === 'specific' && (
+              <TextField
+                fullWidth
+                label="Seleccionar fecha"
+                type="date"
+                value={specificDate}
+                onChange={(e) => setSpecificDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <CalendarIcon />
+                    </InputAdornment>
+                  )
+                }}
+              />
+            )}
+
+            {/* Rango de Fechas */}
+            {filterType === 'range' && (
+              <Stack spacing={2}>
+                <TextField
+                  fullWidth
+                  label="Fecha inicial"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <CalendarIcon />
+                      </InputAdornment>
+                    )
+                  }}
+                />
+                <TextField
+                  fullWidth
+                  label="Fecha final"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <CalendarIcon />
+                      </InputAdornment>
+                    )
+                  }}
+                />
+              </Stack>
+            )}
+
+            {/* Preview del filtro seleccionado */}
+            <Alert severity="info" icon={<FilterListIcon />}>
+              <Typography variant="body2">
+                {filterType === 'quick' && chatListDateFilter === 'today' && 'Se mostrarán chats con actividad HOY'}
+                {filterType === 'quick' && chatListDateFilter === 'yesterday' && 'Se mostrarán chats con actividad AYER'}
+                {filterType === 'quick' && chatListDateFilter === 'week' && 'Se mostrarán chats de los últimos 7 DÍAS'}
+                {filterType === 'quick' && chatListDateFilter === 'month' && 'Se mostrarán chats del MES ACTUAL'}
+                {filterType === 'quick' && chatListDateFilter === 'all' && 'Se mostrarán TODOS los chats'}
+                {filterType === 'specific' && specificDate && `Se mostrarán chats del ${specificDate}`}
+                {filterType === 'specific' && !specificDate && 'Selecciona una fecha específica'}
+                {filterType === 'range' && startDate && endDate && `Se mostrarán chats desde ${startDate} hasta ${endDate}`}
+                {filterType === 'range' && (!startDate || !endDate) && 'Selecciona fecha inicial y final'}
+              </Typography>
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setFilterDialogOpen(false)} sx={{ color: 'text.secondary' }}>
+            Cancelar
+          </Button>
+          <Button 
+            variant="contained"
+            startIcon={<FilterListIcon />}
+            onClick={() => {
+              if (filterType === 'quick') {
+                loadAgentChats(chatListDateFilter);
+              } else if (filterType === 'specific' && specificDate) {
+                loadAgentChats(specificDate);
+              } else if (filterType === 'range' && startDate && endDate) {
+                // Para rangos, por ahora usamos 'all' y filtramos en el frontend
+                loadAgentChats('all');
+              }
+              setFilterDialogOpen(false);
+            }}
+            sx={{ 
+              bgcolor: '#00a884',
+              '&:hover': { bgcolor: '#008c6d' }
+            }}
+          >
+            Aplicar Filtro
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ==================== ESTILOS CSS ADICIONALES ==================== */}
       <style>{`

@@ -73,6 +73,7 @@ import {
   VideoFile,
   Close,
   Refresh,
+  Search,
 } from '@mui/icons-material';
 import { useTheme } from '../contexts/ThemeContext';
 import { io, Socket } from 'socket.io-client';
@@ -208,6 +209,13 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const [selectedKanbanBoards, setSelectedKanbanBoards] = useState<string[]>([]);
   const [selectedLocalGroups, setSelectedLocalGroups] = useState<string[]>([]);
   const [contactSelectionTab, setContactSelectionTab] = useState(0);
+
+  // Estados para paginación y búsqueda de contactos
+  const [contactsPage, setContactsPage] = useState(0);
+  const [contactsHasMore, setContactsHasMore] = useState(true);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [totalContacts, setTotalContacts] = useState(0);
+  const [contactSearchTerm, setContactSearchTerm] = useState('');
   
   const [newCampaign, setNewCampaign] = useState<Partial<CampaignData>>({
     name: '',
@@ -306,17 +314,67 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     }
   }, [sessionId]);
 
-  const loadWhatsAppContacts = useCallback(async () => {
+  const loadWhatsAppContacts = useCallback(async (resetContacts = true) => {
     try {
-      const response = await fetch(`${getAPIBaseURL()}/api/contacts/${sessionId}`);
+      setContactsLoading(true);
+
+      const page = resetContacts ? 0 : contactsPage;
+      const limit = 20;
+      const search = contactSearchTerm;
+
+      const response = await fetch(
+        `${getAPIBaseURL()}/api/contacts/${sessionId}?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}`
+      );
       const data = await response.json();
+
       if (data.success && data.contacts) {
-        setWhatsappContacts(data.contacts);
+        if (resetContacts) {
+          setWhatsappContacts(data.contacts);
+          setContactsPage(0);
+        } else {
+          setWhatsappContacts(prev => [...prev, ...data.contacts]);
+        }
+
+        setContactsHasMore(data.hasMore || false);
+        setTotalContacts(data.total || 0);
       }
+
+      setContactsLoading(false);
     } catch (error) {
       console.error('Error cargando contactos de WhatsApp:', error);
+      setContactsLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, contactsPage, contactSearchTerm]);
+
+  // Función para cargar más contactos
+  const loadMoreWhatsAppContacts = useCallback(async () => {
+    if (contactsLoading || !contactsHasMore) return;
+
+    const nextPage = contactsPage + 1;
+    setContactsPage(nextPage);
+
+    try {
+      setContactsLoading(true);
+      const limit = 20;
+      const search = contactSearchTerm;
+
+      const response = await fetch(
+        `${getAPIBaseURL()}/api/contacts/${sessionId}?page=${nextPage}&limit=${limit}&search=${encodeURIComponent(search)}`
+      );
+      const data = await response.json();
+
+      if (data.success && data.contacts) {
+        setWhatsappContacts(prev => [...prev, ...data.contacts]);
+        setContactsHasMore(data.hasMore || false);
+        setTotalContacts(data.total || 0);
+      }
+
+      setContactsLoading(false);
+    } catch (error) {
+      console.error('Error cargando más contactos de WhatsApp:', error);
+      setContactsLoading(false);
+    }
+  }, [sessionId, contactsPage, contactSearchTerm, contactsLoading, contactsHasMore]);
 
   const loadWhatsAppGroups = useCallback(async () => {
     try {
@@ -414,6 +472,18 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       loadLocalGroups();
     }
   }, [showCreateDialog, loadWhatsAppContacts, loadWhatsAppGroups, loadKanbanBoards, loadLocalGroups]);
+
+  // Effect para buscar contactos cuando cambia el término de búsqueda
+  useEffect(() => {
+    if (contactSelectionTab === 1 && showCreateDialog) {
+      const delayDebounce = setTimeout(() => {
+        loadWhatsAppContacts(true);
+      }, 500);
+
+      return () => clearTimeout(delayDebounce);
+    }
+    return undefined;
+  }, [contactSearchTerm, contactSelectionTab, showCreateDialog]);
 
   // Socket.IO para actualizaciones en tiempo real del historial
   useEffect(() => {
@@ -1866,18 +1936,41 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                   {/* Tab 1: WhatsApp Contactos */}
                   {contactSelectionTab === 1 && (
                     <Box>
+                      {/* Buscador de contactos */}
+                      <TextField
+                        fullWidth
+                        size="small"
+                        placeholder="Buscar contacto por nombre o teléfono..."
+                        value={contactSearchTerm}
+                        onChange={(e) => setContactSearchTerm(e.target.value)}
+                        sx={{ mb: 2 }}
+                        InputProps={{
+                          startAdornment: (
+                            <Box sx={{ mr: 1, display: 'flex', alignItems: 'center' }}>
+                              <Search sx={{ color: 'text.secondary' }} />
+                            </Box>
+                          ),
+                        }}
+                      />
+
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                         <Typography variant="subtitle1">
-                          Contactos de WhatsApp ({whatsappContacts.length})
+                          Contactos de WhatsApp ({whatsappContacts.length} de {totalContacts})
                         </Typography>
                         <Button
                           size="small"
                           startIcon={selectedWhatsAppContacts.length === whatsappContacts.length ? <CheckBox /> : <CheckBoxOutlineBlank />}
                           onClick={handleSelectAllWhatsAppContacts}
+                          disabled={whatsappContacts.length === 0}
                         >
                           {selectedWhatsAppContacts.length === whatsappContacts.length ? 'Deseleccionar Todos' : 'Seleccionar Todos'}
                         </Button>
                       </Box>
+
+                      <Typography variant="body2" color="primary" sx={{ mb: 1, fontWeight: 'bold' }}>
+                        {selectedWhatsAppContacts.length} contactos seleccionados
+                      </Typography>
+
                       <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
                         <Grid container spacing={1}>
                           {whatsappContacts.map((contact) => (
@@ -1907,16 +2000,40 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                               </Paper>
                             </Grid>
                           ))}
+
+                          {/* Indicador de carga */}
+                          {contactsLoading && (
+                            <Grid item xs={12}>
+                              <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+                                <CircularProgress size={32} />
+                              </Box>
+                            </Grid>
+                          )}
                         </Grid>
-                        {whatsappContacts.length === 0 && (
+
+                        {/* Mensaje cuando no hay contactos */}
+                        {!contactsLoading && whatsappContacts.length === 0 && (
                           <Paper sx={{ p: 4, textAlign: 'center' }}>
                             <WhatsApp sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
                             <Typography variant="body2" color="text.secondary">
-                              No hay contactos de WhatsApp sincronizados
+                              {contactSearchTerm ? 'No se encontraron contactos con ese criterio' : 'No hay contactos de WhatsApp sincronizados'}
                             </Typography>
                           </Paper>
                         )}
                       </Box>
+
+                      {/* Botón Cargar Más */}
+                      {contactsHasMore && !contactsLoading && whatsappContacts.length > 0 && (
+                        <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                          <Button
+                            variant="outlined"
+                            onClick={loadMoreWhatsAppContacts}
+                            startIcon={<Add />}
+                          >
+                            Cargar más contactos (mostrados {whatsappContacts.length} de {totalContacts})
+                          </Button>
+                        </Box>
+                      )}
                     </Box>
                   )}
 
