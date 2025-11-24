@@ -385,7 +385,15 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
       return () => clearTimeout(delayDebounce);
     }
+    return undefined;
   }, [contactSearchTerm]);
+
+  // Effect para cargar contactos cuando se selecciona el tipo "individual"
+  useEffect(() => {
+    if (contactSelectionType === 'individual') {
+      loadContactsAndGroups(true);
+    }
+  }, [contactSelectionType]);
 
   // Función para procesar contactos manuales
   const parseManualContacts = (text: string) => {

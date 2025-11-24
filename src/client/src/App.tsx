@@ -280,14 +280,23 @@ const App: React.FC = () => {
       try {
         // Si hay sessionId guardado, verificar dispositivo
         if (savedSessionId) {
-          // NOTA: Con sessionStorage, cada pestaña tiene su propia sesión
-          // Por lo que no necesitamos validar deviceId tan estrictamente
-          // sessionStorage ya garantiza aislamiento por pestaña
-
-          // Si NO hay deviceId, generarlo ahora
+          // 🔒 SEGURIDAD: Verificar que no sea un navegador/dispositivo diferente
+          // sessionStorage es único por pestaña/navegador, así que si hay deviceId diferente
+          // o falta deviceId, es sospechoso
+          
           if (!savedDeviceId) {
-            console.log('⚠️ Sesión sin deviceId, asignando actual...');
-            sessionStorage.setItem('whatsflow_session_device_id', deviceId);
+            console.log('🚫 Sesión sin deviceId - posible navegador diferente. Limpiando...');
+            sessionStorage.clear();
+            setLoading(false);
+            return;
+          }
+
+          // Verificar que el deviceId coincida
+          if (savedDeviceId !== deviceId) {
+            console.log('🚫 DeviceId no coincide - navegador diferente detectado. Limpiando...');
+            sessionStorage.clear();
+            setLoading(false);
+            return;
           }
 
           console.log('✅ Dispositivo verificado correctamente');
@@ -371,12 +380,22 @@ const App: React.FC = () => {
             if (checkData.success && checkData.isConnected) {
               console.log('✅ SessionId guardado sigue activo');
 
-              // Si el usuario es admin (QR), no necesitamos token de agente
+              // 🔒 SEGURIDAD: Verificar que tenga token de autenticación válido
+              // ADMIN (QR): Necesita sessionToken de la sesión QR
+              // AGENTE: Necesita token de usuario (login)
+              
               if (savedUserType === 'admin') {
-                // Admin con QR no necesita token de usuario, solo sessionId
-                setSessionId(savedSessionId);
-                setUserType('admin');
-                console.log('✅ Usuario admin (QR) restaurado con sessionId:', savedSessionId);
+                // Admin debe tener sessionToken (prueba de que escaneó QR)
+                if (savedSessionToken) {
+                  setSessionId(savedSessionId);
+                  setUserType('admin');
+                  console.log('✅ Usuario admin (QR) restaurado con sessionId:', savedSessionId);
+                } else {
+                  console.log('🚫 Admin sin sessionToken - requiere escanear QR nuevamente');
+                  sessionStorage.clear();
+                  setLoading(false);
+                  return;
+                }
               } else if (savedToken && savedUserId) {
                 // Usuario agente necesita tanto token como sessionId
                 const restoredUser = {
@@ -393,10 +412,11 @@ const App: React.FC = () => {
 
                 console.log('✅ Usuario agente restaurado:', restoredUser.name);
               } else {
-                // Hay sessionId pero no token de agente - podría ser sesión de admin QR
-                setSessionId(savedSessionId);
-                setUserType(savedUserType || 'admin');
-                console.log('✅ Sesión de WhatsApp activa, tipo de usuario:', savedUserType || 'admin');
+                // Sin credenciales válidas - requiere autenticación
+                console.log('🚫 Sin credenciales de autenticación válidas');
+                sessionStorage.clear();
+                setLoading(false);
+                return;
               }
 
               console.log('✅ Sesión de WhatsApp activa, manteniendo sesión');
