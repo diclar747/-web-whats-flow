@@ -3,7 +3,7 @@
 // Gestión completa de roles, permisos y asignación de chats
 // ============================================
 
-module.exports = function(app, pool) {
+module.exports = function (app, pool) {
     // Middleware para verificar autenticación (compatible con sistema base64)
     const authenticateToken = async (req, res, next) => {
         const authHeader = req.headers['authorization'];
@@ -17,7 +17,7 @@ module.exports = function(app, pool) {
             // Decodificar token base64 (formato: userId:email:timestamp)
             const decoded = Buffer.from(token, 'base64').toString('utf-8');
             const [userId, email, timestamp] = decoded.split(':');
-            
+
             if (!userId || !email) {
                 return res.status(403).json({ success: false, error: 'Token inválido' });
             }
@@ -29,11 +29,11 @@ module.exports = function(app, pool) {
                     'SELECT id, name, email, role, status FROM users WHERE id = ? AND email = ?',
                     [userId, email]
                 );
-                
+
                 if (users.length === 0 || users[0].status !== 'active') {
                     return res.status(403).json({ success: false, error: 'Token inválido o usuario inactivo' });
                 }
-                
+
                 // Adjuntar info del usuario al request
                 req.user = users[0];
                 connection.release();
@@ -114,7 +114,7 @@ module.exports = function(app, pool) {
             const { permission, action } = req.body; // action: view, create, edit, delete
             const userId = req.user.id;
             const connection = await pool.getConnection();
-            
+
             try {
                 const [result] = await connection.execute(`
                     SELECT 
@@ -189,10 +189,10 @@ module.exports = function(app, pool) {
             const userId = req.user.id;
             const { sessionId } = req.query;
             const connection = await pool.getConnection();
-            
+
             try {
                 console.log('[AGENT-CHATS] 🔍 Buscando chats para agente:', userId, 'sessionId:', sessionId);
-                
+
                 // Query directa sin vista para mayor control
                 let query = `
                     SELECT DISTINCT
@@ -233,18 +233,18 @@ module.exports = function(app, pool) {
                 query += ' ORDER BY last_message_time DESC';
 
                 const [chats] = await connection.execute(query, params);
-                
+
                 console.log('[AGENT-CHATS] ✅ Chats encontrados:', chats.length);
-                
+
                 // Si no hay sessionId en query, intentar obtenerlo del primer chat
                 let finalSessionId = sessionId;
                 if (!finalSessionId && chats.length > 0) {
                     finalSessionId = chats[0].session_id;
                     console.log('[AGENT-CHATS] 📋 SessionId detectado:', finalSessionId);
                 }
-                
-                res.json({ 
-                    success: true, 
+
+                res.json({
+                    success: true,
                     chats,
                     sessionId: finalSessionId,
                     count: chats.length
@@ -268,7 +268,7 @@ module.exports = function(app, pool) {
 
             const { sessionId } = req.query;
             const connection = await pool.getConnection();
-            
+
             try {
                 const [chats] = await connection.execute(`
                     SELECT 
@@ -327,9 +327,9 @@ module.exports = function(app, pool) {
             const { chat_jid, session_id, user_id, notes } = req.body;
 
             if (!chat_jid || !session_id || !user_id) {
-                return res.status(400).json({ 
-                    success: false, 
-                    error: 'chat_jid, session_id y user_id son requeridos' 
+                return res.status(400).json({
+                    success: false,
+                    error: 'chat_jid, session_id y user_id son requeridos'
                 });
             }
 
@@ -342,9 +342,9 @@ module.exports = function(app, pool) {
                 `, [chat_jid, session_id]);
 
                 if (existing.length > 0) {
-                    return res.status(400).json({ 
-                        success: false, 
-                        error: 'El chat ya está asignado a un agente' 
+                    return res.status(400).json({
+                        success: false,
+                        error: 'El chat ya está asignado a un agente'
                     });
                 }
 
@@ -364,8 +364,8 @@ module.exports = function(app, pool) {
 
                 console.log(`✅ Chat ${chat_jid} asignado a usuario ${user_id}`);
 
-                res.json({ 
-                    success: true, 
+                res.json({
+                    success: true,
                     message: 'Chat asignado correctamente',
                     assignment_id: result.insertId
                 });
@@ -384,9 +384,9 @@ module.exports = function(app, pool) {
             const { chat_jid, session_id, from_user_id, to_user_id, reason } = req.body;
 
             if (!chat_jid || !session_id || !to_user_id) {
-                return res.status(400).json({ 
-                    success: false, 
-                    error: 'Datos incompletos. Se requiere: chat_jid, session_id, to_user_id' 
+                return res.status(400).json({
+                    success: false,
+                    error: 'Datos incompletos. Se requiere: chat_jid, session_id, to_user_id'
                 });
             }
 
@@ -463,8 +463,8 @@ module.exports = function(app, pool) {
                     console.warn('⚠️ Error emitiendo evento Socket.IO:', ioError);
                 }
 
-                res.json({ 
-                    success: true, 
+                res.json({
+                    success: true,
                     message: 'Chat transferido exitosamente al agente'
                 });
             } catch (error) {
@@ -584,7 +584,7 @@ module.exports = function(app, pool) {
 
             const { userId } = req.params;
             const connection = await pool.getConnection();
-            
+
             try {
                 const [history] = await connection.execute(`
                     SELECT 
@@ -617,7 +617,7 @@ module.exports = function(app, pool) {
     app.get('/api/transfer-requests/:userId', authenticateToken, async (req, res) => {
         try {
             const { userId } = req.params;
-            
+
             // Verificar que el usuario puede ver sus propias solicitudes o es admin
             if (req.user.id !== parseInt(userId) && req.user.role !== 'admin') {
                 return res.status(403).json({ success: false, error: 'No autorizado' });
@@ -747,9 +747,9 @@ module.exports = function(app, pool) {
             const { chat_jid, session_id, from_user_id, to_user_id, reason, request_acceptance } = req.body;
 
             if (!chat_jid || !session_id || !to_user_id) {
-                return res.status(400).json({ 
-                    success: false, 
-                    error: 'Faltan datos requeridos' 
+                return res.status(400).json({
+                    success: false,
+                    error: 'Faltan datos requeridos'
                 });
             }
 
@@ -762,9 +762,9 @@ module.exports = function(app, pool) {
                 );
 
                 if (assignments.length === 0) {
-                    return res.status(400).json({ 
-                        success: false, 
-                        error: 'El chat no está asignado al usuario origen' 
+                    return res.status(400).json({
+                        success: false,
+                        error: 'El chat no está asignado al usuario origen'
                     });
                 }
 
@@ -782,8 +782,8 @@ module.exports = function(app, pool) {
                         reason || 'Transferencia solicitada'
                     ]);
 
-                    res.json({ 
-                        success: true, 
+                    res.json({
+                        success: true,
                         message: 'Solicitud de transferencia enviada',
                         request_id: result.insertId
                     });
@@ -832,7 +832,7 @@ module.exports = function(app, pool) {
     });
 
     // ==================== ENDPOINT PARA OBTENER AGENTES DISPONIBLES ====================
-    
+
     app.get('/api/users/agents', authenticateToken, async (req, res) => {
         try {
             const connection = await pool.getConnection();
@@ -844,7 +844,7 @@ module.exports = function(app, pool) {
                     AND status = 'active'
                     ORDER BY name ASC
                 `);
-                
+
                 console.log(`✅ Agentes disponibles solicitados: ${agents.length}`);
                 res.json({ success: true, agents });
             } finally {
@@ -857,7 +857,7 @@ module.exports = function(app, pool) {
     });
 
     // ==================== ENDPOINT PARA ENVIAR MENSAJES DE AGENTES ====================
-    
+
     app.post('/api/agent/messages/send', authenticateToken, async (req, res) => {
         try {
             const { sessionId, chatJid, message } = req.body;
@@ -923,9 +923,9 @@ module.exports = function(app, pool) {
     app.get('/api/messages/:sessionId/:chatJid', authenticateToken, async (req, res) => {
         try {
             const { sessionId, chatJid } = req.params;
-            const { limit = 50, offset = 0 } = req.query;
+            const { limit = 50, offset = 0, dateFilter, beforeTimestamp } = req.query;
 
-            console.log('[MESSAGES-GET] 📥 Obteniendo mensajes:', { sessionId, chatJid, limit, offset });
+            console.log('[MESSAGES-GET] 📥 Obteniendo mensajes:', { sessionId, chatJid, limit, offset, dateFilter, beforeTimestamp });
 
             const connection = await pool.getConnection();
             try {
@@ -936,7 +936,7 @@ module.exports = function(app, pool) {
                 );
                 const phoneNumber = sessionInfo[0]?.phone_number || null;
 
-                const [messages] = await connection.execute(`
+                let query = `
                     SELECT
                         m.id,
                         m.chat_jid,
@@ -954,30 +954,52 @@ module.exports = function(app, pool) {
                     FROM messages m
                     LEFT JOIN contacts c ON m.sender_jid = c.jid AND c.session_id = ?
                     WHERE m.session_id = ? AND m.chat_jid = ?
-                    ORDER BY m.timestamp DESC
-                    LIMIT ? OFFSET ?
-                `, [phoneNumber, sessionId, chatJid, parseInt(limit), parseInt(offset)]);
+                `;
+
+                const params = [phoneNumber, sessionId, chatJid];
+
+                // Filtro por fecha (hoy)
+                if (dateFilter === 'today') {
+                    query += ` AND DATE(m.timestamp) = CURDATE()`;
+                }
+
+                // Paginación por cursor (mensajes anteriores a...)
+                if (beforeTimestamp) {
+                    query += ` AND m.timestamp < ?`;
+                    params.push(new Date(beforeTimestamp));
+                }
+
+                query += ` ORDER BY m.timestamp DESC LIMIT ?`;
+                params.push(parseInt(limit));
+
+                // Si no es cursor, usar offset (para compatibilidad o primera carga sin filtro fecha)
+                if (!beforeTimestamp && !dateFilter) {
+                    query += ` OFFSET ?`;
+                    params.push(parseInt(offset));
+                }
+
+                const [messages] = await connection.execute(query, params);
 
                 console.log('[MESSAGES-GET] ✅ Mensajes obtenidos:', messages.length);
 
-                res.json({ 
-                    success: true, 
+                res.json({
+                    success: true,
                     messages: messages.reverse(), // Invertir para orden cronológico
-                    count: messages.length 
+                    count: messages.length
                 });
             } finally {
                 connection.release();
             }
         } catch (error) {
             console.error('[MESSAGES-GET] ❌ Error obteniendo mensajes:', error);
-            res.status(500).json({ 
-                success: false, 
+            res.status(500).json({
+                success: false,
                 error: 'Error obteniendo mensajes',
-                details: error.message 
+                details: error.message
             });
         }
     });
-    
+
     // NUEVO: Endpoint simplificado para obtener chats del agente por ID
     app.get('/api/agents/:agentId/chats', authenticateToken, async (req, res) => {
         try {
@@ -1098,9 +1120,9 @@ module.exports = function(app, pool) {
             const agentId = req.user.id;
 
             if (!chat_jid || !session_id) {
-                return res.status(400).json({ 
-                    success: false, 
-                    error: 'Se requiere chat_jid y session_id' 
+                return res.status(400).json({
+                    success: false,
+                    error: 'Se requiere chat_jid y session_id'
                 });
             }
 
@@ -1127,12 +1149,12 @@ module.exports = function(app, pool) {
             }
         } catch (error) {
             console.error('❌ Error marcando chat como activo:', error);
-            res.status(500).json({ 
-                success: false, 
-                error: 'Error al marcar chat como activo' 
+            res.status(500).json({
+                success: false,
+                error: 'Error al marcar chat como activo'
             });
         }
     });
-    
+
     console.log('✅ Sistema multi-agente endpoints cargados correctamente');
 };

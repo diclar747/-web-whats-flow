@@ -44,7 +44,6 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
   const { socket, isConnected, on, off } = useSocket();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [initialLoad, setInitialLoad] = useState(true);
 
@@ -54,33 +53,39 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
 
   const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3002';
 
-  // Load messages with pagination
-  const loadMessages = useCallback(async (pageNum: number = 1, append: boolean = false) => {
+  // Load messages with pagination (cursor-based)
+  const loadMessages = useCallback(async (isInitial: boolean = false, beforeTimestamp?: string) => {
     if (loading || !chatJid) return;
 
     setLoading(true);
     try {
-      const response = await fetch(
-        `${apiUrl}/api/messages/${sessionId}/${chatJid}?page=${pageNum}&limit=50`,
-        {
-          headers: {
-            'Authorization': `Bearer ${sessionStorage.getItem('token') || ''}`
-          }
+      let url = `${apiUrl}/api/messages/${sessionId}/${chatJid}?limit=50`;
+
+      if (isInitial) {
+        url += '&dateFilter=today';
+      } else if (beforeTimestamp) {
+        url += `&beforeTimestamp=${beforeTimestamp}`;
+      }
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${sessionStorage.getItem('token') || ''}`
         }
-      );
+      });
 
       if (!response.ok) throw new Error('Error loading messages');
 
       const data = await response.json();
       const newMessages = data.messages || [];
 
-      if (append) {
-        setMessages(prev => [...newMessages, ...prev]);
-      } else {
+      if (isInitial) {
         setMessages(newMessages);
         setInitialLoad(false);
         // Scroll to bottom on initial load
         setTimeout(() => scrollToBottom(), 100);
+      } else {
+        // Prepend older messages
+        setMessages(prev => [...newMessages, ...prev]);
       }
 
       setHasMore(newMessages.length === 50);
@@ -102,35 +107,22 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
     if (observer.current) observer.current.disconnect();
 
     observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore && !initialLoad) {
-        const container = messagesContainerRef.current;
-        const scrollHeightBefore = container?.scrollHeight || 0;
-        
-        setPage(prev => {
-          const nextPage = prev + 1;
-          loadMessages(nextPage, true).then(() => {
-            // Maintain scroll position after loading older messages
-            if (container) {
-              const scrollHeightAfter = container.scrollHeight;
-              container.scrollTop = scrollHeightAfter - scrollHeightBefore;
-            }
-          });
-          return nextPage;
-        });
+      if (entries[0].isIntersecting && hasMore && !loading && messages.length > 0) {
+        // Load older messages using the timestamp of the first (oldest) message
+        const oldestMessage = messages[0];
+        loadMessages(false, oldestMessage.timestamp);
       }
     });
 
     if (node) observer.current.observe(node);
-  }, [loading, hasMore, initialLoad, loadMessages]);
+  }, [loading, hasMore, messages, loadMessages]);
 
   // Initial load
   useEffect(() => {
-    if (chatJid) {
-      setPage(1);
-      setMessages([]);
-      setInitialLoad(true);
-      loadMessages(1, false);
-    }
+    setMessages([]);
+    setInitialLoad(true);
+    setHasMore(true);
+    loadMessages(true); // Initial load (today's messages)
   }, [chatJid, sessionId]);
 
   // Escuchar eventos de socket para nuevos mensajes en tiempo real (sin polling!)
@@ -285,12 +277,12 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
 
     // Determinar el tipo de media desde message_type o media_type
     let mediaType = message.media_type || message.message_type;
-    
+
     // Normalizar tipos de WhatsApp (imageMessage -> image, stickerMessage -> sticker, etc.)
     if (mediaType) {
       mediaType = mediaType.replace('Message', '').toLowerCase();
     }
-    
+
     // Detectar sticker por URL si no está marcado como tal
     if (!mediaType || mediaType === 'unknown') {
       if (message.media_url.includes('sticker')) {
@@ -299,7 +291,7 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
         mediaType = 'image';
       }
     }
-    
+
     switch (mediaType) {
       case 'image':
       case 'sticker':
@@ -308,8 +300,8 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
             <img
               src={mediaUrl}
               alt={mediaType === 'sticker' ? 'Sticker' : 'Imagen'}
-              style={{ 
-                width: '100%', 
+              style={{
+                width: '100%',
                 borderRadius: mediaType === 'sticker' ? 0 : 8,
                 backgroundColor: mediaType === 'sticker' ? 'transparent' : undefined
               }}
@@ -395,7 +387,7 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
         }}
       >
         {/* Loading indicator at top */}
-        {loading && page > 1 && (
+        {loading && (
           <Box display="flex" justifyContent="center" p={1}>
             <CircularProgress size={20} />
           </Box>

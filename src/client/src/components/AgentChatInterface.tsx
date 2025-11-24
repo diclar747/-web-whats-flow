@@ -26,7 +26,8 @@ import {
   CheckCircle as CheckIcon,
   Schedule as ScheduleIcon,
   GetApp as DownloadIcon,
-  Description as DocumentIcon
+  Description as DocumentIcon,
+  Block as BlockIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -84,7 +85,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
           'Authorization': `Bearer ${token}`
         }
       });
-      
+
       const data = await response.json();
       if (data.success) {
         setMessages(data.messages || []);
@@ -209,7 +210,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
     setSending(true);
     try {
       const token = sessionStorage.getItem('token');
-      
+
       if (selectedFile) {
         // Enviar archivo
         const formData = new FormData();
@@ -225,7 +226,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
           },
           body: formData
         });
-        
+
         setSelectedFile(null);
       } else {
         // Enviar texto
@@ -249,6 +250,28 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
       console.error('Error sending message:', error);
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleCloseConversation = async () => {
+    try {
+      const token = sessionStorage.getItem('token');
+      await fetch('/api/chats/status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          chatJid: chatId,
+          sessionId,
+          status: 'closed'
+        })
+      });
+      setAnchorEl(null);
+      // Optionally notify user or refresh list
+    } catch (error) {
+      console.error('Error closing conversation:', error);
     }
   };
 
@@ -436,12 +459,12 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: '#f0f2f5' }}>
       {/* Header estilo WhatsApp */}
-      <Paper 
-        elevation={1} 
-        sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          p: 2, 
+      <Paper
+        elevation={1}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          p: 2,
           bgcolor: '#00a884',
           color: 'white',
           borderRadius: 0
@@ -450,15 +473,15 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
         <IconButton onClick={onBack} sx={{ color: 'white', mr: 1 }}>
           <BackIcon />
         </IconButton>
-        
-        <Avatar 
-          src={chatAvatar} 
+
+        <Avatar
+          src={chatAvatar}
           alt={chatName}
           sx={{ width: 40, height: 40, mr: 2 }}
         >
           {chatName?.[0]?.toUpperCase()}
         </Avatar>
-        
+
         <Box sx={{ flexGrow: 1 }}>
           <Typography variant="subtitle1" fontWeight={600}>
             {chatName}
@@ -468,7 +491,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
           </Typography>
         </Box>
 
-        <IconButton 
+        <IconButton
           onClick={(e) => setAnchorEl(e.currentTarget)}
           sx={{ color: 'white' }}
         >
@@ -482,15 +505,18 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
         >
           <MenuItem onClick={() => setAnchorEl(null)}>Ver info del contacto</MenuItem>
           <MenuItem onClick={() => setAnchorEl(null)}>Buscar mensajes</MenuItem>
-          <MenuItem onClick={() => setAnchorEl(null)}>Cerrar chat</MenuItem>
+          <MenuItem onClick={handleCloseConversation} sx={{ color: 'error.main' }}>
+            <BlockIcon fontSize="small" sx={{ mr: 1 }} />
+            Cerrar conversación
+          </MenuItem>
         </Menu>
       </Paper>
 
       {/* Área de mensajes estilo WhatsApp */}
-      <Box 
-        sx={{ 
-          flexGrow: 1, 
-          overflowY: 'auto', 
+      <Box
+        sx={{
+          flexGrow: 1,
+          overflowY: 'auto',
           p: 2,
           backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpattern id=\'pattern\' x=\'0\' y=\'0\' width=\'20\' height=\'20\' patternUnits=\'userSpaceOnUse\'%3E%3Ccircle cx=\'2\' cy=\'2\' r=\'1\' fill=\'%23d9d9d9\' opacity=\'0.3\'/%3E%3C/pattern%3E%3Crect x=\'0\' y=\'0\' width=\'100%25\' height=\'100%25\' fill=\'url(%23pattern)\'/%3E%3C/svg%3E")',
           bgcolor: '#efeae2'
@@ -533,7 +559,8 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
               {renderMedia(msg)}
 
               {/* Texto del mensaje */}
-              {msg.text_content && (
+              {/* Texto del mensaje - FIX "0" BUG: Ensure text_content is truthy string */}
+              {msg.text_content && msg.text_content !== '0' && (
                 <Typography
                   variant="body2"
                   sx={{
@@ -559,11 +586,11 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
       </Box>
 
       {/* Área de envío de mensajes */}
-      <Paper 
+      <Paper
         elevation={2}
-        sx={{ 
-          p: 1.5, 
-          display: 'flex', 
+        sx={{
+          p: 1.5,
+          display: 'flex',
           gap: 1,
           alignItems: 'flex-end',
           bgcolor: '#f0f2f5',
@@ -579,7 +606,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
         />
 
         <Tooltip title="Adjuntar archivo">
-          <IconButton 
+          <IconButton
             size="small"
             onClick={() => fileInputRef.current?.click()}
             sx={{ color: '#54656f' }}
@@ -632,7 +659,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
         </Box>
 
         <Tooltip title="Emoji">
-          <IconButton 
+          <IconButton
             size="small"
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
             sx={{ color: '#54656f' }}
@@ -642,10 +669,10 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
         </Tooltip>
 
         <Tooltip title="Enviar">
-          <IconButton 
+          <IconButton
             onClick={handleSendMessage}
             disabled={sending || (!messageText.trim() && !selectedFile)}
-            sx={{ 
+            sx={{
               bgcolor: '#00a884',
               color: 'white',
               '&:hover': {

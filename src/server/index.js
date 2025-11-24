@@ -2626,9 +2626,9 @@ async function performFullSync(sessionId, sock, userSessionId) {
             // 🚫 FILTRAR STATUS/BROADCAST ANTES DE PROCESAR
             chatArray = chatArray.filter(chat => {
                 const chatId = chat.id || '';
-                return !chatId.includes('@broadcast') && 
-                       !chatId.includes('status@') && 
-                       !chatId.includes('@lid');
+                return !chatId.includes('@broadcast') &&
+                    !chatId.includes('status@') &&
+                    !chatId.includes('@lid');
             });
 
             console.log(`[FULL-SYNC] - Chats en store: ${chatArray.length} (sin estados ni broadcasts)`);
@@ -2656,13 +2656,13 @@ async function performFullSync(sessionId, sock, userSessionId) {
             for (const chat of chatArray) {
                 try {
                     const chatId = chat.id;
-                    
+
                     // 🚫 DOBLE CHECK: Ignorar status/broadcast
                     if (chatId.includes('@broadcast') || chatId.includes('status@') || chatId.includes('@lid')) {
                         console.log(`[FULL-SYNC] 🚫 Ignorando status/broadcast: ${chatId}`);
                         continue;
                     }
-                    
+
                     const isGroup = chatId.endsWith('@g.us');
 
                     if (!isGroup) {
@@ -2840,9 +2840,9 @@ async function performFullSync(sessionId, sock, userSessionId) {
             // 🚫 FILTRAR STATUS/BROADCAST DE CONTACTOS
             contactList = contactList.filter(contact => {
                 const contactId = contact.id || '';
-                return !contactId.includes('@broadcast') && 
-                       !contactId.includes('status@') && 
-                       !contactId.includes('@lid');
+                return !contactId.includes('@broadcast') &&
+                    !contactId.includes('status@') &&
+                    !contactId.includes('@lid');
             });
 
             console.log(`[FULL-SYNC] - Contactos en store: ${contactList.length} (sin estados ni broadcasts)`);
@@ -2873,14 +2873,14 @@ async function performFullSync(sessionId, sock, userSessionId) {
             for (const contact of contactList) {
                 try {
                     // 🚫 DOBLE CHECK: Ignorar status/broadcast/grupos
-                    if (!contact.id || 
-                        contact.id.includes('@g.us') || 
-                        contact.id.includes('@broadcast') || 
-                        contact.id.includes('status@') || 
+                    if (!contact.id ||
+                        contact.id.includes('@g.us') ||
+                        contact.id.includes('@broadcast') ||
+                        contact.id.includes('status@') ||
                         contact.id.includes('@lid')) {
                         continue;
                     }
-                    
+
                     if (contact.id && !contact.id.includes('@g.us')) {
                         const [existing] = await connection.query(
                             'SELECT id FROM contacts WHERE jid = ? AND session_id = ?',
@@ -3847,15 +3847,15 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                  AND role IN ('agent', 'supervisor')`,
                                 [newSessionId, userPhoneNumber]
                             );
-                            
+
                             console.log(`[${newSessionId}] ✅ Session_id asignado a ${updateResult.affectedRows} agentes del admin ${userPhoneNumber}`);
-                            
+
                             // Obtener lista de agentes actualizados para notificarles
                             const [agents] = await connection.execute(
                                 `SELECT id, name, email FROM users WHERE admin_phone = ? AND role IN ('agent', 'supervisor')`,
                                 [userPhoneNumber]
                             );
-                            
+
                             // Notificar a cada agente sobre la actualización de sesión
                             agents.forEach(agent => {
                                 io.emit(`agent-${agent.id}-session-updated`, {
@@ -3914,6 +3914,30 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         status: 'connected',
                         sessionId: newSessionId,
                         phoneNumber: userPhoneNumber
+                    });
+                }
+
+                // Notificar a todos los clientes de esta sesión
+                io.to(`session-${sessionId}`).emit('connection-update', {
+                    status: 'disconnected',
+                    reason: reason || 'unknown'
+                });
+
+                // 🔴 CRÍTICO: Notificar logout forzado a todos los agentes de esta sesión
+                if (reason === DisconnectReason.loggedOut) {
+                    console.log(`[${sessionId}] 🚫 Logout detectado desde dispositivo móvil. Forzando cierre de sesión de agentes.`);
+
+                    // Emitir evento específico para agentes
+                    io.to(`session-${sessionId}`).emit('agent-force-logout', {
+                        sessionId,
+                        reason: 'logged_out_from_device',
+                        timestamp: Date.now()
+                    });
+
+                    // También emitir el evento general por si acaso
+                    io.emit(`session-logged-out-${sessionId}`, {
+                        sessionId,
+                        reason: 'logged_out_from_device'
                     });
                 }
 
@@ -5851,32 +5875,18 @@ app.get('/api/qr-status', async (req, res) => {
         }
     }
 
-    // Verificar si hay CUALQUIER sesión conectada y usarla
+    // Verificar si hay CUALQUIER sesión conectada y usarla - ELIMINADO POR SEGURIDAD
+    // Esto permitía que cualquier usuario que abriera la página obtuviera acceso a la sesión activa
+    /* 
     if (!existingSession || !existingSession.isConnected) {
         for (const [sid, sess] of sessions.entries()) {
             if (sess && sess.isConnected) {
                 console.log(`[QR] ✅ Usando sesión ya conectada: ${sid}`);
-                // Para QR-based sessions, create a device-specific session token
-                const sessionToken = createUniqueSession('admin', deviceId, 'admin@whatsapp', 'admin');
-
-                // Store the sessionToken for validation later
-                sessionTokenMap.set(sid, {
-                    sessionToken,
-                    deviceId,
-                    timestamp: Date.now()
-                });
-
-                return res.json({
-                    success: true,
-                    sessionId: sid,
-                    isConnected: true,
-                    message: 'WhatsApp ya está conectado',
-                    phoneNumber: sess.user?.id?.split(':')[0],
-                    sessionToken // Add the device-specific token to the response
-                });
+                // ...
             }
         }
     }
+    */
 
     if (existingSession && existingSession.isConnected) {
         // Para QR-based sessions, create a device-specific session token
@@ -7795,7 +7805,7 @@ app.get('/api/messages', async (req, res) => {
         // Construir filtro de fecha
         let dateCondition = '';
         let queryParams = [contactId];
-        
+
         // Obtener fecha actual en formato YYYY-MM-DD
         const today = new Date().toISOString().split('T')[0];
         const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
@@ -7845,9 +7855,9 @@ app.get('/api/messages', async (req, res) => {
             'WHERE chat_jid = ? ' +
             dateCondition + ' ' +
             'ORDER BY timestamp ASC';
-        
+
         console.log(`[MESSAGES] Ejecutando query para obtener mensajes (filtro: ${dateFilter})`);
-        
+
         const [messages] = await connection.query(
             sqlQuery,
             queryParams
@@ -15273,20 +15283,32 @@ app.post('/api/agent/close-conversation', async (req, res) => {
     }
 
     try {
+        console.log('[DEBUG] Close Conversation Request:', { agentId, chatJid, sessionId });
+
         const connection = await pool.getConnection();
         try {
+            // DEBUG: Check if record exists
+            const [check] = await connection.execute(
+                `SELECT * FROM chat_assignments WHERE user_id = ? AND chat_jid = ? AND session_id = ?`,
+                [agentId, chatJid, sessionId]
+            );
+            console.log('[DEBUG] Record found before update:', check);
+
             // Actualizar el estado en chat_assignments
+            // Eliminamos "AND status = 'active'" para permitir idempotencia (si ya estaba cerrado, lo actualizamos igual)
             const [result] = await connection.execute(
                 `UPDATE chat_assignments 
-                 SET status = 'closed', closed_at = NOW()
-                 WHERE user_id = ? AND chat_jid = ? AND session_id = ? AND status = 'active'`,
+                 SET status = 'closed', conversation_status = 'closed', closed_at = NOW()
+                 WHERE user_id = ? AND chat_jid = ? AND session_id = ?`,
                 [agentId, chatJid, sessionId]
             );
 
             if (result.affectedRows === 0) {
+                // Si no se actualizó nada, verificamos si es porque no existe la asignación
+                // o porque ya estaba cerrada (aunque con el cambio de arriba, si existe se actualiza por el closed_at)
                 return res.status(404).json({
                     success: false,
-                    error: 'Conversación no encontrada o ya cerrada'
+                    error: 'Conversación no encontrada o no asignada a este agente'
                 });
             }
 
@@ -15294,7 +15316,7 @@ app.post('/api/agent/close-conversation', async (req, res) => {
             await connection.execute(
                 `UPDATE agent_chat_history 
                  SET status = 'closed', closed_at = NOW()
-                 WHERE agent_id = ? AND chat_jid = ? AND session_id = ? AND status = 'active'`,
+                 WHERE agent_id = ? AND chat_jid = ? AND session_id = ?`,
                 [agentId, chatJid, sessionId]
             );
 

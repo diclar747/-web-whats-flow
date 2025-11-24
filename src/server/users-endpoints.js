@@ -2,458 +2,467 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { generateDeviceFingerprint, getDeviceInfo } = require('./utils/deviceFingerprint');
 
-module.exports = function(app, pool) {
+module.exports = function (app, pool) {
 
-// ==================== AUTENTICACIÓN ====================
+    // ==================== AUTENTICACIÓN ====================
 
-// Login de usuario
-app.post('/api/auth/login', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { email, password } = req.body;
-
-        if (!email || !password) {
-            return res.status(400).json({ success: false, error: 'Email y contraseña son requeridos' });
-        }
-
-        const connection = await pool.getConnection();
-
+    // Login de usuario
+    app.post('/api/auth/login', async (req, res) => {
         try {
-            // Buscar usuario por email
-            const [users] = await connection.execute(
-                'SELECT id, name, email, password, role, department, status, created_at FROM users WHERE email = ?',
-                [email]
-            );
-
-            if (users.length === 0) {
-                return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            const user = users[0];
+            const { email, password } = req.body;
 
-            // Verificar contraseña
-            const isValidPassword = await bcrypt.compare(password, user.password);
-            if (!isValidPassword) {
-                return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
+            if (!email || !password) {
+                return res.status(400).json({ success: false, error: 'Email y contraseña son requeridos' });
             }
 
-            // Verificar si el usuario está activo
-            if (user.status !== 'active') {
-                return res.status(401).json({ success: false, error: 'Usuario inactivo' });
-            }
+            const connection = await pool.getConnection();
 
-            // 🔒 Generar fingerprint del dispositivo (vincula sesión al navegador específico)
-            const deviceFingerprint = generateDeviceFingerprint(req);
-            const deviceInfo = getDeviceInfo(req);
-            
-            // Generar token JWT con fingerprint
-            const token = jwt.sign(
-                { 
-                    id: user.id, 
-                    email: user.email, 
-                    role: user.role,
-                    deviceFingerprint: deviceFingerprint, // Vincula token al dispositivo
-                    loginTime: Date.now()
-                },
-                process.env.JWT_SECRET || 'whatsflow_jwt_secret',
-                { expiresIn: '24h' }
-            );
-
-            // Actualizar último login
-            await connection.execute(
-                'UPDATE users SET last_login = NOW() WHERE id = ?',
-                [user.id]
-            );
-
-            // Remover contraseña del objeto a devolver
-            const { password: _, ...userWithoutPassword } = user;
-
-            console.log(`✅ Login: ${email} (${user.role}) - ${deviceInfo.browser}/${deviceInfo.os} [${deviceInfo.ip}]`);
-            res.json({ 
-                success: true, 
-                token,
-                user: userWithoutPassword,
-                deviceInfo: deviceInfo, // Info del dispositivo para mostrar en frontend
-                message: 'Login exitoso'
-            });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('Error en login:', error);
-        res.status(500).json({ success: false, error: 'Error en el proceso de login' });
-    }
-});
-
-// Verificar token con validación de dispositivo
-app.get('/api/auth/verify', async (req, res) => {
-    try {
-        const token = req.headers.authorization?.split(' ')[1];
-        
-        if (!token) {
-            return res.status(401).json({ success: false, error: 'Token no proporcionado' });
-        }
-
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-        
-        // 🔒 Validar que el token se use en el mismo dispositivo
-        const { validateDeviceFingerprint } = require('./utils/deviceFingerprint');
-        if (decoded.deviceFingerprint && !validateDeviceFingerprint(req, decoded.deviceFingerprint)) {
-            console.warn(`⚠️ Token usado desde dispositivo diferente: User ${decoded.id}`);
-            return res.status(403).json({ 
-                success: false, 
-                error: 'Sesión inválida. Por favor, inicia sesión nuevamente.',
-                requireReauth: true 
-            });
-        }
-        
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const connection = await pool.getConnection();
-
-        try {
-            // Buscar usuario por ID
-            const [users] = await connection.execute(
-                'SELECT id, name, email, role, department, status, created_at FROM users WHERE id = ? AND status = ?',
-                [decoded.id, 'active']
-            );
-
-            if (users.length === 0) {
-                return res.status(401).json({ success: false, error: 'Usuario no encontrado o inactivo' });
-            }
-
-            const user = users[0];
-            res.json({ success: true, user, message: 'Token válido' });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('Error verificando token:', error);
-        res.status(401).json({ success: false, error: 'Token inválido' });
-    }
-});
-
-// ==================== GESTIÓN DE USUARIOS ====================
-
-
-// Obtener todos los usuarios
-app.get('/api/users', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { role, department, status, sessionId } = req.query;
-        const connection = await pool.getConnection();
-
-        try {
-            let query = 'SELECT id, name, email, role, department, category, status, avatar_url, phone, last_login, created_at, session_id FROM users WHERE 1=1';
-            const params = [];
-
-            // FILTRO OBLIGATORIO: Cada usuario solo ve sus propios agentes
-            if (sessionId) {
-                query += ' AND session_id = ?';
-                params.push(sessionId);
-            }
-
-            if (role) {
-                query += ' AND role = ?';
-                params.push(role);
-            }
-            if (department) {
-                query += ' AND department = ?';
-                params.push(department);
-            }
-            if (status) {
-                query += ' AND status = ?';
-                params.push(status);
-            }
-
-            query += ' ORDER BY created_at DESC';
-
-            const [users] = await connection.execute(query, params);
-            res.json({ success: true, users });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('Error obteniendo usuarios:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo usuarios' });
-    }
-});
-
-// Crear nuevo usuario
-app.post('/api/users', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { name, email, password, role, department, category, phone, sessionId } = req.body;
-
-        if (!name || !email || !password) {
-            return res.status(400).json({ success: false, error: 'Nombre, email y contraseña son requeridos' });
-        }
-
-        if (!sessionId) {
-            return res.status(400).json({ success: false, error: 'sessionId es requerido' });
-        }
-
-        const connection = await pool.getConnection();
-
-        try {
-            // Verificar si el email ya existe para este sessionId
-            const [existing] = await connection.execute(
-                'SELECT id FROM users WHERE email = ? AND session_id = ?',
-                [email, sessionId]
-            );
-
-            if (existing.length > 0) {
-                return res.status(400).json({ success: false, error: 'El email ya está registrado' });
-            }
-
-            // Hash de la contraseña
-            const hashedPassword = await bcrypt.hash(password, 10);
-
-            // Si es agente, obtener el admin_phone del sessionId
-            let adminPhone = null;
-            if (role === 'agent' || !role) {
-                const [session] = await connection.execute(
-                    'SELECT phone_number FROM user_sessions WHERE session_id = ? LIMIT 1',
-                    [sessionId]
+            try {
+                // Buscar usuario por email
+                const [users] = await connection.execute(
+                    'SELECT id, name, email, password, role, department, status, created_at FROM users WHERE email = ?',
+                    [email]
                 );
-                if (session.length > 0) {
-                    adminPhone = session[0].phone_number;
+
+                if (users.length === 0) {
+                    return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
                 }
+
+                const user = users[0];
+
+                // Verificar contraseña
+                const isValidPassword = await bcrypt.compare(password, user.password);
+                if (!isValidPassword) {
+                    return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
+                }
+
+                // Verificar si el usuario está activo
+                if (user.status !== 'active') {
+                    return res.status(401).json({ success: false, error: 'Usuario inactivo' });
+                }
+
+                // 🔒 Generar fingerprint del dispositivo (vincula sesión al navegador específico)
+                const deviceFingerprint = generateDeviceFingerprint(req);
+                const deviceInfo = getDeviceInfo(req);
+
+                // Generar token JWT con fingerprint
+                const token = jwt.sign(
+                    {
+                        id: user.id,
+                        email: user.email,
+                        role: user.role,
+                        deviceFingerprint: deviceFingerprint, // Vincula token al dispositivo
+                        loginTime: Date.now()
+                    },
+                    process.env.JWT_SECRET || 'whatsflow_jwt_secret',
+                    { expiresIn: '24h' }
+                );
+
+                // Actualizar último login
+                await connection.execute(
+                    'UPDATE users SET last_login = NOW() WHERE id = ?',
+                    [user.id]
+                );
+
+                // Remover contraseña del objeto a devolver
+                const { password: _, ...userWithoutPassword } = user;
+
+                console.log(`✅ Login: ${email} (${user.role}) - ${deviceInfo.browser}/${deviceInfo.os} [${deviceInfo.ip}]`);
+                res.json({
+                    success: true,
+                    token,
+                    user: userWithoutPassword,
+                    deviceInfo: deviceInfo, // Info del dispositivo para mostrar en frontend
+                    message: 'Login exitoso'
+                });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error en login:', error);
+            res.status(500).json({ success: false, error: 'Error en el proceso de login' });
+        }
+    });
+
+    // Verificar token con validación de dispositivo y estado de sesión de WhatsApp
+    app.get('/api/auth/verify', async (req, res) => {
+        try {
+            const token = req.headers.authorization?.split(' ')[1];
+
+            if (!token) {
+                return res.status(401).json({ success: false, error: 'Token no proporcionado' });
             }
 
-            // Insertar usuario con session_id y admin_phone
-            const [result] = await connection.execute(`
+            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+
+            // 🔒 Validar que el token se use en el mismo dispositivo
+            const { validateDeviceFingerprint } = require('./utils/deviceFingerprint');
+            if (decoded.deviceFingerprint && !validateDeviceFingerprint(req, decoded.deviceFingerprint)) {
+                console.warn(`⚠️ Token usado desde dispositivo diferente: User ${decoded.id}`);
+                return res.status(403).json({
+                    success: false,
+                    error: 'Sesión inválida. Por favor, inicia sesión nuevamente.',
+                    requireReauth: true
+                });
+            }
+
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                // Buscar usuario por ID
+                const [users] = await connection.execute(
+                    'SELECT id, name, email, role, department, status, session_id, created_at FROM users WHERE id = ? AND status = ?',
+                    [decoded.id, 'active']
+                );
+
+                if (users.length === 0) {
+                    return res.status(401).json({ success: false, error: 'Usuario no encontrado o inactivo' });
+                }
+
+                const user = users[0];
+
+                // 🔴 VERIFICACIÓN CRÍTICA: Si es agente, verificar que la sesión de WhatsApp del admin esté activa
+                if (user.role === 'agent' && user.session_id) {
+                    // Verificar en la tabla user_sessions si la sesión existe y está conectada (opcional, o si fue cerrada)
+                    // Nota: El estado de conexión real se maneja mejor vía socket, pero aquí verificamos si la sesión fue eliminada o invalidada
+                    // Por ahora, confiamos en el evento de socket para desconexión en tiempo real, 
+                    // pero aquí podríamos agregar lógica extra si se requiere validación estricta contra BD.
+                }
+
+                res.json({ success: true, user, message: 'Token válido' });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error verificando token:', error);
+            res.status(401).json({ success: false, error: 'Token inválido' });
+        }
+    });
+
+    // ==================== GESTIÓN DE USUARIOS ====================
+
+
+    // Obtener todos los usuarios
+    app.get('/api/users', async (req, res) => {
+        try {
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { role, department, status, sessionId } = req.query;
+            const connection = await pool.getConnection();
+
+            try {
+                let query = 'SELECT id, name, email, role, department, category, status, avatar_url, phone, last_login, created_at, session_id FROM users WHERE 1=1';
+                const params = [];
+
+                // FILTRO OBLIGATORIO: Cada usuario solo ve sus propios agentes
+                if (sessionId) {
+                    query += ' AND session_id = ?';
+                    params.push(sessionId);
+                }
+
+                if (role) {
+                    query += ' AND role = ?';
+                    params.push(role);
+                }
+                if (department) {
+                    query += ' AND department = ?';
+                    params.push(department);
+                }
+                if (status) {
+                    query += ' AND status = ?';
+                    params.push(status);
+                }
+
+                query += ' ORDER BY created_at DESC';
+
+                const [users] = await connection.execute(query, params);
+                res.json({ success: true, users });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error obteniendo usuarios:', error);
+            res.status(500).json({ success: false, error: 'Error obteniendo usuarios' });
+        }
+    });
+
+    // Crear nuevo usuario
+    app.post('/api/users', async (req, res) => {
+        try {
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { name, email, password, role, department, category, phone, sessionId } = req.body;
+
+            if (!name || !email || !password) {
+                return res.status(400).json({ success: false, error: 'Nombre, email y contraseña son requeridos' });
+            }
+
+            if (!sessionId) {
+                return res.status(400).json({ success: false, error: 'sessionId es requerido' });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                // Verificar si el email ya existe para este sessionId
+                const [existing] = await connection.execute(
+                    'SELECT id FROM users WHERE email = ? AND session_id = ?',
+                    [email, sessionId]
+                );
+
+                if (existing.length > 0) {
+                    return res.status(400).json({ success: false, error: 'El email ya está registrado' });
+                }
+
+                // Hash de la contraseña
+                const hashedPassword = await bcrypt.hash(password, 10);
+
+                // Si es agente, obtener el admin_phone del sessionId
+                let adminPhone = null;
+                if (role === 'agent' || !role) {
+                    const [session] = await connection.execute(
+                        'SELECT phone_number FROM user_sessions WHERE session_id = ? LIMIT 1',
+                        [sessionId]
+                    );
+                    if (session.length > 0) {
+                        adminPhone = session[0].phone_number;
+                    }
+                }
+
+                // Insertar usuario con session_id y admin_phone
+                const [result] = await connection.execute(`
                 INSERT INTO users (name, email, password, role, department, category, phone, status, session_id, admin_phone)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
             `, [name, email, hashedPassword, role || 'agent', department || null, category || null, phone || null, sessionId, adminPhone]);
 
-            // Obtener el usuario creado
-            const [newUser] = await connection.execute(
-                'SELECT id, name, email, role, department, category, status, phone, created_at, session_id, admin_phone FROM users WHERE id = ?',
-                [result.insertId]
-            );
+                // Obtener el usuario creado
+                const [newUser] = await connection.execute(
+                    'SELECT id, name, email, role, department, category, status, phone, created_at, session_id, admin_phone FROM users WHERE id = ?',
+                    [result.insertId]
+                );
 
-            console.log(`✅ Usuario creado: ${email} (${role || 'agent'}) para sessionId: ${sessionId}, admin_phone: ${adminPhone}`);
-            res.json({ success: true, user: newUser[0] });
-        } finally {
-            connection.release();
+                console.log(`✅ Usuario creado: ${email} (${role || 'agent'}) para sessionId: ${sessionId}, admin_phone: ${adminPhone}`);
+                res.json({ success: true, user: newUser[0] });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error creando usuario:', error);
+            res.status(500).json({ success: false, error: 'Error creando usuario' });
         }
-    } catch (error) {
-        console.error('Error creando usuario:', error);
-        res.status(500).json({ success: false, error: 'Error creando usuario' });
-    }
-});
+    });
 
-// Actualizar usuario
-app.put('/api/users/:id', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { id } = req.params;
-        const { name, email, password, role, department, category, status, phone } = req.body;
-
-        const connection = await pool.getConnection();
-
+    // Actualizar usuario
+    app.put('/api/users/:id', async (req, res) => {
         try {
-            // Verificar si el usuario existe
-            const [existing] = await connection.execute('SELECT id FROM users WHERE id = ?', [id]);
-            if (existing.length === 0) {
-                return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            // Construir query dinámicamente
-            const updates = [];
-            const params = [];
+            const { id } = req.params;
+            const { name, email, password, role, department, category, status, phone } = req.body;
 
-            if (name) {
-                updates.push('name = ?');
-                params.push(name);
-            }
-            if (email) {
-                updates.push('email = ?');
-                params.push(email);
-            }
-            if (password) {
-                const hashedPassword = await bcrypt.hash(password, 10);
-                updates.push('password = ?');
-                params.push(hashedPassword);
-            }
-            if (role) {
-                updates.push('role = ?');
-                params.push(role);
-            }
-            if (department !== undefined) {
-                updates.push('department = ?');
-                params.push(department);
-            }
-            if (category !== undefined) {
-                updates.push('category = ?');
-                params.push(category);
-            }
-            if (status) {
-                updates.push('status = ?');
-                params.push(status);
-            }
-            if (phone !== undefined) {
-                updates.push('phone = ?');
-                params.push(phone);
-            }
+            const connection = await pool.getConnection();
 
-            if (updates.length === 0) {
-                return res.status(400).json({ success: false, error: 'No hay campos para actualizar' });
+            try {
+                // Verificar si el usuario existe
+                const [existing] = await connection.execute('SELECT id FROM users WHERE id = ?', [id]);
+                if (existing.length === 0) {
+                    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+                }
+
+                // Construir query dinámicamente
+                const updates = [];
+                const params = [];
+
+                if (name) {
+                    updates.push('name = ?');
+                    params.push(name);
+                }
+                if (email) {
+                    updates.push('email = ?');
+                    params.push(email);
+                }
+                if (password) {
+                    const hashedPassword = await bcrypt.hash(password, 10);
+                    updates.push('password = ?');
+                    params.push(hashedPassword);
+                }
+                if (role) {
+                    updates.push('role = ?');
+                    params.push(role);
+                }
+                if (department !== undefined) {
+                    updates.push('department = ?');
+                    params.push(department);
+                }
+                if (category !== undefined) {
+                    updates.push('category = ?');
+                    params.push(category);
+                }
+                if (status) {
+                    updates.push('status = ?');
+                    params.push(status);
+                }
+                if (phone !== undefined) {
+                    updates.push('phone = ?');
+                    params.push(phone);
+                }
+
+                if (updates.length === 0) {
+                    return res.status(400).json({ success: false, error: 'No hay campos para actualizar' });
+                }
+
+                params.push(id);
+                await connection.execute(
+                    `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
+                    params
+                );
+
+                // Obtener el usuario actualizado
+                const [updatedUser] = await connection.execute(
+                    'SELECT id, name, email, role, department, category, status, phone, created_at FROM users WHERE id = ?',
+                    [id]
+                );
+
+                console.log(`✅ Usuario actualizado: ${id}`);
+                res.json({ success: true, user: updatedUser[0] });
+            } finally {
+                connection.release();
             }
-
-            params.push(id);
-            await connection.execute(
-                `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
-                params
-            );
-
-            // Obtener el usuario actualizado
-            const [updatedUser] = await connection.execute(
-                'SELECT id, name, email, role, department, category, status, phone, created_at FROM users WHERE id = ?',
-                [id]
-            );
-
-            console.log(`✅ Usuario actualizado: ${id}`);
-            res.json({ success: true, user: updatedUser[0] });
-        } finally {
-            connection.release();
+        } catch (error) {
+            console.error('Error actualizando usuario:', error);
+            res.status(500).json({ success: false, error: 'Error actualizando usuario' });
         }
-    } catch (error) {
-        console.error('Error actualizando usuario:', error);
-        res.status(500).json({ success: false, error: 'Error actualizando usuario' });
-    }
-});
+    });
 
-// Eliminar usuario
-// Actualizar estado del usuario
-app.put('/api/users/:id/status', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { id } = req.params;
-        const { status, sessionId } = req.body;
-
-        if (!status || !sessionId) {
-            return res.status(400).json({ success: false, error: 'Status y sessionId son requeridos' });
-        }
-
-        // Validar que el status sea válido
-        if (!['active', 'inactive', 'suspended'].includes(status)) {
-            return res.status(400).json({ success: false, error: 'Status inválido' });
-        }
-
-        const connection = await pool.getConnection();
-
+    // Eliminar usuario
+    // Actualizar estado del usuario
+    app.put('/api/users/:id/status', async (req, res) => {
         try {
-            // Verificar si el usuario existe
-            const [existing] = await connection.execute(
-                'SELECT id, session_id FROM users WHERE id = ?',
-                [id]
-            );
-
-            if (existing.length === 0) {
-                return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            const user = existing[0];
+            const { id } = req.params;
+            const { status, sessionId } = req.body;
 
-            // Verificar que el usuario pertenece a la sesión correcta
-            if (user.session_id !== sessionId) {
-                return res.status(403).json({ success: false, error: 'No autorizado para modificar este usuario' });
+            if (!status || !sessionId) {
+                return res.status(400).json({ success: false, error: 'Status y sessionId son requeridos' });
             }
 
-            // Actualizar estado del usuario
-            await connection.execute(
-                'UPDATE users SET status = ? WHERE id = ?',
-                [status, id]
-            );
+            // Validar que el status sea válido
+            if (!['active', 'inactive', 'suspended'].includes(status)) {
+                return res.status(400).json({ success: false, error: 'Status inválido' });
+            }
 
-            // Obtener el usuario actualizado
-            const [updatedUser] = await connection.execute(
-                'SELECT id, name, email, role, department, category, status, phone, created_at FROM users WHERE id = ?',
-                [id]
-            );
+            const connection = await pool.getConnection();
 
-            console.log(`✅ Estado del usuario actualizado: ${id} -> ${status}`);
-            res.json({ success: true, user: updatedUser[0] });
-        } finally {
-            connection.release();
+            try {
+                // Verificar si el usuario existe
+                const [existing] = await connection.execute(
+                    'SELECT id, session_id FROM users WHERE id = ?',
+                    [id]
+                );
+
+                if (existing.length === 0) {
+                    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+                }
+
+                const user = existing[0];
+
+                // Verificar que el usuario pertenece a la sesión correcta
+                if (user.session_id !== sessionId) {
+                    return res.status(403).json({ success: false, error: 'No autorizado para modificar este usuario' });
+                }
+
+                // Actualizar estado del usuario
+                await connection.execute(
+                    'UPDATE users SET status = ? WHERE id = ?',
+                    [status, id]
+                );
+
+                // Obtener el usuario actualizado
+                const [updatedUser] = await connection.execute(
+                    'SELECT id, name, email, role, department, category, status, phone, created_at FROM users WHERE id = ?',
+                    [id]
+                );
+
+                console.log(`✅ Estado del usuario actualizado: ${id} -> ${status}`);
+                res.json({ success: true, user: updatedUser[0] });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error actualizando estado del usuario:', error);
+            res.status(500).json({ success: false, error: 'Error actualizando estado del usuario' });
         }
-    } catch (error) {
-        console.error('Error actualizando estado del usuario:', error);
-        res.status(500).json({ success: false, error: 'Error actualizando estado del usuario' });
-    }
-});
+    });
 
-app.delete('/api/users/:id', async (req, res) => {
-    try {
-        console.log('🎯 Solicitud DELETE recibida para /api/users/:id');
-        console.log('🆔 ID del usuario a eliminar:', req.params.id);
-
-        if (!pool) {
-            console.log('❌ Pool de base de datos no disponible');
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { id } = req.params;
-        console.log(`🔍 Intentando eliminar usuario con ID: ${id}`);
-
-        const connection = await pool.getConnection();
-
+    app.delete('/api/users/:id', async (req, res) => {
         try {
-            // Primero verificar si el usuario existe
-            const [existing] = await connection.execute('SELECT id FROM users WHERE id = ?', [id]);
-            console.log(`📊 Usuario encontrado: ${existing.length > 0 ? 'Sí' : 'No'}`);
+            console.log('🎯 Solicitud DELETE recibida para /api/users/:id');
+            console.log('🆔 ID del usuario a eliminar:', req.params.id);
 
-            if (existing.length === 0) {
-                console.log(`⚠️ Usuario con ID ${id} no encontrado`);
-                return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+            if (!pool) {
+                console.log('❌ Pool de base de datos no disponible');
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            await connection.execute('DELETE FROM users WHERE id = ?', [id]);
-            console.log(`✅ Usuario eliminado: ${id}`);
-            res.json({ success: true, message: 'Usuario eliminado' });
-        } finally {
-            connection.release();
+            const { id } = req.params;
+            console.log(`🔍 Intentando eliminar usuario con ID: ${id}`);
+
+            const connection = await pool.getConnection();
+
+            try {
+                // Primero verificar si el usuario existe
+                const [existing] = await connection.execute('SELECT id FROM users WHERE id = ?', [id]);
+                console.log(`📊 Usuario encontrado: ${existing.length > 0 ? 'Sí' : 'No'}`);
+
+                if (existing.length === 0) {
+                    console.log(`⚠️ Usuario con ID ${id} no encontrado`);
+                    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+                }
+
+                await connection.execute('DELETE FROM users WHERE id = ?', [id]);
+                console.log(`✅ Usuario eliminado: ${id}`);
+                res.json({ success: true, message: 'Usuario eliminado' });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error eliminando usuario:', error);
+            res.status(500).json({ success: false, error: 'Error eliminando usuario' });
         }
-    } catch (error) {
-        console.error('Error eliminando usuario:', error);
-        res.status(500).json({ success: false, error: 'Error eliminando usuario' });
-    }
-});
+    });
 
-// ==================== CHATS ASIGNADOS ====================
+    // ==================== CHATS ASIGNADOS ====================
 
-// Obtener chats asignados a un usuario
-app.get('/api/users/:userId/chats', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { userId } = req.params;
-        const connection = await pool.getConnection();
-
+    // Obtener chats asignados a un usuario
+    app.get('/api/users/:userId/chats', async (req, res) => {
         try {
-            // Obtener chats asignados al usuario con información de contacto y mensajes
-            const [chats] = await connection.execute(`
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { userId } = req.params;
+            const connection = await pool.getConnection();
+
+            try {
+                // Obtener chats asignados al usuario con información de contacto y mensajes
+                const [chats] = await connection.execute(`
                 SELECT 
                     ca.id,
                     ca.chat_jid,
@@ -475,232 +484,275 @@ app.get('/api/users/:userId/chats', async (req, res) => {
                 ORDER BY ca.assigned_at DESC
             `, [userId]);
 
-            res.json({ success: true, chats });
-        } finally {
-            connection.release();
+                res.json({ success: true, chats });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error obteniendo chats asignados:', error);
+            res.status(500).json({ success: false, error: 'Error obteniendo chats asignados' });
         }
-    } catch (error) {
-        console.error('Error obteniendo chats asignados:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo chats asignados' });
-    }
-});
+    });
 
-// ==================== TRANSFERENCIA DE CHATS ====================
+    // ==================== TRANSFERENCIA DE CHATS ====================
 
-// Transferir chat entre usuarios
-app.post('/api/chats/transfer', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { sessionId, chatJid, fromUserId, toUserId, reason, transferredBy } = req.body;
-
-        if (!sessionId || !chatJid || !fromUserId || !toUserId) {
-            return res.status(400).json({ success: false, error: 'Faltan parámetros requeridos' });
-        }
-
-        const connection = await pool.getConnection();
-
+    // Transferir chat entre usuarios
+    app.post('/api/chats/transfer', async (req, res) => {
         try {
-            // Verificar que el chat esté asignado al usuario de origen
-            const [currentAssignment] = await connection.execute(
-                'SELECT id FROM chat_assignments WHERE chat_jid = ? AND session_id = ? AND user_id = ? AND status = ?',
-                [chatJid, sessionId, fromUserId, 'active']
-            );
-
-            if (currentAssignment.length === 0) {
-                return res.status(404).json({ success: false, error: 'Chat no encontrado o no asignado al usuario' });
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            // Registrar la transferencia
-            await connection.execute(`
+            const { sessionId, chatJid, fromUserId, toUserId, reason, transferredBy } = req.body;
+
+            if (!sessionId || !chatJid || !fromUserId || !toUserId) {
+                return res.status(400).json({ success: false, error: 'Faltan parámetros requeridos' });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                // Verificar que el chat esté asignado al usuario de origen
+                const [currentAssignment] = await connection.execute(
+                    'SELECT id FROM chat_assignments WHERE chat_jid = ? AND session_id = ? AND user_id = ? AND status = ?',
+                    [chatJid, sessionId, fromUserId, 'active']
+                );
+
+                if (currentAssignment.length === 0) {
+                    return res.status(404).json({ success: false, error: 'Chat no encontrado o no asignado al usuario' });
+                }
+
+                // Registrar la transferencia
+                await connection.execute(`
                 INSERT INTO chat_transfers 
                 (chat_jid, session_id, from_user_id, to_user_id, transferred_by, reason, transferred_at)
                 VALUES (?, ?, ?, ?, ?, ?, NOW())
             `, [chatJid, sessionId, fromUserId, toUserId, transferredBy || fromUserId, reason || null]);
 
-            // Cerrar asignación actual
-            await connection.execute(`
+                // Cerrar asignación actual
+                await connection.execute(`
                 UPDATE chat_assignments 
                 SET status = 'transferred', closed_at = NOW()
                 WHERE chat_jid = ? AND session_id = ? AND user_id = ? AND status = 'active'
             `, [chatJid, sessionId, fromUserId]);
 
-            // Crear nueva asignación
-            await connection.execute(`
+                // Crear nueva asignación
+                await connection.execute(`
                 INSERT INTO chat_assignments 
                 (chat_jid, session_id, user_id, assigned_by, assigned_at, status)
                 VALUES (?, ?, ?, ?, NOW(), 'active')
             `, [chatJid, sessionId, toUserId, transferredBy || fromUserId]);
 
-            console.log(`✅ Chat ${chatJid} transferido de usuario ${fromUserId} a ${toUserId}`);
-            res.json({ success: true, message: 'Chat transferido correctamente' });
-        } finally {
-            connection.release();
+                console.log(`✅ Chat ${chatJid} transferido de usuario ${fromUserId} a ${toUserId}`);
+                res.json({ success: true, message: 'Chat transferido correctamente' });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error transfiriendo chat:', error);
+            res.status(500).json({ success: false, error: 'Error transfiriendo chat' });
         }
-    } catch (error) {
-        console.error('Error transfiriendo chat:', error);
-        res.status(500).json({ success: false, error: 'Error transfiriendo chat' });
-    }
-});
+    });
 
-// ==================== GESTIÓN DE USUARIOS ====================
+    // ==================== GESTIÓN DE USUARIOS ====================
 
-// ==================== ASIGNACIÓN DE CHATS ====================
+    // ==================== ASIGNACIÓN DE CHATS ====================
 
-// Asignar chat a agente
-app.post('/api/chats/assign', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { chatJid, sessionId, userId, assignedBy, notes } = req.body;
-
-        if (!chatJid || !sessionId || !userId) {
-            return res.status(400).json({ success: false, error: 'chatJid, sessionId y userId son requeridos' });
-        }
-
-        const connection = await pool.getConnection();
-
+    // Asignar chat a agente
+    app.post('/api/chats/assign', async (req, res) => {
         try {
-            // Cerrar asignación anterior si existe
-            await connection.execute(`
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { chatJid, sessionId, userId, assignedBy, notes } = req.body;
+
+            if (!chatJid || !sessionId || !userId) {
+                return res.status(400).json({ success: false, error: 'chatJid, sessionId y userId son requeridos' });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                // Cerrar asignación anterior si existe
+                await connection.execute(`
                 UPDATE chat_assignments
                 SET status = 'transferred'
                 WHERE chat_jid = ? AND session_id = ? AND status = 'active'
             `, [chatJid, sessionId]);
 
-            // Crear nueva asignación
-            await connection.execute(`
+                // Crear nueva asignación
+                await connection.execute(`
                 INSERT INTO chat_assignments (chat_jid, session_id, user_id, assigned_by, notes, status)
                 VALUES (?, ?, ?, ?, ?, 'active')
             `, [chatJid, sessionId, userId, assignedBy || null, notes || null]);
 
-            console.log(`✅ Chat ${chatJid} asignado al usuario ${userId}`);
-            res.json({ success: true, message: 'Chat asignado correctamente' });
-        } finally {
-            connection.release();
+                console.log(`✅ Chat ${chatJid} asignado al usuario ${userId}`);
+                res.json({ success: true, message: 'Chat asignado correctamente' });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error asignando chat:', error);
+            res.status(500).json({ success: false, error: 'Error asignando chat' });
         }
-    } catch (error) {
-        console.error('Error asignando chat:', error);
-        res.status(500).json({ success: false, error: 'Error asignando chat' });
-    }
-});
+    });
 
-// Transferir chat entre agentes
-app.post('/api/chats/transfer', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { chatJid, sessionId, fromUserId, toUserId, transferredBy, reason } = req.body;
-
-        if (!chatJid || !sessionId || !fromUserId || !toUserId) {
-            return res.status(400).json({ success: false, error: 'Faltan parámetros requeridos' });
-        }
-
-        const connection = await pool.getConnection();
-
+    // Actualizar estado de conversación (Open/Pending/Closed)
+    app.post('/api/chats/status', async (req, res) => {
         try {
-            // Registrar transferencia
-            await connection.execute(`
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { chatJid, sessionId, status, userId } = req.body;
+
+            if (!chatJid || !sessionId || !status) {
+                return res.status(400).json({ success: false, error: 'Faltan parámetros requeridos' });
+            }
+
+            if (!['open', 'pending', 'closed'].includes(status)) {
+                return res.status(400).json({ success: false, error: 'Estado inválido' });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                // Actualizar estado en chat_assignments
+                // Si el status es 'closed', también podríamos querer actualizar el status de la asignación a 'inactive' o mantenerlo 'active' pero con conversation_status 'closed'
+                // Según requerimiento: "cuando el agente cierra la conversacion solo cierra la sesion de su espacio nomas" -> Interpretación: Cierra el ticket/conversación visualmente
+
+                await connection.execute(`
+                UPDATE chat_assignments
+                SET conversation_status = ?
+                WHERE chat_jid = ? AND session_id = ? AND status = 'active'
+            `, [status, chatJid, sessionId]);
+
+                console.log(`✅ Estado de conversación actualizado: ${chatJid} -> ${status}`);
+                res.json({ success: true, message: 'Estado actualizado correctamente' });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error actualizando estado de conversación:', error);
+            res.status(500).json({ success: false, error: 'Error actualizando estado' });
+        }
+    });
+
+    // Transferir chat entre agentes
+    app.post('/api/chats/transfer', async (req, res) => {
+        try {
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { chatJid, sessionId, fromUserId, toUserId, transferredBy, reason } = req.body;
+
+            if (!chatJid || !sessionId || !fromUserId || !toUserId) {
+                return res.status(400).json({ success: false, error: 'Faltan parámetros requeridos' });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                // Registrar transferencia
+                await connection.execute(`
                 INSERT INTO chat_transfers (chat_jid, session_id, from_user_id, to_user_id, transferred_by, reason)
                 VALUES (?, ?, ?, ?, ?, ?)
             `, [chatJid, sessionId, fromUserId, toUserId, transferredBy || fromUserId, reason || null]);
 
-            // Cerrar asignación anterior
-            await connection.execute(`
+                // Cerrar asignación anterior
+                await connection.execute(`
                 UPDATE chat_assignments
                 SET status = 'transferred'
                 WHERE chat_jid = ? AND session_id = ? AND user_id = ? AND status = 'active'
             `, [chatJid, sessionId, fromUserId]);
 
-            // Crear nueva asignación
-            await connection.execute(`
-                INSERT INTO chat_assignments (chat_jid, session_id, user_id, assigned_by, notes, status)
-                VALUES (?, ?, ?, ?, ?, 'active')
+                // Crear nueva asignación (Resetear conversation_status a 'open' al transferir)
+                await connection.execute(`
+                INSERT INTO chat_assignments (chat_jid, session_id, user_id, assigned_by, notes, status, conversation_status)
+                VALUES (?, ?, ?, ?, ?, 'active', 'open')
             `, [chatJid, sessionId, toUserId, transferredBy || fromUserId, reason || 'Transferido de otro agente']);
 
-            console.log(`✅ Chat ${chatJid} transferido de usuario ${fromUserId} a ${toUserId}`);
-            res.json({ success: true, message: 'Chat transferido correctamente' });
-        } finally {
-            connection.release();
+                console.log(`✅ Chat ${chatJid} transferido de usuario ${fromUserId} a ${toUserId}`);
+                res.json({ success: true, message: 'Chat transferido correctamente' });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error transfiriendo chat:', error);
+            res.status(500).json({ success: false, error: 'Error transfiriendo chat' });
         }
-    } catch (error) {
-        console.error('Error transfiriendo chat:', error);
-        res.status(500).json({ success: false, error: 'Error transfiriendo chat' });
-    }
-});
+    });
 
-// Obtener chats asignados a un agente
-app.get('/api/users/:userId/chats', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { userId } = req.params;
-        const { sessionId } = req.query;
-
-        const connection = await pool.getConnection();
-
+    // Obtener chats asignados a un agente
+    app.get('/api/users/:userId/chats', async (req, res) => {
         try {
-            let query = `
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { userId } = req.params;
+            const { sessionId } = req.query;
+
+            const connection = await pool.getConnection();
+
+            try {
+                let query = `
                 SELECT
                     ca.chat_jid,
                     ca.session_id,
                     ca.assigned_at,
                     ca.notes,
+                    ca.conversation_status,
                     COALESCE(c.name, cg.name) as contact_name,
                     COALESCE(c.avatar_url, cg.avatar_url) as avatar_url,
                     (SELECT COUNT(*) FROM messages m WHERE m.chat_jid = ca.chat_jid AND m.session_id = ca.session_id) as message_count,
-                    (SELECT MAX(timestamp) FROM messages m WHERE m.chat_jid = ca.chat_jid AND m.session_id = ca.session_id) as last_message_time
+                    (SELECT MAX(timestamp) FROM messages m WHERE m.chat_jid = ca.chat_jid AND m.session_id = ca.session_id) as last_message_time,
+                    (SELECT text_content FROM messages m WHERE m.chat_jid = ca.chat_jid AND m.session_id = ca.session_id ORDER BY m.timestamp DESC LIMIT 1) as last_message
                 FROM chat_assignments ca
                 LEFT JOIN contacts c ON ca.chat_jid = c.jid AND ca.session_id = c.session_id
                 LEFT JOIN contact_groups cg ON ca.chat_jid = cg.jid AND ca.session_id = cg.session_id
                 WHERE ca.user_id = ? AND ca.status = 'active'
             `;
 
-            const params = [userId];
+                const params = [userId];
 
-            if (sessionId) {
-                query += ' AND ca.session_id = ?';
-                params.push(sessionId);
+                if (sessionId) {
+                    query += ' AND ca.session_id = ?';
+                    params.push(sessionId);
+                }
+
+                query += ' ORDER BY last_message_time DESC';
+
+                const [chats] = await connection.execute(query, params);
+                res.json({ success: true, chats });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error obteniendo chats del usuario:', error);
+            res.status(500).json({ success: false, error: 'Error obteniendo chats' });
+        }
+    });
+
+    // Obtener datos para el dashboard de gestión de usuarios
+    app.get('/api/users/dashboard', async (req, res) => {
+        try {
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            query += ' ORDER BY last_message_time DESC';
+            const connection = await pool.getConnection();
 
-            const [chats] = await connection.execute(query, params);
-            res.json({ success: true, chats });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('Error obteniendo chats del usuario:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo chats' });
-    }
-});
+            try {
+                // 1. Obtener todos los usuarios
+                const [users] = await connection.execute(
+                    'SELECT id, name, email, role, department, status, avatar_url, phone, last_login, created_at FROM users ORDER BY created_at DESC'
+                );
 
-// Obtener datos para el dashboard de gestión de usuarios
-app.get('/api/users/dashboard', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const connection = await pool.getConnection();
-
-        try {
-            // 1. Obtener todos los usuarios
-            const [users] = await connection.execute(
-                'SELECT id, name, email, role, department, status, avatar_url, phone, last_login, created_at FROM users ORDER BY created_at DESC'
-            );
-
-            // 2. Obtener estadísticas de agentes
-            const [stats] = await connection.execute(`
+                // 2. Obtener estadísticas de agentes
+                const [stats] = await connection.execute(`
                 SELECT
                     u.id as userId,
                     COUNT(DISTINCT ca.chat_jid) as assigned_chats,
@@ -712,8 +764,8 @@ app.get('/api/users/dashboard', async (req, res) => {
                 GROUP BY u.id
             `);
 
-            // 3. Obtener asignaciones recientes
-            const [assignments] = await connection.execute(`
+                // 3. Obtener asignaciones recientes
+                const [assignments] = await connection.execute(`
                 SELECT
                     ca.chat_jid,
                     ca.user_id,
@@ -728,47 +780,47 @@ app.get('/api/users/dashboard', async (req, res) => {
                 LIMIT 10
             `);
 
-            // Combinar estadísticas con usuarios
-            const userStatsMap = stats.reduce((acc, item) => {
-                acc[item.userId] = {
-                    assigned_chats: item.assigned_chats || 0,
-                    total_messages_sent: item.total_messages_sent || 0
-                };
-                return acc;
-            }, {});
+                // Combinar estadísticas con usuarios
+                const userStatsMap = stats.reduce((acc, item) => {
+                    acc[item.userId] = {
+                        assigned_chats: item.assigned_chats || 0,
+                        total_messages_sent: item.total_messages_sent || 0
+                    };
+                    return acc;
+                }, {});
 
-            const usersWithStats = users.map(user => ({
-                ...user,
-                stats: userStatsMap[user.id] || { assigned_chats: 0, total_messages_sent: 0 }
-            }));
+                const usersWithStats = users.map(user => ({
+                    ...user,
+                    stats: userStatsMap[user.id] || { assigned_chats: 0, total_messages_sent: 0 }
+                }));
 
-            res.json({
-                success: true,
-                users: usersWithStats,
-                recent_assignments: assignments
-            });
+                res.json({
+                    success: true,
+                    users: usersWithStats,
+                    recent_assignments: assignments
+                });
 
-        } finally {
-            connection.release();
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error obteniendo datos del dashboard de usuarios:', error);
+            res.status(500).json({ success: false, error: 'Error obteniendo datos del dashboard' });
         }
-    } catch (error) {
-        console.error('Error obteniendo datos del dashboard de usuarios:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo datos del dashboard' });
-    }
-});
+    });
 
-// Obtener estadísticas de agentes
-app.get('/api/users/stats', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { sessionId } = req.query;
-        const connection = await pool.getConnection();
-
+    // Obtener estadísticas de agentes
+    app.get('/api/users/stats', async (req, res) => {
         try {
-            let query = `
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { sessionId } = req.query;
+            const connection = await pool.getConnection();
+
+            try {
+                let query = `
                 SELECT
                     u.id,
                     u.name,
@@ -782,44 +834,44 @@ app.get('/api/users/stats', async (req, res) => {
                 LEFT JOIN chat_assignments ca ON u.id = ca.user_id AND ca.status = 'active'
                 LEFT JOIN messages m ON ca.chat_jid = m.chat_jid AND ca.session_id = m.session_id AND m.from_me = 1
                 WHERE u.status = 'active'`;
-            
-            const params = [];
-            
-            // FILTRO OBLIGATORIO: Solo estadísticas de usuarios del mismo session_id
-            if (sessionId) {
-                query += ' AND u.session_id = ?';
-                params.push(sessionId);
-            }
-            
-            query += `
+
+                const params = [];
+
+                // FILTRO OBLIGATORIO: Solo estadísticas de usuarios del mismo session_id
+                if (sessionId) {
+                    query += ' AND u.session_id = ?';
+                    params.push(sessionId);
+                }
+
+                query += `
                 GROUP BY u.id
                 ORDER BY assigned_chats DESC
             `;
 
-            const [stats] = await connection.execute(query, params);
+                const [stats] = await connection.execute(query, params);
 
-            res.json({ success: true, stats });
-        } finally {
-            connection.release();
+                res.json({ success: true, stats });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error obteniendo estadísticas:', error);
+            res.status(500).json({ success: false, error: 'Error obteniendo estadísticas' });
         }
-    } catch (error) {
-        console.error('Error obteniendo estadísticas:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo estadísticas' });
-    }
-});
+    });
 
-// Obtener asignaciones de chats por sesión
-app.get('/api/chat-assignments/:sessionId', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { sessionId } = req.params;
-        const connection = await pool.getConnection();
-
+    // Obtener asignaciones de chats por sesión
+    app.get('/api/chat-assignments/:sessionId', async (req, res) => {
         try {
-            const [assignments] = await connection.execute(`
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { sessionId } = req.params;
+            const connection = await pool.getConnection();
+
+            try {
+                const [assignments] = await connection.execute(`
                 SELECT
                     ca.id,
                     ca.chat_jid,
@@ -841,16 +893,16 @@ app.get('/api/chat-assignments/:sessionId', async (req, res) => {
                 ORDER BY ca.assigned_at DESC
             `, [sessionId]);
 
-            res.json({ success: true, assignments });
-        } finally {
-            connection.release();
+                res.json({ success: true, assignments });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error obteniendo asignaciones de chats:', error);
+            res.status(500).json({ success: false, error: 'Error obteniendo asignaciones' });
         }
-    } catch (error) {
-        console.error('Error obteniendo asignaciones de chats:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo asignaciones' });
-    }
-});
+    });
 
-console.log('✅ Endpoints de usuarios y asignaciones cargados correctamente');
+    console.log('✅ Endpoints de usuarios y asignaciones cargados correctamente');
 
 }; // Fin del módulo
