@@ -6952,12 +6952,32 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
         const ownJid = session.sock?.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net';
         const actualSessionId = session.sessionId || sessionId;
 
+        // Obtener nombre del agente (priorizar el que viene del cliente)
+        let finalAgentName = agentName;
+        if (!finalAgentName && agentId && pool) {
+            try {
+                const conn = await pool.getConnection();
+                const [users] = await conn.execute('SELECT name FROM users WHERE id = ? LIMIT 1', [agentId]);
+                conn.release();
+                if (users.length > 0) {
+                    finalAgentName = users[0].name;
+                    console.log('[SEND-MEDIA] 📝 Nombre del agente obtenido de BD:', finalAgentName);
+                }
+            } catch (err) {
+                console.log('[SEND-MEDIA] ⚠️ No se pudo obtener nombre del agente:', err.message);
+            }
+        } else if (finalAgentName) {
+            console.log('[SEND-MEDIA] 📝 Nombre del agente recibido del cliente:', finalAgentName);
+        }
+
         // Guardar en BD
         const dbMessage = {
             id: sentResult.key.id,
             chat_jid: jid,
             sender_jid: ownJid,
             from_me: true,
+            agent_id: agentId || null,
+            agent_name: finalAgentName,
             message_type: messageType,
             text_content: req.body.message || '',
             media_url: mediaUrl,
@@ -6969,7 +6989,7 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
             assigned_user_id: agentId || null
         };
         await saveMessageToDB(actualSessionId, dbMessage);
-        console.log('[SEND-MEDIA] 💾 Guardado en BD');
+        console.log('[SEND-MEDIA] 💾 Guardado en BD con agente:', finalAgentName || 'Sin agente');
 
         // Emitir evento Socket.IO
         io.to(`session-${actualSessionId}`).emit('message', {
@@ -7775,19 +7795,29 @@ app.get('/api/messages', async (req, res) => {
         // Construir filtro de fecha
         let dateCondition = '';
         let queryParams = [contactId];
+        
+        // Obtener fecha actual en formato YYYY-MM-DD
+        const today = new Date().toISOString().split('T')[0];
+        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
         if (dateFilter === 'today') {
-            dateCondition = 'AND DATE(timestamp) = CURDATE()';
-            console.log('[MESSAGES] 📅 Cargando solo mensajes de HOY');
+            dateCondition = 'AND DATE(timestamp) = ?';
+            queryParams.push(today);
+            console.log('[MESSAGES] 📅 Cargando solo mensajes de HOY:', today);
         } else if (dateFilter === 'yesterday') {
-            dateCondition = 'AND DATE(timestamp) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)';
-            console.log('[MESSAGES] 📅 Cargando mensajes de AYER');
+            dateCondition = 'AND DATE(timestamp) = ?';
+            queryParams.push(yesterday);
+            console.log('[MESSAGES] 📅 Cargando mensajes de AYER:', yesterday);
         } else if (dateFilter === 'week') {
-            dateCondition = 'AND timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
-            console.log('[MESSAGES] 📅 Cargando mensajes de la SEMANA');
+            const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+            dateCondition = 'AND DATE(timestamp) >= ?';
+            queryParams.push(weekAgo);
+            console.log('[MESSAGES] 📅 Cargando mensajes de la SEMANA desde:', weekAgo);
         } else if (dateFilter === 'month') {
-            dateCondition = 'AND MONTH(timestamp) = MONTH(CURDATE()) AND YEAR(timestamp) = YEAR(CURDATE())';
-            console.log('[MESSAGES] 📅 Cargando mensajes del MES');
+            const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+            dateCondition = 'AND DATE(timestamp) >= ?';
+            queryParams.push(startOfMonth);
+            console.log('[MESSAGES] 📅 Cargando mensajes del MES desde:', startOfMonth);
         } else if (dateFilter && dateFilter !== 'all') {
             // Fecha específica en formato YYYY-MM-DD
             dateCondition = 'AND DATE(timestamp) = ?';
@@ -7797,29 +7827,33 @@ app.get('/api/messages', async (req, res) => {
             console.log('[MESSAGES] 📅 Cargando TODOS los mensajes');
         }
 
-        console.log('Ejecutando query para obtener mensajes con filtro:', dateFilter);
-        const [messages] = await connection.execute(
-            `SELECT
-                id as messageId,
-                chat_jid as contactId,
-                sender_jid,
-                from_me as isFromMe,
-                agent_id as agentId,
-                agent_name as agentName,
-                message_type as type,
-                text_content as text,
-                media_url,
-                media_mime_type,
-                timestamp,
-                status
-            FROM messages
-            WHERE chat_jid = ?
-            ${dateCondition}
-            ORDER BY timestamp ASC`,
+        // Construir query SQL con el filtro de fecha
+        const sqlQuery = 'SELECT ' +
+            'id as messageId, ' +
+            'chat_jid as contactId, ' +
+            'sender_jid, ' +
+            'from_me as isFromMe, ' +
+            'agent_id as agentId, ' +
+            'agent_name as agentName, ' +
+            'message_type as type, ' +
+            'text_content as text, ' +
+            'media_url, ' +
+            'media_mime_type, ' +
+            'timestamp, ' +
+            'status ' +
+            'FROM messages ' +
+            'WHERE chat_jid = ? ' +
+            dateCondition + ' ' +
+            'ORDER BY timestamp ASC';
+        
+        console.log(`[MESSAGES] Ejecutando query para obtener mensajes (filtro: ${dateFilter})`);
+        
+        const [messages] = await connection.query(
+            sqlQuery,
             queryParams
         );
 
-        console.log(`Encontrados ${messages.length} mensajes para ${contactId}`);
+        console.log(`[MESSAGES] ✅ Encontrados ${messages.length} mensajes para ${contactId} (filtro: ${dateFilter})`);
         res.json({
             success: true,
             data: messages.map(msg => ({
