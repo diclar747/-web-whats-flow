@@ -336,7 +336,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
 
         if (contactsData.length > 0 && !activeContact) {
           setActiveContact(contactsData[0]);
-          loadContactMessages(contactsData[0].id, messageDateFilter);
+          loadContactMessages(contactsData[0].id, 'today'); // Por defecto cargar solo hoy
         }
       } else {
         console.error('❌ [ChatModule] Error al cargar chats:', chatsData.error);
@@ -397,8 +397,8 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     setContacts(prev => prev.map(c =>
       c.id === contact.id ? { ...c, unreadCount: 0 } : c
     ));
-    // Cargar mensajes del contacto con filtro actual
-    loadContactMessages(contact.id, messageDateFilter);
+    // Cargar mensajes del contacto - siempre empezar con hoy
+    loadContactMessages(contact.id, 'today');
   };
 
   const sendMessage = async () => {
@@ -552,7 +552,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
   const handleRefresh = () => {
     loadChatData();
     if (activeContact) {
-      loadContactMessages(activeContact.id, messageDateFilter);
+      loadContactMessages(activeContact.id, 'today'); // Refresh con filtro de hoy
     }
   };
 

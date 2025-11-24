@@ -892,18 +892,20 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                             {renderTextWithLinks(message.text_content)}
                           </Typography>
                           {/* Badge del agente/admin que envió el mensaje */}
-                          {isFromMe && (message.agent_name || message.sentBy) && (
+                          {isFromMe && (message.agent_name || message.sentBy) && message.agent_id !== 0 && (
                             <Chip 
-                              label={`Respondido por: ${message.agent_name || message.sentBy}`}
+                              label={`👤 ${message.agent_name || message.sentBy}`}
                               size="small"
                               sx={{ 
                                 mt: 0.5,
-                                height: 20,
-                                fontSize: '0.7rem',
+                                height: 22,
+                                fontSize: '0.75rem',
                                 bgcolor: '#00a884',
                                 color: 'white',
+                                fontWeight: 600,
                                 '& .MuiChip-label': {
-                                  px: 1
+                                  px: 1.5,
+                                  py: 0
                                 }
                               }}
                             />

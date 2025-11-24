@@ -802,7 +802,8 @@ const AgentDashboardPro: React.FC = () => {
           sessionId,
           chatJid: selectedChat.id,
           message: messageToSend,
-          agentId: agentId
+          agentId: agentId,
+          agentName: userName  // Incluir nombre del agente
         })
       });
 
@@ -859,6 +860,7 @@ const AgentDashboardPro: React.FC = () => {
         formData.append('sessionId', sessionId);
         formData.append('chatJid', selectedChat.id);
         formData.append('agentId', agentId?.toString() || '');
+        formData.append('agentName', userName || '');  // Incluir nombre del agente
         if (file.type.startsWith('image/')) {
           formData.append('caption', messageText || '');
         }
@@ -911,7 +913,7 @@ const AgentDashboardPro: React.FC = () => {
 
   // ==================== HANDLERS UI ====================
 
-  const handleChatClick = (chat: AgentChat) => {
+  const handleChatClick = async (chat: AgentChat) => {
     setSelectedChat(chat);
     setMessages([]);
     setShowChatInfo(false);
@@ -923,6 +925,39 @@ const AgentDashboardPro: React.FC = () => {
           c.id === chat.id ? { ...c, unreadCount: 0 } : c
         )
       );
+    }
+
+    // Si es una nueva asignación (status = new_assignment), marcarla como activa
+    if (chat.status === 'new_assignment') {
+      try {
+        const token = sessionStorage.getItem('token');
+        const response = await fetch('/api/chats/mark-active', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            chat_jid: chat.id,
+            session_id: sessionId
+          })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          console.log('✅ Chat marcado como activo');
+          // Actualizar el status en la lista de chats
+          setChats(prevChats =>
+            prevChats.map(c =>
+              c.id === chat.id ? { ...c, status: 'active' as const } : c
+            )
+          );
+          // Actualizar también el chat seleccionado
+          setSelectedChat(prev => prev ? { ...prev, status: 'active' as const } : null);
+        }
+      } catch (error) {
+        console.error('Error marcando chat como activo:', error);
+      }
     }
   };
 
@@ -1153,18 +1188,20 @@ const AgentDashboardPro: React.FC = () => {
             )}
 
             {/* Etiqueta de agente (cuando OTRO agente o admin responde, no cuando yo respondo) */}
-            {msg.from_me && msg.agent_name && msg.agent_id !== agentId && (
+            {msg.from_me && msg.agent_name && msg.agent_id !== agentId && msg.agent_id !== 0 && (
               <Chip
-                label={`Respondido por: ${msg.agent_name}`}
+                label={`👤 ${msg.agent_name}`}
                 size="small"
                 sx={{
                   mb: 0.5,
-                  height: '20px',
-                  fontSize: '0.7rem',
+                  height: '22px',
+                  fontSize: '0.75rem',
                   bgcolor: '#00a884',
                   color: 'white',
+                  fontWeight: 600,
                   '& .MuiChip-label': {
-                    px: 1
+                    px: 1.5,
+                    py: 0
                   }
                 }}
               />

@@ -6624,10 +6624,10 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
 
 // Endpoint específico para agentes - enviar mensajes (con soporte multimedia)
 app.post('/api/messages/send', upload.single('file'), async (req, res) => {
-    const { sessionId, chatJid, message, agentId, phoneNumber } = req.body;
+    const { sessionId, chatJid, message, agentId, agentName, phoneNumber } = req.body;
     const file = req.file;
 
-    console.log('[AGENT-SEND] 📤 Recibida solicitud de envío:', { sessionId, chatJid, agentId, message: message?.substring(0, 50) });
+    console.log('[AGENT-SEND] 📤 Recibida solicitud de envío:', { sessionId, chatJid, agentId, agentName, message: message?.substring(0, 50) });
 
     if (!sessionId || !chatJid || (!message && !file)) {
         console.log('[AGENT-SEND] ❌ Faltan parámetros');
@@ -6740,19 +6740,23 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
         const ownJid = session.sock?.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net';
         const actualSessionId = session.sessionId || sessionId;
 
-        // Obtener nombre del agente si está disponible
-        let agentName = null;
-        if (agentId && pool) {
+        // Obtener nombre del agente (priorizar el que viene del cliente)
+        let finalAgentName = agentName;  // Usar el que viene del cliente si existe
+        if (!finalAgentName && agentId && pool) {
+            // Si no viene del cliente, buscar en la base de datos
             try {
                 const conn = await pool.getConnection();
                 const [users] = await conn.execute('SELECT name FROM users WHERE id = ? LIMIT 1', [agentId]);
                 conn.release();
                 if (users.length > 0) {
-                    agentName = users[0].name;
+                    finalAgentName = users[0].name;
+                    console.log('[AGENT-SEND] 📝 Nombre del agente obtenido de BD:', finalAgentName);
                 }
             } catch (err) {
                 console.log('[AGENT-SEND] ⚠️ No se pudo obtener nombre del agente:', err.message);
             }
+        } else if (finalAgentName) {
+            console.log('[AGENT-SEND] 📝 Nombre del agente recibido del cliente:', finalAgentName);
         }
 
         // Guardar en base de datos
@@ -6762,7 +6766,7 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
             sender_jid: ownJid,
             from_me: true,
             agent_id: agentId || null,
-            agent_name: agentName,
+            agent_name: finalAgentName,  // Usar el nombre final del agente
             message_type: messageType,
             text_content: message || '',
             media_url: mediaUrl,
@@ -6771,7 +6775,7 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
             assigned_user_id: agentId || null
         };
         await saveMessageToDB(actualSessionId, dbMessage);
-        console.log('[AGENT-SEND] 💾 Mensaje guardado en BD');
+        console.log('[AGENT-SEND] 💾 Mensaje guardado en BD con agente:', finalAgentName || 'Sin agente');
 
         // Si es un agente enviando, actualizar estado de 'pending' a 'active' automáticamente
         if (agentId && pool) {
@@ -6842,7 +6846,7 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
     console.log('[SEND-MEDIA] 📎 Recibida solicitud de envío de archivo');
     // Los parámetros son los mismos que /api/messages/send
     // El handler ya está implementado arriba, así que simplemente lo procesamos igual
-    const { sessionId, chatJid, message, caption, agentId } = req.body;
+    const { sessionId, chatJid, message, caption, agentId, agentName } = req.body;
     const file = req.file;
 
     // Usar caption si existe (para imágenes/videos)
@@ -6852,6 +6856,7 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
         sessionId,
         chatJid,
         agentId,
+        agentName,
         hasFile: !!file,
         fileName: file?.originalname
     });

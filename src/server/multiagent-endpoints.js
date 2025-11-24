@@ -401,11 +401,11 @@ module.exports = function(app, pool) {
                     WHERE chat_jid = ? AND session_id = ? AND status = 'active'
                 `, [chat_jid, session_id]);
 
-                // Crear nueva asignación
+                // Crear nueva asignación con status 'pending' para indicar nueva transferencia
                 await connection.execute(`
                     INSERT INTO chat_assignments 
                     (chat_jid, session_id, user_id, assigned_by, status)
-                    VALUES (?, ?, ?, ?, 'active')
+                    VALUES (?, ?, ?, ?, 'pending')
                 `, [chat_jid, session_id, to_user_id, req.user.id]);
 
                 // Registrar transferencia
@@ -1040,7 +1040,7 @@ module.exports = function(app, pool) {
                     FROM chat_assignments ca
                     LEFT JOIN contacts c ON ca.chat_jid = c.jid AND ca.session_id = c.session_id
                     LEFT JOIN contact_groups cg ON ca.chat_jid = cg.jid AND ca.session_id = cg.session_id
-                    WHERE ca.user_id = ? AND ca.status = 'active'
+                    WHERE ca.user_id = ? AND ca.status IN ('active', 'pending')
                 `;
 
                 const params = [agentId];
@@ -1087,6 +1087,49 @@ module.exports = function(app, pool) {
                 success: false,
                 error: 'Error obteniendo chats del agente',
                 details: error.message
+            });
+        }
+    });
+
+    // Endpoint para marcar chat como activo (cuando el agente abre un chat pendiente)
+    app.post('/api/chats/mark-active', authenticateToken, async (req, res) => {
+        try {
+            const { chat_jid, session_id } = req.body;
+            const agentId = req.user.id;
+
+            if (!chat_jid || !session_id) {
+                return res.status(400).json({ 
+                    success: false, 
+                    error: 'Se requiere chat_jid y session_id' 
+                });
+            }
+
+            const connection = await pool.getConnection();
+            try {
+                // Actualizar status de pending a active
+                const [result] = await connection.execute(`
+                    UPDATE chat_assignments 
+                    SET status = 'active'
+                    WHERE chat_jid = ? 
+                    AND session_id = ? 
+                    AND user_id = ? 
+                    AND status = 'pending'
+                `, [chat_jid, session_id, agentId]);
+
+                if (result.affectedRows > 0) {
+                    console.log(`✅ Chat ${chat_jid} marcado como activo por agente ${agentId}`);
+                    res.json({ success: true, message: 'Chat marcado como activo' });
+                } else {
+                    res.json({ success: false, message: 'Chat no encontrado o ya activo' });
+                }
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('❌ Error marcando chat como activo:', error);
+            res.status(500).json({ 
+                success: false, 
+                error: 'Error al marcar chat como activo' 
             });
         }
     });
