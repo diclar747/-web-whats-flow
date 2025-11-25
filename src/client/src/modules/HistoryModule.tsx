@@ -1788,7 +1788,120 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                               </TableCell>
                               <TableCell>
                                 <Box sx={{ display: 'flex' }}>
-                                  <Tooltip title="Ver mensaje completo">
+                                  <Tooltip 
+                                    title={
+                                      <Box sx={{ maxWidth: 400, p: 1 }}>
+                                        {/* Tipo de mensaje */}
+                                        <Typography variant="caption" sx={{ display: 'block', color: '#ffd54f', fontWeight: 600, mb: 1 }}>
+                                          {getMessageTypeLabel(message.messageType, message.fileName)}
+                                        </Typography>
+                                        
+                                        {/* Vista previa según tipo */}
+                                        {message.messageType === 'conversation' || message.messageType === 'extendedTextMessage' ? (
+                                          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                            {message.content}
+                                          </Typography>
+                                        ) : message.messageType === 'imageMessage' && message.mediaUrl ? (
+                                          <Box>
+                                            <img 
+                                              src={message.mediaUrl} 
+                                              alt="Preview" 
+                                              style={{ 
+                                                maxWidth: '100%', 
+                                                maxHeight: 200, 
+                                                borderRadius: 8,
+                                                marginBottom: 8
+                                              }} 
+                                            />
+                                            {message.content && (
+                                              <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
+                                                {message.content}
+                                              </Typography>
+                                            )}
+                                          </Box>
+                                        ) : message.messageType === 'videoMessage' && message.mediaUrl ? (
+                                          <Box>
+                                            <video 
+                                              src={message.mediaUrl} 
+                                              controls 
+                                              style={{ 
+                                                maxWidth: '100%', 
+                                                maxHeight: 200, 
+                                                borderRadius: 8,
+                                                marginBottom: 8
+                                              }}
+                                            />
+                                            {message.content && (
+                                              <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
+                                                {message.content}
+                                              </Typography>
+                                            )}
+                                          </Box>
+                                        ) : message.messageType === 'audioMessage' && message.mediaUrl ? (
+                                          <Box>
+                                            <audio controls style={{ width: '100%' }}>
+                                              <source src={message.mediaUrl} />
+                                            </audio>
+                                            <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#90caf9' }}>
+                                              🎵 Mensaje de audio
+                                            </Typography>
+                                          </Box>
+                                        ) : message.messageType === 'stickerMessage' && message.mediaUrl ? (
+                                          <Box>
+                                            <img 
+                                              src={message.mediaUrl} 
+                                              alt="Sticker" 
+                                              style={{ 
+                                                maxWidth: 150, 
+                                                maxHeight: 150,
+                                                borderRadius: 8
+                                              }} 
+                                            />
+                                            <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#ce93d8' }}>
+                                              Sticker
+                                            </Typography>
+                                          </Box>
+                                        ) : message.messageType === 'documentMessage' ? (
+                                          <Box>
+                                            <Typography variant="body2" sx={{ color: '#81c784' }}>
+                                              📄 {message.fileName || 'Documento'}
+                                            </Typography>
+                                            {message.mediaUrl && (
+                                              <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
+                                                <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#64b5f6' }}>
+                                                  Descargar
+                                                </a>
+                                              </Typography>
+                                            )}
+                                          </Box>
+                                        ) : (
+                                          <Typography variant="body2">
+                                            {message.content || 'Sin contenido'}
+                                          </Typography>
+                                        )}
+                                        
+                                        {/* Info adicional */}
+                                        <Divider sx={{ my: 1, bgcolor: 'rgba(255,255,255,0.2)' }} />
+                                        <Typography variant="caption" sx={{ color: '#b0bec5', display: 'block' }}>
+                                          {new Date(message.timestamp).toLocaleString('es-ES')}
+                                        </Typography>
+                                      </Box>
+                                    }
+                                    arrow
+                                    placement="left"
+                                    componentsProps={{
+                                      tooltip: {
+                                        sx: {
+                                          bgcolor: '#263238',
+                                          '& .MuiTooltip-arrow': {
+                                            color: '#263238',
+                                          },
+                                          maxWidth: 450,
+                                          boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                        }
+                                      }
+                                    }}
+                                  >
                                     <IconButton size="small" onClick={() => handleViewMessage(message)}>
                                       <Visibility />
                                     </IconButton>
