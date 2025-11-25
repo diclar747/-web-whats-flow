@@ -564,7 +564,8 @@ useEffect(() => {
       unreadMessages: stats.unreadMessages || 0,
       chatbots: stats.chatbots || 0,
       campaigns: stats.campaigns || 0,
-      kanbans: stats.kanbans || 0
+      kanbans: stats.kanbans || 0,
+      appointments: stats.appointments || 0
     };
     setDashboardStats(updatedStats);
   };
