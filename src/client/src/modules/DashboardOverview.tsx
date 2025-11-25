@@ -163,8 +163,10 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
       const data = await response.json();
       console.log('📊 Respuesta del servidor:', data);
 
-      if (data.success && data.stats) {
-        const { messages = {}, contacts = {} } = data.stats;
+      if (data.success) {
+        // ✅ CORRECCIÓN: Usar data.messages y data.stats directamente
+        const messages = data.messages || {};
+        const stats = data.stats || {};
 
         const realMetrics: MetricCard[] = [
           {
@@ -220,15 +222,6 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
             color: '#f44336',
             gradient: 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)',
             trend: { value: 0, isPositive: false, period: 'errores' }
-          },
-          {
-            title: 'Contactos',
-            value: (contacts.individual || 0).toLocaleString(),
-            subtitle: `Total: ${contacts.total || 0}`,
-            icon: <PersonAdd />,
-            color: '#9c27b0',
-            gradient: 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)',
-            trend: { value: 0, isPositive: true, period: 'total' }
           }
         ];
 
