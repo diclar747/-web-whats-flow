@@ -6934,7 +6934,7 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
             try {
                 const conn = await pool.getConnection();
                 const [assignments] = await conn.execute(
-                    'SELECT user_id, notes FROM chat_assignments WHERE chat_jid = ? AND session_id = ? AND status IN ("active", "accepted") ORDER BY assigned_at DESC LIMIT 1',
+                    'SELECT user_id, notes FROM chat_assignments WHERE chat_jid = ? AND session_id = ? AND status IN ("active", "accepted", "pending") ORDER BY assigned_at DESC LIMIT 1',
                     [chatJid.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`, phoneNumber]
                 );
                 conn.release();

@@ -1,0 +1,89 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║      🔥 INSTRUCCIONES PARA VER LOS CAMBIOS                      ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+El código NUEVO está en el servidor desde: 2025-11-25 18:33
+Archivo: main.b51e099b.js
+
+Pero tu navegador está usando CACHÉ VIEJO.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔥 MÉTODO 1: HARD REFRESH (Obligatorio)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+En la página /dashboard/history:
+
+Windows/Linux: Ctrl + Shift + R
+Mac:          Cmd + Shift + R
+
+O también:    Ctrl + F5
+
+⚠️ IMPORTANTE: NO uses F5 solo - DEBE ser Ctrl+Shift+R
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🧹 MÉTODO 2: BORRAR CACHÉ (Si método 1 no funciona)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Chrome/Edge:
+1. F12 > Network
+2. Click derecho > Clear browser cache
+3. Recargar con Ctrl+Shift+R
+
+Firefox:
+1. Menú > Configuración
+2. Privacidad y seguridad
+3. Cookies y datos del sitio > Limpiar datos
+4. Marcar "Contenido web en caché"
+5. Limpiar
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ CÓMO VERIFICAR QUE FUNCIONÓ:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Después de Ctrl+Shift+R:
+
+1. Ir a /dashboard/history
+
+2. ✅ DEBE VERSE: Solo el historial completo SIN pestañas
+   
+3. ❌ NO DEBE VERSE: 💬 Chat | 📊 Analytics | 👥 Grupos | etc.
+
+4. En consola (F12) verificar:
+   - Pestaña Network
+   - Buscar "main.b51e099b.js"
+   - Debe decir "200" y fecha 25/11/2025 18:33
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔍 SI SIGUEN APARECIENDO LAS PESTAÑAS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Abrir VENTANA INCÓGNITA (Ctrl+Shift+N)
+2. Ir a https://web.whats-flow.com/dashboard/history
+3. Login
+4. Verificar si ahora SÍ se ven sin pestañas
+
+Si en incógnito SÍ funciona = Es problema de caché local
+Si en incógnito NO funciona = Reportar el problema
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 ESTADO DEL SERVIDOR:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Código corregido en servidor
+✅ Build nuevo compilado: 18:33
+✅ Archivo deployado: main.b51e099b.js
+✅ index.html apuntando al nuevo archivo
+
+⏳ FALTA: Que TU navegador descargue el nuevo archivo
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Fecha: 2025-11-25 18:35
+Estado: ✅ EN SERVIDOR - Esperando que navegador actualice

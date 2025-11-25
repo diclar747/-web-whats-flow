@@ -1588,8 +1588,8 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           </CardContent>
         </Card>
 
-        {/* Tabs */}
-        <Paper sx={{ mb: 3 }}>
+        {/* Tabs - OCULTAS */}
+        <Paper sx={{ mb: 3, display: 'none' }}>
           <Tabs value={selectedTab} onChange={(_, newValue) => setSelectedTab(newValue)}>
             <Tab label={`💬 Chat (${getChatOnlyMessages().length})`} />
             {/* Estados WhatsApp tab removido - funcionalidad no soportada */}

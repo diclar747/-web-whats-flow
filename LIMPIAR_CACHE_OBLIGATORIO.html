@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚠️ LIMPIAR CACHÉ OBLIGATORIO</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .warning {
+            background: #fff3cd;
+            border: 3px solid #ffc107;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        h1 {
+            color: #d32f2f;
+            font-size: 2em;
+            margin-top: 0;
+        }
+        .step {
+            background: white;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 5px solid #00a884;
+            border-radius: 5px;
+        }
+        .code {
+            background: #263238;
+            color: #aed581;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 1.2em;
+            display: inline-block;
+            margin: 10px 0;
+        }
+        .screenshot {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        button {
+            background: #00a884;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.1em;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #008c6f;
+        }
+        .current-file {
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="warning">
+        <h1>⚠️ ESTÁS USANDO CACHÉ VIEJO</h1>
+        <p style="font-size: 1.2em;">Tu navegador está cargando código antiguo que NO tiene las correcciones.</p>
+        
+        <div class="current-file">
+            <strong>Tu navegador usa:</strong> <code>main.9048f220.js</code> ❌ (NO existe en servidor)<br>
+            <strong>Servidor tiene:</strong> <code>main.b51e099b.js</code> ✅ (NUEVO - 18:30)
+        </div>
+    </div>
+
+    <div class="step">
+        <h2>🔥 PASO 1: HARD REFRESH (Obligatorio)</h2>
+        <p>En la página de WhatsFlow, presiona:</p>
+        <div class="code">Ctrl + Shift + R</div>
+        <p>O también:</p>
+        <div class="code">Ctrl + F5</div>
+        <p><strong>⚠️ NO uses solo F5 - DEBE ser Ctrl+Shift+R</strong></p>
+    </div>
+
+    <div class="step">
+        <h2>🧹 PASO 2: Borrar Caché Manualmente</h2>
+        <p><strong>Chrome/Edge:</strong></p>
+        <ol>
+            <li>Presiona <strong>F12</strong> (abrir DevTools)</li>
+            <li>Pestaña <strong>Network</strong></li>
+            <li>Click derecho en cualquier parte</li>
+            <li>Seleccionar <strong>"Clear browser cache"</strong></li>
+            <li>Luego: <strong>Ctrl+Shift+R</strong></li>
+        </ol>
+        
+        <p><strong>Firefox:</strong></p>
+        <ol>
+            <li>Menú (≡) > <strong>Configuración</strong></li>
+            <li><strong>Privacidad y seguridad</strong></li>
+            <li><strong>Cookies y datos del sitio</strong></li>
+            <li><strong>Limpiar datos...</strong></li>
+            <li>Marcar <strong>"Contenido web en caché"</strong></li>
+            <li>Click <strong>Limpiar</strong></li>
+        </ol>
+    </div>
+
+    <div class="step">
+        <h2>✅ PASO 3: Verificar que Funcionó</h2>
+        <div class="screenshot">
+            <p><strong>1. Abrir consola (F12)</strong></p>
+            <p><strong>2. Pestaña Network</strong></p>
+            <p><strong>3. Buscar "main.*.js"</strong></p>
+            <p><strong>4. Debe cargar: main.b51e099b.js</strong> ✅</p>
+            <p><strong>5. Si carga: main.9048f220.js</strong> ❌ - Repetir pasos</p>
+        </div>
+    </div>
+
+    <div class="step">
+        <h2>🆘 SI NO FUNCIONA: Modo Incógnito</h2>
+        <p>Como última opción:</p>
+        <div class="code">Ctrl + Shift + N</div>
+        <p>Abrir ventana incógnita y probar ahí.</p>
+        <p>Si ahí funciona = Es problema de caché local</p>
+    </div>
+
+    <div style="text-align: center; margin-top: 40px;">
+        <button onclick="window.location.reload(true)">🔄 Recargar con Ctrl+Shift+R</button>
+        <button onclick="if(confirm('¿Estás seguro? Esto borrará todo el caché.')) { caches.keys().then(names => { names.forEach(name => caches.delete(name)); }); alert('Caché borrado. Recarga con Ctrl+Shift+R'); }">🗑️ Borrar Caché ServiceWorker</button>
+    </div>
+
+    <hr style="margin: 40px 0;">
+    
+    <div style="background: #e8f5e9; padding: 20px; border-radius: 10px;">
+        <h3 style="color: #2e7d32; margin-top: 0;">📋 Lo que se corrigió en el nuevo código:</h3>
+        <ul style="font-size: 1.1em;">
+            <li>✅ WhatsAppContext ahora ignora eventos de agentes</li>
+            <li>✅ Mensajes llegan en tiempo real sin recargar</li>
+            <li>✅ Multimedia funciona (audio, video, imagen, docs)</li>
+            <li>✅ Botón "Sincronizar" en header</li>
+            <li>✅ Historial sin pestañas innecesarias</li>
+        </ul>
+        <p><strong>Pero necesitas descargar el nuevo JavaScript.</strong></p>
+    </div>
+
+    <footer style="text-align: center; margin-top: 40px; color: #666;">
+        <p>Archivo generado: 2025-11-25 18:40</p>
+        <p>Si después de seguir TODOS los pasos sigue sin funcionar, contactar soporte.</p>
+    </footer>
+
+    <script>
+        // Detectar qué archivo se está usando
+        const scripts = document.querySelectorAll('script[src*="main."]');
+        if (scripts.length > 0) {
+            const currentFile = scripts[0].src.split('/').pop();
+            console.log('Archivo actual cargado:', currentFile);
+            if (currentFile !== 'main.b51e099b.js') {
+                console.error('❌ CACHÉ VIEJO - Necesitas Ctrl+Shift+R');
+                document.title = '❌ ' + document.title;
+            } else {
+                console.log('✅ Archivo correcto cargado');
+            }
+        }
+    </script>
+</body>
+</html>
