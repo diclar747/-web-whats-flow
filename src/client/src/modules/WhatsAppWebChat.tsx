@@ -107,7 +107,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
-  const [filterTab, setFilterTab] = useState(3); // ✅ 3: Pendientes/Activos por defecto
+  const [filterTab, setFilterTab] = useState(0); // ✅ 0: Todo por defecto
   const [chatListCollapsed, setChatListCollapsed] = useState(true); // ✅ Colapsado por defecto
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [connectionChecking, setConnectionChecking] = useState(true);
