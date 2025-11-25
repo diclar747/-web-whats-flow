@@ -969,56 +969,7 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
                       }}
                     />
 
-                    <Divider sx={{ my: 2 }}/>
-
-                    <Typography variant="subtitle2" gutterBottom>
-                      O Extrae Información desde tu Sitio Web
-                    </Typography>
-
-                    <Box sx={{ display: 'flex', gap: 2 }}>
-                      <TextField
-                        fullWidth
-                        label="URL del Sitio Web"
-                        value={showCreateDialog ? (newFlow.aiConfig?.websiteUrl || '') : (selectedFlow?.aiConfig?.websiteUrl || '')}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (showCreateDialog) {
-                            setNewFlow({
-                              ...newFlow,
-                              aiConfig: { ...newFlow.aiConfig!, websiteUrl: value }
-                            });
-                          } else if (selectedFlow) {
-                            setSelectedFlow({
-                              ...selectedFlow,
-                              aiConfig: { ...selectedFlow.aiConfig!, websiteUrl: value }
-                            });
-                          }
-                        }}
-                        placeholder="https://www.tunegocio.com"
-                      />
-                      <Button
-                        variant="contained"
-                        onClick={handleScrapeUrl}
-                        disabled={scrapingUrl || !(showCreateDialog ? newFlow.aiConfig?.websiteUrl : selectedFlow?.aiConfig?.websiteUrl)}
-                        startIcon={scrapingUrl ? <CircularProgress size={20}/> : <Refresh/>}
-                        sx={{ minWidth: 140 }}
-                      >
-                        {scrapingUrl ? 'Extrayendo...' : 'Extraer'}
-                      </Button>
-                    </Box>
-
-                    {(showCreateDialog ? newFlow.aiConfig?.scrapedContent : selectedFlow?.aiConfig?.scrapedContent) && (
-                      <TextField
-                        fullWidth
-                        label="Contenido Extraído"
-                        multiline
-                        rows={4}
-                        value={showCreateDialog ? newFlow.aiConfig?.scrapedContent : selectedFlow?.aiConfig?.scrapedContent}
-                        disabled
-                        helperText={`✅ ${(showCreateDialog ? newFlow.aiConfig?.scrapedContent : selectedFlow?.aiConfig?.scrapedContent)?.length} caracteres extraídos`}
-                        sx={{ mt: 2 }}
-                      />
-                    )}
+                    {/* Campo de URL eliminado - Solo usar el prompt/información manual */}
                   </Box>
                 ) : (
                   // FORMULARIO PARA PROGRAMADO
