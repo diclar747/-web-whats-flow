@@ -889,7 +889,7 @@ const App: React.FC = () => {
                     onClick={() => {
                       sessionStorage.clear();
                       localStorage.clear();
-                      window.location.href = '/';
+                      window.location.href = 'https://web.whats-flow.com/';
                     }}
                     variant="contained"
                     size="large"
@@ -907,7 +907,7 @@ const App: React.FC = () => {
                       }
                     }}
                   >
-                    Entendido
+                    Ir a Página Principal
                   </Button>
                 </DialogActions>
               </Dialog>

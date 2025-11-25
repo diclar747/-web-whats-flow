@@ -441,23 +441,38 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           })
           .map((msg: any) => {
             const chatJid = msg.chatJid || msg.chat_jid || 'unknown';
+            const senderJid = msg.senderJid || msg.sender_jid || chatJid;
+            const isFromMe = msg.fromMe || msg.from_me || false;
+            
+            // ✅ CORRECCIÓN: Usar sender info si es mensaje enviado (from_me=true)
+            const displayName = isFromMe 
+              ? (msg.senderName || msg.sender_name || senderJid.split('@')[0] || 'Yo')
+              : (msg.chatName || msg.chat_name || chatJid.split('@')[0] || 'Desconocido');
+            
+            const displayPhone = isFromMe
+              ? (senderJid.split('@')[0] || 'unknown')
+              : (chatJid.split('@')[0] || 'unknown');
+            
+            const displayAvatar = isFromMe
+              ? `${getAPIBaseURL()}/api/avatar/${sessionId}/${senderJid}`
+              : (msg.contactAvatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chatJid}`);
 
             return {
               id: msg.id || `msg_${Date.now()}`,
               conversationId: chatJid,
-              contactName: msg.contactName || msg.chatName || msg.chat_name || msg.senderName || chatJid.split('@')[0] || 'Desconocido',
-              contactPhone: chatJid.split('@')[0] || 'unknown',
-              contactAvatar: msg.contactAvatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chatJid}`,
-              isGroup: false, // Ya filtramos grupos arriba
+              contactName: displayName,
+              contactPhone: displayPhone,
+              contactAvatar: displayAvatar,
+              isGroup: false,
               messageType: msg.type || msg.message_type || 'text',
               content: getMessageContent(msg),
               mediaUrl: msg.mediaUrl || msg.media_url || null,
               fileName: msg.fileName || msg.file_name || null,
               timestamp: msg.timestamp || new Date().toISOString(),
-              isFromMe: msg.fromMe || msg.from_me || false,
+              isFromMe: isFromMe,
               status: msg.status || 'sent',
               agentId: msg.agentId || msg.agent_id,
-              agentName: msg.agentName || msg.agent_name || (msg.from_me ? (msg.agentId || msg.agent_id ? 'Agente' : 'Sistema') : '-'),
+              agentName: msg.agentName || msg.agent_name || (isFromMe ? (msg.agentId || msg.agent_id ? 'Agente' : 'Sistema') : '-'),
               labels: [],
               priority: 'medium',
               sentiment: 'neutral',
