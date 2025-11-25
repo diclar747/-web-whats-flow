@@ -8571,11 +8571,7 @@ function emitDashboardStats(sessionId) {
 }
 
 // Dashboard stats endpoint HTTP
-app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
-    const { sessionId } = req.params;
-    const data = await getDashboardStats(sessionId);
-    res.json(data);
-});
+// ✅ ELIMINADO - Endpoint duplicado (usar el de la línea 16669)
 
 // Obtener contactos por sesión (usando el número de teléfono del usuario)
 app.get('/api/contacts/:sessionId', async (req, res) => {
@@ -10245,117 +10241,7 @@ function schedulePeriodicNameUpdates() {
 // Iniciar actualizaciones periódicas después de que el servidor esté completamente iniciado
 setTimeout(schedulePeriodicNameUpdates, 60000); // Comenzar después de 1 minuto para permitir la inicialización completa
 
-// Endpoint para estadísticas del Dashboard
-app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
-    const { sessionId } = req.params;
-
-    if (!pool) {
-        return res.status(503).json({
-            success: false,
-            error: 'Servicio de base de datos no disponible.'
-        });
-    }
-
-    try {
-        // Obtener todos los session_ids válidos para este usuario
-        const sessionIds = await getAllSessionIds(sessionId);
-        if (!sessionIds || sessionIds.length === 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'No se pudo obtener información de la sesión'
-            });
-        }
-
-        const connection = await pool.getConnection();
-        try {
-            // Construir placeholders para IN clause
-            const placeholders = sessionIds.map(() => '?').join(',');
-
-            // Contar mensajes por estado
-            const [messageStats] = await connection.execute(
-                `SELECT
-                    COUNT(*) as total_messages,
-                    SUM(CASE WHEN from_me = 1 THEN 1 ELSE 0 END) as sent_messages,
-                    SUM(CASE WHEN from_me = 0 THEN 1 ELSE 0 END) as received_messages,
-                    SUM(CASE WHEN from_me = 1 AND status = 'pending' THEN 1 ELSE 0 END) as pending_messages,
-                    SUM(CASE WHEN from_me = 1 AND status = 'sent' THEN 1 ELSE 0 END) as sent_status,
-                    SUM(CASE WHEN from_me = 1 AND status = 'delivered' THEN 1 ELSE 0 END) as delivered_messages,
-                    SUM(CASE WHEN from_me = 1 AND status = 'read' THEN 1 ELSE 0 END) as read_messages,
-                    SUM(CASE WHEN from_me = 1 AND status = 'failed' THEN 1 ELSE 0 END) as failed_messages
-                FROM messages
-                WHERE session_id IN (${placeholders})`,
-                sessionIds
-            );
-
-            // Contar contactos individuales
-            const [contactStats] = await connection.execute(
-                `SELECT COUNT(*) as individual_contacts
-                FROM contacts
-                WHERE session_id IN (${placeholders}) AND jid LIKE '%@s.whatsapp.net'`,
-                sessionIds
-            );
-
-            // Contar grupos
-            const [groupStats] = await connection.execute(
-                `SELECT COUNT(*) as groups
-                FROM contact_groups
-                WHERE session_id IN (${placeholders})`,
-                sessionIds
-            );
-
-            const totalContacts = (contactStats[0]?.individual_contacts || 0) + (groupStats[0]?.groups || 0);
-
-            // Mensajes hoy
-            const [todayMessages] = await connection.execute(
-                `SELECT COUNT(*) as today_messages
-                FROM messages
-                WHERE session_id IN (${placeholders}) AND DATE(timestamp) = CURDATE()`,
-                sessionIds
-            );
-
-            // Mensajes esta semana
-            const [weekMessages] = await connection.execute(
-                `SELECT COUNT(*) as week_messages
-                FROM messages
-                WHERE session_id IN (${placeholders}) AND YEARWEEK(timestamp, 1) = YEARWEEK(CURDATE(), 1)`,
-                sessionIds
-            );
-
-            const stats = {
-                messages: {
-                    total: parseInt(messageStats[0].total_messages) || 0,
-                    sent: parseInt(messageStats[0].sent_messages) || 0,
-                    received: parseInt(messageStats[0].received_messages) || 0,
-                    pending: parseInt(messageStats[0].pending_messages) || 0,
-                    delivered: parseInt(messageStats[0].delivered_messages) || 0,
-                    read: parseInt(messageStats[0].read_messages) || 0,
-                    failed: parseInt(messageStats[0].failed_messages) || 0,
-                    today: parseInt(todayMessages[0].today_messages) || 0,
-                    thisWeek: parseInt(weekMessages[0].week_messages) || 0
-                },
-                contacts: {
-                    total: totalContacts,
-                    individual: parseInt(contactStats[0].individual_contacts) || 0,
-                    groups: parseInt(groupStats[0].groups) || 0
-                }
-            };
-
-            res.json({
-                success: true,
-                stats
-            });
-
-        } finally {
-            if (connection) connection.release();
-        }
-    } catch (error) {
-        console.error(`[API-DASHBOARD-STATS] Error obteniendo estadísticas para sesión ${sessionId}:`, error);
-        res.status(500).json({
-            success: false,
-            error: 'Error interno del servidor al obtener estadísticas'
-        });
-    }
-});
+// ✅ Endpoint de estadísticas del Dashboard movido a línea 16669 (incluye agents, bots, campaigns, kanbans)
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -16745,9 +16631,9 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                 sessionIds
             );
 
-            // Chatbots activos de ESTE admin
+            // Chatbots activos de ESTE admin (sin is_active, todos los flujos)
             const [chatbotsResult] = await connection.execute(
-                `SELECT COUNT(*) as total FROM chatbot_flows WHERE is_active = 1 AND session_id IN (${placeholders})`,
+                `SELECT COUNT(*) as total FROM chatbot_flows WHERE session_id IN (${placeholders})`,
                 sessionIds
             );
 
@@ -16769,9 +16655,33 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                 sessionIds
             );
 
+            // ✅ Contar mensajes por estado para el dashboard
+            const [messageStatsDetailed] = await connection.execute(
+                `SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN from_me = 1 THEN 1 ELSE 0 END) as sent,
+                    SUM(CASE WHEN from_me = 0 THEN 1 ELSE 0 END) as received,
+                    SUM(CASE WHEN from_me = 1 AND status = 'pending' THEN 1 ELSE 0 END) as pending,
+                    SUM(CASE WHEN from_me = 1 AND status = 'delivered' THEN 1 ELSE 0 END) as delivered,
+                    SUM(CASE WHEN from_me = 1 AND status = 'read' THEN 1 ELSE 0 END) as \`read\`,
+                    SUM(CASE WHEN from_me = 1 AND status = 'failed' THEN 1 ELSE 0 END) as failed
+                FROM messages
+                WHERE session_id IN (${placeholders})`,
+                sessionIds
+            );
+
+            // Mensajes esta semana
+            const [weekMessagesResult] = await connection.execute(
+                `SELECT COUNT(*) as total FROM messages 
+                 WHERE session_id IN (${placeholders}) 
+                 AND YEARWEEK(timestamp, 1) = YEARWEEK(CURDATE(), 1)`,
+                sessionIds
+            );
+
             res.json({
                 success: true,
                 stats: {
+                    // Para el header (formato plano)
                     contacts: contactsResult[0].total || 0,
                     groups: groupsResult[0].total || 0,
                     messages: messagesResult[0].total || 0,
@@ -16783,6 +16693,23 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                     campaigns: campaignsResult[0].total || 0,
                     kanbans: kanbansResult[0].total || 0,
                     appointments: appointmentsResult[0].total || 0
+                },
+                // Para el DashboardOverview (formato anidado)
+                messages: {
+                    total: parseInt(messageStatsDetailed[0].total) || 0,
+                    sent: parseInt(messageStatsDetailed[0].sent) || 0,
+                    received: parseInt(messageStatsDetailed[0].received) || 0,
+                    pending: parseInt(messageStatsDetailed[0].pending) || 0,
+                    delivered: parseInt(messageStatsDetailed[0].delivered) || 0,
+                    read: parseInt(messageStatsDetailed[0].read) || 0,
+                    failed: parseInt(messageStatsDetailed[0].failed) || 0,
+                    today: messagesTodayResult[0].total || 0,
+                    thisWeek: weekMessagesResult[0].total || 0
+                },
+                contacts: {
+                    total: contactsResult[0].total || 0,
+                    individual: contactsResult[0].total || 0,
+                    groups: groupsResult[0].total || 0
                 }
             });
         } finally {
