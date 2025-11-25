@@ -1790,100 +1790,65 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                                 <Box sx={{ display: 'flex' }}>
                                   <Tooltip 
                                     title={
-                                      <Box sx={{ maxWidth: 400, p: 1 }}>
-                                        {/* Tipo de mensaje */}
-                                        <Typography variant="caption" sx={{ display: 'block', color: '#ffd54f', fontWeight: 600, mb: 1 }}>
+                                      <Box sx={{ maxWidth: 380, p: 1.5 }}>
+                                        <Typography variant="caption" sx={{ color: '#ffd54f', fontWeight: 600, display: 'block', mb: 1 }}>
                                           {getMessageTypeLabel(message.messageType, message.fileName)}
                                         </Typography>
                                         
-                                        {/* Vista previa según tipo */}
-                                        {message.messageType === 'conversation' || message.messageType === 'extendedTextMessage' ? (
-                                          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                            {message.content}
-                                          </Typography>
-                                        ) : message.messageType === 'imageMessage' && message.mediaUrl ? (
-                                          <Box>
-                                            <img 
-                                              src={message.mediaUrl} 
-                                              alt="Preview" 
-                                              style={{ 
-                                                maxWidth: '100%', 
-                                                maxHeight: 200, 
-                                                borderRadius: 8,
-                                                marginBottom: 8
-                                              }} 
-                                            />
-                                            {message.content && (
-                                              <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
-                                                {message.content}
+                                        {(() => {
+                                          const msgType = String(message.messageType || '').toLowerCase();
+                                          
+                                          if ((msgType.includes('image') || message.messageType === 'image') && message.mediaUrl) {
+                                            return (
+                                              <Box sx={{ mb: 1 }}>
+                                                <img 
+                                                  src={message.mediaUrl} 
+                                                  alt="Preview" 
+                                                  style={{ maxWidth: '100%', maxHeight: '180px', borderRadius: '6px' }} 
+                                                />
+                                                {message.content && (
+                                                  <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
+                                                    {message.content}
+                                                  </Typography>
+                                                )}
+                                              </Box>
+                                            );
+                                          } else if ((msgType.includes('video') || message.messageType === 'video') && message.mediaUrl) {
+                                            return (
+                                              <Typography variant="body2" sx={{ color: '#90caf9' }}>
+                                                🎥 Video{message.content ? `: ${message.content}` : ''}
                                               </Typography>
-                                            )}
-                                          </Box>
-                                        ) : message.messageType === 'videoMessage' && message.mediaUrl ? (
-                                          <Box>
-                                            <video 
-                                              src={message.mediaUrl} 
-                                              controls 
-                                              style={{ 
-                                                maxWidth: '100%', 
-                                                maxHeight: 200, 
-                                                borderRadius: 8,
-                                                marginBottom: 8
-                                              }}
-                                            />
-                                            {message.content && (
-                                              <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
-                                                {message.content}
+                                            );
+                                          } else if ((msgType.includes('audio') || message.messageType === 'audio') && message.mediaUrl) {
+                                            return (
+                                              <Typography variant="body2" sx={{ color: '#90caf9' }}>
+                                                🎵 Mensaje de audio
                                               </Typography>
-                                            )}
-                                          </Box>
-                                        ) : message.messageType === 'audioMessage' && message.mediaUrl ? (
-                                          <Box>
-                                            <audio controls style={{ width: '100%' }}>
-                                              <source src={message.mediaUrl} />
-                                            </audio>
-                                            <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#90caf9' }}>
-                                              🎵 Mensaje de audio
-                                            </Typography>
-                                          </Box>
-                                        ) : message.messageType === 'stickerMessage' && message.mediaUrl ? (
-                                          <Box>
-                                            <img 
-                                              src={message.mediaUrl} 
-                                              alt="Sticker" 
-                                              style={{ 
-                                                maxWidth: 150, 
-                                                maxHeight: 150,
-                                                borderRadius: 8
-                                              }} 
-                                            />
-                                            <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#ce93d8' }}>
-                                              Sticker
-                                            </Typography>
-                                          </Box>
-                                        ) : message.messageType === 'documentMessage' ? (
-                                          <Box>
-                                            <Typography variant="body2" sx={{ color: '#81c784' }}>
-                                              📄 {message.fileName || 'Documento'}
-                                            </Typography>
-                                            {message.mediaUrl && (
-                                              <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
-                                                <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#64b5f6' }}>
-                                                  Descargar
-                                                </a>
+                                            );
+                                          } else if (msgType.includes('document') || message.messageType === 'document' || message.fileName) {
+                                            return (
+                                              <Typography variant="body2" sx={{ color: '#81c784' }}>
+                                                📄 {message.fileName || 'Documento'}
                                               </Typography>
-                                            )}
-                                          </Box>
-                                        ) : (
-                                          <Typography variant="body2">
-                                            {message.content || 'Sin contenido'}
-                                          </Typography>
-                                        )}
+                                            );
+                                          } else {
+                                            return (
+                                              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto' }}>
+                                                {message.content || 'Sin contenido'}
+                                              </Typography>
+                                            );
+                                          }
+                                        })()}
                                         
-                                        {/* Info adicional */}
-                                        <Divider sx={{ my: 1, bgcolor: 'rgba(255,255,255,0.2)' }} />
-                                        <Typography variant="caption" sx={{ color: '#b0bec5', display: 'block' }}>
-                                          {new Date(message.timestamp).toLocaleString('es-ES')}
+                                        <Divider sx={{ my: 1, bgcolor: 'rgba(255,255,255,0.15)' }} />
+                                        <Typography variant="caption" sx={{ color: '#90a4ae' }}>
+                                          {new Date(message.timestamp).toLocaleString('es-ES', { 
+                                            day: '2-digit', 
+                                            month: '2-digit', 
+                                            year: 'numeric',
+                                            hour: '2-digit', 
+                                            minute: '2-digit' 
+                                          })}
                                         </Typography>
                                       </Box>
                                     }
@@ -1893,17 +1858,19 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                                       tooltip: {
                                         sx: {
                                           bgcolor: '#263238',
+                                          color: '#fff',
                                           '& .MuiTooltip-arrow': {
                                             color: '#263238',
                                           },
-                                          maxWidth: 450,
-                                          boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                          maxWidth: 420,
+                                          boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+                                          fontSize: '0.875rem'
                                         }
                                       }
                                     }}
                                   >
-                                    <IconButton size="small" onClick={() => handleViewMessage(message)}>
-                                      <Visibility />
+                                    <IconButton size="small">
+                                      <Visibility fontSize="small" />
                                     </IconButton>
                                   </Tooltip>
                                   <Tooltip title={message.isStarred ? "Desmarcar como importante" : "Marcar como importante"}>
