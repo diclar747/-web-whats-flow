@@ -482,13 +482,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         );
       });
 
-      // Recargar chats periódicamente para asegurar sincronización
-      const syncInterval = setInterval(() => {
-        if (loadChats && session?.sessionId) {
-          console.log('🔄 [AUTO-SYNC] Recargando chats automáticamente...');
-          loadChats(session.sessionId);
-        }
-      }, 10000); // Cada 10 segundos
+      // ✅ ELIMINADO: setInterval de polling - Ahora TODO es en tiempo real con Socket.IO
+      // Los chats se actualizan automáticamente cuando llegan mensajes nuevos
+      // Los estados se actualizan con eventos 'message-status-update'
+      // La sincronización inicial se hace con 'sync-complete'
+      console.log('🚀 [OPTIMIZACIÓN] Sistema 100% en tiempo real - Sin polling');
 
       // LOG DE DEBUG: Capturar TODOS los eventos para debugging
       newSocket.onAny((eventName: string, ...args: any[]) => {
@@ -496,6 +494,13 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       });
 
       newSocket.on('message', (newMessage: WhatsAppMessage) => {
+        // 🚫 FILTRO: Agentes NO deben procesar eventos en WhatsAppContext
+        const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+        if (userRole === 'agent') {
+          console.log('🚫 [WhatsAppContext] Ignorando mensaje - Usuario es agente (debe usar AgentDashboardPro)');
+          return;
+        }
+
         console.log('🎉🎉🎉 MENSAJE RECIBIDO - INICIANDO PROCESAMIENTO');
 
         // Normalizar chatJid - puede venir en diferentes formatos
@@ -654,6 +659,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       // Listener para actualizaciones de estado de mensaje (✓ ✓✓)
       newSocket.on('message-status-update', (update: any) => {
+        // 🚫 FILTRO: Agentes NO deben procesar en WhatsAppContext
+        const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+        if (userRole === 'agent') return;
+
         console.log('📬 Actualización de estado recibida:', update);
         const { messageId, id, status, chatJid } = update;
         const msgId = messageId || id;
@@ -672,6 +681,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       // Nuevo evento: sync-complete - se emite cuando se completa la sincronización
       newSocket.on('sync-complete', (data: any) => {
+        // 🚫 FILTRO: Agentes NO deben procesar en WhatsAppContext
+        const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+        if (userRole === 'agent') return;
+
         console.log('🔄 Sincronización completa recibida:', data);
         if (data?.success) {
           console.log(`✅ Sincronización exitosa: ${data.chatCount} chats`);
@@ -686,7 +699,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       return () => {
         console.log('Desconectando socket en WhatsAppContext');
-        clearInterval(syncInterval);
+        // ✅ ELIMINADO: clearInterval(syncInterval) - Ya no hay polling
         newSocket.disconnect();
       };
     }
@@ -769,7 +782,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   };
 
 
-  const loadMessages = async (chatId: string): Promise<void> => {
+  const loadMessages = async (chatId: string, dateFilter: string = 'today'): Promise<void> => {
     if (!session?.sessionId) return;
 
     try {
@@ -778,10 +791,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       setMessages([]);
       setIsLoading(true);
 
-      console.log(`🔄 Cargando TODOS los mensajes para chat: ${chatId}`);
+      console.log(`🔄 [OPTIMIZADO] Cargando mensajes del día (${dateFilter}) para chat: ${chatId}`);
 
-      // Cargar TODOS los mensajes sin límite
-      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&limit=10000`);
+      // ⚡ OPTIMIZACIÓN: Solo cargar mensajes del día actual por defecto
+      // Para ver mensajes antiguos, usar filtros manuales
+      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=10000`);
       const data = await response.json();
 
       if (data.success && data.messages) {

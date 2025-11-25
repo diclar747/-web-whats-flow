@@ -51,7 +51,7 @@ const AgentLogin: React.FC = () => {
       const data = await response.json();
 
       if (data.success && data.token) {
-        // Guardar token y datos del usuario SOLO en sessionStorage (único por pestaña)
+        // Guardar token y datos del usuario en sessionStorage (principal)
         sessionStorage.setItem('token', data.token);
         sessionStorage.setItem('userRole', data.user.role);
         sessionStorage.setItem('userName', data.user.name);
@@ -65,13 +65,22 @@ const AgentLogin: React.FC = () => {
           console.log('✅ SessionId asignado:', data.sessionId);
         }
         
-        // IMPORTANTE: Limpiar localStorage para evitar sesiones compartidas
-        localStorage.removeItem('token');
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('userName');
-        localStorage.removeItem('userId');
-        localStorage.removeItem('whatsflow_session');
-        localStorage.removeItem('whatsflow_user_type');
+        // 🔄 PERSISTENCIA: Para AGENTES, guardar backup en localStorage
+        if (data.user.role === 'agent' || data.user.role === 'supervisor') {
+          localStorage.setItem('agent_token_backup', data.token);
+          localStorage.setItem('agent_userId_backup', data.user.id);
+          localStorage.setItem('agent_userName_backup', data.user.name);
+          localStorage.setItem('agent_userRole_backup', data.user.role);
+          console.log('💾 [PERSISTENCIA] Backup guardado en localStorage');
+        } else {
+          // Para admin, limpiar localStorage
+          localStorage.removeItem('token');
+          localStorage.removeItem('userRole');
+          localStorage.removeItem('userName');
+          localStorage.removeItem('userId');
+          localStorage.removeItem('whatsflow_session');
+          localStorage.removeItem('whatsflow_user_type');
+        }
         
         console.log('✅ Login exitoso (sesión única):', data.user);
         

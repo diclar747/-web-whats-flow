@@ -35,10 +35,12 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     // Obtener sessionId de sessionStorage primero (para agentes) o localStorage (para admins)
     const sessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
     const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole') || 'admin'; // Obtener rol del usuario
+    const userId = sessionStorage.getItem('userId') || localStorage.getItem('userId'); // ID del usuario/agente
 
     console.log('🔌 Conectando a Socket.IO en:', socketURL);
     console.log('🔌 SessionId para conexión:', sessionId);
     console.log('🔌 UserRole para conexión:', userRole);
+    console.log('🔌 UserId para conexión:', userId);
 
     // Inicializar conexión Socket.IO CON sessionId y userRole en query
     const newSocket = io(socketURL, {
@@ -56,15 +58,18 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       withCredentials: true,
       query: {
         sessionId: sessionId || '', // Pasar sessionId al servidor
-        userRole: userRole // Pasar rol del usuario
+        userRole: userRole, // Pasar rol del usuario
+        userId: userId || '' // Pasar ID del usuario/agente
       },
       auth: {
         sessionId: sessionId || '',
-        userRole: userRole
+        userRole: userRole,
+        userId: userId || ''
       },
       extraHeaders: {
         'X-Session-Id': sessionId || '',
-        'X-User-Role': userRole
+        'X-User-Role': userRole,
+        'X-User-Id': userId || ''
       }
     });
 
@@ -73,14 +78,25 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     // Eventos de conexión
     newSocket.on('connect', () => {
       const currentSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+      const currentUserRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+      const currentUserId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
+
       console.log('🔌 Socket conectado:', newSocket.id);
       console.log('🔌 SessionId actual:', currentSessionId);
+      console.log('🔌 UserRole actual:', currentUserRole);
+      console.log('🔌 UserId actual:', currentUserId);
       setIsConnected(true);
 
       // Unirse a la sala de la sesión al conectar
       if (currentSessionId) {
         newSocket.emit('join-session', { sessionId: currentSessionId });
         console.log('🔌 Uniéndose a sala:', `session-${currentSessionId}`);
+      }
+
+      // Si es agente, unirse a sala específica del agente
+      if (currentUserRole === 'agent' && currentUserId) {
+        newSocket.emit('join-agent-room', { agentId: parseInt(currentUserId) });
+        console.log('🔌 [AGENTE] Uniéndose a sala agent-' + currentUserId);
       }
     });
 
@@ -91,6 +107,9 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
     newSocket.on('reconnect', (attemptNumber: number) => {
       const currentSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+      const currentUserRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+      const currentUserId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
+
       console.log('🔌 Socket reconectado después de', attemptNumber, 'intentos');
       setIsConnected(true);
 
@@ -98,6 +117,12 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       if (currentSessionId) {
         newSocket.emit('join-session', { sessionId: currentSessionId });
         console.log('🔌 Re-uniéndose a sala:', `session-${currentSessionId}`);
+      }
+
+      // Si es agente, re-unirse a sala específica del agente
+      if (currentUserRole === 'agent' && currentUserId) {
+        newSocket.emit('join-agent-room', { agentId: parseInt(currentUserId) });
+        console.log('🔌 [AGENTE] Re-uniéndose a sala agent-' + currentUserId);
       }
     });
 
@@ -134,30 +159,38 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         }
       }
 
-      // Generar token JWT cuando se conecta
+      // ✅ OPTIMIZADO: Solo generar token JWT cuando es NUEVO sessionId y NO existe token
+      // Evita generación innecesaria en cada connection-update
       if (data?.status === 'connected' && incomingSessionId) {
-        try {
-          const API_BASE_URL = window.location.hostname === 'localhost' 
-            ? 'http://localhost:3001' 
-            : 'https://web.whats-flow.com';
-          
-          const response = await fetch(`${API_BASE_URL}/api/auth/generate-token`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ sessionId: incomingSessionId })
-          });
+        const existingToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+        if (!existingToken) {
+          try {
+            const API_BASE_URL = window.location.hostname === 'localhost'
+              ? 'http://localhost:3001'
+              : 'https://web.whats-flow.com';
 
-          const result = await response.json();
-          if (result.success && result.token) {
-            localStorage.setItem('token', result.token);
-            console.log('🔑 Token JWT generado y guardado');
-          } else {
-            console.error('❌ Error generando token:', result.error);
+            console.log('🔑 [TOKEN] Generando token JWT para nueva sesión...');
+            const response = await fetch(`${API_BASE_URL}/api/auth/generate-token`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ sessionId: incomingSessionId })
+            });
+
+            const result = await response.json();
+            if (result.success && result.token) {
+              localStorage.setItem('token', result.token);
+              sessionStorage.setItem('token', result.token);
+              console.log('🔑 Token JWT generado y guardado');
+            } else {
+              console.error('❌ Error generando token:', result.error);
+            }
+          } catch (error) {
+            console.error('❌ Error al solicitar token:', error);
           }
-        } catch (error) {
-          console.error('❌ Error al solicitar token:', error);
+        } else {
+          console.log('🔑 [TOKEN] Token ya existe, saltando generación');
         }
       }
     });

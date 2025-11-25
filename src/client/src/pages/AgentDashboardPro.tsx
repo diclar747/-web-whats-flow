@@ -105,10 +105,11 @@ interface Message {
   status: 'pending' | 'sent' | 'delivered' | 'read' | 'error';
   message_type: 'conversation' | 'image' | 'document' | 'video' | 'audio' | 'ptt';
   media_url?: string;
+  media_mime_type?: string;  // ✅ Backend usa este nombre
   caption?: string;
   file_name?: string;
   file_size?: number;
-  mime_type?: string;
+  mime_type?: string;  // Legacy
   sender_name?: string;
   sender_avatar?: string;
   quoted_message_id?: string;
@@ -259,17 +260,41 @@ const AgentDashboardPro: React.FC = () => {
 
   useEffect(() => {
     const initializeAgent = async () => {
-      const token = sessionStorage.getItem('token');
-      const userId = sessionStorage.getItem('userId');
-      const savedUserName = sessionStorage.getItem('userName');
+      // 🔄 PERSISTENCIA: Intentar recuperar de sessionStorage, si no, de localStorage
+      let token = sessionStorage.getItem('token');
+      let userId = sessionStorage.getItem('userId');
+      let savedUserName = sessionStorage.getItem('userName');
+      let userRole = sessionStorage.getItem('userRole');
+
+      // Si no hay en sessionStorage, intentar recuperar de localStorage (backup)
+      if (!token || !userId) {
+        console.log('⚠️ [AGENT-PRO] No hay datos en sessionStorage, intentando recuperar de localStorage...');
+        token = localStorage.getItem('agent_token_backup');
+        userId = localStorage.getItem('agent_userId_backup');
+        savedUserName = localStorage.getItem('agent_userName_backup');
+        userRole = localStorage.getItem('agent_userRole_backup');
+
+        // Si se recuperó, restaurar en sessionStorage
+        if (token && userId) {
+          console.log('✅ [AGENT-PRO] Sesión recuperada de localStorage');
+          sessionStorage.setItem('token', token);
+          sessionStorage.setItem('userId', userId);
+          sessionStorage.setItem('userName', savedUserName || '');
+          sessionStorage.setItem('userRole', userRole || 'agent');
+        }
+      }
 
       console.log('🚀 [AGENT-PRO] Inicializando panel profesional...');
       console.log('🔍 Token:', token ? 'Existe' : 'No existe');
       console.log('🔍 UserId:', userId);
 
       if (!token || !userId) {
-        console.log('❌ No hay sesión de agente');
+        console.log('❌ No hay sesión de agente (ni en sessionStorage ni localStorage)');
         sessionStorage.clear();
+        localStorage.removeItem('agent_token_backup');
+        localStorage.removeItem('agent_userId_backup');
+        localStorage.removeItem('agent_userName_backup');
+        localStorage.removeItem('agent_userRole_backup');
         navigate('/login');
         return;
       }
@@ -512,6 +537,24 @@ const AgentDashboardPro: React.FC = () => {
     }
   }, [agentId, sessionId, loadAgentChats]);
 
+  // ==================== POLLING LIGERO PARA AGENTES (Fallback) ====================
+  // Socket.IO es la fuente principal, pero polling cada 30s asegura sincronización
+  useEffect(() => {
+    if (!agentId || !sessionId) return;
+
+    console.log('🔄 [AGENT-PRO] Activando auto-refresh cada 30 segundos como fallback');
+
+    const refreshInterval = setInterval(() => {
+      console.log('🔄 [AGENT-PRO] Auto-refresh de chats (fallback)');
+      loadAgentChats(chatListDateFilter);
+    }, 30000); // Cada 30 segundos (ligero)
+
+    return () => {
+      console.log('🛑 [AGENT-PRO] Limpiando auto-refresh');
+      clearInterval(refreshInterval);
+    };
+  }, [agentId, sessionId, chatListDateFilter, loadAgentChats]);
+
   useEffect(() => {
     if (selectedChat) {
       loadMessages();
@@ -567,6 +610,10 @@ const AgentDashboardPro: React.FC = () => {
     const handleNewMessage = (data: any) => {
       console.log('💬 [AGENT-PRO] Nuevo mensaje recibido:', data);
 
+      // ⚡ IMPORTANTE: Siempre recargar la lista de chats para ver actualizaciones
+      console.log('[AGENT-PRO] 🔄 Recargando lista de chats (mensaje nuevo)');
+      loadAgentChats(chatListDateFilter);
+
       // Si es del chat actual, agregar mensaje
       if (selectedChat && data.chatJid === selectedChat.id) {
         const newMsg: Message = {
@@ -578,28 +625,29 @@ const AgentDashboardPro: React.FC = () => {
           text_content: data.message || data.text_content,
           timestamp: data.timestamp || new Date().toISOString(),
           status: data.status || 'received',
-          media_url: data.media_url,
+          media_url: data.mediaUrl || data.media_url, // ✅ Soportar ambos formatos
+          media_mime_type: data.mediaMimeType || data.media_mime_type,
           caption: data.caption,
           file_name: data.file_name,
-          sender_name: data.sender_name,
-          sender_avatar: data.sender_avatar,
+          sender_name: data.sender_name || data.contactName || data.contact_name,
+          sender_avatar: data.sender_avatar || data.avatar || data.avatar_url,
           agent_id: data.agent_id,
           agent_name: data.agent_name  // Incluir nombre del agente
         };
 
         setMessages(prev => {
           // Si ya existe (mensaje temp), reemplazarlo con el real
-          const existingIndex = prev.findIndex(m => 
-            m.id === newMsg.id || 
+          const existingIndex = prev.findIndex(m =>
+            m.id === newMsg.id ||
             (m.id.toString().startsWith('temp-') && m.text_content === newMsg.text_content && m.chatJid === newMsg.chatJid)
           );
-          
+
           if (existingIndex >= 0) {
             const updated = [...prev];
             updated[existingIndex] = newMsg;
             return updated;
           }
-          
+
           return [...prev, newMsg];
         });
       }
@@ -608,10 +656,6 @@ const AgentDashboardPro: React.FC = () => {
       if (!selectedChat || data.chatJid !== selectedChat.id || !data.from_me) {
         playNotificationSound();
       }
-
-      // Actualizar lista de chats con el filtro actual
-      console.log('[AGENT-PRO] 🔄 Recargando chats con filtro:', chatListDateFilter);
-      loadAgentChats(chatListDateFilter);
     };
 
     // Escuchar eventos específicos del agente
@@ -1081,9 +1125,14 @@ const AgentDashboardPro: React.FC = () => {
       socket.disconnect();
     }
 
-    // Limpiar todo el almacenamiento
+    // Limpiar todo el almacenamiento (incluyendo backup)
     sessionStorage.clear();
     localStorage.removeItem('agentDashboardTheme'); // Mantener preferencia de tema
+    localStorage.removeItem('agent_token_backup');
+    localStorage.removeItem('agent_userId_backup');
+    localStorage.removeItem('agent_userName_backup');
+    localStorage.removeItem('agent_userRole_backup');
+    console.log('🗑️ [AGENT-PRO] Backup de sesión eliminado de localStorage');
 
     // Resetear estados
     setChats([]);

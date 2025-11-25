@@ -615,7 +615,8 @@ useEffect(() => {
       type: 'info',
       onConfirm: () => {
         setAlertOpen(false);
-        window.location.href = '/';
+        // ✅ OPTIMIZADO: Usar navigate en lugar de window.location para evitar recarga
+        navigate('/');
       }
     });
     setAlertOpen(true);
@@ -903,19 +904,15 @@ return (
         position="static"
         elevation={0}
         sx={{
-          bgcolor: isInChatPage ? '#1f2c34' : 'background.paper',
-          color: isInChatPage ? '#e9edef' : 'text.primary',
+          bgcolor: 'background.paper',
+          color: 'text.primary',
           borderBottom: '1px solid',
-          borderColor: isInChatPage ? '#2a3942' : 'divider',
+          borderColor: 'divider',
           backdropFilter: 'blur(20px) saturate(180%)',
-          backgroundColor: isInChatPage
-            ? '#1f2c34'
-            : (theme) => theme.palette.mode === 'dark'
-              ? 'rgba(32, 44, 51, 0.8)'
-              : 'rgba(255, 255, 255, 0.8)',
-          boxShadow: isInChatPage
-            ? '0 1px 2px rgba(0,0,0,0.4)'
-            : '0 2px 8px rgba(0, 0, 0, 0.04)',
+          backgroundColor: (theme) => theme.palette.mode === 'dark'
+            ? 'rgba(32, 44, 51, 0.8)'
+            : 'rgba(255, 255, 255, 0.8)',
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
         }}
       >
         <Toolbar sx={{ gap: 2, justifyContent: 'flex-end' }}>
@@ -1192,8 +1189,8 @@ return (
                   size="large"
                   startIcon={<QrCode />}
                   onClick={() => {
-                    // Redirigir al inicio para reconectar
-                    window.location.href = '/';
+                    // Redirigir al inicio para reconectar (sin recarga de página)
+                    navigate('/');
                   }}
                   sx={{
                     bgcolor: '#00a884',

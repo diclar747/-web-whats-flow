@@ -1646,6 +1646,9 @@ async function saveMessageToDB(sessionId, msg) {
             text_content,
             media_url,
             media_mime_type,
+            caption = null,
+            file_name = null,
+            file_size = null,
             timestamp, // Should be a JS Date object or a string parsable by new Date()
             status = 'sent' // Default status, can be updated later
         } = msg;
@@ -1722,15 +1725,18 @@ async function saveMessageToDB(sessionId, msg) {
             text_content || null,
             media_url || null,
             media_mime_type || null,
+            caption || null,
+            file_name || null,
+            file_size || null,
             mysqlTimestamp,
             status || 'pending', // Asegurar un estado por defecto si es undefined
             senderName, // Nombre del remitente
             senderAvatar // Avatar del remitente
         ];
 
-        console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for phone number: ${phoneNumber}, user_session_id: ${userSessionId}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[8]}, status: ${params[13]}, sender_name: ${senderName}`);
+        console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for phone number: ${phoneNumber}, user_session_id: ${userSessionId}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[8]}, status: ${params[16]}, sender_name: ${senderName}`);
         const [result] = await connection.execute(
-            'INSERT INTO messages (id, session_id, user_session_id, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, timestamp, status, sender_name, sender_avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = VALUES(agent_id), agent_name = VALUES(agent_name), sender_name = VALUES(sender_name), sender_avatar = VALUES(sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), text_content = COALESCE(VALUES(text_content), text_content), updated_at = CURRENT_TIMESTAMP',
+            'INSERT INTO messages (id, session_id, user_session_id, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, caption, file_name, file_size, timestamp, status, sender_name, sender_avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = VALUES(agent_id), agent_name = VALUES(agent_name), sender_name = VALUES(sender_name), sender_avatar = VALUES(sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), caption = COALESCE(VALUES(caption), caption), file_name = COALESCE(VALUES(file_name), file_name), file_size = COALESCE(VALUES(file_size), file_size), text_content = COALESCE(VALUES(text_content), text_content), updated_at = CURRENT_TIMESTAMP',
             params
         );
         console.log(`[DB-MSG-QUERY-RESULT] Result for messageId ${messageId}: affectedRows: ${result.affectedRows}, insertId: ${result.insertId !== undefined ? result.insertId : 'N/A (update)'}`);
@@ -5022,6 +5028,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 media_url: dbMessage.media_url,
                                 mediaMimeType: dbMessage.media_mime_type,
                                 media_mime_type: dbMessage.media_mime_type,
+                                caption: dbMessage.caption,
+                                file_name: dbMessage.file_name,
                                 status: dbMessage.status,
                                 chatJid: dbMessage.chat_jid,
                                 chat_jid: dbMessage.chat_jid,
@@ -5059,22 +5067,39 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 try {
                                     const connection = await pool.getConnection();
                                     try {
+                                        // Obtener todos los sessionIds posibles para este usuario
+                                        const allSessionIds = await getAllSessionIds(phoneNumber);
+
                                         // Buscar si este chat está asignado a algún agente
                                         const [assignments] = await connection.execute(
-                                            `SELECT agent_id FROM chat_assignments
-                                             WHERE chat_jid = ? AND session_id IN (${getAllSessionIds(phoneNumber).map(() => '?').join(',')})
+                                            `SELECT user_id as agent_id FROM chat_assignments
+                                             WHERE chat_jid = ? AND session_id IN (${allSessionIds.map(() => '?').join(',')})
                                              AND status IN ('active', 'pending', 'new_assignment')`,
-                                            [dbMessage.chat_jid, ...getAllSessionIds(phoneNumber)]
+                                            [dbMessage.chat_jid, ...allSessionIds]
                                         );
 
                                         if (assignments.length > 0) {
                                             for (const assignment of assignments) {
-                                                const agentId = assignment.agent_id;
+                                                const agentId = assignment.agent_id; // user_id renombrado como agent_id
+                                                
+                                                // 🔍 DEBUG: Verificar si hay sockets en la sala
+                                                const room = io.sockets.adapter.rooms.get(`agent-${agentId}`);
+                                                const socketsInRoom = room ? room.size : 0;
+                                                
+                                                console.log(`[${sessionId}] 🎯 Emitiendo a agent-${agentId} (${socketsInRoom} sockets conectados)`);
+                                                
                                                 // Emitir a la sala del agente
                                                 io.to(`agent-${agentId}`).emit('message', clientMessage);
                                                 io.to(`agent-${agentId}`).emit('message:received', clientMessage);
-                                                console.log(`[${sessionId}] 📤 Mensaje emitido a agent-${agentId}`);
+                                                
+                                                if (socketsInRoom === 0) {
+                                                    console.warn(`[${sessionId}] ⚠️ Sala agent-${agentId} VACÍA - Mensaje no se entregará`);
+                                                } else {
+                                                    console.log(`[${sessionId}] ✅ Mensaje emitido a agent-${agentId}`);
+                                                }
                                             }
+                                        } else {
+                                            console.log(`[${sessionId}] ℹ️ No hay agentes asignados a este chat`);
                                         }
                                     } finally {
                                         connection.release();
@@ -6713,7 +6738,8 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
             // Query con filtro de fecha
             const query = `SELECT
                 m.id, m.session_id, m.chat_jid, m.sender_jid,
-                m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url,
+                m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content,
+                m.media_url, m.media_mime_type, m.caption, m.file_name,
                 m.timestamp, m.status, m.sender_name, m.sender_avatar
             FROM messages m
             WHERE (m.session_id = ? OR m.phone_number = ?)
@@ -6746,12 +6772,19 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
                     id: msg.id,
                     chatJid: msg.chat_jid,
                     senderJid: msg.sender_jid,
+                    isFromMe: msg.from_me,
                     from_me: msg.from_me,
                     agent_id: msg.agent_id,
                     agent_name: msg.agent_name,
+                    type: msg.message_type,
                     message_type: msg.message_type,
+                    message: msg.text_content,
                     text_content: msg.text_content,
-                    media_url: msg.media_url,
+                    mediaUrl: msg.media_url, // ✅ camelCase para cliente
+                    media_url: msg.media_url, // snake_case legacy
+                    mediaMimeType: msg.media_mime_type,
+                    caption: msg.caption,
+                    file_name: msg.file_name,
                     timestamp: msg.timestamp,
                     status: msg.status,
                     sender_name: msg.sender_name,
@@ -7738,7 +7771,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // Obtener mensajes
 app.get('/api/messages/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
-    const { number, startDate, endDate, limit = 10000, offset = 0 } = req.query;
+    const { number, startDate, endDate, limit = 10000, offset = 0, dateFilter = 'today' } = req.query;
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'DB service unavailable' });
@@ -7770,13 +7803,25 @@ app.get('/api/messages/:sessionId', async (req, res) => {
             queryParams.push(chatJid);
         }
 
-        if (startDate) {
-            query += ' AND timestamp >= ?';
-            queryParams.push(new Date(startDate).toISOString().slice(0, 19).replace('T', ' '));
-        }
-        if (endDate) {
-            query += ' AND timestamp <= ?';
-            queryParams.push(new Date(endDate).toISOString().slice(0, 19).replace('T', ' '));
+        // ⚡ OPTIMIZACIÓN: Filtro de fecha por defecto (solo mensajes de HOY)
+        if (dateFilter === 'today' && !startDate && !endDate) {
+            // Solo mensajes de hoy (desde las 00:00:00 de hoy)
+            query += ' AND DATE(m.timestamp) = CURDATE()';
+            console.log('[API-MSG] 📅 Cargando solo mensajes de HOY (optimización de rendimiento)');
+        } else if (dateFilter === 'week') {
+            query += ' AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
+            console.log('[API-MSG] 📅 Cargando mensajes de la SEMANA');
+        } else if (dateFilter === 'all' || startDate || endDate) {
+            // Solo cargar todos si se solicita explícitamente o hay filtro de fecha manual
+            if (startDate) {
+                query += ' AND timestamp >= ?';
+                queryParams.push(new Date(startDate).toISOString().slice(0, 19).replace('T', ' '));
+            }
+            if (endDate) {
+                query += ' AND timestamp <= ?';
+                queryParams.push(new Date(endDate).toISOString().slice(0, 19).replace('T', ' '));
+            }
+            console.log('[API-MSG] 📅 Cargando mensajes con filtro personalizado:', { startDate, endDate, dateFilter });
         }
 
         query += ' ORDER BY m.timestamp ASC';
@@ -15865,8 +15910,9 @@ app.get('/api/agents/:userId/chats', async (req, res) => {
 
             // Calcular fecha límite según el filtro
             let dateCondition = '';
-            const params = [phoneNumber, phoneNumber, userId, phoneNumber];
-            
+            // phoneNumber para: subconsultas messages (3) + JOINs contacts/groups (2) + WHERE (2)
+            const params = [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, userId, phoneNumber];
+
             if (dateFilter === 'today') {
                 dateCondition = 'AND DATE(ca.assigned_at) = CURDATE()';
             } else if (dateFilter === 'week') {
@@ -15876,8 +15922,7 @@ app.get('/api/agents/:userId/chats', async (req, res) => {
             }
             // Si dateFilter es 'all' o no se especifica, no agregar condición
 
-            // Obtener todos los chats asignados activos al agente (GROUP BY para evitar duplicados)
-            // Usar phoneNumber para JOIN con contacts (que usa phone_number como session_id)
+            // ✅ CORRECCIÓN: Buscar contactos con phone_number (ya actualizado desde session_id)
             const query = `SELECT
                     ca.chat_jid,
                     ca.session_id,
@@ -15892,16 +15937,19 @@ app.get('/api/agents/:userId/chats', async (req, res) => {
                     ) as avatar_url,
                     (SELECT text_content FROM messages m
                      WHERE m.chat_jid = ca.chat_jid
+                     AND (m.session_id = ca.session_id OR m.phone_number = ?)
                      ORDER BY m.timestamp DESC LIMIT 1) as last_message,
                     (SELECT timestamp FROM messages m
                      WHERE m.chat_jid = ca.chat_jid
+                     AND (m.session_id = ca.session_id OR m.phone_number = ?)
                      ORDER BY m.timestamp DESC LIMIT 1) as last_message_time,
                     (SELECT COUNT(*) FROM messages m
                      WHERE m.chat_jid = ca.chat_jid
+                     AND (m.session_id = ca.session_id OR m.phone_number = ?)
                      AND m.from_me = 0
-                     AND m.status != 'read') as unread_count
+                     AND COALESCE(m.is_read, false) = false) as unread_count
                 FROM chat_assignments ca
-                LEFT JOIN contacts c ON c.jid = ca.chat_jid AND c.session_id = ?
+                LEFT JOIN contacts c ON c.jid = ca.chat_jid AND c.phone_number = ?
                 LEFT JOIN contact_groups cg ON cg.jid = ca.chat_jid AND cg.session_id = ?
                 WHERE ca.user_id = ?
                 AND ca.session_id = ?

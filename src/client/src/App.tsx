@@ -18,7 +18,7 @@ import AdminChatAssignment from './pages/AdminChatAssignment';
 import AdminAgentManagement from './components/AdminAgentManagement';
 import AgentPermissionsManager from './components/AgentPermissionsManager';
 import { TransferNotificationListener } from './components/TransferNotificationListener';
-import FloatingWhatsAppButton from './components/FloatingWhatsAppButton';
+// ✅ ELIMINADO: import FloatingWhatsAppButton - Ya no se usa
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
@@ -385,9 +385,8 @@ const App: React.FC = () => {
               const nav = (window as any).__reactNavigate;
               if (nav) {
                 nav('/');
-              } else {
-                window.location.href = '/';
               }
+              // ✅ ELIMINADO: window.location.href - Usar solo navigate de React Router
               return;
             }
 
@@ -716,9 +715,8 @@ const App: React.FC = () => {
     const nav = (window as any).__reactNavigate;
     if (nav) {
       nav('/');
-    } else {
-      window.location.href = '/';
     }
+    // ✅ ELIMINADO: window.location.href - Usar solo navigate de React Router
   };
 
   const handleQRSuccess = (newSessionId: string) => {
@@ -742,6 +740,7 @@ const App: React.FC = () => {
     sessionStorage.setItem('whatsflow_session_token', sessionToken);
     sessionStorage.setItem('whatsflow_session_device_id', deviceId);
     sessionStorage.setItem('whatsflow_user_type', 'admin');
+    sessionStorage.setItem('userRole', 'admin'); // Para SocketContext
 
     console.log('✅ [APP] SessionId, SessionToken y Device ID guardados (sesión única)');
     console.log('📊 [APP] Datos guardados:');
@@ -749,6 +748,7 @@ const App: React.FC = () => {
     console.log('   - whatsflow_session_token:', sessionToken.substring(0, 20) + '...');
     console.log('   - whatsflow_device_id:', deviceId.substring(0, 20) + '...');
     console.log('   - whatsflow_user_type:', 'admin');
+    console.log('   - userRole:', 'admin');
 
     // Registrar sesión en el servidor
     fetch('/api/register-session', {
@@ -772,9 +772,8 @@ const App: React.FC = () => {
             const nav = (window as any).__reactNavigate;
             if (nav) {
               nav('/dashboard');
-            } else {
-              window.location.href = '/dashboard';
             }
+            // ✅ ELIMINADO: window.location.href - Usar solo navigate de React Router
           }, 500);
         } else {
           console.error('❌ [APP] Error registrando sesión:', data.error);
@@ -825,8 +824,7 @@ const App: React.FC = () => {
               {/* Listener de notificaciones de transferencia */}
               {user && <TransferNotificationListener />}
 
-              {/* Botón flotante de WhatsApp para soporte (NO mostrar en panel de agentes) */}
-              {user?.role !== 'agent' && <FloatingWhatsAppButton />}
+              {/* ✅ ELIMINADO: Botón flotante de WhatsApp - Optimización de rendimiento */}
 
               <AppContent
                 sessionId={sessionId}

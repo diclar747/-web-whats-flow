@@ -153,6 +153,24 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
   const commonReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '👏', '✅', '❌'];
 
+  // ⚡ OPTIMIZACIÓN: Memoizar mensajes filtrados para evitar recalcular en cada render
+  const filteredMessages = useMemo(() => {
+    if (!messages || messages.length === 0) return [];
+
+    return messages.filter(msg => {
+      // Filtrar por fecha si está seleccionada
+      if (!dateFilter) return true;
+      const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
+      // Si hay un filtro rápido, mostrar desde esa fecha hasta hoy
+      if (quickFilter) {
+        return msgDate >= dateFilter;
+      }
+      // Si es fecha específica, solo ese día
+      return msgDate === dateFilter;
+    });
+  }, [messages, dateFilter, quickFilter]);
+
+  // ⚡ OPTIMIZACIÓN: Memoizar funciones estables para evitar re-crear en cada render
   // Helper para formatear nombre en respuestas citadas
   const getQuotedSenderName = useCallback((quotedSender: string): string => {
     if (!quotedSender) return 'Tú';
@@ -231,11 +249,10 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     return `${getAPIBaseURL()}/api/avatar/${sessionId}/${jid}`;
   }, [sessionId]);
 
-  // Verificar conexión de WhatsApp
+  // ⚡ OPTIMIZACIÓN: Verificar conexión de WhatsApp cada 30s (antes 10s)
   useEffect(() => {
     const checkConnection = async () => {
       try {
-
         const response = await fetch(`${getAPIBaseURL()}/api/session/${sessionId}/status`);
         const data = await response.json();
         setWhatsappConnected(data.success && data.isConnected);
@@ -248,7 +265,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     };
 
     checkConnection();
-    const interval = setInterval(checkConnection, 10000);
+    // Reducido de 10s a 30s para disminuir carga
+    const interval = setInterval(checkConnection, 30000);
     return () => clearInterval(interval);
   }, [sessionId]);
 
@@ -1544,43 +1562,19 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                   </Typography>
                 </Box>
               ) : (
-                messages
-                  .filter(msg => {
-                    // Filtrar por fecha si está seleccionada
-                    if (!dateFilter) return true;
-                    const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
-                    // Si hay un filtro rápido, mostrar desde esa fecha hasta hoy
-                    if (quickFilter) {
-                      return msgDate >= dateFilter;
-                    }
-                    // Si es fecha específica, solo ese día
-                    return msgDate === dateFilter;
-                  })
-                  .map((msg, index) => (
+                // ⚡ OPTIMIZACIÓN: Usar mensajes filtrados memoizados
+                filteredMessages.map((msg, index) => (
                     <Box
                       key={msg.id}
+                      className="message-container"
                       sx={{
                         display: 'flex',
                         justifyContent: msg.isFromMe ? 'flex-end' : 'flex-start',
                         mb: 1,
                         position: 'relative',
-                        // 🎨 FASE 3: Animación de entrada suave
-                        animation: 'fadeInUp 0.3s ease-out',
-                        animationDelay: `${Math.min(index * 0.05, 0.5)}s`,
-                        animationFillMode: 'both',
-                        '@keyframes fadeInUp': {
-                          from: {
-                            opacity: 0,
-                            transform: 'translateY(10px)'
-                          },
-                          to: {
-                            opacity: 1,
-                            transform: 'translateY(0)'
-                          }
-                        }
+                        // ⚡ OPTIMIZACIÓN: Sin animación para mejor rendimiento
+                        opacity: 1
                       }}
-                      onMouseEnter={() => setHoveredMessageId(msg.id)}
-                      onMouseLeave={() => setHoveredMessageId(null)}
                     >
                       {/* Acciones dentro del mensaje ahora estarán debajo del contenido */}
 
@@ -1941,34 +1935,34 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                         </Box>
                       </Paper>
 
-                      {/* Botón de opciones - FUERA del mensaje, al lado derecho */}
-                      {hoveredMessageId === msg.id && (
-                        <Box sx={{
-                          ml: msg.isFromMe ? 0 : 1,
-                          mr: msg.isFromMe ? 1 : 0,
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          animation: 'fadeIn 0.2s ease-in',
-                          '@keyframes fadeIn': {
-                            from: { opacity: 0, transform: 'scale(0.8)' },
-                            to: { opacity: 1, transform: 'scale(1)' }
-                          }
-                        }}>
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedMessage(msg);
-                              setMessageMenuAnchor(e.currentTarget);
-                            }}
-                            sx={{
-                              bgcolor: colors.hover,
-                              color: colors.textSecondary,
-                              padding: '6px',
-                              transition: 'all 0.2s ease',
-                              boxShadow: colors.shadow,
-                              '&:hover': {
-                                bgcolor: colors.hoverStrong,
+                      {/* ⚡ OPTIMIZACIÓN: Botón de opciones con CSS hover puro (sin estado React) */}
+                      <Box sx={{
+                        ml: msg.isFromMe ? 0 : 1,
+                        mr: msg.isFromMe ? 1 : 0,
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        opacity: 0,
+                        transition: 'opacity 0.2s ease',
+                        // Mostrar en hover del mensaje (CSS puro, sin estado)
+                        '.message-container:hover &': {
+                          opacity: 1
+                        }
+                      }}>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedMessage(msg);
+                            setMessageMenuAnchor(e.currentTarget);
+                          }}
+                          sx={{
+                            bgcolor: colors.hover,
+                            color: colors.textSecondary,
+                            padding: '6px',
+                            transition: 'all 0.2s ease',
+                            boxShadow: colors.shadow,
+                            '&:hover': {
+                              bgcolor: colors.hoverStrong,
                                 color: colors.text,
                                 transform: 'scale(1.1)',
                                 boxShadow: colors.shadowStrong
@@ -1977,8 +1971,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                           >
                             <MoreVert sx={{ fontSize: 18 }} />
                           </IconButton>
-                        </Box>
-                      )}
+                      </Box>
                     </Box>
                   )))}
               <div ref={messagesEndRef} />
