@@ -1,0 +1,106 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                                                                  ║
+║         🔥 DEBES LIMPIAR CACHÉ DEL NAVEGADOR AHORA             ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+
+⚠️  PROBLEMA: Tu navegador está usando código VIEJO
+
+Código viejo: main.d69f9bbe.js (procesaba mensajes 2 veces)
+Código nuevo: main.f5062bb3.js (filtro correcto) ✅
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔥 MÉTODO 1: HARD REFRESH (MÁS RÁPIDO)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. En la página del AGENTE, presiona:
+   
+   Windows/Linux: Ctrl + Shift + R
+   Mac:          Cmd + Shift + R
+   
+   O también: Ctrl + F5
+
+2. La página recargará y descargará nuevo JavaScript
+
+3. Verificar en consola (F12):
+   - Pestaña "Network" 
+   - Buscar "main.XXXXX.js"
+   - Debe ser "main.f5062bb3.js" (NUEVO)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🧹 MÉTODO 2: BORRAR CACHÉ COMPLETO (SI MÉTODO 1 NO FUNCIONA)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Chrome/Edge:
+1. Menú (⋮) > Más herramientas > Borrar datos de navegación
+2. Seleccionar "Archivos e imágenes en caché"
+3. Rango: "Última hora"
+4. Clic en "Borrar datos"
+5. Recargar la página
+
+Firefox:
+1. Menú (≡) > Configuración > Privacidad y seguridad
+2. Cookies y datos del sitio > Limpiar datos
+3. Marcar "Contenido web en caché"
+4. Limpiar y recargar
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ CÓMO SABER QUE FUNCIONÓ:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Después de limpiar caché y recargar:
+
+1. Abrir consola (F12)
+
+2. Admin envía un mensaje al chat del agente
+
+3. En la consola del AGENTE debe aparecer:
+
+   ✅ CORRECTO (NUEVO CÓDIGO):
+   🚫 [WhatsAppContext] Ignorando mensaje - Usuario es agente
+   💬 [AGENT-PRO] Nuevo mensaje recibido
+   
+   ❌ INCORRECTO (CÓDIGO VIEJO):
+   🎉🎉🎉 MENSAJE RECIBIDO - INICIANDO PROCESAMIENTO
+   (Este NO debe aparecer más)
+
+4. Mensajes deben llegar EN TIEMPO REAL sin recargar
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔍 SI SIGUE SIN FUNCIONAR:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Modo incógnito:
+   - Abre ventana incógnita
+   - Login como agente
+   - Prueba ahí (sin caché)
+
+2. Verifica el archivo JavaScript:
+   - F12 > Network
+   - Busca "main.f5062bb3.js"
+   - Si aparece "main.d69f9bbe.js" es que NO se limpió caché
+
+3. Último recurso:
+   - Cerrar TODO el navegador
+   - Abrir de nuevo
+   - Ir a web.whats-flow.com
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 ESTADO DEL SISTEMA:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Backend:  ✅ Actualizado (17:12)
+Frontend: ✅ Compilado nuevo (17:18)
+Deploy:   ✅ Copiado a producción (17:19)
+Tu navegador: ⚠️ Usando caché viejo
+
+SOLO FALTA: Limpiar caché del navegador
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Última actualización: 2025-11-25 17:20

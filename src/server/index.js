@@ -6925,13 +6925,33 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
         const ownJid = session.sock?.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net';
         const actualSessionId = session.sessionId || sessionId;
 
-        // Obtener nombre del agente (priorizar el que viene del cliente)
-        let finalAgentName = agentName;  // Usar el que viene del cliente si existe
-        if (!finalAgentName && agentId && pool) {
-            // Si no viene del cliente, buscar en la base de datos
+        // 🔥 MEJORADO: SIEMPRE intentar obtener datos del agente de la BD si no vienen
+        let finalAgentId = agentId;
+        let finalAgentName = agentName;
+        
+        // Si NO viene agentId pero tenemos phoneNumber, buscar en chat_assignments
+        if (!finalAgentId && phoneNumber && pool) {
             try {
                 const conn = await pool.getConnection();
-                const [users] = await conn.execute('SELECT name FROM users WHERE id = ? LIMIT 1', [agentId]);
+                const [assignments] = await conn.execute(
+                    'SELECT user_id, notes FROM chat_assignments WHERE chat_jid = ? AND session_id = ? AND status IN ("active", "accepted") ORDER BY assigned_at DESC LIMIT 1',
+                    [chatJid.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`, phoneNumber]
+                );
+                conn.release();
+                if (assignments.length > 0 && assignments[0].user_id) {
+                    finalAgentId = assignments[0].user_id;
+                    console.log('[AGENT-SEND] 🔍 AgentId obtenido de chat_assignments:', finalAgentId);
+                }
+            } catch (err) {
+                console.log('[AGENT-SEND] ⚠️ No se pudo obtener agentId:', err.message);
+            }
+        }
+        
+        // Si tenemos agentId pero no nombre, buscar en BD
+        if (finalAgentId && !finalAgentName && pool) {
+            try {
+                const conn = await pool.getConnection();
+                const [users] = await conn.execute('SELECT name FROM users WHERE id = ? LIMIT 1', [finalAgentId]);
                 conn.release();
                 if (users.length > 0) {
                     finalAgentName = users[0].name;
@@ -6944,23 +6964,23 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
             console.log('[AGENT-SEND] 📝 Nombre del agente recibido del cliente:', finalAgentName);
         }
 
-        // Guardar en base de datos
+        // Guardar en base de datos con información del agente
         const dbMessage = {
             id: sentResult.key.id,
             chat_jid: jid,
             sender_jid: ownJid,
             from_me: true,
-            agent_id: agentId || null,
-            agent_name: finalAgentName,  // Usar el nombre final del agente
+            agent_id: finalAgentId || null,  // ✅ Usar finalAgentId (puede venir de BD)
+            agent_name: finalAgentName || null,  // ✅ Usar finalAgentName
             message_type: messageType,
             text_content: message || '',
             media_url: mediaUrl,
             timestamp: new Date(Number(sentResult.messageTimestamp) * 1000 || Date.now()),
             status: 'pending',
-            assigned_user_id: agentId || null
+            assigned_user_id: finalAgentId || null
         };
         await saveMessageToDB(actualSessionId, dbMessage);
-        console.log('[AGENT-SEND] 💾 Mensaje guardado en BD con agente:', finalAgentName || 'Sin agente');
+        console.log('[AGENT-SEND] 💾 Mensaje guardado con agentId:', finalAgentId, 'agentName:', finalAgentName || 'Sin agente');
 
         // Si es un agente enviando, actualizar estado de 'pending' a 'active' automáticamente
         if (agentId && pool) {
