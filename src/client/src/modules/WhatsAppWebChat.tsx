@@ -130,7 +130,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [messageToDelete, setMessageToDelete] = useState<{ id: string; isFromMe: boolean } | null>(null);
-  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [showSearchBar, setShowSearchBar] = useState(true); // ✅ Abierto por defecto
   const [dateFilter, setDateFilter] = useState('');
   const [quickFilter, setQuickFilter] = useState('');
 
@@ -1495,6 +1495,27 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                   sx={{ ml: 'auto' }}
                 >
                   Exportar PDF
+                </Button>
+                
+                {/* Botón Imprimir */}
+                <Button
+                  onClick={() => window.print()}
+                  variant="outlined"
+                  size="small"
+                  startIcon={<Print />}
+                  disabled={!activeChat || messages.length === 0}
+                  sx={{
+                    textTransform: 'none',
+                    fontWeight: 600,
+                    borderColor: colors.primary,
+                    color: colors.primary,
+                    '&:hover': {
+                      borderColor: colors.primary,
+                      bgcolor: `${colors.primary}10`
+                    }
+                  }}
+                >
+                  Imprimir
                 </Button>
               </Box>
             )}
