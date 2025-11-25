@@ -5135,16 +5135,79 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                                             // Enviar mensaje según el tipo
                                             if (response.type === 'text') {
-                                                await sock.sendMessage(senderJid, { text: response.content });
+                                                const sentMsg = await sock.sendMessage(senderJid, { text: response.content });
                                                 console.log(`[CHATBOT] ✅ Respuesta enviada: ${response.content.substring(0, 50)}...`);
+                                                
+                                                // ✅ Guardar respuesta del bot en BD
+                                                const botMessage = {
+                                                    id: sentMsg.key.id,
+                                                    chat_jid: senderJid,
+                                                    sender_jid: sock.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net',
+                                                    from_me: true,
+                                                    message_type: 'conversation',
+                                                    text_content: response.content,
+                                                    timestamp: new Date(Number(sentMsg.messageTimestamp) * 1000 || Date.now()),
+                                                    status: 'sent',
+                                                    agent_id: null, // Es bot, no agente
+                                                    agent_name: 'Bot'
+                                                };
+                                                await saveMessageToDB(sessionId, botMessage);
+                                                
+                                                // ✅ Emitir respuesta del bot vía Socket.IO
+                                                const phoneNumber = await getUserPhoneNumber(sessionId);
+                                                if (phoneNumber) {
+                                                    io.to(`session-${phoneNumber}`).emit('message', {
+                                                        id: botMessage.id,
+                                                        chatJid: senderJid,
+                                                        from: botMessage.sender_jid,
+                                                        message: response.content,
+                                                        timestamp: botMessage.timestamp.toISOString(),
+                                                        isFromMe: true,
+                                                        from_me: true,
+                                                        message_type: 'conversation',
+                                                        agent_name: 'Bot'
+                                                    });
+                                                    console.log(`[CHATBOT] 📤 Respuesta del bot emitida vía socket a session-${phoneNumber}`);
+                                                }
                                             } else if (response.type === 'menu' && response.options) {
                                                 // Construir mensaje de menú
                                                 let menuText = response.content + '\n\n';
                                                 response.options.forEach((opt, idx) => {
                                                     menuText += `${idx + 1}. ${opt.text}\n`;
                                                 });
-                                                await sock.sendMessage(senderJid, { text: menuText });
+                                                const sentMsg = await sock.sendMessage(senderJid, { text: menuText });
                                                 console.log(`[CHATBOT] ✅ Menú enviado con ${response.options.length} opciones`);
+                                                
+                                                // ✅ Guardar menú del bot en BD
+                                                const botMessage = {
+                                                    id: sentMsg.key.id,
+                                                    chat_jid: senderJid,
+                                                    sender_jid: sock.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net',
+                                                    from_me: true,
+                                                    message_type: 'conversation',
+                                                    text_content: menuText,
+                                                    timestamp: new Date(Number(sentMsg.messageTimestamp) * 1000 || Date.now()),
+                                                    status: 'sent',
+                                                    agent_id: null,
+                                                    agent_name: 'Bot'
+                                                };
+                                                await saveMessageToDB(sessionId, botMessage);
+                                                
+                                                // ✅ Emitir menú vía Socket.IO
+                                                const phoneNumber = await getUserPhoneNumber(sessionId);
+                                                if (phoneNumber) {
+                                                    io.to(`session-${phoneNumber}`).emit('message', {
+                                                        id: botMessage.id,
+                                                        chatJid: senderJid,
+                                                        from: botMessage.sender_jid,
+                                                        message: menuText,
+                                                        timestamp: botMessage.timestamp.toISOString(),
+                                                        isFromMe: true,
+                                                        from_me: true,
+                                                        message_type: 'conversation',
+                                                        agent_name: 'Bot'
+                                                    });
+                                                }
                                             } else if (response.type === 'image' && response.mediaUrl) {
                                                 // Enviar imagen (caption opcional)
                                                 const imagePath = path.join(__dirname, '../..', response.mediaUrl);
