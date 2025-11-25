@@ -48,6 +48,9 @@ import {
   Done,
   DoneAll,
   AccessTime,
+  ChevronLeft,
+  ChevronRight,
+  Print,
   Error,
   Reply,
   Forward,
@@ -104,7 +107,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
-  const [filterTab, setFilterTab] = useState(0); // 0: Todo, 1: Enviados, 2: Recibidos, 3: Pendientes
+  const [filterTab, setFilterTab] = useState(3); // ✅ 3: Pendientes/Activos por defecto
+  const [chatListCollapsed, setChatListCollapsed] = useState(true); // ✅ Colapsado por defecto
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [connectionChecking, setConnectionChecking] = useState(true);
   const [chatMenuAnchor, setChatMenuAnchor] = useState<null | HTMLElement>(null);
@@ -941,12 +945,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)', bgcolor: colors.background }}>
       {/* ============ SIDEBAR DE CHATS ============ */}
       <Box sx={{
-        width: 420,
+        width: chatListCollapsed ? 80 : 420,
         display: 'flex',
         flexDirection: 'column',
         bgcolor: colors.sidebar,
         borderRight: `1px solid ${colors.divider}`,
-        boxShadow: '2px 0 8px rgba(0,0,0,0.04)'
+        boxShadow: '2px 0 8px rgba(0,0,0,0.04)',
+        transition: 'width 0.3s ease'
       }}>
         {/* Header del sidebar */}
         <Box sx={{
@@ -956,58 +961,43 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
           alignItems: 'center',
           px: 2,
           gap: 1,
-          borderBottom: `1px solid ${colors.divider}`
+          borderBottom: `1px solid ${colors.divider}`,
+          justifyContent: chatListCollapsed ? 'center' : 'space-between'
         }}>
-          <Typography variant="h6" sx={{ flex: 1, fontWeight: 600, color: colors.text }}>
-            Chats
-          </Typography>
-          <Tooltip title="Comunidades">
+          {!chatListCollapsed && (
+            <Typography variant="h6" sx={{ flex: 1, fontWeight: 600, color: colors.text }}>
+              Chats
+            </Typography>
+          )}
+          
+          {/* Botón minimizar/maximizar */}
+          <Tooltip title={chatListCollapsed ? "Expandir lista" : "Minimizar lista"}>
             <IconButton
+              onClick={() => setChatListCollapsed(!chatListCollapsed)}
               sx={{
                 color: colors.textSecondary,
                 transition: 'all 0.2s ease',
                 '&:hover': { color: colors.text, bgcolor: colors.hover }
               }}
             >
-              <People />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Nuevo chat">
-            <IconButton
-              sx={{
-                color: colors.textSecondary,
-                transition: 'all 0.2s ease',
-                '&:hover': { color: colors.text, bgcolor: colors.hover }
-              }}
-            >
-              <Message />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Menú">
-            <IconButton
-              sx={{
-                color: colors.textSecondary,
-                transition: 'all 0.2s ease',
-                '&:hover': { color: colors.text, bgcolor: colors.hover }
-              }}
-            >
-              <MoreVert />
+              {chatListCollapsed ? <ChevronRight /> : <ChevronLeft />}
             </IconButton>
           </Tooltip>
         </Box>
 
-        {/* Buscador */}
-        <Box sx={{ p: 2, bgcolor: colors.sidebar }}>
-          <TextField
-            fullWidth
-            size="small"
-            placeholder="Buscar o empezar un chat nuevo"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                bgcolor: colors.background,
-                borderRadius: '10px',
+        {/* Buscador - Ocultar si está colapsado */}
+        {!chatListCollapsed && (
+          <Box sx={{ p: 2, bgcolor: colors.sidebar }}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Buscar o empezar un chat nuevo"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: colors.background,
+                  borderRadius: '10px',
                 fontSize: '14px',
                 transition: 'all 0.2s ease',
                 '& fieldset': {
@@ -1039,11 +1029,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               )
             }}
           />
-        </Box>
+          </Box>
+        )}
 
-        {/* PESTAÑAS: Todos / No leídos / Grupos */}
-        <Tabs
-          value={filterTab}
+        {/* PESTAÑAS: Todos / No leídos / Grupos - Ocultar si está colapsado */}
+        {!chatListCollapsed && (
+          <Tabs
+            value={filterTab}
           onChange={(e, newValue) => setFilterTab(newValue)}
           sx={{
             minHeight: 40,
@@ -1062,13 +1054,14 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
             }
           }}
         >
-          <Tab label={`Todo (${chatStats.total})`} />
-          <Tab label={`Enviados (${chatStats.sent})`} />
-          <Tab label={`Recibidos (${chatStats.received})`} />
-          <Tab label={`Sin leer (${chatStats.pending})`} />
-        </Tabs>
+            <Tab label={`Todo (${chatStats.total})`} />
+            <Tab label={`Enviados (${chatStats.sent})`} />
+            <Tab label={`Recibidos (${chatStats.received})`} />
+            <Tab label={`Sin leer (${chatStats.pending})`} />
+          </Tabs>
+        )}
 
-        {/* Lista de chats */}
+        {/* Lista de chats - Mostrar solo avatares si está colapsado */}
         <List sx={{ flex: 1, overflow: 'auto', p: 0 }}>
           {filteredChats.map((chat) => (
             <ListItemButton
@@ -1093,34 +1086,37 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 '&:hover': { backgroundColor: colors.hover }
               }}
             >
-              <ListItemAvatar>
-                <Badge
-                  badgeContent={chat.unreadCount}
-                  color="error"
-                  invisible={!chat.unreadCount || chat.unreadCount === 0}
-                  sx={{
-                    '& .MuiBadge-badge': {
-                      backgroundColor: '#25d366',
-                      color: 'white',
-                      fontWeight: 'bold'
-                    }
-                  }}
-                >
-                  <Avatar
-                    src={chat.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.id}`}
-                    imgProps={{
-                      onError: (e: any) => {
-                        e.target.src = '';
-                        e.target.onerror = null;
+              <ListItemAvatar sx={{ minWidth: chatListCollapsed ? 'auto' : 56, justifyContent: 'center', display: 'flex' }}>
+                <Tooltip title={chatListCollapsed ? chat.name : ''} placement="right">
+                  <Badge
+                    badgeContent={chat.unreadCount}
+                    color="error"
+                    invisible={!chat.unreadCount || chat.unreadCount === 0}
+                    sx={{
+                      '& .MuiBadge-badge': {
+                        backgroundColor: '#25d366',
+                        color: 'white',
+                        fontWeight: 'bold'
                       }
                     }}
-                    sx={{ bgcolor: chat.isGroup ? '#9c27b0' : colors.primary }}
                   >
-                    {chat.name ? chat.name.charAt(0).toUpperCase() : chat.id.split('@')[0].charAt(0)}
-                  </Avatar>
-                </Badge>
+                    <Avatar
+                      src={chat.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.id}`}
+                      imgProps={{
+                        onError: (e: any) => {
+                          e.target.src = '';
+                          e.target.onerror = null;
+                        }
+                      }}
+                      sx={{ bgcolor: chat.isGroup ? '#9c27b0' : colors.primary }}
+                    >
+                      {chat.name ? chat.name.charAt(0).toUpperCase() : chat.id.split('@')[0].charAt(0)}
+                    </Avatar>
+                  </Badge>
+                </Tooltip>
               </ListItemAvatar>
-              <ListItemText
+              {!chatListCollapsed && (
+                <ListItemText
                 primary={
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -1149,19 +1145,20 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                     </Typography>
                   </Box>
                 }
-                secondary={
-                  <Typography
-                    variant="body2"
-                    noWrap
-                    sx={{
-                      color: colors.textSecondary,
-                      fontWeight: chat.unreadCount ? 500 : 400
-                    }}
-                  >
-                    {chat.lastMessage || 'Toca para chatear'}
-                  </Typography>
-                }
-              />
+                  secondary={
+                    <Typography
+                      variant="body2"
+                      noWrap
+                      sx={{
+                        color: colors.textSecondary,
+                        fontWeight: chat.unreadCount ? 500 : 400
+                      }}
+                    >
+                      {chat.lastMessage || 'Toca para chatear'}
+                    </Typography>
+                  }
+                />
+              )}
             </ListItemButton>
           ))}
         </List>
