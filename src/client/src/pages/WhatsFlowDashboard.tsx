@@ -186,7 +186,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     unreadMessages: 0,
     chatbots: 0,
     campaigns: 0,
-    kanbans: 0
+    kanbans: 0,
+    appointments: 0
   });
 
   // Estado para ModernAlert
@@ -494,16 +495,17 @@ const fetchDashboardStats = useCallback(async () => {
     if (data.success && data.stats) {
       // Estructurar los datos correctamente para el dashboard
       const stats = {
-        contacts: data.stats.contacts?.total || 0,
-        groups: data.stats.contacts?.groups || 0,
-        messages: data.stats.messages?.total || 0,
-        messagesToday: data.stats.messages?.today || 0,
+        contacts: data.stats.contacts || 0,
+        groups: data.stats.groups || 0,
+        messages: data.stats.messages || 0,
+        messagesToday: data.stats.messagesToday || 0,
         agents: data.stats.agents || 0,
         activeLines: data.stats.activeLines || 0,
         unreadMessages: data.stats.unreadMessages || 0,
         chatbots: data.stats.chatbots || 0,
         campaigns: data.stats.campaigns || 0,
-        kanbans: data.stats.kanbans || 0
+        kanbans: data.stats.kanbans || 0,
+        appointments: data.stats.appointments || 0
       };
       setDashboardStats(stats);
       // Las notificaciones se calculan automáticamente desde chats.unreadCount
@@ -1096,6 +1098,23 @@ return (
                   height: 28,
                   borderColor: '#673ab7',
                   color: '#673ab7'
+                }}
+              />
+            </Tooltip>
+
+            {/* Agenda/Citas */}
+            <Tooltip title={`Citas agendadas: ${dashboardStats.appointments || 0}`}>
+              <Chip
+                icon={<CalendarIcon sx={{ fontSize: 16 }} />}
+                label={`${dashboardStats.appointments || 0} Agenda`}
+                size="small"
+                variant="outlined"
+                sx={{
+                  fontWeight: 600,
+                  fontSize: '0.75rem',
+                  height: 28,
+                  borderColor: '#795548',
+                  color: '#795548'
                 }}
               />
             </Tooltip>

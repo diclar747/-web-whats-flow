@@ -16727,8 +16727,13 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                 sessionIds
             );
 
+            // Obtener el teléfono del admin para filtrar correctamente
+            const adminPhone = await getUserPhoneNumber(sessionId);
+
+            // Agentes activos de ESTE admin solamente
             const [agentsResult] = await connection.execute(
-                'SELECT COUNT(*) as total FROM users WHERE status = \'active\' AND role = \'agent\''
+                'SELECT COUNT(*) as total FROM users WHERE status = \'active\' AND role IN (\'agent\', \'supervisor\') AND admin_phone = ?',
+                [adminPhone]
             );
 
             const [activeLinesResult] = await connection.execute(
@@ -16740,19 +16745,28 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                 sessionIds
             );
 
-            // Chatbots activos
+            // Chatbots activos de ESTE admin
             const [chatbotsResult] = await connection.execute(
-                `SELECT COUNT(*) as total FROM chatbot_flows WHERE is_active = 1`
+                `SELECT COUNT(*) as total FROM chatbot_flows WHERE is_active = 1 AND session_id IN (${placeholders})`,
+                sessionIds
             );
 
-            // Campañas activas
+            // Campañas activas de ESTE admin
             const [campaignsResult] = await connection.execute(
-                `SELECT COUNT(*) as total FROM campaigns WHERE status = 'active' OR status = 'running'`
+                `SELECT COUNT(*) as total FROM campaigns WHERE (status = 'active' OR status = 'running') AND session_id IN (${placeholders})`,
+                sessionIds
             );
 
-            // Kanbans activos - contar todos los tableros sin filtro de is_active
+            // Kanbans de ESTE admin
             const [kanbansResult] = await connection.execute(
-                `SELECT COUNT(*) as total FROM kanban_boards`
+                `SELECT COUNT(*) as total FROM kanban_boards WHERE session_id IN (${placeholders})`,
+                sessionIds
+            );
+
+            // Citas/Agenda de ESTE admin
+            const [appointmentsResult] = await connection.execute(
+                `SELECT COUNT(*) as total FROM appointments WHERE session_id IN (${placeholders})`,
+                sessionIds
             );
 
             res.json({
@@ -16767,7 +16781,8 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                     unreadMessages: unreadMessagesResult[0].total || 0,
                     chatbots: chatbotsResult[0].total || 0,
                     campaigns: campaignsResult[0].total || 0,
-                    kanbans: kanbansResult[0].total || 0
+                    kanbans: kanbansResult[0].total || 0,
+                    appointments: appointmentsResult[0].total || 0
                 }
             });
         } finally {

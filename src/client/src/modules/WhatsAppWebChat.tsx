@@ -1298,6 +1298,21 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                   <Search />
                 </IconButton>
               </Tooltip>
+              
+              {/* Botón Imprimir - TEST */}
+              <Tooltip title="Imprimir conversación">
+                <IconButton
+                  onClick={() => window.print()}
+                  disabled={!activeChat}
+                  sx={{
+                    color: colors.textSecondary,
+                    transition: 'all 0.2s ease',
+                    '&:hover': { color: colors.text, bgcolor: colors.hover }
+                  }}
+                >
+                  <Print />
+                </IconButton>
+              </Tooltip>
               <Tooltip title="Más opciones">
                 <IconButton
                   onClick={(e) => setChatMenuAnchor(e.currentTarget)}
