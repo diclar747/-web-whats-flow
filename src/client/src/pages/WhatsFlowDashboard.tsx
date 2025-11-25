@@ -615,8 +615,9 @@ useEffect(() => {
       type: 'info',
       onConfirm: () => {
         setAlertOpen(false);
-        // ✅ OPTIMIZADO: Usar navigate en lugar de window.location para evitar recarga
-        navigate('/');
+        sessionStorage.clear();
+        localStorage.clear();
+        window.location.href = 'https://web.whats-flow.com/';
       }
     });
     setAlertOpen(true);
