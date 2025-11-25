@@ -23,6 +23,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { MobileStatusPublisher } from './modules/MobileStatusPublisher';
+import { setupFetchInterceptor } from './utils/fetchInterceptor';
 
 
 
@@ -222,6 +223,12 @@ const App: React.FC = () => {
   const [adminToken, setAdminToken] = useState<string | null>(null);
   const [sessionClosedDialog, setSessionClosedDialog] = useState<{open: boolean; reason: string}>({open: false, reason: ''});
 
+  // 🔐 Inicializar interceptor de fetch al cargar la app
+  useEffect(() => {
+    setupFetchInterceptor();
+    console.log('[APP] 🔐 Interceptor de sesión única inicializado');
+  }, []);
+
   useEffect(() => {
     // Función para generar un ID de dispositivo ÚNICO usando UUID
     const generateDeviceId = () => {
@@ -276,6 +283,13 @@ const App: React.FC = () => {
       console.log('Current Device ID:', deviceId?.substring(0, 20) + '...');
       console.log('Saved Device ID:', savedDeviceId?.substring(0, 20) + '...');
       console.log('SessionToken:', savedSessionToken ? 'Existe' : 'No');
+      
+      // 🔒 SEGURIDAD CRÍTICA: Si NO hay token ni sessionId, NO permitir acceso
+      if (!savedToken && !savedSessionId) {
+        console.log('🚫 [APP-INIT] NO hay credenciales guardadas - Esta pestaña NO está autenticada');
+        setLoading(false);
+        return; // Salir aquí - no cargar nada, mostrar página de login
+      }
 
       try {
         // Si hay sessionId guardado, verificar dispositivo

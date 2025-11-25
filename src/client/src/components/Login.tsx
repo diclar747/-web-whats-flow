@@ -30,7 +30,7 @@ interface LoginProps {
 
 const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(''); // Email como estaba antes
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false); // Nueva opción
@@ -56,7 +56,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ email, password, deviceId })
+        body: JSON.stringify({ email, password, deviceId }) // Email como antes
       });
 
       const data = await response.json();

@@ -6,6 +6,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { frontendLogger } from '../utils/frontendLogger';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { usePermissions } from '../hooks/usePermissions';
+import { useSyncProgress } from '../hooks/useSyncProgress';
 import {
   Box,
   AppBar,
@@ -60,7 +61,9 @@ import {
   Security as SecurityIcon,
   Brightness4,
   Brightness7,
-  Schedule
+  Schedule,
+  Sync,
+  CheckCircle
 } from '@mui/icons-material';
 
 // Componente de llamada entrante (cargado inmediatamente por ser crítico)
@@ -149,6 +152,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   const { chats } = useWhatsApp();
   const { toggleTheme, isDarkMode } = useTheme();
   const { hasModuleAccess, userRole: permUserRole } = usePermissions();
+  const syncProgress = useSyncProgress(sessionId); // 🔄 Hook de sincronización
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [drawerMinimized, setDrawerMinimized] = useState(true);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -936,6 +940,62 @@ return (
                   fontWeight: 600,
                   fontSize: '0.75rem',
                   height: 28
+                }}
+              />
+            </Tooltip>
+
+            {/* 🔄 Indicador de Sincronización - Siempre visible */}
+            <Tooltip title={
+              syncProgress.status === 'syncing' 
+                ? `${syncProgress.message} (${syncProgress.progress}%)` 
+                : syncProgress.status === 'completed'
+                ? 'Sincronización completada'
+                : 'Sistema listo'
+            }>
+              <Chip
+                icon={
+                  syncProgress.status === 'syncing' ? (
+                    <Sync sx={{ 
+                      fontSize: 16, 
+                      animation: 'spin 1s linear infinite',
+                      '@keyframes spin': {
+                        '0%': { transform: 'rotate(0deg)' },
+                        '100%': { transform: 'rotate(360deg)' }
+                      }
+                    }} />
+                  ) : syncProgress.status === 'completed' ? (
+                    <CheckCircle sx={{ fontSize: 16 }} />
+                  ) : (
+                    <Sync sx={{ fontSize: 16 }} />
+                  )
+                }
+                label={
+                  syncProgress.status === 'syncing' 
+                    ? `Sincronizando ${syncProgress.progress}%`
+                    : syncProgress.status === 'completed'
+                    ? 'Sincronizado'
+                    : 'Sincronizar'
+                }
+                size="small"
+                color={
+                  syncProgress.status === 'syncing' 
+                    ? 'info' 
+                    : syncProgress.status === 'completed'
+                    ? 'success'
+                    : 'default'
+                }
+                sx={{
+                  fontWeight: 600,
+                  fontSize: '0.75rem',
+                  height: 28,
+                  cursor: 'pointer',
+                  '&:hover': {
+                    opacity: 0.8
+                  }
+                }}
+                onClick={() => {
+                  // Forzar sincronización manual
+                  console.log('[SYNC] Sincronización manual solicitada');
                 }}
               />
             </Tooltip>

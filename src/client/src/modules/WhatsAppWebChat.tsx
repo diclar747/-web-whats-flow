@@ -82,16 +82,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     mountedRef.current = true;
   }
 
-  // Modo oscuro específico para el chat (independiente del tema global)
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem('whatsflow-chat-darkmode');
-    return saved ? saved === 'true' : true; // Por defecto oscuro solo en chat
-  });
-
-  // Guardar preferencia cuando cambie
-  useEffect(() => {
-    localStorage.setItem('whatsflow-chat-darkmode', isDarkMode.toString());
-  }, [isDarkMode]);
+  // 🌞 MODO CLARO FIJO - Sistema de modo oscuro eliminado completamente
 
   const {
     chats = [],
@@ -184,6 +175,24 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     // Si no se encuentra, usar el número formateado
     return `+${phoneNumber}`;
   }, [chats, sessionId]);
+
+  // 👤 Helper para obtener el nombre del remitente de forma inteligente
+  const getSenderName = useCallback((msg: any): string => {
+    // Si el mensaje NO es de nosotros (from_me = false), mostrar nombre del contacto
+    if (!msg.isFromMe && !msg.fromMe) {
+      return activeChat?.name || msg.from?.split('@')[0] || 'Contacto';
+    }
+
+    // Si el mensaje ES de nosotros (from_me = true)
+    // Verificar si fue enviado por un agente
+    if (msg.agent_id && msg.agent_id !== 0) {
+      // Tiene agent_id válido, mostrar nombre del agente
+      return msg.agent_name || msg.agentName || `Agente ${msg.agent_id}`;
+    }
+
+    // Si no tiene agent_id o es 0, es el Admin
+    return 'Admin';
+  }, [activeChat]);
 
   // Helper para procesar URLs de medios
   const getMediaUrl = useCallback((mediaUrl: string | null | undefined): string => {
@@ -846,6 +855,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
   // Colores exactos de WhatsApp Web
   // 🎨 FASE 1: Colores modernos y profesionales
+  // 🌞 Colores en modo claro fijo (modo oscuro eliminado)
   const colors = {
     primary: '#00a884',
     primaryLight: '#25d366',
@@ -853,28 +863,28 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     secondary: '#667781',
     accent: '#00bfa5',
 
-    background: isDarkMode ? '#0a1014' : '#f5f7fa',
-    sidebar: isDarkMode ? '#111b21' : '#ffffff',
-    header: isDarkMode ? '#1f2c34' : '#f8f9fa',
-    chatBg: isDarkMode ? '#0c1317' : '#e5ddd5',
+    background: '#f5f7fa',
+    sidebar: '#ffffff',
+    header: '#f8f9fa',
+    chatBg: '#e5ddd5',
 
-    myMessage: isDarkMode ? '#1f2c34' : '#ffffff', // Mismo color que mensajes recibidos
-    myMessageHover: isDarkMode ? '#2a3942' : '#f5f6f6', // Mismo hover
-    theirMessage: isDarkMode ? '#1f2c34' : '#ffffff',
-    theirMessageHover: isDarkMode ? '#2a3942' : '#f5f6f6',
+    myMessage: '#ffffff',
+    myMessageHover: '#f5f6f6',
+    theirMessage: '#ffffff',
+    theirMessageHover: '#f5f6f6',
 
-    text: isDarkMode ? '#e9edef' : '#111b21',
-    textSecondary: isDarkMode ? '#8696a0' : '#667781',
-    textTertiary: isDarkMode ? '#6b7c85' : '#8696a0',
+    text: '#111b21',
+    textSecondary: '#667781',
+    textTertiary: '#8696a0',
 
-    divider: isDarkMode ? '#2a3942' : '#e9edef',
-    hover: isDarkMode ? '#202c33' : '#f0f2f5',
-    hoverStrong: isDarkMode ? '#2a3942' : '#e9edef',
-    inputBg: isDarkMode ? '#1f2c34' : '#ffffff', // Mismo color que mensajes recibidos
-    selected: isDarkMode ? '#2a3942' : '#e6f7ff',
+    divider: '#e9edef',
+    hover: '#f0f2f5',
+    hoverStrong: '#e9edef',
+    inputBg: '#ffffff',
+    selected: '#e6f7ff',
 
-    shadow: isDarkMode ? '0 1px 2px rgba(0,0,0,0.4)' : '0 1px 2px rgba(0,0,0,0.1)',
-    shadowStrong: isDarkMode ? '0 2px 8px rgba(0,0,0,0.6)' : '0 2px 8px rgba(0,0,0,0.15)',
+    shadow: '0 1px 2px rgba(0,0,0,0.1)',
+    shadowStrong: '0 2px 8px rgba(0,0,0,0.15)',
 
     success: '#25d366',
     error: '#f44336',
@@ -923,7 +933,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
         {/* Header del sidebar */}
         <Box sx={{
           height: 60,
-          bgcolor: colors.header,
+          bgcolor: '#f8f9fa', // 🌞 Forzar modo claro
           display: 'flex',
           alignItems: 'center',
           px: 2,
@@ -1146,7 +1156,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
             {/* Header del chat */}
             <Box sx={{
               height: 70,
-              bgcolor: colors.header,
+              bgcolor: '#f8f9fa', // 🌞 Forzar modo claro
               display: 'flex',
               alignItems: 'center',
               px: 3,
@@ -1480,7 +1490,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               sx={{
                 flex: 1,
                 overflow: 'auto',
-                backgroundImage: isDarkMode ? 'none' : 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")',
+                backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")',
                 backgroundColor: colors.chatBg,
                 p: 3,
                 position: 'relative',
@@ -1584,16 +1594,12 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                             ? '12px 12px 4px 12px'  // Esquina inferior derecha más pequeña
                             : '12px 12px 12px 4px', // Esquina inferior izquierda más pequeña
                           position: 'relative',
-                          boxShadow: isDarkMode
-                            ? '0 2px 4px rgba(0,0,0,0.3)'
-                            : '0 1px 2px rgba(0,0,0,0.1)',
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
                           // 🎨 Hover effect mejorado
                           transition: 'all 0.2s ease-in-out',
                           '&:hover': {
                             bgcolor: msg.isFromMe ? colors.myMessageHover : colors.theirMessageHover,
-                            boxShadow: isDarkMode
-                              ? '0 4px 12px rgba(0,0,0,0.5)'
-                              : '0 2px 8px rgba(0,0,0,0.15)',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
                             transform: 'translateY(-2px)'
                           }
                         }}
@@ -1618,8 +1624,28 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                             letterSpacing: '0.5px'
                           }}
                         >
-                          {msg.isFromMe ? 'Tú' : (activeChat?.name || msg.from?.split('@')[0] || 'Contacto')}
+                          {getSenderName(msg)}
                         </Typography>
+
+                        {/* 👤 Chip con nombre del agente/admin - Solo para mensajes propios */}
+                        {msg.isFromMe && (
+                          <Chip
+                            label={msg.agent_id && msg.agent_id !== 0 ? `👤 ${msg.agent_name || 'Agente'}` : '👑 Admin'}
+                            size="small"
+                            sx={{
+                              height: 20,
+                              fontSize: '0.7rem',
+                              fontWeight: 600,
+                              mb: 0.5,
+                              bgcolor: msg.agent_id && msg.agent_id !== 0 ? '#00a884' : '#075E54',
+                              color: 'white',
+                              '& .MuiChip-label': {
+                                px: 1,
+                                py: 0
+                              }
+                            }}
+                          />
+                        )}
 
                         {/* Respuesta citada */}
                         {msg.contextInfo && (
@@ -2016,7 +2042,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               }}>
                 <EmojiPicker
                   onEmojiClick={handleEmojiClick}
-                  theme={(isDarkMode ? Theme.DARK : Theme.LIGHT) as Theme}
+                  theme={Theme.LIGHT as Theme}
                   width={350}
                   height={400}
                 />
@@ -2437,7 +2463,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                   )}
                 </TextField>
                 {activeChat && (
-                  <Paper sx={{ mt: 2, p: 2, bgcolor: isDarkMode ? '#2a3942' : '#f0f2f5' }}>
+                  <Paper sx={{ mt: 2, p: 2, bgcolor: '#f0f2f5' }}>
                     <Typography variant="caption" color="textSecondary">Chat a transferir:</Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
                       <Avatar src={`${getAPIBaseURL()}/api/avatar/${sessionId}/${activeChat.id}`} sx={{ width: 32, height: 32 }}>

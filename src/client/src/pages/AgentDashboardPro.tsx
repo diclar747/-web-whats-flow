@@ -91,7 +91,7 @@ interface AgentChat {
   phoneNumber?: string;
   isOnline?: boolean;
   isTyping?: boolean;
-  status?: 'active' | 'closed' | 'transferred' | 'new_assignment';
+  status?: 'active' | 'closed' | 'transferred' | 'new_assignment' | 'pending';
   closedAt?: string;
 }
 
@@ -154,8 +154,9 @@ const AgentDashboardPro: React.FC = () => {
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [transferNotification, setTransferNotification] = useState<{ open: boolean; chatName?: string; avatar?: string; phoneNumber?: string }>({ open: false });
   const [whatsappConnected, setWhatsappConnected] = useState(false);
-  const [chatFilter, setChatFilter] = useState<'all' | 'unread'>('all');
+  const [chatFilter, setChatFilter] = useState<'all' | 'unread' | 'active' | 'pending' | 'closed'>('all');
   const [messageDateFilter, setMessageDateFilter] = useState<string>('today'); // 'today', 'week', 'month', 'all'
   const [chatListDateFilter, setChatListDateFilter] = useState<string>('today'); // Filtro para lista de chats
   
@@ -169,11 +170,17 @@ const AgentDashboardPro: React.FC = () => {
   // Estado para minimizar/maximizar lista de chats (por defecto minimizado)
   const [chatListMinimized, setChatListMinimized] = useState(true);
 
-  // Nuevo: Estado para modo oscuro/claro
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    const saved = localStorage.getItem('agentDashboardTheme');
-    return saved ? saved === 'dark' : false; // Por defecto modo claro en dashboard agente
-  });
+  // Nuevo: Estado para modo oscuro/claro - FORZADO A CLARO
+  const [darkMode, setDarkMode] = useState<boolean>(false); // Siempre modo claro
+
+  // Estado para alerta de transferencia
+  const [transferDialog, setTransferDialog] = useState<{
+    open: boolean;
+    chatJid: string;
+    chatName: string;
+    avatar?: string;
+    phoneNumber?: string;
+  } | null>(null);
 
   // Referencias
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -418,17 +425,19 @@ const AgentDashboardPro: React.FC = () => {
         const mappedChats = (data.chats || [])
           .filter((chat: any) => chat.chatJid)
           .map((chat: any) => {
-            let status: 'active' | 'closed' | 'transferred' | 'new_assignment' = 'active';
-            
+            let status: 'active' | 'closed' | 'transferred' | 'pending' | 'new_assignment' = 'active';
+
             // Mapear estado de DB a estado del frontend
             if (chat.status === 'pending') {
-              status = 'new_assignment';
+              status = 'pending'; // 🟢 Verde - Nueva transferencia pendiente
             } else if (chat.status === 'closed') {
-              status = 'closed';
+              status = 'closed'; // 🔴 Rojo - Cerrado
             } else if (chat.status === 'transferred') {
-              status = 'transferred';
+              status = 'transferred'; // 🔵 Azul - Transferido
+            } else if (chat.status === 'active') {
+              status = 'active'; // 🟡 Amarillo - Activo
             } else {
-              status = 'active';
+              status = 'active'; // Por defecto amarillo
             }
 
             return {
@@ -521,9 +530,16 @@ const AgentDashboardPro: React.FC = () => {
     console.log('🔌 [AGENT-PRO] Socket conectado, escuchando eventos...');
     
     // Unirse a la sala específica del agente para recibir eventos personalizados
-    if (socket) {
+    if (socket && agentId) {
+      console.log('🔌 [AGENT-PRO] Intentando unirse a sala agent-' + agentId);
       socket.emit('join-agent-room', { agentId });
-      console.log('🔌 [AGENT-PRO] Uniéndose a sala agent-' + agentId);
+      
+      // Verificar confirmación de unión
+      socket.on('joined-agent-room', (data: any) => {
+        console.log('✅ [AGENT-PRO] Confirmación de unión a sala:', data);
+      });
+    } else {
+      console.warn('⚠️ [AGENT-PRO] No se puede unir a sala: socket=' + !!socket + ', agentId=' + agentId);
     }
 
     const handleNewChat = (data: any) => {
@@ -593,8 +609,9 @@ const AgentDashboardPro: React.FC = () => {
         playNotificationSound();
       }
 
-      // Actualizar lista de chats
-      loadAgentChats();
+      // Actualizar lista de chats con el filtro actual
+      console.log('[AGENT-PRO] 🔄 Recargando chats con filtro:', chatListDateFilter);
+      loadAgentChats(chatListDateFilter);
     };
 
     // Escuchar eventos específicos del agente
@@ -665,6 +682,46 @@ const AgentDashboardPro: React.FC = () => {
       }
     });
 
+    // Escuchar cuando se cierra una conversación
+    on(`agent-${agentId}-conversation-closed`, (data: any) => {
+      console.log('🔴 [AGENT-PRO] Conversación cerrada:', data);
+      showSnackbar('Conversación cerrada por el admin', 'info');
+
+      // Actualizar estado del chat
+      setChats(prevChats =>
+        prevChats.map(chat =>
+          chat.id === data.chatJid
+            ? { ...chat, status: 'closed' as const, closedAt: data.closedAt }
+            : chat
+        )
+      );
+
+      // Actualizar chat seleccionado si es el que se cerró
+      if (selectedChat && selectedChat.id === data.chatJid) {
+        setSelectedChat(prev => prev ? { ...prev, status: 'closed' as const } : null);
+      }
+    });
+
+    on('conversation-status-changed', (data: any) => {
+      if (data.agentId === agentId) {
+        console.log('🔄 Estado de conversación cambiado:', data);
+
+        // Actualizar estado del chat
+        setChats(prevChats =>
+          prevChats.map(chat =>
+            chat.id === data.chatJid
+              ? { ...chat, status: data.status as any }
+              : chat
+          )
+        );
+
+        // Actualizar chat seleccionado
+        if (selectedChat && selectedChat.id === data.chatJid) {
+          setSelectedChat(prev => prev ? { ...prev, status: data.status as any } : null);
+        }
+      }
+    });
+
     // 🚀 NUEVO: Escuchar cuando el admin reconecta WhatsApp
     on('session-updated', async (data: any) => {
       console.log('🔄 [AGENT-PRO] Admin reconectó WhatsApp:', data);
@@ -710,8 +767,25 @@ const AgentDashboardPro: React.FC = () => {
     on('chat:transferred', (data: any) => {
       console.log('📨 Chat transferido recibido:', data);
       if (data.toAgentId === agentId) {
+        // Mostrar alerta de transferencia
+        setTransferDialog({
+          open: true,
+          chatJid: data.chatJid,
+          chatName: data.chatName || 'Contacto',
+          avatar: data.avatar,
+          phoneNumber: data.phoneNumber
+        });
+        
+        // 🔥 Mostrar notificación moderna con avatar
+        setTransferNotification({
+          open: true,
+          chatName: data.chatName || 'Contacto',
+          avatar: data.avatar,
+          phoneNumber: data.phoneNumber
+        });
+        
         showDesktopNotification('📨 Chat Transferido', `Nuevo chat de ${data.chatName || 'un contacto'}`);
-        showSnackbar(`Chat transferido: ${data.chatName}`, 'info');
+        playNotificationSound();
         loadAgentChats();
       } else if (data.fromAgentId === agentId) {
         showSnackbar(`Chat transferido a otro agente`, 'info');
@@ -720,6 +794,12 @@ const AgentDashboardPro: React.FC = () => {
           setSelectedChat(null);
         }
       }
+    });
+
+    // 🟢 Respuestas a transferencias (para admin)
+    on('transfer-response', (data: any) => {
+      console.log('✅ Respuesta de transferencia:', data);
+      showSnackbar(data.message, data.type === 'accepted' ? 'success' : 'error');
     });
 
     // 🔐 Cierre de sesión forzado por admin
@@ -743,6 +823,29 @@ const AgentDashboardPro: React.FC = () => {
       }
     });
 
+    // 🔥 Admin desconectó WhatsApp - notificar al agente
+    on('admin-disconnected', (data: any) => {
+      console.log('📵 [AGENT-PRO] Admin desconectó WhatsApp:', data);
+      showSnackbar('⚠️ Tu administrador cerró WhatsApp. No podrás enviar mensajes hasta que se reconecte.', 'error');
+      setWhatsappConnected(false);
+      
+      // Limpiar chats y selección
+      setChats([]);
+      setSelectedChat(null);
+    });
+
+    // 🔥 Admin reconectó WhatsApp - recargar chats
+    on('session-updated', (data: any) => {
+      console.log('✅ [AGENT-PRO] Admin reconectó WhatsApp:', data);
+      showSnackbar('✅ Tu administrador reconectó WhatsApp. Recargando chats...', 'success');
+      setWhatsappConnected(true);
+      
+      // Recargar chats después de 1 segundo
+      setTimeout(() => {
+        loadAgentChats();
+      }, 1000);
+    });
+
     return () => {
       off(`agent-${agentId}-new-chat`);
       off(`agent-${agentId}-assignment`);
@@ -755,7 +858,9 @@ const AgentDashboardPro: React.FC = () => {
       off('user-typing');
       off('session-updated');
       off('chat:transferred');
+      off('transfer-response');
       off('force-logout');
+      off('admin-disconnected');
     };
   }, [socket, isConnected, agentId, on, off, loadAgentChats, selectedChat, setSessionId]);
 
@@ -803,7 +908,8 @@ const AgentDashboardPro: React.FC = () => {
           chatJid: selectedChat.id,
           message: messageToSend,
           agentId: agentId,
-          agentName: userName  // Incluir nombre del agente
+          agentName: userName,  // Incluir nombre del agente
+          phoneNumber: phoneNumber  // 🔥 Incluir phoneNumber del admin
         })
       });
 
@@ -861,6 +967,7 @@ const AgentDashboardPro: React.FC = () => {
         formData.append('chatJid', selectedChat.id);
         formData.append('agentId', agentId?.toString() || '');
         formData.append('agentName', userName || '');  // Incluir nombre del agente
+        formData.append('phoneNumber', phoneNumber || '');  // 🔥 Incluir phoneNumber del admin
         if (file.type.startsWith('image/')) {
           formData.append('caption', messageText || '');
         }
@@ -1051,6 +1158,100 @@ const AgentDashboardPro: React.FC = () => {
     }
   };
 
+  // ==================== FUNCIONES DE TRANSFERENCIA ====================
+
+  const handleAcceptTransfer = async () => {
+    if (!transferDialog || !agentId || !sessionId) return;
+
+    try {
+      const token = sessionStorage.getItem('token');
+      const response = await fetch('/api/agent/accept-transfer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          agentId,
+          chatJid: transferDialog.chatJid,
+          sessionId,
+          agentName: userName
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        showSnackbar(`Aceptaste la conversación con ${transferDialog.chatName}`, 'success');
+
+        // Actualizar estado del chat a 'active'
+        setChats(prevChats =>
+          prevChats.map(chat =>
+            chat.id === transferDialog.chatJid
+              ? { ...chat, status: 'active' as const }
+              : chat
+          )
+        );
+
+        // Cerrar dialog
+        setTransferDialog(null);
+
+        // Recargar chats
+        loadAgentChats();
+      } else {
+        showSnackbar(data.error || 'Error al aceptar transferencia', 'error');
+      }
+    } catch (error) {
+      console.error('Error aceptando transferencia:', error);
+      showSnackbar('Error al aceptar transferencia', 'error');
+    }
+  };
+
+  const handleRejectTransfer = async () => {
+    if (!transferDialog || !agentId || !sessionId) return;
+
+    try {
+      const token = sessionStorage.getItem('token');
+      const response = await fetch('/api/agent/reject-transfer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          agentId,
+          chatJid: transferDialog.chatJid,
+          sessionId,
+          agentName: userName,
+          reason: 'Rechazado por el agente'
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        showSnackbar(`Rechazaste la conversación con ${transferDialog.chatName}`, 'info');
+
+        // Eliminar chat de la lista
+        setChats(prevChats => prevChats.filter(c => c.id !== transferDialog.chatJid));
+
+        // Si estaba seleccionado, deseleccionarlo
+        if (selectedChat?.id === transferDialog.chatJid) {
+          setSelectedChat(null);
+        }
+
+        // Cerrar dialog
+        setTransferDialog(null);
+
+        // Recargar chats
+        loadAgentChats();
+      } else {
+        showSnackbar(data.error || 'Error al rechazar transferencia', 'error');
+      }
+    } catch (error) {
+      console.error('Error rechazando transferencia:', error);
+      showSnackbar('Error al rechazar transferencia', 'error');
+    }
+  };
+
   // ==================== FUNCIONES DE FORMATO ====================
 
   const formatTime = (timestamp: string) => {
@@ -1087,14 +1288,15 @@ const AgentDashboardPro: React.FC = () => {
 
   const getConversationStatusColor = (status?: string) => {
     switch (status) {
-      case 'active':
-        return '#FFC107'; // Amarillo - conversación activa
-      case 'closed':
-        return '#F44336'; // Rojo - conversación cerrada
+      case 'pending':
       case 'new_assignment':
-        return '#4CAF50'; // Verde - nueva asignación/transferencia
+        return '#4CAF50'; // 🟢 Verde - nueva transferencia (pendiente de aceptar)
+      case 'active':
+        return '#FFC107'; // 🟡 Amarillo - conversación activa (en proceso)
+      case 'closed':
+        return '#F44336'; // 🔴 Rojo - conversación cerrada
       case 'transferred':
-        return '#2196F3'; // Azul - transferida
+        return '#2196F3'; // 🔵 Azul - transferida a otro agente
       default:
         return '#FFC107'; // Amarillo por defecto
     }
@@ -1102,14 +1304,15 @@ const AgentDashboardPro: React.FC = () => {
 
   const getConversationStatusTooltip = (status?: string) => {
     switch (status) {
-      case 'active':
-        return 'Conversación activa';
-      case 'closed':
-        return 'Conversación cerrada';
+      case 'pending':
       case 'new_assignment':
-        return 'Nueva asignación';
+        return '🟢 Nueva transferencia - Pendiente de aceptar';
+      case 'active':
+        return '🟡 Conversación activa - En proceso';
+      case 'closed':
+        return '🔴 Conversación cerrada';
       case 'transferred':
-        return 'Conversación transferida';
+        return '🔵 Transferida a otro agente';
       default:
         return 'Estado desconocido';
     }
@@ -1134,12 +1337,33 @@ const AgentDashboardPro: React.FC = () => {
 
   const filteredChats = chats.filter(chat => {
     // Filtro por búsqueda
-    const matchesSearch = chat.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         chat.phoneNumber?.includes(searchTerm);
+    const searchLower = (searchTerm || '').toLowerCase();
+    const matchesSearch = !searchTerm ||
+                         (chat.name && chat.name.toLowerCase().includes(searchLower)) ||
+                         (chat.phoneNumber && chat.phoneNumber.includes(searchTerm));
 
     // Filtro por tipo de chat
-    const matchesFilter = chatFilter === 'all' ||
-                         (chatFilter === 'unread' && chat.unreadCount > 0);
+    let matchesFilter = false;
+
+    switch (chatFilter) {
+      case 'all':
+        matchesFilter = true;
+        break;
+      case 'unread':
+        matchesFilter = chat.unreadCount > 0;
+        break;
+      case 'active':
+        matchesFilter = chat.status === 'active';
+        break;
+      case 'pending':
+        matchesFilter = chat.status === 'pending' || chat.status === 'new_assignment' || chat.status === 'transferred';
+        break;
+      case 'closed':
+        matchesFilter = chat.status === 'closed';
+        break;
+      default:
+        matchesFilter = true;
+    }
 
     return matchesSearch && matchesFilter;
   });
@@ -1187,25 +1411,53 @@ const AgentDashboardPro: React.FC = () => {
               </Typography>
             )}
 
-            {/* Etiqueta de agente (cuando OTRO agente o admin responde, no cuando yo respondo) */}
-            {msg.from_me && msg.agent_name && msg.agent_id !== agentId && msg.agent_id !== 0 && (
-              <Chip
-                label={`👤 ${msg.agent_name}`}
-                size="small"
-                sx={{
-                  mb: 0.5,
-                  height: '22px',
-                  fontSize: '0.75rem',
-                  bgcolor: '#00a884',
-                  color: 'white',
-                  fontWeight: 600,
-                  '& .MuiChip-label': {
-                    px: 1.5,
-                    py: 0
-                  }
-                }}
-              />
-            )}
+            {/* Etiqueta del remitente en mensajes enviados (from_me) */}
+            {msg.from_me && (() => {
+              let senderLabel = '';
+              let senderIcon = '';
+              let bgColor = '';
+
+              if (msg.agent_id === agentId) {
+                // El agente actual envió el mensaje - mostrar nombre del agente
+                senderLabel = msg.agent_name || userName || 'Agente';
+                senderIcon = '👤';
+                bgColor = '#128C7E'; // Verde oscuro para el agente actual
+              } else if (msg.agent_name) {
+                // Otro agente envió el mensaje
+                senderLabel = msg.agent_name;
+                senderIcon = '👤';
+                bgColor = '#00a884'; // Verde WhatsApp para otros agentes
+              } else if (!msg.agent_id || msg.agent_id === 0) {
+                // El admin envió el mensaje (sin agent_id)
+                senderLabel = 'Admin';
+                senderIcon = '👨‍💼';
+                bgColor = '#075E54'; // Verde más oscuro para Admin
+              } else {
+                // Mensaje del sistema
+                senderLabel = 'Sistema';
+                senderIcon = '⚙️';
+                bgColor = '#667781'; // Gris para sistema
+              }
+
+              return (
+                <Chip
+                  label={`${senderIcon} ${senderLabel}`}
+                  size="small"
+                  sx={{
+                    mb: 0.5,
+                    height: '22px',
+                    fontSize: '0.7rem',
+                    bgcolor: bgColor,
+                    color: 'white',
+                    fontWeight: 600,
+                    '& .MuiChip-label': {
+                      px: 1.5,
+                      py: 0
+                    }
+                  }}
+                />
+              );
+            })()}
 
             {/* Contenido de media */}
             {isMedia && msg.media_url && (() => {
@@ -1421,9 +1673,13 @@ const AgentDashboardPro: React.FC = () => {
                 onClick={() => setSoundEnabled(!soundEnabled)}
                 sx={{ color: 'white' }}
               >
-                <Badge badgeContent={unreadTotal} color="error">
-                  {soundEnabled ? <NotificationsActiveIcon /> : <NotificationsIcon />}
-                </Badge>
+                {unreadTotal > 0 ? (
+                  <Badge badgeContent={unreadTotal} color="error">
+                    {soundEnabled ? <NotificationsActiveIcon /> : <NotificationsIcon />}
+                  </Badge>
+                ) : (
+                  soundEnabled ? <NotificationsActiveIcon /> : <NotificationsIcon />
+                )}
               </IconButton>
             </Tooltip>
 
@@ -1596,15 +1852,18 @@ const AgentDashboardPro: React.FC = () => {
                 onChange={(e, newValue) => setChatFilter(newValue)}
                 textColor="inherit"
                 indicatorColor="primary"
-                variant="fullWidth"
+                variant="scrollable"
+                scrollButtons="auto"
                 sx={{
                   minHeight: 36,
                   '& .MuiTab-root': {
                     minHeight: 36,
-                    fontSize: '0.8rem',
+                    fontSize: '0.75rem',
                     textTransform: 'none',
                     fontWeight: 500,
                     color: currentTheme.text.secondary,
+                    minWidth: 'auto',
+                    px: 1.5,
                     '&.Mui-selected': {
                       color: '#00a884',
                       fontWeight: 600
@@ -1616,8 +1875,26 @@ const AgentDashboardPro: React.FC = () => {
                   }
                 }}
               >
-                <Tab label="Todos" value="all" />
-                <Tab label="Sin leer" value="unread" />
+                <Tab
+                  label={`📋 Todos (${chats.length})`}
+                  value="all"
+                />
+                <Tab
+                  label={`🟡 Activos (${chats.filter(c => c.status === 'active').length})`}
+                  value="active"
+                />
+                <Tab
+                  label={`🟢 Pendientes (${chats.filter(c => c.status === 'pending' || c.status === 'new_assignment' || c.status === 'transferred').length})`}
+                  value="pending"
+                />
+                <Tab
+                  label={`🔴 Cerrados (${chats.filter(c => c.status === 'closed').length})`}
+                  value="closed"
+                />
+                <Tab
+                  label={`💬 Sin leer (${chats.filter(c => c.unreadCount > 0).length})`}
+                  value="unread"
+                />
               </Tabs>
             </Box>
           </Box>
@@ -1658,16 +1935,31 @@ const AgentDashboardPro: React.FC = () => {
                     // Vista minimizada: solo avatar con badge
                     <Tooltip title={`${chat.name}${chat.unreadCount > 0 ? ` (${chat.unreadCount})` : ''}\n${getConversationStatusTooltip(chat.status)}`} placement="right">
                       <Box position="relative">
-                        <Badge
-                          badgeContent={chat.unreadCount}
-                          color="error"
-                          overlap="circular"
-                        >
+                        {chat.unreadCount > 0 ? (
+                          <Badge
+                            badgeContent={chat.unreadCount}
+                            color="error"
+                            overlap="circular"
+                          >
+                            <Avatar
+                              src={chat.avatar}
+                              alt={chat.name}
+                              sx={{
+                                width: 48,
+                                height: 48,
+                                border: `3px solid ${getAvatarColor(chat.name || chat.phoneNumber || 'unknown')}`,
+                                boxShadow: `0 0 0 2px ${currentTheme.bg.secondary}`
+                              }}
+                            >
+                              {chat.name?.[0]?.toUpperCase() || '?'}
+                            </Avatar>
+                          </Badge>
+                        ) : (
                           <Avatar
                             src={chat.avatar}
                             alt={chat.name}
-                            sx={{ 
-                              width: 48, 
+                            sx={{
+                              width: 48,
                               height: 48,
                               border: `3px solid ${getAvatarColor(chat.name || chat.phoneNumber || 'unknown')}`,
                               boxShadow: `0 0 0 2px ${currentTheme.bg.secondary}`
@@ -1675,7 +1967,7 @@ const AgentDashboardPro: React.FC = () => {
                           >
                             {chat.name?.[0]?.toUpperCase() || '?'}
                           </Avatar>
-                        </Badge>
+                        )}
                         <Box
                           sx={{
                             position: 'absolute',
@@ -2228,6 +2520,108 @@ const AgentDashboardPro: React.FC = () => {
         )}
       </Box>
 
+      {/* ==================== NOTIFICACIÓN MODERNA DE TRANSFERENCIA ==================== */}
+      <Snackbar
+        open={transferNotification.open}
+        autoHideDuration={8000}
+        onClose={() => setTransferNotification({ open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        TransitionComponent={Zoom}
+      >
+        <Paper
+          elevation={8}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            p: 2,
+            bgcolor: currentTheme.bg.primary,
+            borderRadius: 3,
+            border: '2px solid #00a884',
+            minWidth: 400,
+            boxShadow: '0 8px 32px rgba(0,168,132,0.3)',
+            animation: 'slideDown 0.4s ease-out'
+          }}
+        >
+          {/* Avatar animado */}
+          <Box sx={{ position: 'relative' }}>
+            <Avatar
+              src={transferNotification.avatar}
+              sx={{
+                width: 56,
+                height: 56,
+                border: '3px solid #00a884',
+                boxShadow: '0 4px 12px rgba(0,168,132,0.3)'
+              }}
+            >
+              {transferNotification.chatName?.[0]?.toUpperCase() || '?'}
+            </Avatar>
+            <Box
+              sx={{
+                position: 'absolute',
+                top: -4,
+                right: -4,
+                width: 24,
+                height: 24,
+                bgcolor: '#00a884',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(0,168,132,0.4)',
+                animation: 'pulse 1.5s infinite'
+              }}
+            >
+              <ChatIcon sx={{ fontSize: 14, color: 'white' }} />
+            </Box>
+          </Box>
+
+          {/* Contenido */}
+          <Box sx={{ flex: 1 }}>
+            <Typography
+              variant="subtitle1"
+              fontWeight={700}
+              sx={{
+                color: currentTheme.text.primary,
+                mb: 0.5,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1
+              }}
+            >
+              📨 Chat Transferido
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{ color: currentTheme.text.secondary, fontWeight: 500 }}
+            >
+              {transferNotification.chatName}
+            </Typography>
+            {transferNotification.phoneNumber && (
+              <Typography
+                variant="caption"
+                sx={{ color: currentTheme.text.secondary, display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}
+              >
+                <PhoneIcon sx={{ fontSize: 12 }} />
+                {transferNotification.phoneNumber}
+              </Typography>
+            )}
+          </Box>
+
+          {/* Botón de cerrar */}
+          <IconButton
+            size="small"
+            onClick={() => setTransferNotification({ open: false })}
+            sx={{
+              color: currentTheme.text.secondary,
+              '&:hover': { color: currentTheme.text.primary }
+            }}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Paper>
+      </Snackbar>
+
       {/* ==================== SNACKBAR DE NOTIFICACIONES ==================== */}
       <Snackbar
         open={snackbar.open}
@@ -2407,6 +2801,206 @@ const AgentDashboardPro: React.FC = () => {
         </DialogActions>
       </Dialog>
 
+      {/* ==================== ALERTA DE TRANSFERENCIA ==================== */}
+      <Dialog
+        open={transferDialog?.open || false}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+            overflow: 'hidden'
+          }
+        }}
+      >
+        {/* Header con gradiente */}
+        <Box
+          sx={{
+            background: 'linear-gradient(135deg, #00a884 0%, #128C7E 100%)',
+            p: 3,
+            textAlign: 'center',
+            position: 'relative'
+          }}
+        >
+          {/* Icono de transferencia animado */}
+          <Box
+            sx={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 80,
+              height: 80,
+              borderRadius: '50%',
+              bgcolor: 'rgba(255,255,255,0.2)',
+              mb: 2,
+              animation: 'ripple 2s infinite',
+              '@keyframes ripple': {
+                '0%': {
+                  transform: 'scale(0.9)',
+                  boxShadow: '0 0 0 0 rgba(255,255,255,0.7)'
+                },
+                '50%': {
+                  transform: 'scale(1)',
+                  boxShadow: '0 0 0 10px rgba(255,255,255,0)'
+                },
+                '100%': {
+                  transform: 'scale(0.9)',
+                  boxShadow: '0 0 0 0 rgba(255,255,255,0)'
+                }
+              }
+            }}
+          >
+            <SyncIcon sx={{ fontSize: 40, color: 'white' }} />
+          </Box>
+
+          <Typography
+            variant="h5"
+            sx={{
+              color: 'white',
+              fontWeight: 700,
+              mb: 0.5
+            }}
+          >
+            🟢 Nueva Transferencia
+          </Typography>
+          <Typography
+            variant="body2"
+            sx={{
+              color: 'rgba(255,255,255,0.9)',
+              fontSize: '0.9rem'
+            }}
+          >
+            Un administrador te está transfiriendo un chat
+          </Typography>
+        </Box>
+
+        {/* Contenido */}
+        <DialogContent sx={{ p: 3 }}>
+          {/* Avatar y nombre del contacto */}
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              p: 2,
+              bgcolor: '#f5f5f5',
+              borderRadius: 2,
+              mb: 2
+            }}
+          >
+            <Avatar
+              src={transferDialog?.avatar}
+              sx={{
+                width: 60,
+                height: 60,
+                bgcolor: '#00a884',
+                fontSize: '1.5rem',
+                fontWeight: 700
+              }}
+            >
+              {transferDialog?.chatName?.[0]?.toUpperCase() || 'C'}
+            </Avatar>
+            <Box sx={{ flex: 1 }}>
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 600,
+                  color: '#111b21',
+                  mb: 0.5
+                }}
+              >
+                {transferDialog?.chatName || 'Contacto'}
+              </Typography>
+              {transferDialog?.phoneNumber && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <PhoneIcon sx={{ fontSize: 16, color: '#667781' }} />
+                  <Typography
+                    variant="body2"
+                    sx={{ color: '#667781' }}
+                  >
+                    {transferDialog.phoneNumber}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
+
+          {/* Mensaje informativo */}
+          <Alert
+            severity="info"
+            icon={<InfoIcon />}
+            sx={{ mb: 2 }}
+          >
+            <Typography variant="body2">
+              Admin te está transfiriendo una conversación con <strong>{transferDialog?.chatName || 'este contacto'}</strong>
+            </Typography>
+          </Alert>
+
+          {/* Pregunta */}
+          <Typography
+            variant="body1"
+            sx={{
+              textAlign: 'center',
+              color: '#111b21',
+              fontWeight: 500,
+              mb: 2
+            }}
+          >
+            ¿Deseas aceptar esta transferencia?
+          </Typography>
+        </DialogContent>
+
+        {/* Botones de acción */}
+        <DialogActions
+          sx={{
+            p: 3,
+            pt: 0,
+            gap: 2,
+            justifyContent: 'stretch'
+          }}
+        >
+          <Button
+            fullWidth
+            variant="outlined"
+            size="large"
+            startIcon={<CloseIcon />}
+            onClick={handleRejectTransfer}
+            sx={{
+              borderColor: '#f44336',
+              color: '#f44336',
+              fontWeight: 600,
+              py: 1.5,
+              '&:hover': {
+                borderColor: '#d32f2f',
+                bgcolor: 'rgba(244, 67, 54, 0.04)'
+              }
+            }}
+          >
+            Rechazar
+          </Button>
+          <Button
+            fullWidth
+            variant="contained"
+            size="large"
+            startIcon={<CheckIcon />}
+            onClick={handleAcceptTransfer}
+            sx={{
+              bgcolor: '#00a884',
+              fontWeight: 600,
+              py: 1.5,
+              boxShadow: '0 4px 12px rgba(0,168,132,0.3)',
+              '&:hover': {
+                bgcolor: '#008c6d',
+                boxShadow: '0 6px 16px rgba(0,168,132,0.4)'
+              }
+            }}
+          >
+            Aceptar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* ==================== ESTILOS CSS ADICIONALES ==================== */}
       <style>{`
         @keyframes ripple {
@@ -2417,6 +3011,28 @@ const AgentDashboardPro: React.FC = () => {
           100% {
             transform: scale(2.4);
             opacity: 0;
+          }
+        }
+        
+        @keyframes pulse {
+          0%, 100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          50% {
+            transform: scale(1.1);
+            opacity: 0.8;
+          }
+        }
+        
+        @keyframes slideDown {
+          0% {
+            transform: translateY(-100px);
+            opacity: 0;
+          }
+          100% {
+            transform: translateY(0);
+            opacity: 1;
           }
         }
       `}</style>

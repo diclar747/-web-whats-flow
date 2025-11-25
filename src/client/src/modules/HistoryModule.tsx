@@ -457,7 +457,8 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
               isFromMe: msg.fromMe || msg.from_me || false,
               status: msg.status || 'sent',
               agentId: msg.agentId || msg.agent_id,
-              agentName: msg.agentName || msg.agent_name || (msg.from_me ? (msg.agentId || msg.agent_id ? 'Agente' : 'Sistema') : '-'),
+              // 👤 Usar directamente el nombre que viene del backend (ya tiene la lógica correcta)
+              agentName: msg.agentName || msg.agent_name || '-',
               labels: [],
               priority: 'medium',
               sentiment: 'neutral',
@@ -484,7 +485,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
               lastMessageTime: msg.timestamp || new Date().toISOString(),
               duration: 0,
               status: 'active',
-              agentName: msg.agentName || (msg.agentId ? 'Agente' : 'Sistema'),
+              agentName: msg.agentName || 'Admin',
               labels: [],
               responseTime: 0
             });

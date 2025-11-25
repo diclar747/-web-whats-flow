@@ -87,7 +87,10 @@ const createUniqueSession = (userId, deviceId, email, role, io = null) => {
     if (closedSessions > 0) {
         console.log(`[SESSION] ⚠️ ${closedSessions} sesión(es) previa(s) cerrada(s) para ${email}`);
         
-        // Emitir evento para cerrar sesiones en otros dispositivos
+        // 🔐 DESACTIVADO TEMPORALMENTE - No emitir evento de cierre
+        // Este evento causa que se cierren sesiones de usuarios diferentes
+        // TODO: Reactivar cuando el middleware de validación esté completamente funcional
+        /*
         if (io) {
             io.emit('session-closed', {
                 userId: userId,
@@ -98,6 +101,8 @@ const createUniqueSession = (userId, deviceId, email, role, io = null) => {
             });
             console.log(`[SESSION] 📢 Evento session-closed emitido para ${email}`);
         }
+        */
+        console.log(`[SESSION] ℹ️ Evento session-closed NO emitido (sistema de sesión única desactivado)`);
     }
     
     // SEGUNDO: Crear la nueva sesión

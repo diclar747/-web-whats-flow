@@ -115,11 +115,14 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       console.log('📱 Actualización de conexión WhatsApp:', data);
 
       const incomingSessionId = data?.sessionId || data?.newSessionId;
-      const oldSessionId = localStorage.getItem('whatsflow_session');
+      // 🔒 SEGURIDAD: Leer de sessionStorage, no localStorage
+      const oldSessionId = sessionStorage.getItem('whatsflow_session');
 
       if (incomingSessionId && incomingSessionId !== oldSessionId) {
-        // Actualizar storage y re-unir salas sin recargar la página
-        localStorage.setItem('whatsflow_session', incomingSessionId);
+        // 🔒 SEGURIDAD: NO guardar en localStorage - usar SOLO sessionStorage
+        // localStorage se comparte entre TODOS los navegadores/pestañas
+        // sessionStorage.setItem('whatsflow_session', incomingSessionId);
+        
         try {
           if (oldSessionId) {
             newSocket.emit('leave-session', { sessionId: oldSessionId });

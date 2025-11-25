@@ -255,6 +255,7 @@ interface UserAccount {
   id: string;
   name: string;
   email: string;
+  phone?: string; // 📱 Número de teléfono
   role: 'admin' | 'manager' | 'agent' | 'viewer';
   department: string;
   status: 'active' | 'inactive' | 'pending';
@@ -431,8 +432,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
     password: '',
     role: 'agent',
     department: '',
-    phone: ''
+    phone: '',
+    avatar_url: '' // 🖼️ Avatar del contacto
   });
+
+  // Estados para búsqueda de contactos
+  const [contactSearchOpen, setContactSearchOpen] = useState(false);
+  const [contactSearchQuery, setContactSearchQuery] = useState('');
+  const [availableContacts, setAvailableContacts] = useState<any[]>([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
 
   // Estados para modal de permisos
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
@@ -456,6 +464,28 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
   useEffect(() => {
     loadSettingsData();
   }, [sessionId]);
+
+  // 📱 Función para cargar contactos de WhatsApp
+  const loadWhatsAppContacts = async () => {
+    const currentSessionId = localStorage.getItem('sessionId') || sessionStorage.getItem('sessionId');
+    if (!currentSessionId) return;
+
+    setLoadingContacts(true);
+    try {
+      const API_BASE = getAPIBaseURL();
+      const response = await fetch(`${API_BASE}/api/contacts/${currentSessionId}`);
+      const data = await response.json();
+      
+      if (data.success && data.contacts) {
+        console.log('[CONTACTS] 📋 Contactos cargados:', data.contacts.length);
+        setAvailableContacts(data.contacts);
+      }
+    } catch (error) {
+      console.error('[CONTACTS] ❌ Error cargando contactos:', error);
+    } finally {
+      setLoadingContacts(false);
+    }
+  };
 
   const loadSettingsData = async () => {
     try {
@@ -751,7 +781,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
         password: '',
         role: user.role,
         department: user.department || '',
-        phone: ''
+        phone: user.phone || '',
+        avatar_url: user.avatar || ''
       });
     } else {
       setSelectedUser(null);
@@ -761,7 +792,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
         password: '',
         role: 'agent',
         department: '',
-        phone: ''
+        phone: '',
+        avatar_url: ''
       });
     }
     setShowUserDialog(true);
@@ -1942,6 +1974,57 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
         </DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
+            {/* 📱 Botón para buscar en contactos (solo al crear nuevo) */}
+            {!selectedUser && (
+              <Grid item xs={12}>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  startIcon={<Search />}
+                  onClick={() => {
+                    loadWhatsAppContacts();
+                    setContactSearchOpen(true);
+                  }}
+                  sx={{
+                    borderColor: '#25D366',
+                    color: '#25D366',
+                    '&:hover': {
+                      borderColor: '#128C7E',
+                      backgroundColor: 'rgba(37, 211, 102, 0.1)'
+                    }
+                  }}
+                >
+                  Buscar en Contactos de WhatsApp
+                </Button>
+              </Grid>
+            )}
+            
+            {/* Vista previa del avatar seleccionado */}
+            {userForm.avatar_url && (
+              <Grid item xs={12}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 2 }}>
+                  <Avatar 
+                    src={userForm.avatar_url} 
+                    sx={{ width: 64, height: 64 }}
+                  />
+                  <Box>
+                    <Typography variant="body2" fontWeight={600}>
+                      Foto de perfil cargada
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Esta imagen se mostrará en el perfil del agente
+                    </Typography>
+                  </Box>
+                  <IconButton 
+                    onClick={() => setUserForm({ ...userForm, avatar_url: '' })}
+                    size="small"
+                  >
+                    <Close />
+                  </IconButton>
+                </Box>
+              </Grid>
+            )}
+            
             <Grid item xs={12}>
               <TextField
                 fullWidth
@@ -1949,6 +2032,27 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                 value={userForm.name}
                 onChange={(e) => setUserForm({ ...userForm, name: e.target.value })}
                 variant="outlined"
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Número de Teléfono"
+                type="tel"
+                value={userForm.phone}
+                onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })}
+                variant="outlined"
+                required
+                placeholder="595981234567"
+                helperText="Número con código de país (ej: 595981234567)"
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Phone sx={{ color: '#128C7E' }} />
+                    </InputAdornment>
+                  ),
+                }}
               />
             </Grid>
             <Grid item xs={12}>
@@ -1959,22 +2063,29 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                 value={userForm.email}
                 onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
                 variant="outlined"
+                required
+                helperText="Se usará para iniciar sesión"
               />
             </Grid>
-            {!selectedUser && (
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Contraseña"
-                  type="password"
-                  value={userForm.password}
-                  onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
-                  variant="outlined"
-                  required
-                  helperText="Requerida para nuevos usuarios"
-                />
-              </Grid>
-            )}
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label={selectedUser ? "Nueva Contraseña (dejar vacío para mantener la actual)" : "Contraseña"}
+                type="password"
+                value={userForm.password}
+                onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                variant="outlined"
+                required={!selectedUser}
+                helperText={selectedUser ? "Solo ingresa una contraseña si deseas cambiarla" : "Requerida para nuevos usuarios"}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Lock sx={{ color: '#128C7E' }} />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Grid>
             <Grid item xs={6}>
               <FormControl fullWidth>
                 <InputLabel>Rol</InputLabel>
@@ -1992,18 +2103,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
             <Grid item xs={6}>
               <TextField
                 fullWidth
-                label="Departamento"
+                label="Departamento (opcional)"
                 value={userForm.department}
                 onChange={(e) => setUserForm({ ...userForm, department: e.target.value })}
-                variant="outlined"
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Teléfono (opcional)"
-                value={userForm.phone}
-                onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })}
                 variant="outlined"
               />
             </Grid>
@@ -2017,6 +2119,101 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
             disabled={saveStatus === 'saving'}
           >
             {saveStatus === 'saving' ? 'Guardando...' : (selectedUser ? 'Actualizar' : 'Crear')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 📱 Dialog de búsqueda de contactos */}
+      <Dialog 
+        open={contactSearchOpen} 
+        onClose={() => setContactSearchOpen(false)} 
+        maxWidth="sm" 
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Phone sx={{ color: '#25D366' }} />
+            <Typography variant="h6">Seleccionar Contacto de WhatsApp</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            placeholder="Buscar por nombre..."
+            value={contactSearchQuery}
+            onChange={(e) => setContactSearchQuery(e.target.value)}
+            sx={{ mb: 2 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search />
+                </InputAdornment>
+              ),
+            }}
+          />
+          
+          {loadingContacts ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <List sx={{ maxHeight: 400, overflow: 'auto' }}>
+              {availableContacts
+                .filter(contact => 
+                  contact.name?.toLowerCase().includes(contactSearchQuery.toLowerCase()) ||
+                  contact.notify_name?.toLowerCase().includes(contactSearchQuery.toLowerCase())
+                )
+                .map((contact) => (
+                  <ListItem
+                    key={contact.jid}
+                    button
+                    onClick={() => {
+                      // Llenar el formulario con datos del contacto
+                      setUserForm({
+                        ...userForm,
+                        name: contact.name || contact.notify_name || contact.jid.split('@')[0],
+                        phone: contact.jid.split('@')[0],
+                        avatar_url: contact.avatar_url || ''
+                      });
+                      setContactSearchOpen(false);
+                      setContactSearchQuery('');
+                    }}
+                    sx={{
+                      borderRadius: 2,
+                      mb: 1,
+                      '&:hover': {
+                        backgroundColor: 'rgba(37, 211, 102, 0.1)'
+                      }
+                    }}
+                  >
+                    <ListItemAvatar>
+                      <Avatar 
+                        src={contact.avatar_url} 
+                        sx={{ bgcolor: '#25D366' }}
+                      >
+                        {(contact.name || contact.notify_name || 'U')[0].toUpperCase()}
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText
+                      primary={contact.name || contact.notify_name || contact.jid.split('@')[0]}
+                      secondary={contact.jid.split('@')[0]}
+                    />
+                  </ListItem>
+                ))}
+              {availableContacts.filter(contact => 
+                contact.name?.toLowerCase().includes(contactSearchQuery.toLowerCase()) ||
+                contact.notify_name?.toLowerCase().includes(contactSearchQuery.toLowerCase())
+              ).length === 0 && (
+                <Typography variant="body2" sx={{ textAlign: 'center', color: '#64748b', py: 3 }}>
+                  {contactSearchQuery ? 'No se encontraron contactos' : 'No hay contactos disponibles'}
+                </Typography>
+              )}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setContactSearchOpen(false)}>
+            Cancelar
           </Button>
         </DialogActions>
       </Dialog>

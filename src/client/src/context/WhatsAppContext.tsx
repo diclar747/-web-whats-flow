@@ -188,6 +188,8 @@ interface WhatsAppMessage {
   mediaUrl?: string;
   mediaMimeType?: string;
   sentBy?: string; // Nombre del agente que envió el mensaje
+  agent_id?: number; // 🔥 ID del agente que envió el mensaje
+  agent_name?: string; // 🔥 Nombre del agente que envió el mensaje
   reactions?: MessageReaction[];
   contextInfo?: {
     quotedMessageId?: string;
@@ -210,7 +212,7 @@ interface WhatsAppContextType {
   generateQR: () => Promise<string | null>;
   connectSession: (sessionId: string) => void;
   disconnectSession: () => void;
-  loadChats: (sessionId: string) => Promise<void>;
+  loadChats: (sessionId: string, dateFilter?: string) => Promise<void>;
   loadMessages: (chatId: string) => Promise<void>;
   sendMessage: (chatId: string, message: string, contextInfo?: any) => Promise<boolean>;
   sendFile: (chatId: string, file: File, caption?: string) => Promise<boolean>;
@@ -285,7 +287,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     return false;
   };
 
-  const loadChats = useCallback(async (sessionId: string): Promise<void> => {
+  const loadChats = useCallback(async (sessionId: string, dateFilter: string = 'today'): Promise<void> => {
     try {
       setIsLoading(true);
       setError(null);
@@ -293,10 +295,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       // Si es agente, usar endpoint de chats asignados
       const isAgent = userRole && userRole !== 'admin';
       const endpoint = isAgent && userId
-        ? `${API_BASE}/api/agents/${userId}/chats?sessionId=${sessionId}`
-        : `${API_BASE}/api/chats/${sessionId}`;
+        ? `${API_BASE}/api/agents/${userId}/chats?sessionId=${sessionId}&dateFilter=${dateFilter}`
+        : `${API_BASE}/api/chats/${sessionId}?dateFilter=${dateFilter}`;
 
-      console.log(`🔄 Cargando chats desde API (${isAgent ? 'AGENTE' : 'ADMIN'}):`, endpoint);
+      console.log(`🔄 Cargando chats desde API (${isAgent ? 'AGENTE' : 'ADMIN'}) con filtro: ${dateFilter}`, endpoint);
       const response = await fetch(endpoint);
       const data = await response.json();
 
@@ -306,11 +308,14 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         const chatMap = new Map();
 
         data.chats.forEach((chat: any) => {
-          if (!chatMap.has(chat.id)) {
+          // Safety check: ensure chat.id exists
+          if (!chat.id && chat.chat_jid) chat.id = chat.chat_jid; // Fallback for agent chats
+
+          if (chat.id && !chatMap.has(chat.id)) {
             chatMap.set(chat.id, {
               id: chat.id,
-              name: chat.subject || chat.name || chat.id.split('@')[0] || 'Desconocido',
-              isGroup: chat.isGroup || chat.id.includes('@g.us'),
+              name: chat.subject || chat.name || (chat.id ? chat.id.split('@')[0] : 'Desconocido'),
+              isGroup: chat.isGroup || (chat.id && chat.id.includes('@g.us')),
               lastMessage: chat.lastMessage || 'Toca para cargar mensajes',
               lastMessageFromMe: chat.fromMe !== undefined ? chat.fromMe : undefined, // Mapear campo del servidor
               timestamp: chat.timestamp || new Date().toISOString(),
@@ -514,7 +519,9 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           message: newMessage.message || newMessage.text || '',
           text: newMessage.message || newMessage.text || '',
           chatJid: normalizedChatJid,
-          isFromMe: Boolean((newMessage as any).from_me || newMessage.isFromMe)
+          isFromMe: Boolean((newMessage as any).from_me || newMessage.isFromMe),
+          agent_id: (newMessage as any).agent_id,  // 🔥 Incluir ID del agente
+          agent_name: (newMessage as any).agent_name  // 🔥 Incluir nombre del agente
         };
 
         // Notificaciones para mensajes entrantes - SIEMPRE mostrar
@@ -738,7 +745,12 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       lastActivity: new Date().toISOString()
     };
     setSession(newSession);
-    sessionStorage.setItem('whatsflow_session', sessionId);
+    
+    // 🔒 SEGURIDAD: NO guardar automáticamente el sessionId aquí
+    // Solo debe guardarse cuando el usuario EXPLÍCITAMENTE inicia sesión
+    // Esta función puede ser llamada desde eventos de Socket.IO sin autenticación
+    // sessionStorage.setItem('whatsflow_session', sessionId);
+    
     loadChats(sessionId);
   };
 

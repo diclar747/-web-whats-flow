@@ -52,6 +52,7 @@ interface Message {
   text_content: string;
   from_me: boolean;
   timestamp: string;
+  message_type?: string; // audioMessage, imageMessage, videoMessage, etc.
   media_type?: string;
   media_url?: string;
   agent_id?: number;
@@ -576,7 +577,9 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
         timestamp: data.timestamp || new Date().toISOString(),
         media_type: data.media_type || data.type,
         media_url: data.media_url || data.mediaUrl,
-        sentBy: data.sentByName
+        sentBy: data.sentByName,
+        agent_id: data.agent_id,  // 🔥 Incluir ID del agente
+        agent_name: data.agent_name  // 🔥 Incluir nombre del agente
       };
       
       // Si hay un chat seleccionado y el mensaje es para ese chat
@@ -872,13 +875,86 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                     >
                       {message.media_url && (
                         <Box mb={1}>
-                          {message.media_type === 'image' && (
+                          {/* Imagen */}
+                          {(message.message_type === 'imageMessage' || message.media_type === 'image') && message.media_url && (
                             <img
                               src={message.media_url.startsWith('http') ? message.media_url : `${apiUrl}${message.media_url}`}
-                              alt="Media"
-                              style={{ maxWidth: '100%', borderRadius: '8px' }}
+                              alt="Imagen"
+                              style={{ maxWidth: '100%', borderRadius: '8px', cursor: 'pointer' }}
+                              onClick={() => window.open(message.media_url?.startsWith('http') ? message.media_url : `${apiUrl}${message.media_url}`, '_blank')}
                               onError={(e) => {
-                                console.error('Error loading image:', message.media_url);
+                                console.error('Error cargando imagen:', message.media_url);
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
+                          )}
+                          
+                          {/* Audio */}
+                          {(message.message_type === 'audioMessage' || message.media_type === 'audio') && message.media_url && (
+                            <Box sx={{ width: '100%', minWidth: '250px' }}>
+                              <audio 
+                                controls 
+                                style={{ width: '100%' }}
+                                preload="metadata"
+                              >
+                                <source 
+                                  src={message.media_url.startsWith('http') ? message.media_url : `${apiUrl}${message.media_url}`}
+                                  type="audio/ogg"
+                                />
+                                <source 
+                                  src={message.media_url.startsWith('http') ? message.media_url : `${apiUrl}${message.media_url}`}
+                                  type="audio/mpeg"
+                                />
+                                Tu navegador no soporta el elemento de audio.
+                              </audio>
+                            </Box>
+                          )}
+                          
+                          {/* Video */}
+                          {(message.message_type === 'videoMessage' || message.media_type === 'video') && message.media_url && (
+                            <video
+                              controls
+                              style={{ maxWidth: '100%', borderRadius: '8px' }}
+                              preload="metadata"
+                            >
+                              <source 
+                                src={message.media_url.startsWith('http') ? message.media_url : `${apiUrl}${message.media_url}`}
+                              />
+                              Tu navegador no soporta el elemento de video.
+                            </video>
+                          )}
+                          
+                          {/* Documento */}
+                          {(message.message_type === 'documentMessage' || message.media_type === 'document') && message.media_url && (
+                            <Button
+                              variant="outlined"
+                              startIcon={<AttachFileIcon />}
+                              href={message.media_url.startsWith('http') ? message.media_url : `${apiUrl}${message.media_url}`}
+                              target="_blank"
+                              download
+                              sx={{ 
+                                textTransform: 'none',
+                                borderRadius: 2,
+                                borderColor: '#00a884',
+                                color: '#00a884',
+                                '&:hover': {
+                                  borderColor: '#00796b',
+                                  bgcolor: 'rgba(0, 168, 132, 0.1)'
+                                }
+                              }}
+                            >
+                              📄 Descargar archivo
+                            </Button>
+                          )}
+                          
+                          {/* Sticker */}
+                          {message.message_type === 'stickerMessage' && message.media_url && (
+                            <img
+                              src={message.media_url.startsWith('http') ? message.media_url : `${apiUrl}${message.media_url}`}
+                              alt="Sticker"
+                              style={{ maxWidth: '150px', borderRadius: '8px' }}
+                              onError={(e) => {
+                                console.error('Error cargando sticker:', message.media_url);
                                 e.currentTarget.style.display = 'none';
                               }}
                             />

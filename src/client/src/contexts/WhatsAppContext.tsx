@@ -326,9 +326,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   }, [API_BASE, userId, userRole]);
 
   useEffect(() => {
-    const savedSessionId = localStorage.getItem('whatsflow_session');
+    // 🔒 SEGURIDAD: Leer SOLO de sessionStorage (único por pestaña)
+    const savedSessionId = sessionStorage.getItem('whatsflow_session');
     if (savedSessionId) {
-      console.log('Sesión encontrada en localStorage:', savedSessionId);
+      console.log('Sesión encontrada en sessionStorage:', savedSessionId);
       setConnectionStatus('connecting');
 
       const checkConnection = async () => {
@@ -707,7 +708,9 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       lastActivity: new Date().toISOString()
     };
     setSession(newSession);
+    // Guardar en ambos para compatibilidad (admin por QR necesita localStorage)
     localStorage.setItem('whatsflow_session', sessionId);
+    sessionStorage.setItem('whatsflow_session', sessionId);
     loadChats(sessionId);
   };
 

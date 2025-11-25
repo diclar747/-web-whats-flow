@@ -26,15 +26,12 @@ type ThemeProviderProps = {
 };
 
 function ThemeProvider({ children }: ThemeProviderProps) {
-  // Cargar preferencia guardada o detectar del sistema
+  // Cargar preferencia guardada, por defecto modo claro
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('whatsflow-theme');
     if (saved === 'light' || saved === 'dark') return saved;
 
-    // Detectar preferencia del sistema
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark';
-    }
+    // Por defecto modo claro (no detectar sistema)
     return 'light';
   });
 

@@ -374,7 +374,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
 
       // Cargar usuarios reales (agentes/operadores) desde la base de datos
       try {
-        const usersResponse = await fetch(`/api/users`);
+        const usersResponse = await fetch(`/api/users?sessionId=${sessionId}`);
         const usersData = await usersResponse.json();
         
         if (usersData.success && usersData.users && usersData.users.length > 0) {
