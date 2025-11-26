@@ -144,9 +144,40 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
 
     const whatsappClient = sessionData.client;
 
+    // Obtener configuración de envíos
+    const [settings] = await pool.execute(
+      `SELECT reminder_days_before, send_hour_start, send_hour_end, 
+              interval_min_seconds, interval_max_seconds
+       FROM campaign_settings 
+       WHERE session_id = ?`,
+      [sessionId]
+    );
+
+    const config = settings[0] || {
+      reminder_days_before: 0,
+      send_hour_start: '07:00:00',
+      send_hour_end: '18:00:00',
+      interval_min_seconds: 60,
+      interval_max_seconds: 120
+    };
+
     const now = new Date();
     const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    const currentTime = now.toTimeString().split(' ')[0].substring(0, 5); // HH:MM
+    const currentTime = now.toTimeString().split(' ')[0]; // HH:MM:SS
+    const currentHour = currentTime.substring(0, 5); // HH:MM
+    
+    // Verificar si estamos dentro del horario permitido
+    const startTime = config.send_hour_start.substring(0, 5); // HH:MM
+    const endTime = config.send_hour_end.substring(0, 5); // HH:MM
+    
+    if (currentHour < startTime || currentHour > endTime) {
+      return res.json({ 
+        success: true, 
+        sent: 0, 
+        message: `Fuera del horario de envío (${startTime} - ${endTime})` 
+      });
+    }
+
     let sentCount = 0;
 
     // Obtener campañas activas de la sesión desde la base de datos
@@ -170,17 +201,24 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
       let campaignUpdated = false;
 
       for (const contact of campaign.contactos) {
-        // Verificar si es la fecha y hora de envío y está pendiente
-        const contactHour = contact.hora || '00:00';
-        const contactDateTime = `${contact.fecha} ${contactHour}`;
-        const currentDateTime = `${currentDate} ${currentTime}`;
+        if (contact.estado !== 'pendiente') continue;
+
+        // Calcular fecha de envío basada en el recordatorio
+        const dueDate = new Date(contact.fecha);
+        const sendDate = new Date(dueDate);
+        sendDate.setDate(sendDate.getDate() - config.reminder_days_before);
+        const sendDateStr = sendDate.toISOString().split('T')[0];
+
+        // Verificar si es el día de envío
+        if (sendDateStr !== currentDate) continue;
+
+        // Si el contacto tiene hora específica, respetarla
+        const contactHour = contact.hora || startTime;
         
-        const shouldSend = contact.estado === 'pendiente' &&
-                          contact.fecha === currentDate &&
-                          contactHour <= currentTime;
+        const shouldSend = contactHour <= currentHour;
 
         if (shouldSend) {
-          console.log(`📅 Enviando mensaje programado: ${contact.nombre} - Fecha: ${contact.fecha} Hora: ${contactHour}`);
+          console.log(`📅 Enviando mensaje programado: ${contact.nombre} - Fecha vencimiento: ${contact.fecha} - Envío: ${sendDateStr} ${contactHour}`);
 
           try {
             // Reemplazar variables en el mensaje
@@ -188,7 +226,8 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
               .replace(/{nombre}/g, contact.nombre || '')
               .replace(/{dato1}/g, contact.dato1 || '')
               .replace(/{dato2}/g, contact.dato2 || '')
-              .replace(/{dato3}/g, contact.dato3 || '');
+              .replace(/{dato3}/g, contact.dato3 || '')
+              .replace(/{fecha}/g, contact.fecha || '');
 
             // Formatear número
             let phoneNumber = contact.numero.replace(/\D/g, '');
@@ -212,13 +251,19 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
             }
 
             contact.estado = 'enviado';
+            contact.enviadoEn = new Date().toISOString();
             sentCount++;
             campaignUpdated = true;
 
             console.log(`✅ Mensaje enviado a ${contact.nombre} (${contact.numero})`);
 
-            // Esperar un poco entre mensajes para evitar bloqueos
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            // Esperar tiempo aleatorio entre mensajes según configuración
+            const minDelay = (config.interval_min_seconds || 60) * 1000;
+            const maxDelay = (config.interval_max_seconds || 120) * 1000;
+            const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+            
+            console.log(`⏱️  Esperando ${Math.floor(randomDelay/1000)} segundos antes del próximo envío...`);
+            await new Promise(resolve => setTimeout(resolve, randomDelay));
 
           } catch (error) {
             console.error(`❌ Error enviando a ${contact.numero}:`, error);
@@ -369,6 +414,69 @@ router.get('/detail/:campaignId', async (req, res) => {
 
   } catch (error) {
     console.error('Error obteniendo detalle de campaña:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE - Eliminar un contacto específico de una campaña
+router.delete('/:campaignId/contact/:phoneNumber', async (req, res) => {
+  try {
+    const { campaignId, phoneNumber } = req.params;
+    const { sessionId } = req.query;
+
+    // Obtener campaña de la base de datos
+    const [campaigns] = await pool.execute(
+      'SELECT * FROM campaigns WHERE id = ? AND session_id = ?',
+      [campaignId, sessionId]
+    );
+
+    if (campaigns.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Campaña no encontrada o no tienes permiso'
+      });
+    }
+
+    const campaign = campaigns[0];
+    let contactos = JSON.parse(campaign.contacts || '[]');
+
+    // Filtrar el contacto a eliminar
+    const originalLength = contactos.length;
+    contactos = contactos.filter(c => c.numero !== phoneNumber);
+
+    if (contactos.length === originalLength) {
+      return res.status(404).json({
+        success: false,
+        error: 'Contacto no encontrado en la campaña'
+      });
+    }
+
+    // Calcular estadísticas actualizadas
+    const totalContactos = contactos.length;
+    const enviados = contactos.filter(c => c.estado === 'enviado').length;
+    const errores = contactos.filter(c => c.estado === 'error').length;
+
+    // Guardar cambios en la base de datos
+    await pool.execute(
+      `UPDATE campaigns 
+       SET contacts = ?, 
+           progress_total = ?,
+           progress_sent = ?, 
+           progress_failed = ?,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [JSON.stringify(contactos), totalContactos, enviados, errores, campaignId]
+    );
+
+    console.log(`[CAMPAIGN-DB] Contacto ${phoneNumber} eliminado de campaña ${campaignId}`);
+
+    res.json({
+      success: true,
+      message: 'Contacto eliminado correctamente'
+    });
+
+  } catch (error) {
+    console.error('Error eliminando contacto:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

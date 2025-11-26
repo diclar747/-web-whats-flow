@@ -47,15 +47,32 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
   const [showImagePreview, setShowImagePreview] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  if (!mediaUrl) return null;
+  if (!mediaUrl) {
+    console.warn('[ModernMessageMedia] ⚠️ mediaUrl está vacío para tipo:', type);
+    return null;
+  }
 
   const getMediaUrl = (url: string) => {
-    if (!url) return '';
+    if (!url) {
+      console.warn('[ModernMessageMedia] ⚠️ URL vacía en getMediaUrl');
+      return '';
+    }
+
+    // Si ya es una URL completa, retornarla tal cual
     if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('blob:')) {
+      console.log('[ModernMessageMedia] ✅ URL completa detectada:', url.substring(0, 50) + '...');
       return url;
     }
+
+    // Construir URL completa para rutas relativas
     const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
-    return `${API_BASE}${url}`;
+    const fullUrl = url.startsWith('/') ? `${API_BASE}${url}` : `${API_BASE}/${url}`;
+    console.log('[ModernMessageMedia] 🔗 URL procesada:', {
+      original: url,
+      base: API_BASE,
+      final: fullUrl
+    });
+    return fullUrl;
   };
 
   const handleDownload = async (url: string, name: string) => {
@@ -120,7 +137,13 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
               marginBottom: message ? '8px' : '0'
             }}
             onLoad={() => setIsLoading(false)}
-            onError={() => {
+            onError={(e) => {
+              console.error('[ModernMessageMedia] ❌ Error cargando imagen:', {
+                originalUrl: mediaUrl,
+                processedUrl: getMediaUrl(mediaUrl),
+                type: type,
+                error: e
+              });
               setIsLoading(false);
               setHasError(true);
             }}
@@ -236,7 +259,13 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
             borderRadius: '12px'
           }}
           onLoadedMetadata={() => setIsLoading(false)}
-          onError={() => {
+          onError={(e) => {
+            console.error('[ModernMessageMedia] ❌ Error cargando video:', {
+              originalUrl: mediaUrl,
+              processedUrl: getMediaUrl(mediaUrl),
+              mimeType: mediaMimeType,
+              error: e
+            });
             setIsLoading(false);
             setHasError(true);
           }}
@@ -300,7 +329,15 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
               height: '32px',
               outline: 'none'
             }}
-            onError={() => setHasError(true)}
+            onError={(e) => {
+              console.error('[ModernMessageMedia] ❌ Error cargando audio:', {
+                originalUrl: mediaUrl,
+                processedUrl: getMediaUrl(mediaUrl),
+                mimeType: mediaMimeType,
+                error: e
+              });
+              setHasError(true);
+            }}
           >
             <source src={getMediaUrl(mediaUrl)} type={mediaMimeType || 'audio/mpeg'} />
             Tu navegador no soporta audio

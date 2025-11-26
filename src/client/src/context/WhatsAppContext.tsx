@@ -288,6 +288,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   };
 
   const loadChats = useCallback(async (sessionId: string, dateFilter: string = 'today'): Promise<void> => {
+    console.log('[WhatsAppContext] 🚀 loadChats llamado con:', { sessionId, dateFilter, userRole, userId });
     try {
       setIsLoading(true);
       setError(null);
@@ -301,6 +302,13 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       console.log(`🔄 Cargando chats desde API (${isAgent ? 'AGENTE' : 'ADMIN'}) con filtro: ${dateFilter}`, endpoint);
       const response = await fetch(endpoint);
       const data = await response.json();
+
+      console.log('[WhatsAppContext] 📦 Respuesta de API recibida:', {
+        success: data.success,
+        chatsLength: data.chats?.length,
+        source: data.source,
+        fullData: data
+      });
 
       if (data.success && data.chats) {
         console.log(`✅ Chats cargados exitosamente: ${data.chats.length}`);
@@ -340,8 +348,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         const groupCount = mappedChats.filter(chat => chat.isGroup).length;
         console.log(`📋 Filtrando ${groupCount} grupos. Solo contactos individuales: ${individualChats.length}`);
 
+        console.log('[WhatsAppContext] 💾 Guardando chats en estado:', individualChats.length, individualChats);
         setChats(individualChats);
         setConnectionStatus('connected');
+        console.log('[WhatsAppContext] ✅ setChats ejecutado con', individualChats.length, 'chats');
 
       } else if (data.source === 'database_fallback') {
         console.log('📦 Usando datos de fallback de base de datos');
@@ -362,7 +372,14 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         setConnectionStatus('connected');
         setError('Usando datos guardados. Conecte WhatsApp para ver chats completos.');
       } else {
-        console.log('❌ No se encontraron chats');
+        console.error('[WhatsAppContext] ❌ No se encontraron chats o API falló:', {
+          success: data.success,
+          hasChats: !!data.chats,
+          chatsLength: data.chats?.length,
+          error: data.error,
+          message: data.message
+        });
+        console.log('[WhatsAppContext] 🚫 LIMPIANDO chats (setChats([]))');
         setChats([]);
         setConnectionStatus('error');
         setError('No se pudieron cargar los chats. Verifique la conexión de WhatsApp.');

@@ -3974,6 +3974,37 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     console.error(`[${newSessionId}] ❌ Error actualizando agentes:`, agentUpdateError);
                 }
 
+                // 🔐 GENERAR TOKEN JWT PARA ADMIN (Login por QR)
+                try {
+                    console.log(`[${newSessionId}] 🔐 Generando token JWT para admin: ${userPhoneNumber}`);
+
+                    const adminToken = jwt.sign(
+                        {
+                            phone: userPhoneNumber,
+                            role: 'admin',
+                            sessionId: newSessionId,
+                            type: 'qr_login',
+                            iat: Math.floor(Date.now() / 1000)
+                        },
+                        process.env.JWT_SECRET || 'tu-secret-key',
+                        { expiresIn: '30d' }
+                    );
+
+                    // Emitir token al cliente via Socket.IO
+                    io.emit('auth_token', {
+                        token: adminToken,
+                        user: {
+                            phone: userPhoneNumber,
+                            role: 'admin',
+                            sessionId: newSessionId
+                        }
+                    });
+
+                    console.log(`[${newSessionId}] ✅ Token JWT generado y emitido para admin ${userPhoneNumber}`);
+                } catch (tokenError) {
+                    console.error(`[${newSessionId}] ❌ Error generando token JWT:`, tokenError);
+                }
+
                 // Emitir evento global de conexión actualizada
                 io.emit('connection-update', {
                     status: 'connected',
@@ -8044,7 +8075,7 @@ app.post('/api/force-sync/:sessionId', async (req, res) => {
 // Obtener chats/contactos
 app.get('/api/chats/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
-    const { dateFilter = 'today' } = req.query; // 📅 Por defecto solo hoy
+    const { dateFilter = 'all' } = req.query; // 📅 Por defecto 'all' para mostrar todos los chats
     // 🚫 GRUPOS BLOQUEADOS - Siempre false, no permitir incluir grupos
     const includeGroups = false; // Forzado a false - No sincronizar grupos
     const phoneNumber = await getUserPhoneNumber(sessionId);
@@ -8055,13 +8086,73 @@ app.get('/api/chats/:sessionId', async (req, res) => {
 
     try {
         console.log(`[API][${sessionId}] 📅 Solicitud de chats con filtro: ${dateFilter}. includeGroups: ${includeGroups} (FORZADO - grupos bloqueados)`);
-        const chats = await loadChatListFromDB(sessionId, includeGroups, dateFilter);
-        console.log(`[API][${sessionId}] ✅ Devolviendo ${chats.length} chats (filtro: ${dateFilter}). Conectado: ${isConnected}`);
+
+        let chats = [];
+        let source = 'database';
+
+        // 🚀 PRIORIDAD 1: Si hay sesión activa de WhatsApp, obtener chats de la sesión
+        if (session && session.sock && session.sock.store && session.sock.store.chats) {
+            console.log(`[API][${sessionId}] 🔥 Sesión activa detectada - obteniendo chats de WhatsApp en memoria`);
+
+            try {
+                let memoryChats = [];
+
+                // Intentar obtener chats del store
+                if (session.sock.store.chats.all) {
+                    memoryChats = session.sock.store.chats.all();
+                } else if (session.sock.store.chats.values) {
+                    memoryChats = Array.from(session.sock.store.chats.values());
+                } else {
+                    memoryChats = Array.from(session.sock.store.chats || []);
+                }
+
+                console.log(`[API][${sessionId}] 📱 Chats en memoria: ${memoryChats.length}`);
+
+                // Filtrar y mapear chats
+                chats = memoryChats
+                    .filter(chat => {
+                        if (!chat || !chat.id) return false;
+                        // Filtrar grupos si includeGroups es false
+                        if (!includeGroups && chat.id.includes('@g.us')) return false;
+                        // Filtrar status broadcasts
+                        if (chat.id.includes('status@broadcast')) return false;
+                        return true;
+                    })
+                    .map(chat => ({
+                        id: chat.id,
+                        name: chat.name || chat.subject || chat.id.split('@')[0],
+                        isGroup: chat.id.includes('@g.us'),
+                        lastMessage: chat.lastMessage?.message || 'Sin mensajes',
+                        timestamp: chat.conversationTimestamp ? new Date(chat.conversationTimestamp * 1000).toISOString() : new Date().toISOString(),
+                        fromMe: chat.lastMessage?.key?.fromMe || false,
+                        unreadCount: chat.unreadCount || 0,
+                        avatar: null,
+                        isOnline: !chat.id.includes('@g.us')
+                    }))
+                    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+                source = 'memory';
+                console.log(`[API][${sessionId}] ✅ Devolviendo ${chats.length} chats desde MEMORIA (WhatsApp activo)`);
+            } catch (memoryError) {
+                console.error(`[API][${sessionId}] ❌ Error obteniendo chats de memoria:`, memoryError);
+                chats = [];
+            }
+        }
+
+        // 🗄️ FALLBACK: Si no hay chats en memoria, intentar cargar desde DB
+        if (chats.length === 0) {
+            console.log(`[API][${sessionId}] 📦 No hay chats en memoria, intentando desde BD...`);
+            chats = await loadChatListFromDB(sessionId, includeGroups, dateFilter);
+            source = 'database';
+            console.log(`[API][${sessionId}] ✅ Devolviendo ${chats.length} chats desde BD`);
+        }
+
         res.json({
             success: true,
             sessionId,
             chats,
-            isConnected
+            isConnected,
+            source
         });
     } catch (error) {
         console.error(`[API][${sessionId}] Error cargando chats:`, error);
@@ -10339,6 +10430,41 @@ io.on('connection', (socket) => {
             console.log(`🔌 [Socket.IO] Cliente ${socket.id} unido explícitamente a session-${sid}`);
             // Confirmar al cliente que se unió exitosamente
             socket.emit('joined-session', { sessionId: sid, success: true });
+
+            // 🔐 GENERAR Y ENVIAR TOKEN JWT SI LA SESIÓN YA ESTÁ CONECTADA
+            // Esto cubre el caso donde WhatsApp ya estaba conectado antes de que el cliente se uniera
+            const existingSession = sessions.get(sid);
+            if (existingSession && existingSession.sock && existingSession.phoneNumber) {
+                console.log(`[${sid}] 🔐 Sesión ya conectada - Generando token JWT para admin: ${existingSession.phoneNumber}`);
+
+                try {
+                    const adminToken = jwt.sign(
+                        {
+                            phone: existingSession.phoneNumber,
+                            role: 'admin',
+                            sessionId: sid,
+                            type: 'qr_login_existing',
+                            iat: Math.floor(Date.now() / 1000)
+                        },
+                        process.env.JWT_SECRET || 'tu-secret-key',
+                        { expiresIn: '30d' }
+                    );
+
+                    // Enviar token solo a este cliente específico
+                    socket.emit('auth_token', {
+                        token: adminToken,
+                        user: {
+                            phone: existingSession.phoneNumber,
+                            role: 'admin',
+                            sessionId: sid
+                        }
+                    });
+
+                    console.log(`[${sid}] ✅ Token JWT enviado a cliente ${socket.id} para sesión existente`);
+                } catch (tokenError) {
+                    console.error(`[${sid}] ❌ Error generando token JWT para sesión existente:`, tokenError);
+                }
+            }
         } else {
             console.error(`❌ [JOIN-SESSION] sessionId vacío o inválido para ${socket.id}`, {
                 data: data,
@@ -18230,6 +18356,12 @@ const checkPlanFeature = (featureName) => {
 const personalizedCampaignsRouter = require('./routes/personalizedCampaigns');
 app.use('/api/personalized-campaigns', personalizedCampaignsRouter);
 app.set('whatsappSessions', sessions); // Hacer disponible para las rutas
+
+// ============= ENDPOINTS DE PLANTILLAS Y CONFIGURACIÓN =============
+const messageTemplatesRouter = require('./routes/messageTemplates');
+app.use('/api/message-templates', messageTemplatesRouter);
+// ============= FIN ENDPOINTS DE PLANTILLAS Y CONFIGURACIÓN =============
+
 // ============= FIN ENDPOINTS DE CAMPAÑAS PERSONALIZADAS =============
 
 // ============= ENDPOINT DE UPLOAD PARA CHATBOT =============

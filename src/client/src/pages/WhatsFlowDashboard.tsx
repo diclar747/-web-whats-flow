@@ -7,6 +7,7 @@ import { frontendLogger } from '../utils/frontendLogger';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { usePermissions } from '../hooks/usePermissions';
 import { useSyncProgress } from '../hooks/useSyncProgress';
+import { useSocket } from '../context/SocketContext';
 import {
   Box,
   AppBar,
@@ -149,6 +150,15 @@ interface NavigationItem {
 const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLogout }) => {
   const navigate = useNavigate();
   const location = useLocation();
+
+  // ✅ Guardar sessionId en localStorage para que SocketContext pueda acceder
+  useEffect(() => {
+    if (sessionId) {
+      localStorage.setItem('whatsflow_session', sessionId);
+      sessionStorage.setItem('whatsflow_session', sessionId);
+      console.log('[DASHBOARD] 💾 SessionId guardado para Socket.IO:', sessionId);
+    }
+  }, [sessionId]);
   const { chats } = useWhatsApp();
   const { toggleTheme, isDarkMode } = useTheme();
   const { hasModuleAccess, userRole: permUserRole } = usePermissions();
@@ -189,6 +199,16 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     kanbans: 0,
     appointments: 0
   });
+
+  // 🔍 DEBUG: Loguear cambios en dashboardStats
+  useEffect(() => {
+    console.log('[DASHBOARD] 📊 dashboardStats actualizado:', {
+      agents: dashboardStats.agents,
+      chatbots: dashboardStats.chatbots,
+      kanbans: dashboardStats.kanbans,
+      contacts: dashboardStats.contacts
+    });
+  }, [dashboardStats]);
 
   // Estado para ModernAlert
   const [alertOpen, setAlertOpen] = useState(false);
@@ -352,36 +372,6 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       return;
     }
 
-    // 🔒 VALIDACIÓN DE TOKEN LOCAL (Fix Auto-login)
-    // IMPORTANTE: Admin por QR NO requiere token de usuario, solo sessionId de WhatsApp
-    const localToken = localStorage.getItem('token') || sessionStorage.getItem('token');
-    const userType = sessionStorage.getItem('whatsflow_user_type') || localStorage.getItem('whatsflow_user_type');
-    
-    if (!localToken) {
-      console.warn('[AUTH] 🚫 Sin token local. Verificando tipo de usuario...');
-      
-      // Si es admin por QR, NO requiere token de usuario
-      if (userType === 'admin' && !isAgent) {
-        console.log('[AUTH] ✅ Admin por QR - No requiere token de usuario, validando sessionId...');
-        // Continuar con la validación del sessionId de WhatsApp
-      } else {
-        // Para agentes/supervisores SÍ se requiere token
-        console.warn('[AUTH] 🚫 Usuario agente/supervisor sin token. Verificando si acabamos de hacer login...');
-        
-        // Dar un pequeño delay para que el token se guarde después del login
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        const tokenAfterDelay = localStorage.getItem('token') || sessionStorage.getItem('token');
-        if (!tokenAfterDelay) {
-          console.warn('[AUTH] 🚫 Sesión sin token local. Bloqueando acceso.');
-          frontendLogger.log('SESSION_INVALID', { reason: 'No local token found (Auto-login prevention)' });
-          setSessionValid(false);
-          setWhatsappStatus('disconnected');
-          return;
-        }
-      }
-    }
-
     try {
       frontendLogger.log('CHECKING_SESSION_VALIDITY', { sessionId: currentSessionId });
 
@@ -394,10 +384,15 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
           isConnected: data.isConnected
         });
 
+        // ✅ WhatsApp está conectado - marcar sesión como válida
         setSessionValid(true);
         setWhatsappStatus('connected');
         setUserPhoneNumber(data.phoneNumber);
         setUserProfilePic(`/api/avatar/${currentSessionId}/${data.phoneNumber}@s.whatsapp.net`);
+
+        // ℹ️ Token JWT se recibirá automáticamente via Socket.IO (evento 'auth_token')
+        // No es necesario validarlo aquí, el servidor lo envía cuando conecta WhatsApp
+        console.log('[AUTH] ✅ Sesión WhatsApp válida. Token JWT se recibirá via Socket.IO si es necesario.');
       } else {
         frontendLogger.log('SESSION_INVALID', {
           reason: 'Not connected or no phone number',
@@ -420,7 +415,6 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
 
 
 
-  // ... (dentro de checkWhatsappStatus)
   const checkWhatsappStatus = useCallback(async () => {
     if (sessionValid === false) return;
 
@@ -430,59 +424,12 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       return;
     }
 
-    // 🔒 VALIDACIÓN DE TOKEN LOCAL (Fix Auto-login)
-    // IMPORTANTE: Admin por QR NO requiere token de usuario
-    const localToken = localStorage.getItem('token') || sessionStorage.getItem('token');
-    const userType = sessionStorage.getItem('whatsflow_user_type') || localStorage.getItem('whatsflow_user_type');
-    
-    if (!localToken) {
-      // Si es admin por QR, NO requiere token
-      if (userType === 'admin' && !isAgent) {
-        console.log('[AUTH] ✅ Admin por QR - No requiere token, continuando...');
-        // Continuar sin validar token
-      } else {
-        console.warn('[AUTH] ⏳ Token no encontrado, esperando...');
-        
-        // Dar tiempo para que el token se guarde después del login
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        const tokenAfterDelay = localStorage.getItem('token') || sessionStorage.getItem('token');
-        if (!tokenAfterDelay) {
-          console.warn('[AUTH] 🚫 Sin token después del delay');
-          setSessionValid(false);
-          setWhatsappStatus('disconnected');
-          return;
-        }
-      }
-    }
+    // La validación de token ya no es necesaria aquí
+    // Token JWT se recibe automáticamente via Socket.IO (evento 'auth_token')
+    // Solo verificamos que la sesión de WhatsApp esté activa
 
     // ... (resto de la función)
-  }, [sessionId, sessionValid, isAuthenticating, isAgent]);
-
-  // ... (dentro de handleConnectionUpdate)
-  const handleConnectionUpdate = (data: any) => {
-    console.log('[SOCKET] 📱 Estado de conexión actualizado:', data);
-    if (data.status === 'connected') {
-      setWhatsappStatus('connected');
-
-      const localToken = localStorage.getItem('token') || sessionStorage.getItem('token');
-      if (localToken) {
-        setSessionValid(true);
-        setIsAuthenticating(false); // Ya tenemos token, fin de autenticación
-      } else {
-        // Conectado pero sin token -> Estamos autenticando (QR escaneado)
-        console.log('[SOCKET] ⏳ Conectado, esperando token... (Activando modo autenticación)');
-        setIsAuthenticating(true);
-        // NO setSessionValid(true) todavía
-      }
-    } else if (data.status === 'disconnected') {
-      setWhatsappStatus('disconnected');
-      setIsAuthenticating(false);
-    } else {
-      setWhatsappStatus('connecting');
-    }
-    setLastConnectionCheck(new Date());
-  };
+  }, [sessionValid, isAuthenticating]);
 
   // Función para obtener estadísticas del dashboard
 const fetchDashboardStats = useCallback(async () => {
@@ -508,6 +455,7 @@ const fetchDashboardStats = useCallback(async () => {
         appointments: data.stats.appointments || 0
       };
       setDashboardStats(stats);
+      console.log('[STATS] 📊 Estadísticas actualizadas:', stats);
       // Las notificaciones se calculan automáticamente desde chats.unreadCount
     }
   } catch (error) {
@@ -524,6 +472,118 @@ useEffect(() => {
   }
 }, [totalUnreadMessages]);
 
+// ✅ FIX: Memoizar handlers de Socket.IO para evitar recrearlos en cada render
+const handleStatsUpdate = useCallback((stats: any) => {
+  console.log('[SOCKET] 📊 Estadísticas actualizadas en tiempo real:', stats);
+  const updatedStats = {
+    contacts: stats.contacts?.total || 0,
+    groups: stats.contacts?.groups || 0,
+    messages: stats.messages?.total || 0,
+    messagesToday: stats.messages?.today || 0,
+    agents: stats.agents || 0,
+    activeLines: stats.activeLines || 0,
+    unreadMessages: stats.unreadMessages || 0,
+    chatbots: stats.chatbots || 0,
+    campaigns: stats.campaigns || 0,
+    kanbans: stats.kanbans || 0,
+    appointments: stats.appointments || 0
+  };
+  setDashboardStats(updatedStats);
+}, []);
+
+const handleConnectionUpdate = useCallback((data: any) => {
+  console.log('[SOCKET] 📱 Estado de conexión actualizado:', data);
+  if (data.status === 'connected') {
+    setWhatsappStatus('connected');
+
+    const localToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+    if (localToken) {
+      setSessionValid(true);
+      setIsAuthenticating(false);
+    } else {
+      console.log('[SOCKET] ⏳ Conectado pero esperando token de autenticación... (Activando modo autenticación)');
+      setIsAuthenticating(true);
+    }
+  } else if (data.status === 'disconnected') {
+    setWhatsappStatus('disconnected');
+    setIsAuthenticating(false);
+  } else {
+    setWhatsappStatus('connecting');
+  }
+  setLastConnectionCheck(new Date());
+}, []);
+
+const handleSessionLoggedOut = useCallback((data: any) => {
+  console.log('[SOCKET] 👋 Sesión cerrada desde el teléfono:', data);
+
+  frontendLogger.log('LOGOUT_EVENT_RECEIVED', {
+    eventData: data,
+    triggeredBy: 'socket.io session-logged-out',
+    willClearStorage: true,
+    willRedirect: true,
+    currentUrl: window.location.href
+  });
+
+  sessionStorage.clear();
+  localStorage.clear();
+
+  frontendLogger.log('STORAGE_CLEARED', {
+    action: 'sessionStorage and localStorage cleared'
+  });
+
+  setAlertConfig({
+    title: 'Sesión Cerrada',
+    message: 'Sesión cerrada desde el dispositivo móvil. Será redirigido a la página principal.',
+    type: 'info',
+    onConfirm: () => {
+      setAlertOpen(false);
+      sessionStorage.clear();
+      localStorage.clear();
+      window.location.href = 'https://web.whats-flow.com/';
+    }
+  });
+  setAlertOpen(true);
+}, []);
+
+const handleAuthToken = useCallback((data: any) => {
+  console.log('[SOCKET] 🔐 Token recibido:', data);
+  if (data.token) {
+    // Guardar token en localStorage y sessionStorage
+    localStorage.setItem('token', data.token);
+    sessionStorage.setItem('token', data.token);
+
+    // Guardar rol del usuario
+    if (data.user && data.user.role) {
+      localStorage.setItem('userRole', data.user.role);
+      sessionStorage.setItem('userRole', data.user.role);
+      console.log('[SOCKET] 👤 Rol guardado:', data.user.role);
+    } else {
+      // Si no hay role en data.user, asumir que es admin (login por QR)
+      localStorage.setItem('userRole', 'admin');
+      sessionStorage.setItem('userRole', 'admin');
+      console.log('[SOCKET] 👤 Asumiendo rol admin (login por QR)');
+    }
+
+    // ✅ FIX RACE CONDITION: Ahora que tenemos el token, marcamos la sesión como válida
+    console.log('[SOCKET] ✅ Token guardado, activando sesión');
+    setSessionValid(true);
+    setWhatsappStatus('connected');
+    setIsAuthenticating(false);
+
+    // Recargar estadísticas ahora que tenemos autenticación válida
+    fetchDashboardStats();
+  }
+}, [fetchDashboardStats]);
+
+const handleAgentForceLogout = useCallback((data: any) => {
+  console.log('[SOCKET] 🚫 Logout forzado de agente:', data);
+  const currentRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+  if (currentRole === 'agent') {
+    handleSessionLoggedOut(data);
+  }
+}, [handleSessionLoggedOut]);
+
+// ✅ Inicialización: Ejecutar una sola vez cuando cambia sessionId
 useEffect(() => {
   // Redirigir a dashboard si estamos en la ruta base
   if (location.pathname === '/dashboard') {
@@ -550,143 +610,46 @@ useEffect(() => {
 
   // Obtener estadísticas iniciales (solo una vez)
   fetchDashboardStats();
+}, [sessionId, fetchDashboardStats]);
 
-  // Usar Socket.IO para actualizaciones en tiempo real (SIN POLLING)
-  const handleStatsUpdate = (stats: any) => {
-    console.log('[SOCKET] 📊 Estadísticas actualizadas en tiempo real:', stats);
-    const updatedStats = {
-      contacts: stats.contacts?.total || 0,
-      groups: stats.contacts?.groups || 0,
-      messages: stats.messages?.total || 0,
-      messagesToday: stats.messages?.today || 0,
-      agents: stats.agents || 0,
-      activeLines: stats.activeLines || 0,
-      unreadMessages: stats.unreadMessages || 0,
-      chatbots: stats.chatbots || 0,
-      campaigns: stats.campaigns || 0,
-      kanbans: stats.kanbans || 0,
-      appointments: stats.appointments || 0
-    };
-    setDashboardStats(updatedStats);
-  };
+// ✅ Usar Socket.IO del contexto global (evitar conexiones duplicadas)
+const { socket, isConnected } = useSocket();
 
-  // Handler para actualizaciones de conexión de WhatsApp en tiempo real
-  const handleConnectionUpdate = (data: any) => {
-    console.log('[SOCKET] 📱 Estado de conexión actualizado:', data);
-    if (data.status === 'connected') {
-      setWhatsappStatus('connected');
+// ✅ Socket.IO: Configurar listeners en tiempo real usando el contexto global
+useEffect(() => {
+  if (!socket || !sessionId) return;
 
-      const localToken = localStorage.getItem('token') || sessionStorage.getItem('token');
-      if (localToken) {
-        setSessionValid(true);
-        setIsAuthenticating(false);
-      } else {
-        console.log('[SOCKET] ⏳ Conectado pero esperando token de autenticación... (Activando modo autenticación)');
-        setIsAuthenticating(true);
-      }
-    } else if (data.status === 'disconnected') {
-      setWhatsappStatus('disconnected');
-      setIsAuthenticating(false);
-    } else {
-      setWhatsappStatus('connecting');
-    }
-    setLastConnectionCheck(new Date());
-  };
-
-  // Handler para cuando se cierra sesión desde el teléfono
-  const handleSessionLoggedOut = (data: any) => {
-    console.log('[SOCKET] 👋 Sesión cerrada desde el teléfono:', data);
-
-    frontendLogger.log('LOGOUT_EVENT_RECEIVED', {
-      eventData: data,
-      triggeredBy: 'socket.io session-logged-out',
-      willClearStorage: true,
-      willRedirect: true,
-      currentUrl: window.location.href
-    });
-
-    sessionStorage.clear();
-    localStorage.clear();
-
-    frontendLogger.log('STORAGE_CLEARED', {
-      action: 'sessionStorage and localStorage cleared'
-    });
-
-    setAlertConfig({
-      title: 'Sesión Cerrada',
-      message: 'Sesión cerrada desde el dispositivo móvil. Será redirigido a la página principal.',
-      type: 'info',
-      onConfirm: () => {
-        setAlertOpen(false);
-        sessionStorage.clear();
-        localStorage.clear();
-        window.location.href = 'https://web.whats-flow.com/';
-      }
-    });
-    setAlertOpen(true);
-  };
-
-  // Escuchar eventos de Socket.IO para estadísticas y conexión en tiempo real
-  const socketIo = (window as any).io || require('socket.io-client');
-  if (!socketIo || !sessionId) return;
-  
-  const ioSocket = socketIo();
+  console.log(`[SOCKET] 📡 Configurando listeners para sesión: ${sessionId}`);
 
   // Unirse a la sala de la sesión para recibir eventos específicos
-  ioSocket.emit('join-session', sessionId);
-  console.log(`[SOCKET] 🔗 Unido a sala de sesión: ${sessionId}`);
+  if (isConnected) {
+    socket.emit('join-session', sessionId);
+    console.log(`[SOCKET] 🔗 Unido a sala de sesión: ${sessionId}`);
+  }
 
-  // Suscribirse al evento de estadísticas para esta sesión
-  ioSocket.on(`dashboard-stats-${sessionId}`, handleStatsUpdate);
-  // Suscribirse al evento de conexión para esta sesión
-  ioSocket.on(`connection-${sessionId}`, handleConnectionUpdate);
-  ioSocket.on('connection-update', handleConnectionUpdate);
-  // Escuchar evento de sesión cerrada desde el teléfono
-  ioSocket.on('session-logged-out', handleSessionLoggedOut);
-  ioSocket.on(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
-
-  // Escuchar evento de token de autenticación (Admin)
-  ioSocket.on('auth_token', (data: any) => {
-    console.log('[SOCKET] 🔐 Token recibido:', data);
-    if (data.token) {
-      localStorage.setItem('token', data.token);
-      sessionStorage.setItem('token', data.token);
-      if (data.user) {
-        localStorage.setItem('userRole', data.user.role);
-        sessionStorage.setItem('userRole', data.user.role);
-      }
-
-      // ✅ FIX RACE CONDITION: Ahora que tenemos el token, marcamos la sesión como válida
-      console.log('[SOCKET] ✅ Token guardado, activando sesión');
-      setSessionValid(true);
-      setWhatsappStatus('connected');
-      setIsAuthenticating(false);
-    }
-  });
-
-  // Escuchar evento de logout forzado para agentes
-  ioSocket.on('agent-force-logout', (data: any) => {
-    console.log('[SOCKET] 🚫 Logout forzado de agente:', data);
-    const currentRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
-    if (currentRole === 'agent') {
-      handleSessionLoggedOut(data);
-    }
-  });
+  // Suscribirse a eventos con handlers memoizados
+  socket.on(`dashboard-stats-${sessionId}`, handleStatsUpdate);
+  socket.on(`connection-${sessionId}`, handleConnectionUpdate);
+  socket.on('connection-update', handleConnectionUpdate);
+  socket.on('session-logged-out', handleSessionLoggedOut);
+  socket.on(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
+  socket.on('auth_token', handleAuthToken);
+  socket.on('agent-force-logout', handleAgentForceLogout);
 
   console.log(`[SOCKET] ✅ Escuchando actualizaciones en tiempo real para sesión: ${sessionId}`);
-  console.log('[SOCKET] 🚫 POLLING ELIMINADO - Solo eventos de socket en tiempo real');
 
   return () => {
-    ioSocket.off(`dashboard-stats-${sessionId}`, handleStatsUpdate);
-    ioSocket.off(`connection-${sessionId}`, handleConnectionUpdate);
-    ioSocket.off('connection-update', handleConnectionUpdate);
-    ioSocket.off('session-logged-out', handleSessionLoggedOut);
-    ioSocket.off(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
-    ioSocket.off('auth_token');
-    ioSocket.off('agent-force-logout');
-    ioSocket.disconnect();
+    console.log(`[SOCKET] 🔌 Desconectando listeners para sesión: ${sessionId}`);
+    socket.off(`dashboard-stats-${sessionId}`, handleStatsUpdate);
+    socket.off(`connection-${sessionId}`, handleConnectionUpdate);
+    socket.off('connection-update', handleConnectionUpdate);
+    socket.off('session-logged-out', handleSessionLoggedOut);
+    socket.off(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
+    socket.off('auth_token', handleAuthToken);
+    socket.off('agent-force-logout', handleAgentForceLogout);
+    // NO desconectar el socket, es compartido globalmente
   };
-}, [sessionId]); // Solo depender de sessionId, las funciones se ejecutan internamente
+}, [socket, isConnected, sessionId, handleStatsUpdate, handleConnectionUpdate, handleSessionLoggedOut, handleAuthToken, handleAgentForceLogout]);
 
 const handleNavigation = (path: string) => {
   navigate(path);

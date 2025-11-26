@@ -49,7 +49,9 @@ import {
   Clear,
   CheckCircle,
   HourglassEmpty,
-  Cancel
+  Cancel,
+  Add,
+  Description
 } from '@mui/icons-material';
 import * as XLSX from 'xlsx';
 import { getAPIBaseURL } from '../utils/socketConfig';
@@ -84,6 +86,24 @@ interface PersonalizedCampaign {
   errores: number;
 }
 
+interface MessageTemplate {
+  id: string;
+  sessionId: string;
+  name: string;
+  messageText: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface CampaignSettings {
+  sessionId: string;
+  reminderDaysBefore: number;
+  sendHourStart: string;
+  sendHourEnd: string;
+  intervalMinSeconds: number;
+  intervalMaxSeconds: number;
+}
+
 interface PersonalizedCampaignModuleProps {
   sessionId: string;
 }
@@ -103,8 +123,30 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
 
   const [campaigns, setCampaigns] = useState<PersonalizedCampaign[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [showTemplatesDialog, setShowTemplatesDialog] = useState(false);
+  const [showTemplateFormDialog, setShowTemplateFormDialog] = useState(false);
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+
+  // Estados para plantillas
+  const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null);
+  const [templateForm, setTemplateForm] = useState({
+    name: '',
+    messageText: ''
+  });
+
+  // Estados para configuración
+  const [settings, setSettings] = useState<CampaignSettings>({
+    sessionId,
+    reminderDaysBefore: 0,
+    sendHourStart: '07:00',
+    sendHourEnd: '18:00',
+    intervalMinSeconds: 60,
+    intervalMaxSeconds: 120
+  });
 
   // Estados para crear campaña
   const [campaignName, setCampaignName] = useState('');
@@ -126,6 +168,8 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
 
   useEffect(() => {
     loadCampaigns();
+    loadTemplates();
+    loadSettings();
     // Configurar intervalo para enviar mensajes programados
     const interval = setInterval(() => {
       checkScheduledMessages();
@@ -144,6 +188,167 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
     } catch (error) {
       console.error('Error cargando campañas:', error);
     }
+  };
+
+  const loadTemplates = async () => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/message-templates/${sessionId}`);
+      const data = await response.json();
+      if (data.success) {
+        setTemplates(data.templates || []);
+      }
+    } catch (error) {
+      console.error('Error cargando plantillas:', error);
+    }
+  };
+
+  const loadSettings = async () => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/message-templates/settings/${sessionId}`);
+      const data = await response.json();
+      if (data.success) {
+        setSettings(data.settings);
+      }
+    } catch (error) {
+      console.error('Error cargando configuración:', error);
+    }
+  };
+
+  const saveSettings = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${getAPIBaseURL()}/api/message-templates/settings/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        showSuccess('Configuración guardada correctamente', 'Guardado');
+        setShowSettingsDialog(false);
+      } else {
+        showError(data.error || 'Error al guardar configuración', 'Error');
+      }
+    } catch (error) {
+      console.error('Error guardando configuración:', error);
+      showError('Error de conexión', 'Error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createTemplate = async () => {
+    if (!templateForm.name || !templateForm.messageText) {
+      showWarning('Por favor completa el nombre y el mensaje de la plantilla', 'Campos incompletos');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(`${getAPIBaseURL()}/api/message-templates/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          name: templateForm.name,
+          messageText: templateForm.messageText
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        showSuccess('Plantilla creada correctamente', 'Guardado');
+        setTemplateForm({ name: '', messageText: '' });
+        setShowTemplateFormDialog(false);
+        loadTemplates();
+      } else {
+        showError(data.error || 'Error al crear plantilla', 'Error');
+      }
+    } catch (error) {
+      console.error('Error creando plantilla:', error);
+      showError('Error de conexión', 'Error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateTemplate = async () => {
+    if (!editingTemplate || !templateForm.name || !templateForm.messageText) {
+      showWarning('Por favor completa todos los campos', 'Campos incompletos');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(`${getAPIBaseURL()}/api/message-templates/${editingTemplate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          name: templateForm.name,
+          messageText: templateForm.messageText
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        showSuccess('Plantilla actualizada correctamente', 'Guardado');
+        setTemplateForm({ name: '', messageText: '' });
+        setEditingTemplate(null);
+        setShowTemplateFormDialog(false);
+        loadTemplates();
+      } else {
+        showError(data.error || 'Error al actualizar plantilla', 'Error');
+      }
+    } catch (error) {
+      console.error('Error actualizando plantilla:', error);
+      showError('Error de conexión', 'Error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteTemplate = async (templateId: string) => {
+    showConfirm(
+      'Eliminar plantilla',
+      '¿Estás seguro de eliminar esta plantilla? Esta acción no se puede deshacer.',
+      async () => {
+        try {
+          const response = await fetch(`${getAPIBaseURL()}/api/message-templates/${templateId}?sessionId=${sessionId}`, {
+            method: 'DELETE'
+          });
+
+          const data = await response.json();
+          if (data.success) {
+            showSuccess('Plantilla eliminada correctamente', 'Eliminado');
+            loadTemplates();
+          } else {
+            showError(data.error || 'Error al eliminar plantilla', 'Error');
+          }
+        } catch (error) {
+          console.error('Error eliminando plantilla:', error);
+          showError('Error de conexión', 'Error');
+        }
+      },
+      'Eliminar',
+      'Cancelar'
+    );
+  };
+
+  const openEditTemplate = (template: MessageTemplate) => {
+    setEditingTemplate(template);
+    setTemplateForm({
+      name: template.name,
+      messageText: template.messageText
+    });
+    setShowTemplateFormDialog(true);
+  };
+
+  const openCreateTemplate = () => {
+    setEditingTemplate(null);
+    setTemplateForm({ name: '', messageText: '' });
+    setShowTemplateFormDialog(true);
   };
 
   const checkScheduledMessages = async () => {
@@ -406,37 +611,37 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
       {
         numero: '573001234567',
         nombre: 'Juan Pérez',
-        dato1: 'Valor 1',
-        dato2: 'Valor 2',
-        dato3: 'Valor 3',
-        fecha: '2025-01-15',
+        dato1: '$150.000',
+        dato2: 'Cuota #3',
+        dato3: 'Producto ABC',
+        fecha: '2025-11-30',
         hora: '09:00'
       },
       {
         numero: '573007654321',
         nombre: 'María García',
-        dato1: 'Valor A',
-        dato2: 'Valor B',
-        dato3: 'Valor C',
-        fecha: '2025-01-15',
+        dato1: '$200.000',
+        dato2: 'Cuota #5',
+        dato3: 'Servicio XYZ',
+        fecha: '2025-11-30',
         hora: '14:30'
       },
       {
         numero: '573009876543',
         nombre: 'Carlos López',
-        dato1: 'Dato Ejemplo 1',
-        dato2: 'Dato Ejemplo 2',
-        dato3: 'Dato Ejemplo 3',
-        fecha: '2025-02-05',
+        dato1: '$175.000',
+        dato2: 'Cuota #2',
+        dato3: 'Plan Premium',
+        fecha: '2025-12-05',
         hora: '10:15'
       },
       {
         numero: '573001111111',
         nombre: 'Ana Torres',
-        dato1: 'Info 1',
-        dato2: 'Info 2',
-        dato3: 'Info 3',
-        fecha: '2025-02-05',
+        dato1: '$120.000',
+        dato2: 'Cuota #1',
+        dato3: 'Membresía Anual',
+        fecha: '2025-12-10',
         hora: '16:45'
       }
     ];
@@ -492,7 +697,21 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
             startIcon={<Download />}
             onClick={downloadExcelTemplate}
           >
-            Descargar Plantilla Excel
+            Descargar Excel
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<Description />}
+            onClick={() => setShowTemplatesDialog(true)}
+          >
+            Mis Plantillas
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<Schedule />}
+            onClick={() => setShowSettingsDialog(true)}
+          >
+            Configuración
           </Button>
           <Button
             variant="contained"
@@ -507,9 +726,10 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
       {/* Descripción */}
       <Alert severity="info" sx={{ mb: 3 }}>
         <Typography variant="body2">
-          <strong>Envíos programados con fecha y hora:</strong> Carga un Excel con contactos, fechas y horas de envío. 
-          El sistema enviará automáticamente los mensajes en las fechas y horas programadas (formato fecha: YYYY-MM-DD, hora: HH:MM). 
-          Puedes reprogramar las campañas completadas.
+          <strong>Envíos programados con recordatorios:</strong> Carga un Excel con fechas de vencimiento y usa plantillas personalizadas. 
+          En Configuración puedes elegir enviar recordatorios 1 día antes, 2 días antes, 3 días antes, 1 semana antes o el mismo día. 
+          Los mensajes se envían en horarios aleatorios entre {settings.sendHourStart} y {settings.sendHourEnd} 
+          con intervalos de {settings.intervalMinSeconds}-{settings.intervalMaxSeconds} segundos para evitar patrones repetitivos.
         </Typography>
       </Alert>
 
@@ -696,9 +916,10 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                 <strong>Formato del Excel:</strong><br />
                 • <strong>numero:</strong> Número con código de país (ej: 573001234567)<br />
                 • <strong>nombre:</strong> Nombre del contacto<br />
-                • <strong>dato1, dato2, dato3:</strong> Datos personalizados para usar en el mensaje<br />
-                • <strong>fecha:</strong> Formato YYYY-MM-DD (ej: 2025-01-15)<br />
-                • <strong>hora:</strong> Formato HH:MM en formato 24 horas (ej: 09:30, 14:45)
+                • <strong>dato1, dato2, dato3:</strong> Datos personalizados (monto, cuota, producto, etc.)<br />
+                • <strong>fecha:</strong> Fecha de VENCIMIENTO en formato YYYY-MM-DD (ej: 2025-11-30)<br />
+                • <strong>hora:</strong> (Opcional) Hora específica de envío HH:MM (ej: 09:30)<br />
+                <strong>Nota:</strong> El recordatorio se enviará según tu configuración (ej: 1 día antes del vencimiento)
               </Alert>
               <Box
                 onDragEnter={handleDrag}
@@ -729,10 +950,10 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                   {excelFile ? excelFile.name : 'Arrastra o haz clic para cargar Excel'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Columnas requeridas: numero, nombre, dato1, dato2, dato3, fecha, hora
+                  Columnas: numero, nombre, dato1, dato2, dato3, fecha (vencimiento), hora (opcional)
                 </Typography>
                 <Typography variant="caption" color="text.secondary" display="block">
-                  Formato fecha: YYYY-MM-DD (ej: 2025-01-15) | Formato hora: HH:MM (ej: 09:30)
+                  La fecha es de vencimiento. El envío será según tu configuración de recordatorios.
                 </Typography>
               </Box>
 
@@ -746,8 +967,65 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
             {/* Mensaje Template */}
             <Box>
               <Typography variant="subtitle2" gutterBottom>
-                2. Mensaje (usa variables)
+                2. Seleccionar Plantilla o Mensaje Personalizado
               </Typography>
+              
+              {/* Selector de Plantillas */}
+              <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <FormControl fullWidth sx={{ mr: 2 }}>
+                    <InputLabel>Plantilla de Mensaje</InputLabel>
+                    <Select
+                      value={selectedTemplate}
+                      label="Plantilla de Mensaje"
+                      onChange={(e) => {
+                        setSelectedTemplate(e.target.value);
+                        const template = templates.find(t => t.id === e.target.value);
+                        if (template) {
+                          setMessageTemplate(template.messageText);
+                        }
+                      }}
+                    >
+                      <MenuItem value="">
+                        <em>Ninguna - Escribir mensaje personalizado</em>
+                      </MenuItem>
+                      {templates.filter(t => t.sessionId === 'default').length > 0 && (
+                        <MenuItem disabled>
+                          <strong>— Plantillas Demo —</strong>
+                        </MenuItem>
+                      )}
+                      {templates.filter(t => t.sessionId === 'default').map((template) => (
+                        <MenuItem key={template.id} value={template.id}>
+                          {template.name} (Demo)
+                        </MenuItem>
+                      ))}
+                      {templates.filter(t => t.sessionId !== 'default').length > 0 && (
+                        <MenuItem disabled>
+                          <strong>— Mis Plantillas —</strong>
+                        </MenuItem>
+                      )}
+                      {templates.filter(t => t.sessionId !== 'default').map((template) => (
+                        <MenuItem key={template.id} value={template.id}>
+                          {template.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<Description />}
+                    onClick={() => setShowTemplatesDialog(true)}
+                    sx={{ minWidth: 150 }}
+                  >
+                    Gestionar
+                  </Button>
+                </Box>
+                <Alert severity="info" sx={{ fontSize: '0.85rem' }}>
+                  Puedes usar las plantillas Demo como base y editarlas, o crear tus propias plantillas en "Gestionar".
+                </Alert>
+              </Box>
+
               <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
                 <Button size="small" onClick={() => insertVariable('nombre')}>
                   {'{nombre}'}
@@ -760,6 +1038,9 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                 </Button>
                 <Button size="small" onClick={() => insertVariable('dato3')}>
                   {'{dato3}'}
+                </Button>
+                <Button size="small" onClick={() => insertVariable('fecha')}>
+                  {'{fecha}'}
                 </Button>
                 <Button
                   size="small"
@@ -1261,6 +1542,368 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
             disabled={loading}
           >
             {loading ? <CircularProgress size={20} /> : 'Guardar Cambios'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog Gestionar Plantillas */}
+      <Dialog
+        open={showTemplatesDialog}
+        onClose={() => setShowTemplatesDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6" fontWeight="bold">
+              📝 Mis Plantillas de Mensajes
+            </Typography>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<Add />}
+              onClick={openCreateTemplate}
+            >
+              Nueva Plantilla
+            </Button>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="info">
+              Las plantillas con etiqueta "Demo" son ejemplos predefinidos del sistema. Puedes editarlas para personalizarlas, 
+              pero no se pueden eliminar. También puedes crear tus propias plantillas desde cero.
+            </Alert>
+
+            {templates.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <Description sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                <Typography variant="h6" color="text.secondary">
+                  No hay plantillas disponibles
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                  Crea tu primera plantilla personalizada
+                </Typography>
+                <Button
+                  variant="contained"
+                  startIcon={<Add />}
+                  onClick={openCreateTemplate}
+                >
+                  Crear Primera Plantilla
+                </Button>
+              </Box>
+            ) : (
+              templates.map((template) => (
+                <Card key={template.id} variant="outlined">
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
+                      <Box sx={{ flex: 1 }}>
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                          <Typography variant="h6" fontWeight="bold">
+                            {template.name}
+                          </Typography>
+                          {template.sessionId === 'default' && (
+                            <Chip label="Demo" size="small" color="primary" />
+                          )}
+                        </Stack>
+                        <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
+                          {template.messageText}
+                        </Typography>
+                      </Box>
+                      <Stack direction="row" spacing={1}>
+                        <Tooltip title="Editar">
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => openEditTemplate(template)}
+                          >
+                            <Edit fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        {template.sessionId !== 'default' && (
+                          <Tooltip title="Eliminar">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => deleteTemplate(template.id)}
+                            >
+                              <Delete fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </Stack>
+                    </Box>
+                    <Divider sx={{ my: 1 }} />
+                    <Typography variant="caption" color="text.secondary">
+                      Variables disponibles: {'{nombre}'}, {'{dato1}'}, {'{dato2}'}, {'{dato3}'}, {'{fecha}'}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowTemplatesDialog(false)}>
+            Cerrar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog Crear/Editar Plantilla */}
+      <Dialog
+        open={showTemplateFormDialog}
+        onClose={() => {
+          setShowTemplateFormDialog(false);
+          setEditingTemplate(null);
+          setTemplateForm({ name: '', messageText: '' });
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Typography variant="h6" fontWeight="bold">
+            {editingTemplate ? '✏️ Editar Plantilla' : '➕ Nueva Plantilla'}
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={3} sx={{ mt: 2 }}>
+            <TextField
+              label="Nombre de la Plantilla"
+              fullWidth
+              value={templateForm.name}
+              onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
+              placeholder="Ej: Recordatorio de Pago Mensual"
+              helperText="Dale un nombre descriptivo a tu plantilla"
+            />
+
+            <Box>
+              <Typography variant="subtitle2" gutterBottom>
+                Mensaje de la Plantilla
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap', gap: 1 }}>
+                <Button 
+                  size="small" 
+                  onClick={() => setTemplateForm({ 
+                    ...templateForm, 
+                    messageText: templateForm.messageText + '{nombre}' 
+                  })}
+                >
+                  {'{nombre}'}
+                </Button>
+                <Button 
+                  size="small" 
+                  onClick={() => setTemplateForm({ 
+                    ...templateForm, 
+                    messageText: templateForm.messageText + '{dato1}' 
+                  })}
+                >
+                  {'{dato1}'}
+                </Button>
+                <Button 
+                  size="small" 
+                  onClick={() => setTemplateForm({ 
+                    ...templateForm, 
+                    messageText: templateForm.messageText + '{dato2}' 
+                  })}
+                >
+                  {'{dato2}'}
+                </Button>
+                <Button 
+                  size="small" 
+                  onClick={() => setTemplateForm({ 
+                    ...templateForm, 
+                    messageText: templateForm.messageText + '{dato3}' 
+                  })}
+                >
+                  {'{dato3}'}
+                </Button>
+                <Button 
+                  size="small" 
+                  onClick={() => setTemplateForm({ 
+                    ...templateForm, 
+                    messageText: templateForm.messageText + '{fecha}' 
+                  })}
+                >
+                  {'{fecha}'}
+                </Button>
+              </Stack>
+              <TextField
+                multiline
+                rows={6}
+                fullWidth
+                value={templateForm.messageText}
+                onChange={(e) => setTemplateForm({ ...templateForm, messageText: e.target.value })}
+                placeholder="Escribe tu mensaje aquí. Usa las variables para personalizar el contenido."
+                helperText="Haz clic en los botones de arriba para insertar variables"
+              />
+            </Box>
+
+            <Alert severity="info" sx={{ fontSize: '0.85rem' }}>
+              <strong>Variables disponibles:</strong><br/>
+              • <strong>{'{nombre}'}</strong> - Nombre del contacto<br/>
+              • <strong>{'{dato1}, {dato2}, {dato3}'}</strong> - Datos personalizados del Excel<br/>
+              • <strong>{'{fecha}'}</strong> - Fecha de vencimiento
+            </Alert>
+
+            {templateForm.messageText && (
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>
+                  Vista Previa:
+                </Typography>
+                <Paper sx={{ p: 2, bgcolor: 'grey.50' }}>
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                    {templateForm.messageText
+                      .replace(/{nombre}/g, 'Juan Pérez')
+                      .replace(/{dato1}/g, '$150.000')
+                      .replace(/{dato2}/g, 'Cuota #3')
+                      .replace(/{dato3}/g, 'Plan Premium')
+                      .replace(/{fecha}/g, '2025-11-30')}
+                  </Typography>
+                </Paper>
+              </Box>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setShowTemplateFormDialog(false);
+            setEditingTemplate(null);
+            setTemplateForm({ name: '', messageText: '' });
+          }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={editingTemplate ? updateTemplate : createTemplate}
+            disabled={loading || !templateForm.name || !templateForm.messageText}
+            startIcon={loading ? <CircularProgress size={20} /> : <Check />}
+          >
+            {loading ? 'Guardando...' : editingTemplate ? 'Actualizar' : 'Crear Plantilla'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog Configuración de Envíos */}
+      <Dialog
+        open={showSettingsDialog}
+        onClose={() => setShowSettingsDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Typography variant="h6" fontWeight="bold">
+            ⚙️ Configuración de Envíos
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={3} sx={{ mt: 2 }}>
+            <Alert severity="info">
+              Configura cuándo enviar los recordatorios y el intervalo aleatorio entre mensajes
+            </Alert>
+
+            {/* Días antes del vencimiento */}
+            <FormControl fullWidth>
+              <InputLabel>Enviar Recordatorio</InputLabel>
+              <Select
+                value={settings.reminderDaysBefore}
+                label="Enviar Recordatorio"
+                onChange={(e) => setSettings({ ...settings, reminderDaysBefore: e.target.value as number })}
+              >
+                <MenuItem value={0}>En el mismo día</MenuItem>
+                <MenuItem value={1}>1 día antes</MenuItem>
+                <MenuItem value={2}>2 días antes</MenuItem>
+                <MenuItem value={3}>3 días antes</MenuItem>
+                <MenuItem value={7}>1 semana antes</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Divider />
+            
+            <Typography variant="subtitle2" fontWeight="bold">
+              Horario de Envío
+            </Typography>
+
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <TextField
+                  label="Hora de Inicio"
+                  type="time"
+                  value={settings.sendHourStart}
+                  onChange={(e) => setSettings({ ...settings, sendHourStart: e.target.value })}
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                  helperText="Hora mínima de envío"
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  label="Hora de Fin"
+                  type="time"
+                  value={settings.sendHourEnd}
+                  onChange={(e) => setSettings({ ...settings, sendHourEnd: e.target.value })}
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                  helperText="Hora máxima de envío"
+                />
+              </Grid>
+            </Grid>
+
+            <Alert severity="warning" sx={{ fontSize: '0.85rem' }}>
+              Los mensajes solo se enviarán entre las {settings.sendHourStart} y {settings.sendHourEnd} horas
+            </Alert>
+
+            <Divider />
+
+            <Typography variant="subtitle2" fontWeight="bold">
+              Intervalo Aleatorio Entre Mensajes
+            </Typography>
+
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <TextField
+                  label="Mínimo (segundos)"
+                  type="number"
+                  value={settings.intervalMinSeconds}
+                  onChange={(e) => setSettings({ ...settings, intervalMinSeconds: parseInt(e.target.value) || 60 })}
+                  fullWidth
+                  inputProps={{ min: 1, max: 600 }}
+                  helperText="Mínimo: 1 seg"
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  label="Máximo (segundos)"
+                  type="number"
+                  value={settings.intervalMaxSeconds}
+                  onChange={(e) => setSettings({ ...settings, intervalMaxSeconds: parseInt(e.target.value) || 120 })}
+                  fullWidth
+                  inputProps={{ min: 1, max: 600 }}
+                  helperText="Máximo: 600 seg"
+                />
+              </Grid>
+            </Grid>
+
+            <Alert severity="success" sx={{ fontSize: '0.85rem' }}>
+              <strong>Ejemplo:</strong> Con intervalo de {settings.intervalMinSeconds} a {settings.intervalMaxSeconds} segundos:<br/>
+              • Mensaje 1: 13:01<br/>
+              • Mensaje 2: 13:{String(1 + Math.floor(settings.intervalMinSeconds / 60)).padStart(2, '0')}<br/>
+              • Mensaje 3: 13:{String(1 + Math.floor((settings.intervalMinSeconds + settings.intervalMaxSeconds) / 60 / 2)).padStart(2, '0')}<br/>
+              Cada mensaje sale en un horario diferente de forma aleatoria.
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowSettingsDialog(false)}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            onClick={saveSettings}
+            disabled={loading}
+            startIcon={loading ? <CircularProgress size={20} /> : <Check />}
+          >
+            {loading ? 'Guardando...' : 'Guardar Configuración'}
           </Button>
         </DialogActions>
       </Dialog>

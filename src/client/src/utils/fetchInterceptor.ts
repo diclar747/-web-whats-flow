@@ -49,11 +49,26 @@ export const setupFetchInterceptor = (): void => {
     // Si no hay sessionToken o deviceId, hacer fetch sin headers (dejar que el backend maneje)
     // Esto permite que el dashboard funcione mientras se escanea el QR
     if (!sessionToken || !deviceId) {
-      // Solo mostrar advertencia en endpoints críticos de autenticación
+      // Detectar si estamos en modo Admin por QR
+      const isAdminQRMode = window.location.pathname.startsWith('/dashboard');
+      const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+      const hasToken = sessionStorage.getItem('token') || localStorage.getItem('token');
+
+      // NO mostrar advertencias para:
+      // 1. Admin por QR (con o sin token todavía)
+      // 2. Endpoints públicos que no requieren autenticación
       const url = typeof input === 'string' ? input : (input as Request).url;
-      if (url.includes('/api/auth/') || url.includes('/api/admin/')) {
-        console.warn('[FETCH-INTERCEPTOR] ⚠️ No hay sessionToken/deviceId para endpoint crítico');
+
+      // Solo advertir si es endpoint crítico Y NO es admin Y NO tiene token
+      if ((url.includes('/api/auth/') || url.includes('/api/admin/'))
+          && !isAdminQRMode
+          && userRole !== 'admin'
+          && !hasToken) {
+        console.warn('[FETCH-INTERCEPTOR] ⚠️ No hay sessionToken/deviceId para endpoint crítico:', url);
+      } else {
+        console.log('[FETCH-INTERCEPTOR] ℹ️ Sin sessionToken/deviceId, pero permitido para:', url);
       }
+
       return originalFetch(input, init);
     }
 
@@ -77,16 +92,26 @@ export const setupFetchInterceptor = (): void => {
       if (response.status === 401 || response.status === 403) {
         try {
           const data = await response.clone().json();
-          
+
+          // ✅ NO limpiar sesión si estamos en modo Admin por QR esperando token
+          const isAdminQRMode = window.location.pathname.startsWith('/dashboard/');
+          const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+
+          if (isAdminQRMode || userRole === 'admin') {
+            console.log('[FETCH-INTERCEPTOR] ⚠️ Error 401/403 pero en modo Admin por QR - NO limpiar sesión');
+            console.log('[FETCH-INTERCEPTOR] ℹ️ Token JWT se recibirá via Socket.IO cuando WhatsApp conecte');
+            return response; // Retornar respuesta sin limpiar sesión
+          }
+
           if (data.requiresReauth) {
             console.error('[FETCH-INTERCEPTOR] 🚫 Sesión inválida:', data.error);
-            
+
             // Limpiar sessionStorage
             sessionStorage.clear();
-            
+
             // Mostrar alerta
             alert(data.error || 'Tu sesión ha expirado o está activa en otro dispositivo. Por favor, inicia sesión nuevamente.');
-            
+
             // Redirigir a login
             if (!window.location.pathname.includes('/login')) {
               window.location.href = '/login';

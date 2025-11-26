@@ -43,15 +43,23 @@ export const sessionFetch = async (url: string, options: SessionFetchOptions = {
 
   // Si la respuesta indica que se requiere re-autenticación, limpiar sesión y redirigir
   if (response.status === 401 || response.status === 403) {
+    console.warn(`⚠️ [sessionFetch] Error ${response.status} en: ${url}`);
     try {
       const data = await response.clone().json();
-      if (data.requiresReauth) {
-        console.warn('🚫 Sesión inválida detectada, limpiando y redirigiendo...');
+      console.warn('[sessionFetch] Response data:', data);
+
+      // Solo redirigir si explícitamente se requiere re-autenticación
+      // NO redirigir para admins conectados por QR sin token
+      if (data.requiresReauth || data.requireReauth) {
+        console.warn('🚫 Sesión inválida detectada (requiresReauth=true), limpiando y redirigiendo...');
         sessionStorage.clear();
-        window.location.href = '/login';
+        localStorage.clear();
+        window.location.href = '/';
+      } else {
+        console.warn('[sessionFetch] Error de autorización pero NO se requiere reauth. Continuando...');
       }
     } catch (err) {
-      // Ignorar errores de parsing JSON
+      console.error('[sessionFetch] Error parsing JSON response:', err);
     }
   }
 

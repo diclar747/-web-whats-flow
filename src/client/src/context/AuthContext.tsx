@@ -46,7 +46,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Verificar token guardado al inicializar
     const checkAuthStatus = async () => {
       try {
-        // 🔒 LIMPIAR localStorage siempre al inicio (forzar sesiones únicas)
+        // ✅ DETECTAR SI ESTAMOS EN MODO ADMIN POR QR
+        const isAdminQRMode = window.location.pathname.startsWith('/dashboard/');
+        const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+
+        if (isAdminQRMode || userRole === 'admin') {
+          console.log('ℹ️ Modo Admin por QR detectado - saltando validación de token JWT');
+          console.log('ℹ️ Token JWT se recibirá automáticamente via Socket.IO cuando WhatsApp conecte');
+          setIsLoading(false);
+          return; // NO verificar token, esperar Socket.IO
+        }
+
+        // 🔒 LIMPIAR localStorage siempre al inicio (forzar sesiones únicas) - SOLO para agentes
         const localStorageKeys = ['token', 'whatsflow_token', 'userRole', 'userName', 'userId', 'whatsflow_session', 'sessionToken'];
         localStorageKeys.forEach(key => localStorage.removeItem(key));
         console.log('🧹 localStorage limpiado - forzando sesiones únicas por pestaña');
@@ -58,7 +69,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           console.log('🔍 Token encontrado en sessionStorage, verificando...');
           const deviceId = sessionStorage.getItem('device_id');
           const sessionToken = sessionStorage.getItem('sessionToken');
-          
+
           const response = await fetch('/api/auth/verify', {
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -87,7 +98,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       } catch (error) {
         console.error('Error verificando autenticación:', error);
-        sessionStorage.clear();
+        // NO limpiar sesión en caso de error de red
+        console.log('⚠️ Error de red, manteniendo sesión');
       } finally {
         setIsLoading(false);
       }

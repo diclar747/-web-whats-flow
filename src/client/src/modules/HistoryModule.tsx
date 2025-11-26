@@ -222,8 +222,6 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   const [rowsPerPage, setRowsPerPage] = useState(15);
   const [selectedMessages, setSelectedMessages] = useState<string[]>([]);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [showExportDialog, setShowExportDialog] = useState(false);
-  const [exportFormat, setExportFormat] = useState('pdf');
   const [selectedTab, setSelectedTab] = useState(0);
   const [mediaSubTab, setMediaSubTab] = useState(0); // 0: Imágenes, 1: Videos, 2: Audio, 3: Documentos
   const [viewMode, setViewMode] = useState<'messages' | 'conversations'>('messages');
@@ -1179,10 +1177,293 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     }
   };
 
-  const handleExport = async () => {
-    const dataToExport = viewMode === 'messages' ? filteredMessages : filteredConversations;
-    console.log(`Exportando ${dataToExport.length} registros en formato ${exportFormat}`);
-    setShowExportDialog(false);
+
+
+  const exportToPDF = async (data: any[]) => {
+    try {
+      const { jsPDF } = await import('jspdf');
+      await import('jspdf-autotable');
+
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+    
+      // Encabezado
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Historial de Mensajes - WhatsFlow', pageWidth / 2, 15, { align: 'center' });
+      
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Fecha de exportación: ${new Date().toLocaleString('es-ES')}`, pageWidth / 2, 22, { align: 'center' });
+      doc.text(`Total de registros: ${data.length}`, pageWidth / 2, 28, { align: 'center' });
+
+      if (viewMode === 'messages') {
+        // Exportar mensajes
+        const tableData = data.map((msg: any) => [
+          msg.timestamp ? new Date(msg.timestamp).toLocaleString('es-ES') : '-',
+          msg.contactName || msg.pushName || msg.from?.split('@')[0] || 'Desconocido',
+          (msg.body || msg.text || msg.message || '(Sin texto)').substring(0, 60),
+          msg.fromMe ? 'Enviado' : 'Recibido',
+          msg.type || msg.messageType || 'chat'
+        ]);
+
+        (doc as any).autoTable({
+          startY: 35,
+          head: [['Fecha/Hora', 'Contacto', 'Mensaje', 'Dirección', 'Tipo']],
+          body: tableData,
+          styles: { fontSize: 8, cellPadding: 2 },
+          headStyles: { fillColor: [76, 175, 80], fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [245, 245, 245] },
+          margin: { top: 35, left: 10, right: 10 }
+        });
+      } else {
+        // Exportar conversaciones
+        const tableData = data.map((conv: any) => [
+          conv.name || conv.pushName || conv.phoneNumber || 'Desconocido',
+          (conv.lastMessage || conv.last_message || '(Sin mensajes)').substring(0, 40),
+          conv.timestamp ? new Date(conv.timestamp).toLocaleString('es-ES') : '-',
+          conv.unreadCount || conv.unread_count || 0,
+          conv.messageCount || conv.message_count || 0
+        ]);
+
+        (doc as any).autoTable({
+          startY: 35,
+          head: [['Contacto', 'Último Mensaje', 'Fecha', 'No Leídos', 'Total Msgs']],
+          body: tableData,
+          styles: { fontSize: 8, cellPadding: 2 },
+          headStyles: { fillColor: [33, 150, 243], fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [245, 245, 245] },
+          margin: { top: 35, left: 10, right: 10 }
+        });
+      }
+
+      // Pie de página
+      const pageCount = (doc as any).internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(128);
+        doc.text(
+          `Página ${i} de ${pageCount}`,
+          pageWidth / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
+
+      doc.save(`historial_whatsflow_${new Date().toISOString().split('T')[0]}.pdf`);
+      console.log('✅ PDF generado exitosamente');
+      showSnackbar('✅ PDF descargado exitosamente', 'success');
+    } catch (error) {
+      console.error('Error generando PDF:', error);
+      showSnackbar(`❌ Error al generar el PDF: ${error}`, 'error');
+    }
+  };
+
+  const exportToExcel = async (data: any[]) => {
+    try {
+      const XLSX = await import('xlsx');
+    
+      let worksheetData: any[];
+      
+      if (viewMode === 'messages') {
+        worksheetData = data.map((msg: any) => ({
+          'Fecha/Hora': msg.timestamp ? new Date(msg.timestamp).toLocaleString('es-ES') : '-',
+          'Contacto': msg.contactName || msg.pushName || msg.from?.split('@')[0] || 'Desconocido',
+          'Número': msg.from?.split('@')[0] || msg.phoneNumber || '',
+          'Mensaje': msg.body || msg.text || msg.message || '(Sin texto)',
+          'Dirección': msg.fromMe ? 'Enviado' : 'Recibido',
+          'Tipo': msg.type || msg.messageType || 'chat',
+          'Estado': msg.ack ? (msg.ack === 3 ? 'Leído' : msg.ack === 2 ? 'Entregado' : 'Enviado') : 'Recibido'
+        }));
+      } else {
+        worksheetData = data.map((conv: any) => ({
+          'Contacto': conv.name || conv.pushName || conv.phoneNumber || 'Desconocido',
+          'Número': conv.phoneNumber || conv.id?.split('@')[0] || '',
+          'Último Mensaje': conv.lastMessage || conv.last_message || '(Sin mensajes)',
+          'Fecha': conv.timestamp ? new Date(conv.timestamp).toLocaleString('es-ES') : '-',
+          'No Leídos': conv.unreadCount || conv.unread_count || 0,
+          'Total Mensajes': conv.messageCount || conv.message_count || 0,
+          'Tipo': conv.isGroup ? 'Grupo' : 'Individual'
+        }));
+      }
+
+      const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+      
+      // Ajustar ancho de columnas
+      const colWidths = Object.keys(worksheetData[0] || {}).map(() => ({ wch: 20 }));
+      worksheet['!cols'] = colWidths;
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Historial');
+
+      // Agregar hoja de información
+      const infoData = [
+        { Campo: 'Fecha de Exportación', Valor: new Date().toLocaleString('es-ES') },
+        { Campo: 'Total de Registros', Valor: data.length },
+        { Campo: 'Tipo de Vista', Valor: viewMode === 'messages' ? 'Mensajes' : 'Conversaciones' },
+        { Campo: 'Filtros Aplicados', Valor: searchTerm || 'Ninguno' }
+      ];
+      const infoSheet = XLSX.utils.json_to_sheet(infoData);
+      XLSX.utils.book_append_sheet(workbook, infoSheet, 'Información');
+
+      XLSX.writeFile(workbook, `historial_whatsflow_${new Date().toISOString().split('T')[0]}.xlsx`);
+      console.log('✅ Excel generado exitosamente');
+      showSnackbar('✅ Excel descargado exitosamente', 'success');
+    } catch (error) {
+      console.error('Error generando Excel:', error);
+      showSnackbar(`❌ Error al generar el Excel: ${error}`, 'error');
+    }
+  };
+
+  const handlePrint = (data: any[]) => {
+    try {
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        showSnackbar('⚠️ Por favor permite ventanas emergentes para imprimir', 'warning');
+        return;
+      }
+
+      let tableHTML = '';
+      
+      if (viewMode === 'messages') {
+        tableHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha/Hora</th>
+                <th>Contacto</th>
+                <th>Mensaje</th>
+                <th>Dirección</th>
+                <th>Tipo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.map((msg: any) => `
+                <tr>
+                  <td>${msg.timestamp ? new Date(msg.timestamp).toLocaleString('es-ES') : '-'}</td>
+                  <td>${msg.contactName || msg.pushName || msg.from?.split('@')[0] || 'Desconocido'}</td>
+                  <td>${((msg.body || msg.text || msg.message || '(Sin texto)').substring(0, 80))}</td>
+                  <td>${msg.fromMe ? 'Enviado' : 'Recibido'}</td>
+                  <td>${msg.type || msg.messageType || 'chat'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      } else {
+        tableHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>Contacto</th>
+                <th>Último Mensaje</th>
+                <th>Fecha</th>
+                <th>No Leídos</th>
+                <th>Total Mensajes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.map((conv: any) => `
+                <tr>
+                  <td>${conv.name || conv.pushName || conv.phoneNumber || 'Desconocido'}</td>
+                  <td>${((conv.lastMessage || conv.last_message || '(Sin mensajes)').substring(0, 60))}</td>
+                  <td>${conv.timestamp ? new Date(conv.timestamp).toLocaleString('es-ES') : '-'}</td>
+                  <td>${conv.unreadCount || conv.unread_count || 0}</td>
+                  <td>${conv.messageCount || conv.message_count || 0}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+      }
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Historial WhatsFlow - ${new Date().toLocaleDateString('es-ES')}</title>
+        <style>
+          @media print {
+            @page { margin: 2cm; }
+            body { margin: 0; }
+          }
+          body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            color: #333;
+          }
+          h1 {
+            color: #4CAF50;
+            text-align: center;
+            margin-bottom: 10px;
+          }
+          .info {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 12px;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 11px;
+          }
+          th {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: bold;
+          }
+          td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #ddd;
+          }
+          tr:nth-child(even) {
+            background-color: #f9f9f9;
+          }
+          tr:hover {
+            background-color: #f5f5f5;
+          }
+          .footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 10px;
+            color: #999;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>📱 Historial de Mensajes - WhatsFlow</h1>
+        <div class="info">
+          <p><strong>Fecha de impresión:</strong> ${new Date().toLocaleString('es-ES')}</p>
+          <p><strong>Total de registros:</strong> ${data.length}</p>
+          <p><strong>Vista:</strong> ${viewMode === 'messages' ? 'Mensajes' : 'Conversaciones'}</p>
+        </div>
+        ${tableHTML}
+        <div class="footer">
+          <p>Generado por WhatsFlow - Sistema de Gestión de WhatsApp</p>
+          <p>${new Date().toLocaleDateString('es-ES')}</p>
+        </div>
+        <script>
+          window.onload = function() {
+            window.print();
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      console.log('✅ Vista de impresión abierta');
+      showSnackbar('✅ Vista de impresión abierta', 'success');
+    } catch (error) {
+      console.error('Error abriendo impresión:', error);
+      showSnackbar(`❌ Error al abrir la impresión: ${error}`, 'error');
+    }
   };
 
   const handleSyncContacts = async () => {
@@ -1398,14 +1679,57 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
             <Button
               variant="contained"
-              startIcon={<Download />}
-              onClick={() => setShowExportDialog(true)}
+              startIcon={<SaveAlt />}
+              onClick={() => {
+                const dataToExport = viewMode === 'messages' ? filteredMessages : filteredConversations;
+                if (dataToExport.length === 0) {
+                  showSnackbar('⚠️ No hay datos para exportar. Aplica filtros o espera a que carguen los datos.', 'warning');
+                  return;
+                }
+                exportToPDF(dataToExport);
+              }}
               sx={{
-                bgcolor: 'rgba(255,255,255,0.2)',
-                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }
+                bgcolor: '#f44336',
+                '&:hover': { bgcolor: '#d32f2f' }
               }}
             >
-              Exportar
+              PDF
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<SaveAlt />}
+              onClick={() => {
+                const dataToExport = viewMode === 'messages' ? filteredMessages : filteredConversations;
+                if (dataToExport.length === 0) {
+                  showSnackbar('⚠️ No hay datos para exportar. Aplica filtros o espera a que carguen los datos.', 'warning');
+                  return;
+                }
+                exportToExcel(dataToExport);
+              }}
+              sx={{
+                bgcolor: '#4caf50',
+                '&:hover': { bgcolor: '#388e3c' }
+              }}
+            >
+              Excel
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<Print />}
+              onClick={() => {
+                const dataToExport = viewMode === 'messages' ? filteredMessages : filteredConversations;
+                if (dataToExport.length === 0) {
+                  showSnackbar('⚠️ No hay datos para exportar. Aplica filtros o espera a que carguen los datos.', 'warning');
+                  return;
+                }
+                handlePrint(dataToExport);
+              }}
+              sx={{
+                bgcolor: '#2196f3',
+                '&:hover': { bgcolor: '#1976d2' }
+              }}
+            >
+              Imprimir
             </Button>
             <Button
               variant="contained"

@@ -257,12 +257,18 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   useEffect(() => {
     const checkConnection = async () => {
       try {
+        console.log('[WhatsAppWebChat] 🔍 Verificando conexión para sessionId:', sessionId);
         const response = await fetch(`${getAPIBaseURL()}/api/session/${sessionId}/status`);
         const data = await response.json();
+        console.log('[WhatsAppWebChat] 📡 Estado de conexión recibido:', {
+          success: data.success,
+          isConnected: data.isConnected,
+          phoneNumber: data.phoneNumber
+        });
         setWhatsappConnected(data.success && data.isConnected);
         setConnectionChecking(false);
       } catch (error) {
-        console.error('Error verificando conexión:', error);
+        console.error('[WhatsAppWebChat] ❌ Error verificando conexión:', error);
         setWhatsappConnected(false);
         setConnectionChecking(false);
       }
@@ -395,10 +401,37 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
   // Cargar chats
   useEffect(() => {
-    if (whatsappConnected && loadChats) {
-      loadChats(sessionId);
+    console.log('[WhatsAppWebChat] 📋 useEffect loadChats ejecutado:', {
+      whatsappConnected,
+      sessionId,
+      loadChatsExists: !!loadChats,
+      chatsLength: chats?.length || 0,
+      connectionChecking
+    });
+
+    // Si todavía estamos verificando la conexión, esperar
+    if (connectionChecking) {
+      console.log('[WhatsAppWebChat] ⏳ Todavía verificando conexión, esperando...');
+      return;
     }
-  }, [whatsappConnected, sessionId, loadChats]);
+
+    if (whatsappConnected && loadChats) {
+      console.log('[WhatsAppWebChat] 🔄 Llamando a loadChats para sessionId:', sessionId, 'con filter: all');
+      loadChats(sessionId, 'all'); // Cambiar de 'today' (default) a 'all'
+    } else {
+      console.warn('[WhatsAppWebChat] ⚠️ No se puede cargar chats:', {
+        whatsappConnected,
+        loadChatsExists: !!loadChats,
+        sessionId,
+        reason: !whatsappConnected ? 'WhatsApp desconectado' : 'loadChats no disponible'
+      });
+
+      // Mostrar mensaje al usuario
+      if (!whatsappConnected && !connectionChecking) {
+        console.error('[WhatsAppWebChat] ❌ WhatsApp NO está conectado. Por favor, escanea el código QR.');
+      }
+    }
+  }, [whatsappConnected, sessionId, loadChats, connectionChecking]);
 
   // Los mensajes se cargan automáticamente desde WhatsAppContext cuando cambia activeChat
   // No necesitamos useEffect aquí para evitar loops infinitos
@@ -825,6 +858,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
   // 🚀 FASE 2: Filtrado optimizado con useMemo
   const filteredChats = useMemo(() => {
+    console.log('[WhatsAppWebChat] 🔍 Calculando filteredChats:', {
+      totalChats: chats.length,
+      filterTab,
+      searchTerm,
+      chatsData: chats.map(c => ({ id: c.id, name: c.name, isGroup: c.isGroup }))
+    });
+
     const filtered = chats.filter(chat => {
       const chatName = chat.name || chat.id.split('@')[0] || 'Desconocido';
 
