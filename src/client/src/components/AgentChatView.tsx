@@ -36,10 +36,10 @@ interface AgentChatViewProps {
   onChatSelect: (chatJid: string) => void;
 }
 
-const AgentChatView: React.FC<AgentChatViewProps> = ({ 
-  userId, 
+const AgentChatView: React.FC<AgentChatViewProps> = ({
+  userId,
   sessionId,
-  onChatSelect 
+  onChatSelect
 }) => {
   const [assignedChats, setAssignedChats] = useState<AgentChat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +47,7 @@ const AgentChatView: React.FC<AgentChatViewProps> = ({
 
   useEffect(() => {
     loadAssignedChats();
-    
+
     // Recargar cada 30 segundos
     const interval = setInterval(loadAssignedChats, 30000);
     return () => clearInterval(interval);
@@ -60,7 +60,7 @@ const AgentChatView: React.FC<AgentChatViewProps> = ({
         `${API_BASE}/api/agent/${userId}/chats?sessionId=${sessionId}`
       );
       const data = await response.json();
-      
+
       if (data.success) {
         setAssignedChats(data.chats || []);
         console.log(`✅ ${data.chats?.length || 0} chats asignados cargados`);
@@ -93,11 +93,11 @@ const AgentChatView: React.FC<AgentChatViewProps> = ({
 
   if (assignedChats.length === 0) {
     return (
-      <Box 
-        display="flex" 
+      <Box
+        display="flex"
         flexDirection="column"
-        justifyContent="center" 
-        alignItems="center" 
+        justifyContent="center"
+        alignItems="center"
         height="400px"
         gap={2}
       >
@@ -145,7 +145,10 @@ const AgentChatView: React.FC<AgentChatViewProps> = ({
                   color="error"
                   max={99}
                 >
-                  <Avatar>
+                  <Avatar
+                    src={`${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.chat_jid}`}
+                    alt={chat.chat_name || chat.phone_number}
+                  >
                     {(chat.chat_name || chat.phone_number || '?').charAt(0).toUpperCase()}
                   </Avatar>
                 </Badge>
@@ -156,7 +159,7 @@ const AgentChatView: React.FC<AgentChatViewProps> = ({
                     <Typography variant="body1" fontWeight={chat.unread_count ? 'bold' : 'normal'}>
                       {chat.chat_name || chat.phone_number || 'Sin nombre'}
                     </Typography>
-                    <Chip 
+                    <Chip
                       label="Asignado"
                       size="small"
                       color="success"
@@ -166,8 +169,8 @@ const AgentChatView: React.FC<AgentChatViewProps> = ({
                 }
                 secondary={
                   <Box>
-                    <Typography 
-                      variant="body2" 
+                    <Typography
+                      variant="body2"
                       color="text.secondary"
                       sx={{
                         overflow: 'hidden',

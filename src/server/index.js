@@ -69,12 +69,9 @@ server.headersTimeout = 66000; // 66 segundos
 
 const io = new Server(server, {
     cors: {
-        origin: [
-            'http://localhost:3000',
-            'https://web.whats-flow.com',
-            'http://web.whats-flow.com'
-        ],
-        methods: ['GET', 'POST'],
+        origin: "*",
+        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization"],
         credentials: true
     },
     pingTimeout: 60000,        // 60 segundos antes de considerar desconectado
@@ -94,6 +91,36 @@ const io = new Server(server, {
     destroyUpgrade: true,      // Destruir upgrade si falla
     destroyUpgradeTimeout: 1000 // Timeout para destruir upgrade
 });
+
+// Sistema de caché para consultas frecuentes
+const cache = new Map();
+const CACHE_TTL = 30000; // 30 segundos
+
+function getCached(key) {
+    const cached = cache.get(key);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        return cached.data;
+    }
+    cache.delete(key);
+    return null;
+}
+
+function setCached(key, data) {
+    cache.set(key, {
+        data,
+        timestamp: Date.now()
+    });
+}
+
+// Limpiar caché cada minuto
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, value] of cache.entries()) {
+        if (now - value.timestamp > CACHE_TTL) {
+            cache.delete(key);
+        }
+    }
+}, 60000);
 
 // Monitoring de conexiones activas
 let activeConnections = 0;
@@ -2980,7 +3007,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
 async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter = 'today') {
     // Obtener el número de teléfono del usuario en lugar de la session_id temporal
     const phoneNumber = await getUserPhoneNumber(sessionId);
-    
+
     console.log(`[CHATLIST] 📅 Cargando chats con filtro: ${dateFilter}`);
 
     // Modo memoria si no hay DB
@@ -3038,7 +3065,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         // Filtrar grupos si includeGroups es false
         const groupFilterSubquery = includeGroups ? '' : " AND chat_jid NOT LIKE '%@g.us'";
         const groupFilterMain = includeGroups ? '' : " AND m.chat_jid NOT LIKE '%@g.us'";
-        
+
         // 📅 Filtro de fecha - Por defecto solo hoy
         let dateFilterSQL = '';
         if (dateFilter === 'today') {
@@ -3713,6 +3740,39 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     connectionState: 'open'
                 });
 
+                // 🔄 ASIGNAR SESIÓN WHATSAPP A AGENTES DEL ADMIN
+                if (pool) {
+                    try {
+                        const phoneNumber = await getUserPhoneNumber(sessionId);
+                        if (phoneNumber) {
+                            console.log(`[${sessionId}] 🔄 Asignando sesión WhatsApp a agentes del admin: ${phoneNumber}`);
+
+                            const connection = await pool.getConnection();
+                            try {
+                                // Actualizar session_id de todos los agentes de este admin
+                                const [result] = await connection.execute(
+                                    'UPDATE users SET session_id = ? WHERE admin_phone = ? AND role IN ("agent", "supervisor") AND status = "active"',
+                                    [sessionId, phoneNumber]
+                                );
+
+                                console.log(`[${sessionId}] ✅ Sesión asignada a ${result.affectedRows} agentes del admin ${phoneNumber}`);
+
+                                // Emitir evento para notificar a los agentes
+                                io.emit(`session-assigned-${phoneNumber}`, {
+                                    sessionId: sessionId,
+                                    adminPhone: phoneNumber,
+                                    timestamp: new Date().toISOString()
+                                });
+
+                            } finally {
+                                connection.release();
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`[${sessionId}] ❌ Error asignando sesión a agentes:`, error);
+                    }
+                }
+
                 // Informar sobre el estado de sincronización
                 if (syncHistory) {
                     console.log(`[${sessionId}] 📥 Sincronización de historial ACTIVADA - Descargando mensajes, chats y contactos...`);
@@ -3883,7 +3943,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                     // Emitir estadísticas iniciales después de conectar
                     emitDashboardStats(userPhoneNumber);
-                    
+
                     // 🔄 Emitir evento de inicio de sincronización
                     console.log(`[${userPhoneNumber}] 🔄 Iniciando sincronización de datos...`);
                     io.emit('sync-start', {
@@ -3891,7 +3951,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         message: 'Iniciando sincronización...',
                         timestamp: new Date().toISOString()
                     });
-                    
+
                     // Simular progreso de sincronización
                     setTimeout(() => {
                         io.emit('sync-progress', {
@@ -3901,7 +3961,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             timestamp: new Date().toISOString()
                         });
                     }, 1000);
-                    
+
                     setTimeout(() => {
                         io.emit('sync-progress', {
                             sessionId: userPhoneNumber,
@@ -3910,7 +3970,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             timestamp: new Date().toISOString()
                         });
                     }, 2000);
-                    
+
                     setTimeout(() => {
                         io.emit('sync-progress', {
                             sessionId: userPhoneNumber,
@@ -3919,7 +3979,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             timestamp: new Date().toISOString()
                         });
                     }, 3000);
-                    
+
                     setTimeout(() => {
                         io.emit('sync-completed', {
                             sessionId: userPhoneNumber,
@@ -3928,7 +3988,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         });
                         console.log(`[${userPhoneNumber}] ✅ Sincronización completada`);
                     }, 4000);
-                    
+
                 } catch (error) {
                     console.error(`[${sessionId}] ❌ Error registrando usuario:`, error);
                 }
@@ -4052,26 +4112,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 // Notificar a todos los clientes de esta sesión
                 io.to(`session-${sessionId}`).emit('connection-update', {
                     status: 'disconnected',
-                    reason: reason || 'unknown'
+                    reason: 'unknown'
                 });
-
-                // 🔴 CRÍTICO: Notificar logout forzado a todos los agentes de esta sesión
-                if (reason === DisconnectReason.loggedOut) {
-                    console.log(`[${sessionId}] 🚫 Logout detectado desde dispositivo móvil. Forzando cierre de sesión de agentes.`);
-
-                    // Emitir evento específico para agentes
-                    io.to(`session-${sessionId}`).emit('agent-force-logout', {
-                        sessionId,
-                        reason: 'logged_out_from_device',
-                        timestamp: Date.now()
-                    });
-
-                    // También emitir el evento general por si acaso
-                    io.emit(`session-logged-out-${sessionId}`, {
-                        sessionId,
-                        reason: 'logged_out_from_device'
-                    });
-                }
 
                 // Esperar un poco para asegurar que el store esté completamente cargado
                 setTimeout(async () => {
@@ -5112,17 +5154,17 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                         if (assignments.length > 0) {
                                             for (const assignment of assignments) {
                                                 const agentId = assignment.agent_id; // user_id renombrado como agent_id
-                                                
+
                                                 // 🔍 DEBUG: Verificar si hay sockets en la sala
                                                 const room = io.sockets.adapter.rooms.get(`agent-${agentId}`);
                                                 const socketsInRoom = room ? room.size : 0;
-                                                
+
                                                 console.log(`[${sessionId}] 🎯 Emitiendo a agent-${agentId} (${socketsInRoom} sockets conectados)`);
-                                                
+
                                                 // Emitir a la sala del agente
                                                 io.to(`agent-${agentId}`).emit('message', clientMessage);
                                                 io.to(`agent-${agentId}`).emit('message:received', clientMessage);
-                                                
+
                                                 if (socketsInRoom === 0) {
                                                     console.warn(`[${sessionId}] ⚠️ Sala agent-${agentId} VACÍA - Mensaje no se entregará`);
                                                 } else {
@@ -5168,7 +5210,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                             if (response.type === 'text') {
                                                 const sentMsg = await sock.sendMessage(senderJid, { text: response.content });
                                                 console.log(`[CHATBOT] ✅ Respuesta enviada: ${response.content.substring(0, 50)}...`);
-                                                
+
                                                 // ✅ Guardar respuesta del bot en BD
                                                 const botMessage = {
                                                     id: sentMsg.key.id,
@@ -5183,7 +5225,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                     agent_name: 'Bot'
                                                 };
                                                 await saveMessageToDB(sessionId, botMessage);
-                                                
+
                                                 // ✅ Emitir respuesta del bot vía Socket.IO
                                                 const phoneNumber = await getUserPhoneNumber(sessionId);
                                                 if (phoneNumber) {
@@ -5208,7 +5250,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                 });
                                                 const sentMsg = await sock.sendMessage(senderJid, { text: menuText });
                                                 console.log(`[CHATBOT] ✅ Menú enviado con ${response.options.length} opciones`);
-                                                
+
                                                 // ✅ Guardar menú del bot en BD
                                                 const botMessage = {
                                                     id: sentMsg.key.id,
@@ -5223,7 +5265,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                     agent_name: 'Bot'
                                                 };
                                                 await saveMessageToDB(sessionId, botMessage);
-                                                
+
                                                 // ✅ Emitir menú vía Socket.IO
                                                 const phoneNumber = await getUserPhoneNumber(sessionId);
                                                 if (phoneNumber) {
@@ -6143,8 +6185,13 @@ app.get('/api/qr-status', async (req, res) => {
     */
 
     if (existingSession && existingSession.isConnected) {
-        // Para QR-based sessions, create a device-specific session token
-        const sessionToken = createUniqueSession('admin', deviceId, 'admin@whatsapp', 'admin');
+        // Para QR-based sessions, usar el número de teléfono real como userId único
+        // Esto evita conflictos entre diferentes admins
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        const userId = phoneNumber || sessionId; // Usar phoneNumber si está disponible, sino sessionId
+        const email = phoneNumber ? `${phoneNumber}@whatsapp` : 'admin@whatsapp';
+
+        const sessionToken = createUniqueSession(userId, deviceId, email, 'admin');
 
         // Store the sessionToken for validation later
         sessionTokenMap.set(sessionId, {
@@ -6175,8 +6222,12 @@ app.get('/api/qr-status', async (req, res) => {
                         margin: 1,
                         errorCorrectionLevel: 'H'
                     });
-                    // For QR-based sessions, create a device-specific session token
-                    const sessionToken = createUniqueSession('admin', deviceId, 'admin@whatsapp', 'admin');
+                    // For QR-based sessions, usar el número de teléfono real como userId único
+                    const phoneNumber = await getUserPhoneNumber(sessionId);
+                    const userId = phoneNumber || sessionId; // Usar phoneNumber si está disponible, sino sessionId
+                    const email = phoneNumber ? `${phoneNumber}@whatsapp` : 'admin@whatsapp';
+
+                    const sessionToken = createUniqueSession(userId, deviceId, email, 'admin');
 
                     // Store the sessionToken for validation later
                     sessionTokenMap.set(sessionId, {
@@ -6899,13 +6950,13 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
     const { sessionId, chatJid, message, agentId, agentName, phoneNumber } = req.body;
     const file = req.file;
 
-    console.log('[AGENT-SEND] 📤 Recibida solicitud de envío:', { 
-        sessionId, 
-        chatJid, 
-        agentId: agentId || 'NO ENVIADO', 
+    console.log('[AGENT-SEND] 📤 Recibida solicitud de envío:', {
+        sessionId,
+        chatJid,
+        agentId: agentId || 'NO ENVIADO',
         agentName: agentName || 'NO ENVIADO',
         phoneNumber: phoneNumber || 'NO ENVIADO',
-        message: message?.substring(0, 50) 
+        message: message?.substring(0, 50)
     });
 
     if (!sessionId || !chatJid || (!message && !file)) {
@@ -7022,7 +7073,7 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
         // 🔥 MEJORADO: SIEMPRE intentar obtener datos del agente de la BD si no vienen
         let finalAgentId = agentId;
         let finalAgentName = agentName;
-        
+
         // Si NO viene agentId pero tenemos phoneNumber, buscar en chat_assignments
         if (!finalAgentId && phoneNumber && pool) {
             try {
@@ -7040,7 +7091,7 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
                 console.log('[AGENT-SEND] ⚠️ No se pudo obtener agentId:', err.message);
             }
         }
-        
+
         // Si tenemos agentId pero no nombre, buscar en BD
         if (finalAgentId && !finalAgentName && pool) {
             try {
@@ -7879,13 +7930,33 @@ app.use(express.static(path.join(__dirname, 'public'), {
             res.setHeader('Pragma', 'no-cache');
             res.setHeader('Expires', '0');
         }
+        // Configurar MIME types para archivos de audio
+        if (filepath.endsWith('.mp3')) {
+            res.setHeader('Content-Type', 'audio/mpeg');
+            res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache por 1 día
+        }
     }
 }));
 
-// Obtener mensajes
+// Ruta específica para archivos de notificación
+app.get('/notification.mp3', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public/notification.mp3'));
+});
+
+// Obtener mensajes con caché para mejorar rendimiento
 app.get('/api/messages/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
-    const { number, startDate, endDate, limit = 10000, offset = 0, dateFilter = 'today' } = req.query;
+    const { number, startDate, endDate, limit = 10000, offset = 0, dateFilter = 'today', nocache } = req.query;
+
+    // Verificar caché si no se solicita explícitamente sin caché
+    if (!nocache && !number && dateFilter === 'today') {
+        const cacheKey = `messages_${sessionId}_${dateFilter}`;
+        const cached = getCached(cacheKey);
+        if (cached) {
+            console.log(`[API-MSG] 📦 Mensajes cargados desde caché para ${sessionId}`);
+            return res.json(cached);
+        }
+    }
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'DB service unavailable' });
@@ -8006,13 +8077,22 @@ app.get('/api/messages/:sessionId', async (req, res) => {
             };
         });
 
-        res.json({
+        const response = {
             success: true,
             messages: clientMessages,
             totalMessages,
             limit: parseInt(limit, 10),
             offset: parseInt(offset, 10)
-        });
+        };
+
+        // Guardar en caché si es una consulta común (sin filtros específicos)
+        if (!nocache && !number && dateFilter === 'today') {
+            const cacheKey = `messages_${sessionId}_${dateFilter}`;
+            setCached(cacheKey, response);
+            console.log(`[API-MSG] 💾 Mensajes guardados en caché para ${sessionId}`);
+        }
+
+        res.json(response);
 
     } catch (error) {
         console.error(`[API-MSG] Error fetching messages for session ${sessionId}:`, error);
@@ -10352,22 +10432,31 @@ io.on('connection', (socket) => {
     const sessionId = socket.handshake.query.sessionId;
     const userRole = socket.handshake.query.userRole || socket.handshake.auth?.userRole; // Obtener rol del usuario
 
-    // LOG DETALLADO PARA DEBUG
-    console.log(`🔌 Nueva conexión Socket.IO:`);
+    // LOG OPTIMIZADO PARA DEBUG
+    console.log(`🔌 [SOCKET] Nueva conexión Socket.IO:`);
     console.log(`   - Socket ID: ${socket.id}`);
     console.log(`   - SessionId recibido: ${sessionId || 'NO RECIBIDO'}`);
     console.log(`   - User Role: ${userRole || 'NO ESPECIFICADO'}`);
-    console.log(`   - Query completo:`, socket.handshake.query);
-    console.log(`   - Headers:`, {
-        'user-agent': socket.handshake.headers['user-agent'],
-        'origin': socket.handshake.headers.origin,
-        'x-real-ip': socket.handshake.headers['x-real-ip'],
-        'x-forwarded-for': socket.handshake.headers['x-forwarded-for']
-    });
     console.log(`   - Transporte: ${socket.conn.transport.name}`);
+    console.log(`   - Timestamp: ${new Date().toISOString()}`);
 
     // Guardar rol en el socket para uso posterior
     socket.userRole = userRole;
+
+    // Monitoreo de latencia
+    socket.on('ping', () => {
+        socket.emit('pong', { timestamp: Date.now() });
+    });
+
+    // Log de eventos importantes (excluyendo ping/pong para reducir ruido)
+    socket.onAny((eventName, ...args) => {
+        if (eventName !== 'ping' && eventName !== 'pong') {
+            console.log(`📡 [SOCKET-EVENT] ${socket.id} (${sessionId || 'no-session'}) -> ${eventName}`, {
+                args: args.length > 0 ? args[0] : 'no-data',
+                timestamp: new Date().toISOString()
+            });
+        }
+    });
 
     // Limitar conexiones por sessionId
     // Guardar timeout para poder cancelarlo
@@ -10491,8 +10580,12 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('disconnect', () => {
-        console.log('Cliente desconectado:', socket.id);
+    socket.on('disconnect', (reason) => {
+        console.log(`🔌 [SOCKET] Cliente desconectado: ${socket.id}`, {
+            sessionId: sessionId || 'no-session',
+            reason: reason,
+            timestamp: new Date().toISOString()
+        });
 
         // Limpiar de sessionConnectionsMap
         if (sessionId && sessionConnectionsMap.has(sessionId)) {
@@ -10500,6 +10593,12 @@ io.on('connection', (socket) => {
             if (sessionConnectionsMap.get(sessionId).size === 0) {
                 sessionConnectionsMap.delete(sessionId);
             }
+        }
+
+        // Cancelar timeout si existe
+        if (disconnectTimeout) {
+            clearTimeout(disconnectTimeout);
+            disconnectTimeout = null;
         }
     });
 });
@@ -13853,10 +13952,10 @@ app.get('/api/users', async (req, res) => {
 
     try {
         const { role, department, status, sessionId } = req.query;
-        
+
         // Obtener adminPhone desde JWT token O desde sessionId (para admin por QR)
         let adminPhone = null;
-        
+
         // Opción 1: Desde JWT token (agentes)
         const authHeader = req.headers['authorization'];
         if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -13869,7 +13968,7 @@ app.get('/api/users', async (req, res) => {
                 console.log('[USERS] Token JWT inválido, intentando con sessionId...');
             }
         }
-        
+
         // Opción 2: Desde sessionId (admin por QR)
         if (!adminPhone && sessionId) {
             console.log('[USERS] Admin por QR detectado, obteniendo número desde sessionId:', sessionId);
@@ -13879,11 +13978,11 @@ app.get('/api/users', async (req, res) => {
             }
             console.log('[USERS] Admin phone desde sessionId:', adminPhone);
         }
-        
+
         if (!adminPhone) {
-            return res.status(401).json({ 
-                success: false, 
-                error: 'Token no proporcionado o sessionId requerido' 
+            return res.status(401).json({
+                success: false,
+                error: 'Token no proporcionado o sessionId requerido'
             });
         }
 
@@ -14211,9 +14310,9 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     } catch (error) {
         if (error.code === 'ER_DUP_ENTRY') {
             console.log('[USERS] ❌ Email duplicado:', email);
-            return res.status(409).json({ 
-                success: false, 
-                error: `El email ${email} ya está registrado. Si eliminaste este usuario recientemente, intenta con otro email o contacta al administrador.` 
+            return res.status(409).json({
+                success: false,
+                error: `El email ${email} ya está registrado. Si eliminaste este usuario recientemente, intenta con otro email o contacta al administrador.`
             });
         }
         console.error('[USERS] Error creating:', error);
@@ -14246,7 +14345,7 @@ app.put('/api/users/:id', async (req, res) => {
             const safePhone = phone || null;
             const safeEmail = email || null; // 📧 Email puede ser null
             const safeStatus = status || 'active';
-            
+
             // Verificar si el número inicia con 595994854167 para asignar admin
             const isAdmin = safePhone && safePhone.startsWith('595994854167');
             const finalRole = isAdmin ? 'admin' : (role || 'agent');
@@ -15104,7 +15203,7 @@ app.get('/api/agents/available', async (req, res) => {
         const connection = await pool.getConnection();
         try {
             // Obtener usuarios activos (agentes y supervisores) de la tabla users
-            let query = `SELECT id, name, email, phone, role, status, avatar_url, last_login as last_activity
+            let query = `SELECT id, name, email, phone, role, status, agent_status, avatar_url, last_login as last_activity
                          FROM users
                          WHERE status = 'active' AND role IN ('agent', 'supervisor')`;
             let params = [];
@@ -15119,7 +15218,7 @@ app.get('/api/agents/available', async (req, res) => {
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
-                status: 'online', // Podemos mejorar esto después con estado real
+                status: user.agent_status || 'offline', // Usar estado real del agente
                 role: user.role,
                 avatar_url: user.avatar_url,
                 last_activity: user.last_activity
@@ -15138,8 +15237,10 @@ app.get('/api/agents/available', async (req, res) => {
 });
 
 // ===== ENDPOINTS DE GESTIÓN DE AGENTES CON PRIVILEGIOS =====
-// IMPORTANTE: Estos deben ir ANTES de '/api/agents/:id' para evitar conflictos
+// IMPORTANTE: Estos endpoints ahora están en agents-permissions-endpoints.js
+// Los dejamos comentados para evitar conflictos
 
+/*
 // Listar agentes del admin actual
 app.get('/api/agents/list', async (req, res) => {
     try {
@@ -15209,40 +15310,45 @@ app.post('/api/agents/create', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+*/
 
 // ===== FIN ENDPOINTS GESTIÓN AGENTES =====
 
-// Obtener agente por ID
-app.get('/api/agents/:id', async (req, res) => {
-    const { id } = req.params;
+// NOTA: Los endpoints de agents-permissions se cargan después de initializeDatabase()
+// para asegurar que el pool esté disponible (ver línea ~19227)
 
-    if (!pool) {
-        return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible' });
-    }
-
-    try {
-        const connection = await pool.getConnection();
-        try {
-            const [agents] = await connection.execute(
-                `SELECT id, session_id, name, email, phone, status, max_concurrent_chats, current_chats,
-                 is_active, avatar_url, created_at, updated_at, last_activity
-                 FROM agents WHERE id = ?`,
-                [id]
-            );
-
-            if (agents.length === 0) {
-                return res.status(404).json({ success: false, error: 'Agente no encontrado' });
-            }
-
-            res.json({ success: true, agent: agents[0] });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[AGENTS] Error getting agent:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+// ENDPOINTS DE AGENTES COMENTADOS - Ahora están en agents-permissions-endpoints.js
+// Obtener agente por ID (ENDPOINT OBSOLETO - Usa tabla agents que no existe)
+// app.get('/api/agents/:id', async (req, res) => {
+//     const { id } = req.params;
+//
+//     if (!pool) {
+//         return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible' });
+//     }
+//
+//     try {
+//         const connection = await pool.getConnection();
+//         try {
+//             const [agents] = await connection.execute(
+//                 `SELECT id, session_id, name, email, phone, status, max_concurrent_chats, current_chats,
+//                  is_active, avatar_url, created_at, updated_at, last_activity
+//                  FROM agents WHERE id = ?`,
+//                 [id]
+//             );
+//
+//             if (agents.length === 0) {
+//                 return res.status(404).json({ success: false, error: 'Agente no encontrado' });
+//             }
+//
+//             res.json({ success: true, agent: agents[0] });
+//         } finally {
+//             connection.release();
+//         }
+//     } catch (error) {
+//         console.error('[AGENTS] Error getting agent:', error);
+//         res.status(500).json({ success: false, error: error.message });
+//     }
+// });
 
 // Crear nuevo agente
 app.post('/api/agents', async (req, res) => {
@@ -15387,14 +15493,17 @@ app.delete('/api/agents/:id', async (req, res) => {
 });
 
 // Cambiar estado del agente
+// ESTE ENDPOINT ESTÁ DUPLICADO Y CAUSA CONFLICTOS CON agents-permissions-endpoints.js
+// SE COMENTA PARA USAR LA VERSIÓN CORRECTA QUE ACTUALIZA LA TABLA users
+/*
 app.put('/api/agents/:id/status', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!status || !['available', 'busy', 'away', 'offline'].includes(status)) {
+    if (!status || !['online', 'busy', 'paused', 'offline'].includes(status)) {
         return res.status(400).json({
             success: false,
-            error: 'Estado inválido. Use: available, busy, away, offline'
+            error: 'Estado inválido. Use: online, busy, paused, offline'
         });
     }
 
@@ -15422,6 +15531,7 @@ app.put('/api/agents/:id/status', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+*/
 
 // Transferir chat a otro agente
 app.post('/api/agents/transfer-chat', async (req, res) => {
@@ -15695,32 +15805,97 @@ app.post('/api/agent/accept-transfer', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            // Buscar todos los posibles sessionIds relacionados
-            const allSessionIds = await getAllSessionIds(sessionId);
-
-            // Buscar la asignación pendiente
-            const placeholders = allSessionIds.map(() => '?').join(',');
+            // Buscar directamente en chat_assignments sin usar getAllSessionIds
+            // Las transferencias se guardan con el session_id del admin que hizo la transferencia
             const [assignments] = await connection.execute(
                 `SELECT * FROM chat_assignments
-                 WHERE user_id = ? AND chat_jid = ? AND session_id IN (${placeholders}) AND status = 'pending'`,
-                [agentId, chatJid, ...allSessionIds]
+                 WHERE user_id = ? AND chat_jid = ? AND status = 'pending'
+                 ORDER BY assigned_at DESC LIMIT 1`,
+                [agentId, chatJid]
             );
 
+            console.log(`[ACCEPT-TRANSFER] 🔍 Buscando asignación para agente ${agentId}, chat ${chatJid}`);
+            console.log(`[ACCEPT-TRANSFER] 📊 Asignaciones encontradas: ${assignments.length}`);
+
             if (assignments.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'No se encontró transferencia pendiente'
+                // Intentar buscar con session_id del agente como fallback
+                const [fallbackAssignments] = await connection.execute(
+                    `SELECT * FROM chat_assignments
+                     WHERE user_id = ? AND chat_jid = ? AND session_id = ? AND status = 'pending'
+                     ORDER BY assigned_at DESC LIMIT 1`,
+                    [agentId, chatJid, sessionId]
+                );
+
+                if (fallbackAssignments.length === 0) {
+                    console.log(`[ACCEPT-TRANSFER] ❌ No se encontró transferencia pendiente para agente ${agentId}, chat ${chatJid}`);
+                    return res.status(404).json({
+                        success: false,
+                        error: 'No se encontró transferencia pendiente'
+                    });
+                }
+
+                console.log(`[ACCEPT-TRANSFER] ✅ Encontrada asignación con session_id del agente`);
+                const assignment = fallbackAssignments[0];
+                const targetSessionId = assignment.session_id;
+
+                // Actualizar estado a 'active'
+                await connection.execute(
+                    `UPDATE chat_assignments
+                     SET status = 'active', accepted_at = NOW()
+                     WHERE id = ?`,
+                    [assignment.id]
+                );
+
+                // Obtener nombre del contacto
+                const [chatInfo] = await connection.execute(
+                    `SELECT
+                        COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as chat_name
+                     FROM (SELECT 1) as dummy
+                     LEFT JOIN contacts c ON c.jid = ? AND c.phone_number = ?
+                     LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
+                     LIMIT 1`,
+                    [chatJid, chatJid, targetSessionId, chatJid, targetSessionId]
+                );
+
+                const chatName = chatInfo[0]?.chat_name || chatJid.split('@')[0];
+
+                // Emitir eventos Socket.IO
+                io.emit(`agent-${agentId}-transfer-accepted`, {
+                    chatJid,
+                    sessionId: targetSessionId,
+                    status: 'active',
+                    acceptedAt: new Date().toISOString()
+                });
+
+                // Notificar al admin
+                io.emit('transfer-response', {
+                    type: 'accepted',
+                    agentId,
+                    agentName: agentName || 'Agente',
+                    chatJid,
+                    chatName,
+                    message: `El agente ${agentName || 'Agente'} aceptó la conversación con ${chatName}`,
+                    timestamp: new Date().toISOString()
+                });
+
+                console.log(`[ACCEPT-TRANSFER] ✅ Agente ${agentName} aceptó chat ${chatName} (fallback)`);
+
+                return res.json({
+                    success: true,
+                    message: 'Transferencia aceptada'
                 });
             }
 
-            const targetSessionId = assignments[0].session_id;
+            const assignment = assignments[0];
+            const targetSessionId = assignment.session_id;
+            console.log(`[ACCEPT-TRANSFER] ✅ Encontrada asignación con session_id: ${targetSessionId}`);
 
-            // Actualizar estado a 'active' (amarillo)
+            // Actualizar estado a 'active'
             await connection.execute(
                 `UPDATE chat_assignments
                  SET status = 'active', accepted_at = NOW()
-                 WHERE user_id = ? AND chat_jid = ? AND session_id = ?`,
-                [agentId, chatJid, targetSessionId]
+                 WHERE id = ?`,
+                [assignment.id]
             );
 
             // Obtener nombre del contacto
@@ -15728,7 +15903,7 @@ app.post('/api/agent/accept-transfer', async (req, res) => {
                 `SELECT
                     COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as chat_name
                  FROM (SELECT 1) as dummy
-                 LEFT JOIN contacts c ON c.jid = ? AND c.session_id = ?
+                 LEFT JOIN contacts c ON c.jid = ? AND c.phone_number = ?
                  LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
                  LIMIT 1`,
                 [chatJid, chatJid, targetSessionId, chatJid, targetSessionId]
@@ -15790,39 +15965,111 @@ app.post('/api/agent/reject-transfer', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            // Buscar todos los posibles sessionIds relacionados
-            const allSessionIds = await getAllSessionIds(sessionId);
-
-            // Buscar la asignación pendiente
-            const placeholders = allSessionIds.map(() => '?').join(',');
+            // Buscar directamente en chat_assignments sin usar getAllSessionIds
             const [assignments] = await connection.execute(
                 `SELECT * FROM chat_assignments
-                 WHERE user_id = ? AND chat_jid = ? AND session_id IN (${placeholders}) AND status = 'pending'`,
-                [agentId, chatJid, ...allSessionIds]
+                 WHERE user_id = ? AND chat_jid = ? AND status = 'pending'
+                 ORDER BY assigned_at DESC LIMIT 1`,
+                [agentId, chatJid]
             );
 
+            console.log(`[REJECT-TRANSFER] 🔍 Buscando asignación para agente ${agentId}, chat ${chatJid}`);
+            console.log(`[REJECT-TRANSFER] 📊 Asignaciones encontradas: ${assignments.length}`);
+
             if (assignments.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'No se encontró transferencia pendiente'
+                // Intentar buscar con session_id del agente como fallback
+                const [fallbackAssignments] = await connection.execute(
+                    `SELECT * FROM chat_assignments
+                     WHERE user_id = ? AND chat_jid = ? AND session_id = ? AND status = 'pending'
+                     ORDER BY assigned_at DESC LIMIT 1`,
+                    [agentId, chatJid, sessionId]
+                );
+
+                if (fallbackAssignments.length === 0) {
+                    console.log(`[REJECT-TRANSFER] ❌ No se encontró transferencia pendiente para agente ${agentId}, chat ${chatJid}`);
+                    return res.status(404).json({
+                        success: false,
+                        error: 'No se encontró transferencia pendiente'
+                    });
+                }
+
+                console.log(`[REJECT-TRANSFER] ✅ Encontrada asignación con session_id del agente`);
+                const assignment = fallbackAssignments[0];
+                const targetSessionId = assignment.session_id;
+
+                // Marcar como rechazada y eliminar
+                await connection.execute(
+                    `UPDATE chat_assignments
+                     SET status = 'rejected', rejected_at = NOW(), notes = ?
+                     WHERE id = ?`,
+                    [reason || 'Rechazado por el agente', assignment.id]
+                );
+
+                // Eliminar la asignación rechazada después de registrarla
+                await connection.execute(
+                    `DELETE FROM chat_assignments
+                     WHERE id = ? AND status = 'rejected'`,
+                    [assignment.id]
+                );
+
+                // Obtener nombre del contacto
+                const [chatInfo] = await connection.execute(
+                    `SELECT
+                        COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as chat_name
+                     FROM (SELECT 1) as dummy
+                     LEFT JOIN contacts c ON c.jid = ? AND c.phone_number = ?
+                     LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
+                     LIMIT 1`,
+                    [chatJid, chatJid, targetSessionId, chatJid, targetSessionId]
+                );
+
+                const chatName = chatInfo[0]?.chat_name || chatJid.split('@')[0];
+
+                // Emitir eventos Socket.IO
+                io.emit(`agent-${agentId}-transfer-rejected`, {
+                    chatJid,
+                    sessionId: targetSessionId,
+                    rejectedAt: new Date().toISOString()
+                });
+
+                // Notificar al admin
+                io.emit('transfer-response', {
+                    type: 'rejected',
+                    agentId,
+                    agentName: agentName || 'Agente',
+                    chatJid,
+                    chatName,
+                    reason: reason || 'Sin razón especificada',
+                    message: `El agente ${agentName || 'Agente'} rechazó la conversación con ${chatName}`,
+                    timestamp: new Date().toISOString()
+                });
+
+                console.log(`[REJECT-TRANSFER] ✅ Agente ${agentName} rechazó chat ${chatName}`);
+
+                return res.json({
+                    success: true,
+                    message: 'Transferencia rechazada'
                 });
             }
 
-            const targetSessionId = assignments[0].session_id;
+            // Si encontramos asignación en la búsqueda principal
+            const assignment = assignments[0];
+            const targetSessionId = assignment.session_id;
+            console.log(`[REJECT-TRANSFER] ✅ Encontrada asignación con session_id: ${targetSessionId}`);
 
             // Marcar como rechazada y eliminar
             await connection.execute(
                 `UPDATE chat_assignments
                  SET status = 'rejected', rejected_at = NOW(), notes = ?
-                 WHERE user_id = ? AND chat_jid = ? AND session_id = ?`,
-                [reason || 'Rechazado por el agente', agentId, chatJid, targetSessionId]
+                 WHERE id = ?`,
+                [reason || 'Rechazado por el agente', assignment.id]
             );
 
             // Eliminar la asignación rechazada después de registrarla
             await connection.execute(
                 `DELETE FROM chat_assignments
-                 WHERE user_id = ? AND chat_jid = ? AND session_id = ? AND status = 'rejected'`,
-                [agentId, chatJid, targetSessionId]
+                 WHERE id = ? AND status = 'rejected'`,
+                [assignment.id]
             );
 
             // Obtener nombre del contacto
@@ -15830,7 +16077,7 @@ app.post('/api/agent/reject-transfer', async (req, res) => {
                 `SELECT
                     COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as chat_name
                  FROM (SELECT 1) as dummy
-                 LEFT JOIN contacts c ON c.jid = ? AND c.session_id = ?
+                 LEFT JOIN contacts c ON c.jid = ? AND c.phone_number = ?
                  LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
                  LIMIT 1`,
                 [chatJid, chatJid, targetSessionId, chatJid, targetSessionId]
@@ -15872,9 +16119,9 @@ app.post('/api/agent/reject-transfer', async (req, res) => {
     }
 });
 
-// Cerrar conversación de un agente
+// Cerrar conversación de un agente con notificación al admin
 app.post('/api/agent/close-conversation', async (req, res) => {
-    const { agentId, chatJid, sessionId } = req.body;
+    const { agentId, chatJid, sessionId, agentName, reason } = req.body;
 
     if (!agentId || !chatJid || !sessionId) {
         return res.status(400).json({
@@ -15888,7 +16135,7 @@ app.post('/api/agent/close-conversation', async (req, res) => {
     }
 
     try {
-        console.log('[CLOSE-CONV] 📋 Request:', { agentId, chatJid, sessionId });
+        console.log('[CLOSE-CONV] 📋 Request:', { agentId, chatJid, sessionId, agentName, reason });
 
         const connection = await pool.getConnection();
         try {
@@ -15917,18 +16164,29 @@ app.post('/api/agent/close-conversation', async (req, res) => {
             const targetSessionId = assignments[0].session_id;
             console.log('[CLOSE-CONV] ✅ Usando sessionId de BD:', targetSessionId);
 
+            // Obtener información del chat para la notificación
+            const [chatInfo] = await connection.execute(
+                `SELECT
+                    COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as chat_name
+                 FROM (SELECT 1) as dummy
+                 LEFT JOIN contacts c ON c.jid = ? AND c.phone_number = ?
+                 LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
+                 LIMIT 1`,
+                [chatJid, chatJid, targetSessionId, chatJid, targetSessionId]
+            );
+
+            const chatName = chatInfo[0]?.chat_name || chatJid.split('@')[0];
+
             // Actualizar el estado en chat_assignments
-            // Eliminamos "AND status = 'active'" para permitir idempotencia (si ya estaba cerrado, lo actualizamos igual)
             const [result] = await connection.execute(
-                `UPDATE chat_assignments 
-                 SET status = 'closed', conversation_status = 'closed', closed_at = NOW()
+                `UPDATE chat_assignments
+                 SET status = 'closed', conversation_status = 'closed', closed_at = NOW(),
+                 notes = CONCAT(IFNULL(notes, ''), '\nCerrado por agente: ', ?)
                  WHERE user_id = ? AND chat_jid = ? AND session_id = ?`,
-                [agentId, chatJid, targetSessionId]
+                [reason || 'Sin razón especificada', agentId, chatJid, targetSessionId]
             );
 
             if (result.affectedRows === 0) {
-                // Si no se actualizó nada, verificamos si es porque no existe la asignación
-                // o porque ya estaba cerrada (aunque con el cambio de arriba, si existe se actualiza por el closed_at)
                 return res.status(404).json({
                     success: false,
                     error: 'Conversación no encontrada o no asignada a este agente'
@@ -15937,31 +16195,77 @@ app.post('/api/agent/close-conversation', async (req, res) => {
 
             // También actualizar en agent_chat_history si existe
             await connection.execute(
-                `UPDATE agent_chat_history 
+                `UPDATE agent_chat_history
                  SET status = 'closed', closed_at = NOW()
                  WHERE agent_id = ? AND chat_jid = ? AND session_id = ?`,
                 [agentId, chatJid, targetSessionId]
             );
 
+            // Crear mensaje de notificación para el admin
+            const notificationText = `📋 *Conversación Cerrada*\n\n` +
+                `El agente *${agentName || 'Agente'}* cerró la conversación con *${chatName}*\n` +
+                `Razón: ${reason || 'No especificada'}\n\n` +
+                `_Mensaje automático del sistema_`;
+
+            await connection.execute(
+                `INSERT INTO messages (
+                    id, session_id, phone_number, chat_jid, sender_jid,
+                    from_me, message_type, text_content, timestamp, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+                [
+                    `SYSTEM-CLOSE-${Date.now()}`,
+                    targetSessionId,
+                    targetSessionId,
+                    chatJid,
+                    'system@whatsflow.com',
+                    false,
+                    'notification',
+                    notificationText,
+                    'read'
+                ]
+            );
+
             // Emitir evento Socket.IO para notificar al agente y admin
             io.emit(`agent-${agentId}-conversation-closed`, {
                 chatJid,
-                sessionId,
-                closedAt: new Date().toISOString()
+                sessionId: targetSessionId,
+                closedAt: new Date().toISOString(),
+                agentName,
+                chatName,
+                reason
             });
 
             io.emit('conversation-status-changed', {
                 agentId,
                 chatJid,
-                sessionId,
-                status: 'closed'
+                sessionId: targetSessionId,
+                status: 'closed',
+                agentName,
+                chatName,
+                reason
             });
 
-            console.log(`[AGENT] ✅ Conversación cerrada: agente ${agentId}, chat ${chatJid}`);
+            // Notificar específicamente al admin
+            io.emit('conversation-closed-notification', {
+                type: 'conversation_closed',
+                agentId,
+                agentName: agentName || 'Agente',
+                chatJid,
+                chatName,
+                reason: reason || 'Sin razón especificada',
+                message: `El agente ${agentName || 'Agente'} cerró la conversación con ${chatName}`,
+                timestamp: new Date().toISOString(),
+                playSound: true,
+                showNotification: true
+            });
+
+            console.log(`[AGENT] ✅ Conversación cerrada: agente ${agentName} (${agentId}), chat ${chatName} (${chatJid})`);
 
             res.json({
                 success: true,
-                message: 'Conversación cerrada exitosamente'
+                message: 'Conversación cerrada exitosamente',
+                chatName,
+                agentName
             });
         } finally {
             connection.release();
@@ -16005,8 +16309,7 @@ app.get('/api/agents/:userId/chats', async (req, res) => {
 
             // Calcular fecha límite según el filtro
             let dateCondition = '';
-            // phoneNumber para: subconsultas messages (3) + JOINs contacts/groups (2) + WHERE (2)
-            const params = [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, userId, phoneNumber];
+            const params = [userId, phoneNumber];
 
             if (dateFilter === 'today') {
                 dateCondition = 'AND DATE(ca.assigned_at) = CURDATE()';
@@ -16017,43 +16320,55 @@ app.get('/api/agents/:userId/chats', async (req, res) => {
             }
             // Si dateFilter es 'all' o no se especifica, no agregar condición
 
-            // ✅ CORRECCIÓN: Buscar contactos con phone_number (ya actualizado desde session_id)
+            // ✅ CONSULTA OPTIMIZADA: Reducir subconsultas y JOINs
             const query = `SELECT
                     ca.chat_jid,
                     ca.session_id,
-                    MAX(ca.assigned_at) as assigned_at,
-                    MAX(ca.notes) as notes,
+                    ca.assigned_at,
+                    ca.notes,
                     COALESCE(
-                        MAX(CASE WHEN ca.chat_jid LIKE '%@g.us' THEN cg.name ELSE c.name END),
+                        c.name,
+                        cg.name,
                         SUBSTRING_INDEX(ca.chat_jid, '@', 1)
                     ) as contact_name,
-                    COALESCE(
-                        MAX(CASE WHEN ca.chat_jid LIKE '%@g.us' THEN cg.avatar_url ELSE c.avatar_url END)
-                    ) as avatar_url,
-                    (SELECT text_content FROM messages m
-                     WHERE m.chat_jid = ca.chat_jid
-                     AND (m.session_id = ca.session_id OR m.phone_number = ?)
-                     ORDER BY m.timestamp DESC LIMIT 1) as last_message,
-                    (SELECT timestamp FROM messages m
-                     WHERE m.chat_jid = ca.chat_jid
-                     AND (m.session_id = ca.session_id OR m.phone_number = ?)
-                     ORDER BY m.timestamp DESC LIMIT 1) as last_message_time,
-                    (SELECT COUNT(*) FROM messages m
-                     WHERE m.chat_jid = ca.chat_jid
-                     AND (m.session_id = ca.session_id OR m.phone_number = ?)
-                     AND m.from_me = 0
-                     AND COALESCE(m.is_read, false) = false) as unread_count
+                    COALESCE(c.avatar_url, cg.avatar_url) as avatar_url,
+                    m.text_content as last_message,
+                    m.timestamp as last_message_time,
+                    COALESCE(m_unread.unread_count, 0) as unread_count
                 FROM chat_assignments ca
                 LEFT JOIN contacts c ON c.jid = ca.chat_jid AND c.phone_number = ?
                 LEFT JOIN contact_groups cg ON cg.jid = ca.chat_jid AND cg.session_id = ?
+                LEFT JOIN (
+                    SELECT chat_jid, text_content, timestamp
+                    FROM messages
+                    WHERE (session_id = ? OR phone_number = ?)
+                    AND (chat_jid, timestamp) IN (
+                        SELECT chat_jid, MAX(timestamp)
+                        FROM messages
+                        WHERE (session_id = ? OR phone_number = ?)
+                        GROUP BY chat_jid
+                    )
+                ) m ON m.chat_jid = ca.chat_jid
+                LEFT JOIN (
+                    SELECT chat_jid, COUNT(*) as unread_count
+                    FROM messages
+                    WHERE (session_id = ? OR phone_number = ?)
+                    AND from_me = 0
+                    AND COALESCE(is_read, false) = false
+                    GROUP BY chat_jid
+                ) m_unread ON m_unread.chat_jid = ca.chat_jid
                 WHERE ca.user_id = ?
                 AND ca.session_id = ?
                 AND ca.status IN ('pending', 'accepted', 'active')
                 ${dateCondition}
-                GROUP BY ca.chat_jid, ca.session_id
-                ORDER BY last_message_time DESC`;
+                ORDER BY m.timestamp DESC, ca.assigned_at DESC`;
 
-            const [assignments] = await connection.execute(query, params);
+            const [assignments] = await connection.execute(query, [
+                phoneNumber, phoneNumber, // JOIN contacts/groups
+                phoneNumber, phoneNumber, phoneNumber, phoneNumber, // Subconsulta last_message
+                phoneNumber, phoneNumber, // Subconsulta unread_count
+                userId, phoneNumber // WHERE conditions
+            ]);
 
             console.log('[AGENTS-CHATS] ✅ Chats encontrados:', assignments.length);
             if (assignments.length > 0) {
@@ -16680,6 +16995,7 @@ app.get('/api/chat-assignments/agent/:userId', async (req, res) => {
 
 app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
+    console.log(`[DASHBOARD-API] 📊 Solicitando estadísticas para sessionId: ${sessionId}`);
 
     if (!pool) {
         return res.json({
@@ -16696,9 +17012,13 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
     }
 
     try {
+        console.log(`[DASHBOARD-API] 🔍 Obteniendo sessionIds para: ${sessionId}`);
         // Obtener todos los session_ids válidos para este usuario
         const sessionIds = await getAllSessionIds(sessionId);
+        console.log(`[DASHBOARD-API] 📋 SessionIds obtenidos:`, sessionIds);
+
         if (!sessionIds || sessionIds.length === 0) {
+            console.log(`[DASHBOARD-API] ⚠️ No se encontraron sessionIds válidos para: ${sessionId}`);
             return res.json({
                 success: true,
                 stats: {
@@ -16713,7 +17033,9 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
             });
         }
 
+        console.log(`[DASHBOARD-API] 🔗 Obteniendo conexión a BD...`);
         const connection = await pool.getConnection();
+        console.log(`[DASHBOARD-API] ✅ Conexión a BD obtenida`);
         try {
             // Construir placeholders para IN clause
             const placeholders = sessionIds.map(() => '?').join(',');
@@ -16741,12 +17063,31 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
 
             // Obtener el teléfono del admin para filtrar correctamente
             const adminPhone = await getUserPhoneNumber(sessionId);
+            console.log(`[DASHBOARD-STATS] Admin phone obtenido para sesión ${sessionId}: ${adminPhone}`);
 
             // Agentes activos de ESTE admin solamente
-            const [agentsResult] = await connection.execute(
-                'SELECT COUNT(*) as total FROM users WHERE status = \'active\' AND role IN (\'agent\', \'supervisor\') AND admin_phone = ?',
-                [adminPhone]
-            );
+            let agentsCount = 0;
+            let agentsResult = [{ total: 0 }]; // Inicializar con valor por defecto
+
+            if (adminPhone) {
+                // Contar solo los agentes del admin actual con filtro estricto
+                [agentsResult] = await connection.execute(
+                    'SELECT COUNT(*) as total FROM users WHERE status = \'active\' AND role IN (\'agent\', \'supervisor\') AND admin_phone = ?',
+                    [adminPhone]
+                );
+                agentsCount = agentsResult[0].total || 0;
+                console.log(`[DASHBOARD-STATS] Agentes encontrados para admin ${adminPhone}: ${agentsCount}`);
+
+                // Si el contador es mayor a 1, verificar si hay agentes de otros admins
+                if (agentsCount > 1) {
+                    const [allAgents] = await connection.execute(
+                        'SELECT id, phone, email, role, admin_phone, status FROM users WHERE status = \'active\' AND role IN (\'agent\', \'supervisor\')'
+                    );
+                    console.log(`[DASHBOARD-STATS] VERIFICACIÓN: Todos los agentes en BD:`, allAgents);
+                }
+            } else {
+                console.log(`[DASHBOARD-STATS] No se pudo obtener adminPhone para sesión ${sessionId}, contando 0 agentes`);
+            }
 
             const [activeLinesResult] = await connection.execute(
                 'SELECT COUNT(*) as total FROM user_sessions WHERE is_active = 1'
@@ -18824,18 +19165,7 @@ app.use('/api/*', (err, req, res, next) => {
     }
 });
 
-// Ruta catch-all para servir index.html (debe estar al final, después de todas las rutas API)
-app.get('*', (req, res) => {
-    // Si la ruta empieza con /api/, devolver un error JSON en lugar de index.html
-    if (req.path.startsWith('/api/')) {
-        res.status(404).json({
-            success: false,
-            error: 'Endpoint no encontrado'
-        });
-    } else {
-        res.sendFile(path.join(__dirname, '../../public/index.html'));
-    }
-});
+
 
 // Configuración de timeouts del servidor para evitar cierres prematuros
 server.setTimeout(300000); // 5 minutos para manejar operaciones largas
@@ -18861,6 +19191,15 @@ server.listen(PORT, '0.0.0.0', async () => {
     console.log(`⏰ Timeouts configurados: 5 minutos para operaciones largas`);
     await initializeDatabase();
 
+    // Cargar endpoints de agents-permissions DESPUÉS de inicializar DB
+    console.log('[AGENTS-PERMISSIONS] 🔄 Cargando endpoints...');
+    try {
+        require('./agents-permissions-endpoints')(app, pool);
+        console.log('[AGENTS-PERMISSIONS] ✅ Endpoints cargados correctamente');
+    } catch (error) {
+        console.error('[AGENTS-PERMISSIONS] ❌ Error cargando endpoints:', error);
+    }
+
     // Inicializar Scheduler de Estados de WhatsApp
     console.log(`\n📱 [DEBUG] Inicializando Scheduler de Estados de WhatsApp...`);
     console.log(`\n📱 [DEBUG] Pool disponible:`, !!pool);
@@ -18877,6 +19216,20 @@ server.listen(PORT, '0.0.0.0', async () => {
         console.error(`❌ [DEBUG] Error al iniciar Scheduler de Estados:`, error);
         console.error(`❌ [DEBUG] Stack:`, error.stack);
     }
+
+    // Ruta catch-all para servir index.html (debe estar al final, después de todas las rutas API)
+    // MOVIDO AQUÍ para asegurar que se cargue DESPUÉS de los endpoints dinámicos (como agents-permissions)
+    app.get('*', (req, res) => {
+        // Si la ruta empieza con /api/, devolver un error JSON en lugar de index.html
+        if (req.path.startsWith('/api/')) {
+            res.status(404).json({
+                success: false,
+                error: 'Endpoint no encontrado'
+            });
+        } else {
+            res.sendFile(path.join(__dirname, '../../public/index.html'));
+        }
+    });
 
 
     // Restaurar sesiones guardadas automáticamente
@@ -18967,12 +19320,8 @@ server.listen(PORT, '0.0.0.0', async () => {
         }
 
         // Cargar sistema de gestión de agentes con privilegios
-        try {
-            require('./agents-permissions-endpoints')(app, pool);
-            console.log('✅ Sistema de gestión de agentes con privilegios cargado correctamente');
-        } catch (error) {
-            console.error('❌ Error cargando sistema de privilegios:', error);
-        }
+        // MOVIDO ARRIBA (línea ~19222) para evitar conflictos con /api/agents/:id
+        // Ya se carga después de initializeDatabase()
     } else {
         console.log('⚠️  Pool no disponible - Sistema multi-agente no cargado');
     }

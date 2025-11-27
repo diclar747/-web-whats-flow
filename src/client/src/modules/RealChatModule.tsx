@@ -56,6 +56,13 @@ import {
   Error as ErrorIcon
 } from '@mui/icons-material';
 
+// Función para normalizar números de teléfono (eliminar sufijos como :0, :82, etc.)
+const normalizePhoneNumber = (phone: string): string => {
+  if (!phone) return phone;
+  // Eliminar sufijos como :0, :82, etc. que WhatsApp agrega para hilos/dispositivos
+  return phone.split(':')[0];
+};
+
 interface RealChatModuleProps {
   sessionId: string;
 }
@@ -248,8 +255,9 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
     // Transfer to Kanban board
     if (transferType === 'kanban' && selectedBoard) {
       try {
-        // Extract phone from chat ID
-        const phone = activeChat.id.replace('@c.us', '').replace('@g.us', '');
+        // Extract phone from chat ID and normalize (remove device suffixes like :0, :82, etc.)
+        const rawPhone = activeChat.id.replace('@c.us', '').replace('@g.us', '');
+        const phone = normalizePhoneNumber(rawPhone);
 
         const response = await fetch(`${getAPIBaseURL()}/api/contacts/categorize`, {
           method: 'POST',

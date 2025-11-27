@@ -287,8 +287,15 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     return false;
   };
 
-  const loadChats = useCallback(async (sessionId: string, dateFilter: string = 'today'): Promise<void> => {
-    console.log('[WhatsAppContext] 🚀 loadChats llamado con:', { sessionId, dateFilter, userRole, userId });
+  const loadChats = useCallback(async (sessionId: string, dateFilter: string = 'all'): Promise<void> => {
+    console.log('[WhatsAppContext] 🚀 loadChats llamado con:', {
+      sessionId,
+      dateFilter,
+      userRole,
+      userId,
+      stackTrace: new Error().stack?.split('\n').slice(1, 4).join('\n')
+    });
+
     try {
       setIsLoading(true);
       setError(null);
@@ -348,7 +355,13 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         const groupCount = mappedChats.filter(chat => chat.isGroup).length;
         console.log(`📋 Filtrando ${groupCount} grupos. Solo contactos individuales: ${individualChats.length}`);
 
-        console.log('[WhatsAppContext] 💾 Guardando chats en estado:', individualChats.length, individualChats);
+        console.log('[WhatsAppContext] 💾 Guardando chats en estado:', individualChats.length);
+        console.log('[WhatsAppContext] 📅 Fechas de chats:', individualChats.map(c => ({
+          name: c.name,
+          timestamp: c.timestamp,
+          date: c.timestamp ? new Date(c.timestamp).toLocaleDateString() : 'sin fecha'
+        })).slice(0, 10));
+
         setChats(individualChats);
         setConnectionStatus('connected');
         console.log('[WhatsAppContext] ✅ setChats ejecutado con', individualChats.length, 'chats');
@@ -377,12 +390,20 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           hasChats: !!data.chats,
           chatsLength: data.chats?.length,
           error: data.error,
-          message: data.message
+          message: data.message,
+          chatsActuales: chats.length
         });
-        console.log('[WhatsAppContext] 🚫 LIMPIANDO chats (setChats([]))');
-        setChats([]);
-        setConnectionStatus('error');
-        setError('No se pudieron cargar los chats. Verifique la conexión de WhatsApp.');
+
+        // 🛡️ NO limpiar chats si ya tenemos datos cargados (mantener estabilidad)
+        if (chats.length > 0) {
+          console.warn('[WhatsAppContext] ⚠️ API falló pero manteniendo chats existentes:', chats.length);
+          setConnectionStatus('error');
+          setError('Error actualizando chats. Mostrando última versión disponible.');
+        } else {
+          console.log('[WhatsAppContext] 🚫 No hay chats previos, no cargar datos vacíos');
+          setConnectionStatus('error');
+          setError('No se pudieron cargar los chats. Verifique la conexión de WhatsApp.');
+        }
       }
     } catch (error) {
       console.error('❌ Error cargando chats:', error);

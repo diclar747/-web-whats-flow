@@ -1,0 +1,185 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    🎯 GUÍA RÁPIDA - CAMPAÑAS MEJORADAS                       ║
+║                      https://web.whats-flow.com/dashboard/campaigns          ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ✨ NUEVAS FUNCIONALIDADES IMPLEMENTADAS                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+1. PLANTILLAS DE MENSAJES
+   ━━━━━━━━━━━━━━━━━━━━━━━━━
+   ✓ 3 plantillas predefinidas disponibles
+   ✓ Selecciona una al crear la campaña
+   ✓ O escribe tu mensaje personalizado
+   ✓ Usa variables: {nombre}, {dato1}, {dato2}, {dato3}, {fecha}
+
+2. CONFIGURACIÓN DE RECORDATORIOS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ✓ Mismo día del vencimiento
+   ✓ 1 día antes
+   ✓ 2 días antes
+   ✓ 3 días antes
+   ✓ 1 semana antes
+
+3. HORARIOS INTELIGENTES
+   ━━━━━━━━━━━━━━━━━━━━━━━
+   ✓ Solo envía entre 07:00 - 18:00 (configurable)
+   ✓ Evita horarios inapropiados
+   ✓ Respeta zonas horarias
+
+4. INTERVALOS ALEATORIOS
+   ━━━━━━━━━━━━━━━━━━━━━━━━
+   ✓ Cada mensaje en horario diferente
+   ✓ Defecto: 60-120 segundos entre mensajes
+   ✓ Evita detección de spam
+   ✓ Envíos naturales y seguros
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📝 FORMATO DEL EXCEL (IMPORTANTE)                                            │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────┬──────────────┬──────────┬──────────┬──────────┬────────────┬───────┐
+│ numero  │ nombre       │ dato1    │ dato2    │ dato3    │ fecha      │ hora  │
+├─────────┼──────────────┼──────────┼──────────┼──────────┼────────────┼───────┤
+│ 573001..│ Juan Pérez   │ $150.000 │ Cuota #3 │ Plan A   │ 2025-11-30 │ 09:00 │
+│ 573002..│ María García │ $200.000 │ Cuota #5 │ Plan B   │ 2025-11-30 │ 14:00 │
+└─────────┴──────────────┴──────────┴──────────┴──────────┴────────────┴───────┘
+
+⚠️  IMPORTANTE: La columna "fecha" es la FECHA DE VENCIMIENTO
+    El sistema calculará cuándo enviar según tu configuración de recordatorio
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🚀 PASOS PARA USAR EL SISTEMA                                                │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+PASO 1: CONFIGURAR (hacer una vez)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Clic en botón "Configuración" (en el header)
+2. Seleccionar cuándo enviar recordatorio (ej: 1 día antes)
+3. Definir horario de envío (ej: 07:00 - 18:00)
+4. Configurar intervalo entre mensajes (ej: 60-120 segundos)
+5. Guardar configuración
+
+PASO 2: CREAR CAMPAÑA
+━━━━━━━━━━━━━━━━━━━━━━
+1. Clic en "Nueva Campaña"
+2. Ingresar nombre de la campaña
+3. Descargar plantilla Excel (botón en el header)
+4. Llenar el Excel con fechas de VENCIMIENTO
+5. Cargar el Excel
+6. Seleccionar plantilla de mensaje o escribir personalizado
+7. (Opcional) Adjuntar archivo multimedia
+8. Crear campaña
+
+PASO 3: ENVÍO AUTOMÁTICO
+━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ El sistema revisa cada minuto
+✓ Calcula automáticamente cuándo enviar
+✓ Solo envía en horario permitido
+✓ Usa intervalos aleatorios
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 💡 EJEMPLO COMPLETO                                                          │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+ESCENARIO: Recordatorios de pago de mensualidades
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. CONFIGURACIÓN:
+   ├─ Recordatorio: 1 día antes
+   ├─ Horario: 09:00 - 17:00
+   └─ Intervalo: 60-120 segundos
+
+2. EXCEL:
+   ┌─────────────┬─────────────┬──────────┬──────────┬────────────┐
+   │ 573001234   │ Juan Pérez  │ $150.000 │ Cuota #3 │ 2025-11-30 │
+   └─────────────┴─────────────┴──────────┴──────────┴────────────┘
+
+3. PLANTILLA SELECCIONADA:
+   "Hola {nombre}, te recordamos que tu pago de {dato1} 
+    vence el {fecha}. ¡Gracias por tu confianza! 😊"
+
+4. RESULTADO:
+   ├─ Fecha de vencimiento: 30/11/2025
+   ├─ Fecha de envío: 29/11/2025 (1 día antes)
+   ├─ Horario: Entre 09:00 y 17:00
+   ├─ Intervalo: Aleatorio 60-120 seg entre cada mensaje
+   └─ Mensaje: "Hola Juan Pérez, te recordamos que tu pago 
+               de $150.000 vence el 2025-11-30. ¡Gracias!"
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📋 PLANTILLAS DISPONIBLES                                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+PLANTILLA 1 - Recordatorio Formal
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"Señor {nombre}, le recordamos el vencimiento de su cuota. 
+ Le recomendamos pagar en fecha a fin de evitar cargos por mora. 
+ Atentamente, la empresa."
+
+PLANTILLA 2 - Recordatorio Amigable
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"Hola {nombre} 👋, te recordamos que tu pago de {dato1} 
+ vence el {dato2}. ¡Gracias por tu confianza! 😊"
+
+PLANTILLA 3 - Recordatorio con Datos
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"Estimado/a {nombre}, su cuota #{dato1} por valor de {dato2} 
+ vence el día {dato3}. Para cualquier consulta, estamos a su 
+ disposición. 📱💰"
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ✅ VENTAJAS DEL SISTEMA                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+✓ Envíos naturales - Los intervalos aleatorios evitan spam
+✓ Horarios apropiados - Solo en horario de oficina
+✓ Recordatorios inteligentes - Envía automáticamente antes del vencimiento
+✓ Plantillas reutilizables - Ahorra tiempo
+✓ Personalización total - Variables dinámicas
+✓ Fácil de usar - Interfaz intuitiva
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📊 VARIABLES DISPONIBLES                                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+{nombre}  → Nombre del contacto del Excel
+{dato1}   → Primera columna personalizada
+{dato2}   → Segunda columna personalizada
+{dato3}   → Tercera columna personalizada
+{fecha}   → Fecha de vencimiento del Excel
+
+Ejemplo: "Hola {nombre}, tu cuota {dato1} vence el {fecha}"
+Resulta: "Hola Juan Pérez, tu cuota $150.000 vence el 2025-11-30"
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🎯 ACCESO AL SISTEMA                                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+URL: https://web.whats-flow.com/dashboard/campaigns
+
+Busca los nuevos botones:
+1. "Configuración" (arriba a la derecha)
+2. "Descargar Plantilla Excel" (arriba)
+3. Selector de plantillas (al crear campaña)
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ⚡ ESTADO DEL SISTEMA                                                        │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+✅ Base de datos creada y funcionando
+✅ 3 plantillas predeterminadas activas
+✅ APIs de configuración operativas
+✅ Frontend compilado y desplegado
+✅ Servidor reiniciado exitosamente
+✅ Sistema en producción
+
+Estado: FUNCIONANDO ✅
+Fecha: 25 de Noviembre de 2025
+Versión: Campañas v2.0
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         ¡Sistema Listo para Usar!                            ║
+║                  Accede ahora y prueba las nuevas funciones                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝

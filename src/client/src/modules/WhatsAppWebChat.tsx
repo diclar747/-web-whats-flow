@@ -198,6 +198,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     return `+${phoneNumber}`;
   }, [chats, sessionId]);
 
+  // Función para normalizar números de teléfono (eliminar sufijos como :0, :82, etc.)
+  const normalizePhoneNumber = useCallback((phone: string): string => {
+    if (!phone) return phone;
+    // Eliminar sufijos como :0, :82, etc. que WhatsApp agrega para hilos/dispositivos
+    return phone.split(':')[0];
+  }, []);
+
   // 👤 Helper para obtener el nombre del remitente de forma inteligente
   const getSenderName = useCallback((msg: any): string => {
     // Si el mensaje NO es de nosotros (from_me = false), mostrar nombre del contacto
@@ -469,6 +476,26 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       loadAgents();
     }
   }, [sessionId]);
+
+  // Escuchar cambios de estado de agentes en tiempo real
+  useEffect(() => {
+    const socket = io(getAPIBaseURL());
+
+    socket.on('agent-status-changed', (data: { agentId: string; status: string }) => {
+      console.log('🔔 [WhatsAppWebChat] Estado de agente actualizado:', data);
+      setAvailableAgents(prevAgents =>
+        prevAgents.map(agent =>
+          String(agent.id) === String(data.agentId)
+            ? { ...agent, status: data.status }
+            : agent
+        )
+      );
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   // Funciones
   const handleSendMessage = async () => {
@@ -764,6 +791,17 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   const handleTransferToAgent = async () => {
     if (!selectedAgentForTransfer || !activeChat) return;
 
+    // Validar estado del agente
+    const agent = availableAgents.find(a => String(a.id) === String(selectedAgentForTransfer));
+    if (agent && (agent.status === 'offline' || !agent.status)) {
+      setSnackbar({
+        open: true,
+        message: '⛔ No puedes transferir el chat a un agente desconectado',
+        severity: 'warning'
+      });
+      return;
+    }
+
     try {
 
       const response = await fetch(`${getAPIBaseURL()}/api/chats/transfer`, {
@@ -1009,7 +1047,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               Chats
             </Typography>
           )}
-          
+
           {/* Botón minimizar/maximizar */}
           <Tooltip title={chatListCollapsed ? "Expandir lista" : "Minimizar lista"}>
             <IconButton
@@ -1038,37 +1076,37 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 '& .MuiOutlinedInput-root': {
                   bgcolor: colors.background,
                   borderRadius: '10px',
-                fontSize: '14px',
-                transition: 'all 0.2s ease',
-                '& fieldset': {
-                  border: `1px solid ${colors.divider}`
-                },
-                '&:hover': {
-                  bgcolor: colors.hover,
+                  fontSize: '14px',
+                  transition: 'all 0.2s ease',
                   '& fieldset': {
-                    borderColor: colors.primary
+                    border: `1px solid ${colors.divider}`
+                  },
+                  '&:hover': {
+                    bgcolor: colors.hover,
+                    '& fieldset': {
+                      borderColor: colors.primary
+                    }
+                  },
+                  '&.Mui-focused': {
+                    bgcolor: colors.inputBg,
+                    boxShadow: `0 0 0 2px ${colors.primary}25`,
+                    '& fieldset': {
+                      borderColor: colors.primary
+                    }
+                  },
+                  '& input': {
+                    padding: '10px 12px'
                   }
-                },
-                '&.Mui-focused': {
-                  bgcolor: colors.inputBg,
-                  boxShadow: `0 0 0 2px ${colors.primary}25`,
-                  '& fieldset': {
-                    borderColor: colors.primary
-                  }
-                },
-                '& input': {
-                  padding: '10px 12px'
                 }
-              }
-            }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <Search sx={{ color: colors.textSecondary, fontSize: 20 }} />
-                </InputAdornment>
-              )
-            }}
-          />
+              }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search sx={{ color: colors.textSecondary, fontSize: 20 }} />
+                  </InputAdornment>
+                )
+              }}
+            />
           </Box>
         )}
 
@@ -1076,24 +1114,24 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
         {!chatListCollapsed && (
           <Tabs
             value={filterTab}
-          onChange={(e, newValue) => setFilterTab(newValue)}
-          sx={{
-            minHeight: 40,
-            bgcolor: colors.sidebar,
-            '& .MuiTab-root': {
+            onChange={(e, newValue) => setFilterTab(newValue)}
+            sx={{
               minHeight: 40,
-              textTransform: 'none',
-              color: colors.textSecondary,
-              fontSize: '0.9rem'
-            },
-            '& .Mui-selected': {
-              color: colors.primary
-            },
-            '& .MuiTabs-indicator': {
-              bgcolor: colors.primary
-            }
-          }}
-        >
+              bgcolor: colors.sidebar,
+              '& .MuiTab-root': {
+                minHeight: 40,
+                textTransform: 'none',
+                color: colors.textSecondary,
+                fontSize: '0.9rem'
+              },
+              '& .Mui-selected': {
+                color: colors.primary
+              },
+              '& .MuiTabs-indicator': {
+                bgcolor: colors.primary
+              }
+            }}
+          >
             <Tab label={`Todo (${chatStats.total})`} />
             <Tab label={`Enviados (${chatStats.sent})`} />
             <Tab label={`Recibidos (${chatStats.received})`} />
@@ -1157,34 +1195,34 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               </ListItemAvatar>
               {!chatListCollapsed && (
                 <ListItemText
-                primary={
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      {chat.isGroup && <People sx={{ fontSize: 16, color: '#9c27b0' }} />}
-                      <Typography variant="body1" noWrap sx={{ fontWeight: chat.unreadCount ? 600 : 400, color: colors.text }}>
-                        {chat.name || chat.id.split('@')[0]}
+                  primary={
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {chat.isGroup && <People sx={{ fontSize: 16, color: '#9c27b0' }} />}
+                        <Typography variant="body1" noWrap sx={{ fontWeight: chat.unreadCount ? 600 : 400, color: colors.text }}>
+                          {chat.name || chat.id.split('@')[0]}
+                        </Typography>
+                        {/* Etiqueta de Agente Asignado */}
+                        {(chat as any).assigned_agent_name && (
+                          <Chip
+                            label={`Agente: ${chat.assigned_agent_name}`}
+                            size="small"
+                            sx={{
+                              ml: 1,
+                              height: 16,
+                              fontSize: '0.65rem',
+                              bgcolor: '#e3f2fd',
+                              color: '#1976d2',
+                              fontWeight: 600
+                            }}
+                          />
+                        )}
+                      </Box>
+                      <Typography variant="caption" sx={{ color: colors.textSecondary, ml: 1 }}>
+                        {chat.timestamp ? formatTime(chat.timestamp) : ''}
                       </Typography>
-                      {/* Etiqueta de Agente Asignado */}
-                      {(chat as any).assigned_agent_name && (
-                        <Chip
-                          label={`Agente: ${chat.assigned_agent_name}`}
-                          size="small"
-                          sx={{
-                            ml: 1,
-                            height: 16,
-                            fontSize: '0.65rem',
-                            bgcolor: '#e3f2fd',
-                            color: '#1976d2',
-                            fontWeight: 600
-                          }}
-                        />
-                      )}
                     </Box>
-                    <Typography variant="caption" sx={{ color: colors.textSecondary, ml: 1 }}>
-                      {chat.timestamp ? formatTime(chat.timestamp) : ''}
-                    </Typography>
-                  </Box>
-                }
+                  }
                   secondary={
                     <Typography
                       variant="body2"
@@ -1255,12 +1293,12 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                       letterSpacing: '0.01em'
                     }}
                   >
-                    {activeChat.name || activeChat.id.split('@')[0]}
+                    {activeChat.name || normalizePhoneNumber(activeChat.id.split('@')[0])}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.3 }}>
                   <Typography variant="caption" sx={{ color: colors.textSecondary, fontSize: '12.5px' }}>
-                    {activeChat.isGroup ? `Grupo · ${messages.length} mensajes` : `${activeChat.id.split('@')[0]}`}
+                    {activeChat.isGroup ? `Grupo · ${messages.length} mensajes` : `${normalizePhoneNumber(activeChat.id.split('@')[0])}`}
                   </Typography>
                   {activeChat.unreadCount && activeChat.unreadCount > 0 && (
                     <Chip
@@ -1338,7 +1376,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                   <Search />
                 </IconButton>
               </Tooltip>
-              
+
               {/* Botón Imprimir - TEST */}
               <Tooltip title="Imprimir conversación">
                 <IconButton
@@ -1551,7 +1589,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 >
                   Exportar PDF
                 </Button>
-                
+
                 {/* Botón Imprimir */}
                 <Button
                   onClick={() => window.print()}
@@ -1637,416 +1675,416 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               ) : (
                 // ⚡ OPTIMIZACIÓN: Usar mensajes filtrados memoizados
                 filteredMessages.map((msg, index) => (
-                    <Box
-                      key={msg.id}
-                      className="message-container"
+                  <Box
+                    key={msg.id}
+                    className="message-container"
+                    sx={{
+                      display: 'flex',
+                      justifyContent: msg.isFromMe ? 'flex-end' : 'flex-start',
+                      mb: 1,
+                      position: 'relative',
+                      // ⚡ OPTIMIZACIÓN: Sin animación para mejor rendimiento
+                      opacity: 1
+                    }}
+                  >
+                    {/* Acciones dentro del mensaje ahora estarán debajo del contenido */}
+
+                    <Paper
+                      elevation={0}
                       sx={{
-                        display: 'flex',
-                        justifyContent: msg.isFromMe ? 'flex-end' : 'flex-start',
-                        mb: 1,
+                        maxWidth: '65%',
+                        bgcolor: msg.isFromMe ? colors.myMessage : colors.theirMessage,
+                        p: '10px 12px 10px 12px',
+                        borderRadius: msg.isFromMe
+                          ? '12px 12px 4px 12px'  // Esquina inferior derecha más pequeña
+                          : '12px 12px 12px 4px', // Esquina inferior izquierda más pequeña
                         position: 'relative',
-                        // ⚡ OPTIMIZACIÓN: Sin animación para mejor rendimiento
-                        opacity: 1
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                        // 🎨 Hover effect mejorado
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': {
+                          bgcolor: msg.isFromMe ? colors.myMessageHover : colors.theirMessageHover,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                          transform: 'translateY(-2px)'
+                        }
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setSelectedMessage(msg);
+                        setMessageMenuAnchor(e.currentTarget);
                       }}
                     >
-                      {/* Acciones dentro del mensaje ahora estarán debajo del contenido */}
-
-                      <Paper
-                        elevation={0}
+                      {/* Nombre del remitente - Siempre visible */}
+                      <Typography
+                        variant="caption"
                         sx={{
-                          maxWidth: '65%',
-                          bgcolor: msg.isFromMe ? colors.myMessage : colors.theirMessage,
-                          p: '10px 12px 10px 12px',
-                          borderRadius: msg.isFromMe
-                            ? '12px 12px 4px 12px'  // Esquina inferior derecha más pequeña
-                            : '12px 12px 12px 4px', // Esquina inferior izquierda más pequeña
-                          position: 'relative',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                          // 🎨 Hover effect mejorado
-                          transition: 'all 0.2s ease-in-out',
-                          '&:hover': {
-                            bgcolor: msg.isFromMe ? colors.myMessageHover : colors.theirMessageHover,
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                            transform: 'translateY(-2px)'
-                          }
-                        }}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setSelectedMessage(msg);
-                          setMessageMenuAnchor(e.currentTarget);
+                          fontWeight: 700,
+                          fontSize: '0.75rem',
+                          color: msg.isFromMe
+                            ? '#075E54'  // Verde oscuro para mensajes propios
+                            : '#00897B', // Teal para mensajes recibidos
+                          display: 'block',
+                          mb: 0.5,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px'
                         }}
                       >
-                        {/* Nombre del remitente - Siempre visible */}
+                        {getSenderName(msg)}
+                      </Typography>
+
+                      {/* 👤 Chip con nombre del agente/admin - Solo para mensajes propios */}
+                      {msg.isFromMe && (
+                        <Chip
+                          label={msg.agent_id && msg.agent_id !== 0 ? `👤 ${msg.agent_name || 'Agente'}` : '👑 Admin'}
+                          size="small"
+                          sx={{
+                            height: 20,
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            mb: 0.5,
+                            bgcolor: msg.agent_id && msg.agent_id !== 0 ? '#00a884' : '#075E54',
+                            color: 'white',
+                            '& .MuiChip-label': {
+                              px: 1,
+                              py: 0
+                            }
+                          }}
+                        />
+                      )}
+
+                      {/* Respuesta citada */}
+                      {msg.contextInfo && (
+                        <Box sx={{ bgcolor: 'rgba(0,0,0,0.1)', p: 1, mb: 1, borderRadius: 1, borderLeft: '4px solid #06cf9c' }}>
+                          <Typography variant="caption" sx={{ fontWeight: 600, color: '#06cf9c' }}>
+                            {getQuotedSenderName(msg.contextInfo.quotedMessageSender || '')}
+                          </Typography>
+                          <Typography variant="body2" noWrap sx={{ color: colors.textSecondary }}>
+                            {msg.contextInfo.quotedMessageText}
+                          </Typography>
+                        </Box>
+                      )}
+
+                      {/* Contenido según tipo */}
+                      {(() => {
+                        // Debug log
+                        if (msg.mediaUrl) {
+                          console.log(`[CHAT-DEBUG] Mensaje ID: ${msg.id}, Tipo: ${msg.type}, mediaUrl: ${msg.mediaUrl}, mediaMimeType: ${msg.mediaMimeType}`);
+                        }
+                        return null;
+                      })()}
+
+                      {msg.type === 'image' && msg.mediaUrl ? (
+                        <Box sx={{ mb: 1 }}>
+                          <Box
+                            sx={{
+                              maxWidth: '300px',
+                              maxHeight: '300px',
+                              borderRadius: '8px',
+                              overflow: 'hidden',
+                              cursor: 'pointer',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                              transition: 'transform 0.2s ease-in-out',
+                              '&:hover': {
+                                transform: 'scale(1.02)',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                              }
+                            }}
+                            onClick={() => handleImageClick(msg.mediaUrl!)}
+                          >
+                            <img
+                              src={getMediaUrl(msg.mediaUrl)}
+                              alt="Imagen"
+                              loading="lazy"
+                              style={{
+                                maxWidth: '100%',
+                                maxHeight: '300px',
+                                display: 'block',
+                                objectFit: 'cover'
+                              }}
+                              onError={(e) => {
+                                console.error('Error cargando imagen. URL original:', msg.mediaUrl, 'URL procesada:', getMediaUrl(msg.mediaUrl));
+                                e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="300"%3E%3Crect width="300" height="300" fill="%23f0f0f0"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
+                              }}
+                            />
+                          </Box>
+                        </Box>
+                      ) : msg.type === 'video' && msg.mediaUrl ? (
+                        <Box sx={{ mb: 1 }}>
+                          <video
+                            controls
+                            style={{
+                              maxWidth: '300px',
+                              maxHeight: '300px',
+                              borderRadius: '8px',
+                              display: 'block',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                            }}
+                            onError={(e) => {
+                              console.error('Error cargando video:', msg.mediaUrl);
+                            }}
+                          >
+                            <source src={getMediaUrl(msg.mediaUrl)} type={msg.mediaMimeType || 'video/mp4'} />
+                            Tu navegador no soporta la reproducción de videos.
+                          </video>
+                        </Box>
+                      ) : msg.type === 'audio' && msg.mediaUrl ? (
+                        <Box sx={{ mb: 1 }}>
+                          <Box sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1.5,
+                            backgroundColor: msg.isFromMe ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.05)',
+                            p: 1.5,
+                            borderRadius: 2,
+                            minWidth: 250,
+                            boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
+                          }}>
+                            <Avatar
+                              src={getAvatarUrlForJid(getSenderJidForMessage(msg) || '')}
+                              sx={{ width: 32, height: 32 }}
+                            >
+                              {(activeChat?.name || (getSenderJidForMessage(msg) || 'U').split('@')[0]).charAt(0).toUpperCase()}
+                            </Avatar>
+                            <IconButton
+                              size="small"
+                              onClick={() => handlePlayAudio(msg.id, msg.mediaUrl!)}
+                              sx={{
+                                width: 36,
+                                height: 36,
+                                bgcolor: colors.primary,
+                                color: 'white',
+                                '&:hover': {
+                                  bgcolor: '#008069'
+                                }
+                              }}
+                            >
+                              {playingAudio === msg.id ? (
+                                <Box sx={{ width: 12, height: 12, bgcolor: 'white', borderRadius: '2px' }} />
+                              ) : (
+                                <PlayArrow sx={{ fontSize: 20 }} />
+                              )}
+                            </IconButton>
+                            <Box sx={{ flex: 1 }}>
+                              <Box sx={{ height: 28, display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                                {[...Array(40)].map((_, i) => (
+                                  <Box
+                                    key={i}
+                                    sx={{
+                                      width: 2,
+                                      height: Math.random() * 20 + 8,
+                                      bgcolor: playingAudio === msg.id ? colors.primary : colors.textSecondary,
+                                      opacity: playingAudio === msg.id ? 0.8 : 0.5,
+                                      borderRadius: 1,
+                                      transition: 'all 0.2s ease'
+                                    }}
+                                  />
+                                ))}
+                              </Box>
+                            </Box>
+                            <Typography variant="caption" sx={{ color: colors.textSecondary, minWidth: 35, fontSize: '0.75rem', fontWeight: 500 }}>
+                              {playingAudio === msg.id ? '▶ ' : ''}
+                              <audio
+                                ref={(el) => {
+                                  if (el && !audioRefs.current[msg.id]) {
+                                    audioRefs.current[msg.id] = el;
+                                  }
+                                }}
+                                src={getMediaUrl(msg.mediaUrl)}
+                                style={{ display: 'none' }}
+                              />
+                              Audio
+                            </Typography>
+                          </Box>
+                        </Box>
+                      ) : msg.type === 'document' && msg.mediaUrl ? (
+                        <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1, p: 1.5, bgcolor: msg.isFromMe ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)', borderRadius: 2, maxWidth: '300px' }}>
+                          <Box sx={{ width: 40, height: 40, borderRadius: '50%', bgcolor: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                            <Description sx={{ fontSize: 20 }} />
+                          </Box>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {msg.message || 'Documento.pdf'}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: colors.textSecondary }}>
+                              Documento
+                            </Typography>
+                          </Box>
+                          <IconButton size="small" onClick={() => window.open(msg.mediaUrl, '_blank')} sx={{ color: colors.textSecondary }}>
+                            <Download fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      ) : msg.type === 'sticker' && msg.mediaUrl ? (
+                        // Sticker
+                        <Box sx={{ mb: 1 }}>
+                          <Box
+                            sx={{
+                              maxWidth: '150px',
+                              maxHeight: '150px',
+                              borderRadius: '8px',
+                              overflow: 'hidden',
+                              cursor: 'pointer',
+                              transition: 'transform 0.2s ease-in-out',
+                              '&:hover': {
+                                transform: 'scale(1.1)'
+                              }
+                            }}
+                            onClick={() => handleImageClick(msg.mediaUrl!)}
+                          >
+                            <img
+                              src={getMediaUrl(msg.mediaUrl)}
+                              alt="Sticker"
+                              loading="lazy"
+                              style={{
+                                maxWidth: '100%',
+                                maxHeight: '150px',
+                                display: 'block',
+                                objectFit: 'contain',
+                                backgroundColor: 'transparent'
+                              }}
+                              onError={(e) => {
+                                console.error('Error cargando sticker:', msg.mediaUrl);
+                                e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="150" height="150"%3E%3Crect width="150" height="150" fill="%23f0f0f0"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999"%3ESticker no disponible%3C/text%3E%3C/svg%3E';
+                              }}
+                            />
+                          </Box>
+                        </Box>
+                      ) : (msg.type === 'image' || msg.type === 'video' || msg.type === 'audio' || msg.type === 'document' || msg.type === 'sticker') && !msg.mediaUrl ? (
+                        // Fallback para multimedia sin URL
+                        <Box sx={{ mb: 1, p: 1.5, bgcolor: 'rgba(255,152,0,0.1)', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Error sx={{ color: '#ff9800', fontSize: 20 }} />
+                          <Box>
+                            <Typography variant="body2" sx={{ color: colors.text, fontWeight: 500 }}>
+                              {msg.type === 'image' ? '🖼️ Imagen' : msg.type === 'video' ? '🎥 Video' : msg.type === 'audio' ? '🔊 Audio' : msg.type === 'sticker' ? '🎨 Sticker' : '📄 Documento'}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: colors.textSecondary }}>
+                              {msg.message || 'Multimedia no disponible'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      ) : (
+                        <Typography
+                          variant="body2"
+                          component="div"
+                          sx={{
+                            color: colors.text,
+                            wordBreak: 'break-word',
+                            lineHeight: 1.5,
+                            fontSize: '14.5px',
+                            fontWeight: 400,
+                            letterSpacing: '0.01em',
+                            '& a': {
+                              color: msg.isFromMe ? '#4fc3f7' : '#00a884',
+                              textDecoration: 'none',
+                              fontWeight: 500,
+                              wordBreak: 'break-all',
+                              display: 'inline-block',
+                              transition: 'all 0.2s ease',
+                              '&:hover': {
+                                textDecoration: 'underline',
+                                opacity: 0.8
+                              }
+                            }
+                          }}
+                          dangerouslySetInnerHTML={{
+                            __html: msg.message
+                              ? msg.message
+                                // Detectar URLs y convertirlas en enlaces clicables
+                                .replace(
+                                  /(https?:\/\/[^\s]+)/g,
+                                  '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+                                )
+                                // Detectar emails
+                                .replace(
+                                  /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/gi,
+                                  '<a href="mailto:$1">$1</a>'
+                                )
+                                // Saltos de línea
+                                .replace(/\n/g, '<br/>')
+                              : ''
+                          }}
+                        />
+                      )}
+
+                      {/* Hora y estado */}
+                      <Box sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        gap: 0.3,
+                        mt: 0.5,
+                        minWidth: '60px'
+                      }}>
                         <Typography
                           variant="caption"
                           sx={{
-                            fontWeight: 700,
-                            fontSize: '0.75rem',
-                            color: msg.isFromMe
-                              ? '#075E54'  // Verde oscuro para mensajes propios
-                              : '#00897B', // Teal para mensajes recibidos
-                            display: 'block',
-                            mb: 0.5,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px'
+                            color: msg.isFromMe ? '#667d6f' : colors.textSecondary,
+                            fontSize: '11px',
+                            lineHeight: 1
                           }}
                         >
-                          {getSenderName(msg)}
+                          {formatTime(msg.timestamp)}
                         </Typography>
-
-                        {/* 👤 Chip con nombre del agente/admin - Solo para mensajes propios */}
                         {msg.isFromMe && (
-                          <Chip
-                            label={msg.agent_id && msg.agent_id !== 0 ? `👤 ${msg.agent_name || 'Agente'}` : '👑 Admin'}
-                            size="small"
-                            sx={{
-                              height: 20,
-                              fontSize: '0.7rem',
-                              fontWeight: 600,
-                              mb: 0.5,
-                              bgcolor: msg.agent_id && msg.agent_id !== 0 ? '#00a884' : '#075E54',
-                              color: 'white',
-                              '& .MuiChip-label': {
-                                px: 1,
-                                py: 0
-                              }
-                            }}
-                          />
+                          <>
+                            {msg.status === 'sending' && (
+                              <AccessTime sx={{ fontSize: 16, color: '#667d6f', ml: 0.3 }} />
+                            )}
+                            {msg.status === 'sent' && (
+                              <Done sx={{ fontSize: 16, color: '#667d6f' }} />
+                            )}
+                            {msg.status === 'delivered' && (
+                              <DoneAll sx={{ fontSize: 16, color: '#667d6f' }} />
+                            )}
+                            {msg.status === 'read' && (
+                              <DoneAll sx={{ fontSize: 16, color: '#53bdeb' }} />
+                            )}
+                            {msg.status === 'failed' && (
+                              <Error sx={{ fontSize: 16, color: '#f44336' }} />
+                            )}
+                          </>
                         )}
-
-                        {/* Respuesta citada */}
-                        {msg.contextInfo && (
-                          <Box sx={{ bgcolor: 'rgba(0,0,0,0.1)', p: 1, mb: 1, borderRadius: 1, borderLeft: '4px solid #06cf9c' }}>
-                            <Typography variant="caption" sx={{ fontWeight: 600, color: '#06cf9c' }}>
-                              {getQuotedSenderName(msg.contextInfo.quotedMessageSender || '')}
-                            </Typography>
-                            <Typography variant="body2" noWrap sx={{ color: colors.textSecondary }}>
-                              {msg.contextInfo.quotedMessageText}
-                            </Typography>
-                          </Box>
-                        )}
-
-                        {/* Contenido según tipo */}
-                        {(() => {
-                          // Debug log
-                          if (msg.mediaUrl) {
-                            console.log(`[CHAT-DEBUG] Mensaje ID: ${msg.id}, Tipo: ${msg.type}, mediaUrl: ${msg.mediaUrl}, mediaMimeType: ${msg.mediaMimeType}`);
-                          }
-                          return null;
-                        })()}
-
-                        {msg.type === 'image' && msg.mediaUrl ? (
-                          <Box sx={{ mb: 1 }}>
-                            <Box
-                              sx={{
-                                maxWidth: '300px',
-                                maxHeight: '300px',
-                                borderRadius: '8px',
-                                overflow: 'hidden',
-                                cursor: 'pointer',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                                transition: 'transform 0.2s ease-in-out',
-                                '&:hover': {
-                                  transform: 'scale(1.02)',
-                                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-                                }
-                              }}
-                              onClick={() => handleImageClick(msg.mediaUrl!)}
-                            >
-                              <img
-                                src={getMediaUrl(msg.mediaUrl)}
-                                alt="Imagen"
-                                loading="lazy"
-                                style={{
-                                  maxWidth: '100%',
-                                  maxHeight: '300px',
-                                  display: 'block',
-                                  objectFit: 'cover'
-                                }}
-                                onError={(e) => {
-                                  console.error('Error cargando imagen. URL original:', msg.mediaUrl, 'URL procesada:', getMediaUrl(msg.mediaUrl));
-                                  e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="300"%3E%3Crect width="300" height="300" fill="%23f0f0f0"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
-                                }}
-                              />
-                            </Box>
-                          </Box>
-                        ) : msg.type === 'video' && msg.mediaUrl ? (
-                          <Box sx={{ mb: 1 }}>
-                            <video
-                              controls
-                              style={{
-                                maxWidth: '300px',
-                                maxHeight: '300px',
-                                borderRadius: '8px',
-                                display: 'block',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                              }}
-                              onError={(e) => {
-                                console.error('Error cargando video:', msg.mediaUrl);
-                              }}
-                            >
-                              <source src={getMediaUrl(msg.mediaUrl)} type={msg.mediaMimeType || 'video/mp4'} />
-                              Tu navegador no soporta la reproducción de videos.
-                            </video>
-                          </Box>
-                        ) : msg.type === 'audio' && msg.mediaUrl ? (
-                          <Box sx={{ mb: 1 }}>
-                            <Box sx={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 1.5,
-                              backgroundColor: msg.isFromMe ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.05)',
-                              p: 1.5,
-                              borderRadius: 2,
-                              minWidth: 250,
-                              boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
-                            }}>
-                              <Avatar
-                                src={getAvatarUrlForJid(getSenderJidForMessage(msg) || '')}
-                                sx={{ width: 32, height: 32 }}
-                              >
-                                {(activeChat?.name || (getSenderJidForMessage(msg) || 'U').split('@')[0]).charAt(0).toUpperCase()}
-                              </Avatar>
-                              <IconButton
-                                size="small"
-                                onClick={() => handlePlayAudio(msg.id, msg.mediaUrl!)}
-                                sx={{
-                                  width: 36,
-                                  height: 36,
-                                  bgcolor: colors.primary,
-                                  color: 'white',
-                                  '&:hover': {
-                                    bgcolor: '#008069'
-                                  }
-                                }}
-                              >
-                                {playingAudio === msg.id ? (
-                                  <Box sx={{ width: 12, height: 12, bgcolor: 'white', borderRadius: '2px' }} />
-                                ) : (
-                                  <PlayArrow sx={{ fontSize: 20 }} />
-                                )}
-                              </IconButton>
-                              <Box sx={{ flex: 1 }}>
-                                <Box sx={{ height: 28, display: 'flex', alignItems: 'center', gap: 0.3 }}>
-                                  {[...Array(40)].map((_, i) => (
-                                    <Box
-                                      key={i}
-                                      sx={{
-                                        width: 2,
-                                        height: Math.random() * 20 + 8,
-                                        bgcolor: playingAudio === msg.id ? colors.primary : colors.textSecondary,
-                                        opacity: playingAudio === msg.id ? 0.8 : 0.5,
-                                        borderRadius: 1,
-                                        transition: 'all 0.2s ease'
-                                      }}
-                                    />
-                                  ))}
-                                </Box>
-                              </Box>
-                              <Typography variant="caption" sx={{ color: colors.textSecondary, minWidth: 35, fontSize: '0.75rem', fontWeight: 500 }}>
-                                {playingAudio === msg.id ? '▶ ' : ''}
-                                <audio
-                                  ref={(el) => {
-                                    if (el && !audioRefs.current[msg.id]) {
-                                      audioRefs.current[msg.id] = el;
-                                    }
-                                  }}
-                                  src={getMediaUrl(msg.mediaUrl)}
-                                  style={{ display: 'none' }}
-                                />
-                                Audio
-                              </Typography>
-                            </Box>
-                          </Box>
-                        ) : msg.type === 'document' && msg.mediaUrl ? (
-                          <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1, p: 1.5, bgcolor: msg.isFromMe ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)', borderRadius: 2, maxWidth: '300px' }}>
-                            <Box sx={{ width: 40, height: 40, borderRadius: '50%', bgcolor: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                              <Description sx={{ fontSize: 20 }} />
-                            </Box>
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                              <Typography variant="body2" sx={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {msg.message || 'Documento.pdf'}
-                              </Typography>
-                              <Typography variant="caption" sx={{ color: colors.textSecondary }}>
-                                Documento
-                              </Typography>
-                            </Box>
-                            <IconButton size="small" onClick={() => window.open(msg.mediaUrl, '_blank')} sx={{ color: colors.textSecondary }}>
-                              <Download fontSize="small" />
-                            </IconButton>
-                          </Box>
-                        ) : msg.type === 'sticker' && msg.mediaUrl ? (
-                          // Sticker
-                          <Box sx={{ mb: 1 }}>
-                            <Box
-                              sx={{
-                                maxWidth: '150px',
-                                maxHeight: '150px',
-                                borderRadius: '8px',
-                                overflow: 'hidden',
-                                cursor: 'pointer',
-                                transition: 'transform 0.2s ease-in-out',
-                                '&:hover': {
-                                  transform: 'scale(1.1)'
-                                }
-                              }}
-                              onClick={() => handleImageClick(msg.mediaUrl!)}
-                            >
-                              <img
-                                src={getMediaUrl(msg.mediaUrl)}
-                                alt="Sticker"
-                                loading="lazy"
-                                style={{
-                                  maxWidth: '100%',
-                                  maxHeight: '150px',
-                                  display: 'block',
-                                  objectFit: 'contain',
-                                  backgroundColor: 'transparent'
-                                }}
-                                onError={(e) => {
-                                  console.error('Error cargando sticker:', msg.mediaUrl);
-                                  e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="150" height="150"%3E%3Crect width="150" height="150" fill="%23f0f0f0"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999"%3ESticker no disponible%3C/text%3E%3C/svg%3E';
-                                }}
-                              />
-                            </Box>
-                          </Box>
-                        ) : (msg.type === 'image' || msg.type === 'video' || msg.type === 'audio' || msg.type === 'document' || msg.type === 'sticker') && !msg.mediaUrl ? (
-                          // Fallback para multimedia sin URL
-                          <Box sx={{ mb: 1, p: 1.5, bgcolor: 'rgba(255,152,0,0.1)', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Error sx={{ color: '#ff9800', fontSize: 20 }} />
-                            <Box>
-                              <Typography variant="body2" sx={{ color: colors.text, fontWeight: 500 }}>
-                                {msg.type === 'image' ? '🖼️ Imagen' : msg.type === 'video' ? '🎥 Video' : msg.type === 'audio' ? '🔊 Audio' : msg.type === 'sticker' ? '🎨 Sticker' : '📄 Documento'}
-                              </Typography>
-                              <Typography variant="caption" sx={{ color: colors.textSecondary }}>
-                                {msg.message || 'Multimedia no disponible'}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        ) : (
-                          <Typography
-                            variant="body2"
-                            component="div"
-                            sx={{
-                              color: colors.text,
-                              wordBreak: 'break-word',
-                              lineHeight: 1.5,
-                              fontSize: '14.5px',
-                              fontWeight: 400,
-                              letterSpacing: '0.01em',
-                              '& a': {
-                                color: msg.isFromMe ? '#4fc3f7' : '#00a884',
-                                textDecoration: 'none',
-                                fontWeight: 500,
-                                wordBreak: 'break-all',
-                                display: 'inline-block',
-                                transition: 'all 0.2s ease',
-                                '&:hover': {
-                                  textDecoration: 'underline',
-                                  opacity: 0.8
-                                }
-                              }
-                            }}
-                            dangerouslySetInnerHTML={{
-                              __html: msg.message
-                                ? msg.message
-                                  // Detectar URLs y convertirlas en enlaces clicables
-                                  .replace(
-                                    /(https?:\/\/[^\s]+)/g,
-                                    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-                                  )
-                                  // Detectar emails
-                                  .replace(
-                                    /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/gi,
-                                    '<a href="mailto:$1">$1</a>'
-                                  )
-                                  // Saltos de línea
-                                  .replace(/\n/g, '<br/>')
-                                : ''
-                            }}
-                          />
-                        )}
-
-                        {/* Hora y estado */}
-                        <Box sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'flex-end',
-                          gap: 0.3,
-                          mt: 0.5,
-                          minWidth: '60px'
-                        }}>
-                          <Typography
-                            variant="caption"
-                            sx={{
-                              color: msg.isFromMe ? '#667d6f' : colors.textSecondary,
-                              fontSize: '11px',
-                              lineHeight: 1
-                            }}
-                          >
-                            {formatTime(msg.timestamp)}
-                          </Typography>
-                          {msg.isFromMe && (
-                            <>
-                              {msg.status === 'sending' && (
-                                <AccessTime sx={{ fontSize: 16, color: '#667d6f', ml: 0.3 }} />
-                              )}
-                              {msg.status === 'sent' && (
-                                <Done sx={{ fontSize: 16, color: '#667d6f' }} />
-                              )}
-                              {msg.status === 'delivered' && (
-                                <DoneAll sx={{ fontSize: 16, color: '#667d6f' }} />
-                              )}
-                              {msg.status === 'read' && (
-                                <DoneAll sx={{ fontSize: 16, color: '#53bdeb' }} />
-                              )}
-                              {msg.status === 'failed' && (
-                                <Error sx={{ fontSize: 16, color: '#f44336' }} />
-                              )}
-                            </>
-                          )}
-                        </Box>
-                      </Paper>
-
-                      {/* ⚡ OPTIMIZACIÓN: Botón de opciones con CSS hover puro (sin estado React) */}
-                      <Box sx={{
-                        ml: msg.isFromMe ? 0 : 1,
-                        mr: msg.isFromMe ? 1 : 0,
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        opacity: 0,
-                        transition: 'opacity 0.2s ease',
-                        // Mostrar en hover del mensaje (CSS puro, sin estado)
-                        '.message-container:hover &': {
-                          opacity: 1
-                        }
-                      }}>
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedMessage(msg);
-                            setMessageMenuAnchor(e.currentTarget);
-                          }}
-                          sx={{
-                            bgcolor: colors.hover,
-                            color: colors.textSecondary,
-                            padding: '6px',
-                            transition: 'all 0.2s ease',
-                            boxShadow: colors.shadow,
-                            '&:hover': {
-                              bgcolor: colors.hoverStrong,
-                                color: colors.text,
-                                transform: 'scale(1.1)',
-                                boxShadow: colors.shadowStrong
-                              }
-                            }}
-                          >
-                            <MoreVert sx={{ fontSize: 18 }} />
-                          </IconButton>
                       </Box>
+                    </Paper>
+
+                    {/* ⚡ OPTIMIZACIÓN: Botón de opciones con CSS hover puro (sin estado React) */}
+                    <Box sx={{
+                      ml: msg.isFromMe ? 0 : 1,
+                      mr: msg.isFromMe ? 1 : 0,
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      opacity: 0,
+                      transition: 'opacity 0.2s ease',
+                      // Mostrar en hover del mensaje (CSS puro, sin estado)
+                      '.message-container:hover &': {
+                        opacity: 1
+                      }
+                    }}>
+                      <IconButton
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedMessage(msg);
+                          setMessageMenuAnchor(e.currentTarget);
+                        }}
+                        sx={{
+                          bgcolor: colors.hover,
+                          color: colors.textSecondary,
+                          padding: '6px',
+                          transition: 'all 0.2s ease',
+                          boxShadow: colors.shadow,
+                          '&:hover': {
+                            bgcolor: colors.hoverStrong,
+                            color: colors.text,
+                            transform: 'scale(1.1)',
+                            boxShadow: colors.shadowStrong
+                          }
+                        }}
+                      >
+                        <MoreVert sx={{ fontSize: 18 }} />
+                      </IconButton>
                     </Box>
-                  )))}
+                  </Box>
+                )))}
               <div ref={messagesEndRef} />
             </Box>
 
@@ -2514,7 +2552,12 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                           <Box>
                             <Typography variant="body2">{agent.name}</Typography>
                             <Typography variant="caption" sx={{ color: colors.textSecondary }}>
-                              {agent.email} • {agent.status === 'online' ? '🟢 En línea' : '⚫ Offline'}
+                              {agent.email} • {
+                                agent.status === 'online' ? '🟢 En línea' :
+                                  agent.status === 'busy' ? '🔴 Ocupado' :
+                                    agent.status === 'paused' ? '🟡 En pausa' :
+                                      '⚫ Desconectado'
+                              }
                             </Typography>
                           </Box>
                         </Box>
@@ -2536,7 +2579,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                         {activeChat.name?.charAt(0).toUpperCase()}
                       </Avatar>
                       <Typography variant="body2" sx={{ color: colors.text }}>
-                        {activeChat.name || activeChat.id.split('@')[0]}
+                        {activeChat.name || normalizePhoneNumber(activeChat.id.split('@')[0])}
                       </Typography>
                     </Box>
                   </Paper>

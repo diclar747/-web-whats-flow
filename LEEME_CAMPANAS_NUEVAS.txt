@@ -1,0 +1,149 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║        🎯 SISTEMA DE CAMPAÑAS MEJORADO - LISTO PARA USAR 🎯                 ║
+║                                                                              ║
+║           https://web.whats-flow.com/dashboard/campaigns                    ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ✨ ¿QUÉ HAY DE NUEVO?                                                        │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+1. 📝 PLANTILLAS DE MENSAJES
+   ▸ 3 plantillas predefinidas listas para usar
+   ▸ Puedes crear tus propias plantillas personalizadas
+   ▸ Variables dinámicas: {nombre}, {dato1}, {dato2}, {dato3}, {fecha}
+
+2. ⏰ RECORDATORIOS INTELIGENTES
+   ▸ Envía 1 día antes, 2 días antes, 3 días antes o 1 semana antes
+   ▸ O envía el mismo día del vencimiento
+   ▸ El Excel lleva FECHAS DE VENCIMIENTO, el sistema calcula cuándo enviar
+
+3. 🕐 HORARIOS DE OFICINA
+   ▸ Solo envía entre 07:00 y 18:00 (configurable)
+   ▸ Respeta horarios apropiados
+   ▸ Evita molestias a tus clientes
+
+4. 🎲 INTERVALOS ALEATORIOS
+   ▸ Cada mensaje se envía en un horario diferente
+   ▸ Intervalos de 60-120 segundos (configurable)
+   ▸ Envíos naturales que evitan detección de spam
+   ▸ Ejemplo: 13:01, 13:03, 13:05, 13:08, etc.
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🚀 CÓMO EMPEZAR (3 pasos simples)                                           │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+PASO 1 → Configura tus preferencias
+          ├─ Clic en "Configuración" (botón nuevo en el header)
+          ├─ Elige cuándo enviar (ej: 1 día antes)
+          ├─ Define horario (ej: 07:00 - 18:00)
+          └─ Guarda
+
+PASO 2 → Prepara tu Excel
+          ├─ Descarga la plantilla (botón "Descargar Plantilla Excel")
+          ├─ Llena con FECHAS DE VENCIMIENTO (no fechas de envío)
+          └─ Agrega datos personalizados (montos, cuotas, etc.)
+
+PASO 3 → Crea tu campaña
+          ├─ Clic en "Nueva Campaña"
+          ├─ Carga tu Excel
+          ├─ Selecciona una plantilla
+          └─ Listo! El sistema enviará automáticamente
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📊 FORMATO DEL EXCEL                                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────┬──────────────┬──────────┬──────────┬──────────┬────────────┐
+│ numero       │ nombre       │ dato1    │ dato2    │ dato3    │ fecha      │
+├──────────────┼──────────────┼──────────┼──────────┼──────────┼────────────┤
+│ 573001234567 │ Juan Pérez   │ $150.000 │ Cuota #3 │ Plan A   │ 2025-11-30 │
+│ 573007654321 │ María García │ $200.000 │ Cuota #5 │ Plan B   │ 2025-12-05 │
+└──────────────┴──────────────┴──────────┴──────────┴──────────┴────────────┘
+
+⚠️  IMPORTANTE: La columna "fecha" es la FECHA DE VENCIMIENTO
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 💡 EJEMPLO REAL                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+Quieres enviar recordatorios de pago 1 día antes del vencimiento:
+
+1. CONFIGURACIÓN:
+   Recordatorio: 1 día antes ✓
+   Horario: 09:00 - 17:00 ✓
+   Intervalo: 60-120 segundos ✓
+
+2. EXCEL:
+   Juan Pérez | Cuota #3 | $150.000 | Vence: 30/11/2025
+
+3. PLANTILLA:
+   "Hola {nombre}, tu pago de {dato1} vence mañana. ¡Gracias!"
+
+4. RESULTADO:
+   • Sistema envía el 29/11/2025 (1 día antes)
+   • Entre las 09:00 y 17:00
+   • Con intervalos aleatorios
+   • Mensaje: "Hola Juan Pérez, tu pago de $150.000 vence mañana"
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🎨 NUEVOS BOTONES EN LA INTERFAZ                                             │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+En el header verás:
+
+[Descargar Plantilla Excel] [Configuración] [Nueva Campaña]
+        ↓                           ↓               ↓
+   Descarga Excel         Ajusta recordatorios   Crea campaña
+   con formato             y horarios            usando plantillas
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📝 PLANTILLAS PREDEFINIDAS                                                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+✓ Plantilla 1: Formal (para empresas)
+✓ Plantilla 2: Amigable (más personal)
+✓ Plantilla 3: Con datos (información detallada)
+
+Todas incluyen variables personalizables: {nombre}, {dato1}, {dato2}, etc.
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ✅ VERIFICADO Y FUNCIONANDO                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+✅ Base de datos: 3 plantillas cargadas
+✅ APIs funcionando correctamente
+✅ Frontend compilado y desplegado
+✅ Servidor activo y estable
+✅ Sistema probado y verificado
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 📚 DOCUMENTACIÓN DISPONIBLE                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+1. SISTEMA_CAMPANAS_MEJORADO.md    → Documentación completa y detallada
+2. RESUMEN_MEJORAS_CAMPANAS.md     → Resumen técnico de cambios
+3. GUIA_RAPIDA_CAMPANAS.txt        → Guía visual paso a paso
+4. Este archivo                     → Introducción rápida
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ 🎯 ACCESO DIRECTO                                                            │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+URL: https://web.whats-flow.com/dashboard/campaigns
+
+         ┌─────────────────────────────────────┐
+         │  ¡Entra ahora y prueba el sistema!  │
+         │  Todas las funciones están activas  │
+         └─────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║                    🎉 SISTEMA LISTO PARA USAR 🎉                            ║
+║                                                                              ║
+║            Fecha de implementación: 25 de Noviembre de 2025                 ║
+║                    Versión: Campañas v2.0                                   ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝

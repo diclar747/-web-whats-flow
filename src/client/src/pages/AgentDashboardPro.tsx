@@ -39,6 +39,7 @@ import {
   Select,
   Stack
 } from '@mui/material';
+import { useTransferNotifications } from '../hooks/useTransferNotifications';
 import {
   Chat as ChatIcon,
   Search as SearchIcon,
@@ -70,7 +71,8 @@ import {
   Block as BlockIcon,
   FilterList as FilterListIcon,
   Sync as SyncIcon,
-  CalendarToday as CalendarIcon
+  CalendarToday as CalendarIcon,
+  Circle
 } from '@mui/icons-material';
 import { format, formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -142,6 +144,8 @@ const AgentDashboardPro: React.FC = () => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
+  const [agentStatus, setAgentStatus] = useState<'online' | 'offline' | 'paused' | 'busy'>('online');
+  const [statusMenuAnchor, setStatusMenuAnchor] = useState<null | HTMLElement>(null);
 
   // Estados UI avanzados
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -160,7 +164,7 @@ const AgentDashboardPro: React.FC = () => {
   const [chatFilter, setChatFilter] = useState<'all' | 'unread' | 'active' | 'pending' | 'closed'>('all');
   const [messageDateFilter, setMessageDateFilter] = useState<string>('today'); // 'today', 'week', 'month', 'all'
   const [chatListDateFilter, setChatListDateFilter] = useState<string>('today'); // Filtro para lista de chats
-  
+
   // Estado para dialog de filtros avanzados
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
   const [filterType, setFilterType] = useState<'quick' | 'range' | 'specific'>('quick');
@@ -303,16 +307,30 @@ const AgentDashboardPro: React.FC = () => {
       setUserName(savedUserName || 'Agente');
       console.log('✅ AgentId establecido:', userId);
 
-      // Solicitar permisos de notificación
-      if ('Notification' in window && Notification.permission === 'default') {
-        try {
-          const permission = await Notification.requestPermission();
-          console.log('🔔 Permisos de notificación:', permission);
-          if (permission === 'granted') {
-            showSnackbar('Notificaciones activadas correctamente', 'success');
+      // Solicitar permisos de notificación de manera más efectiva
+      if ('Notification' in window) {
+        const currentPermission = Notification.permission;
+        console.log('🔔 Permisos de notificación actuales:', currentPermission);
+
+        if (currentPermission === 'default') {
+          try {
+            console.log('🔔 Solicitando permisos de notificación...');
+            const permission = await Notification.requestPermission();
+            console.log('🔔 Permisos de notificación:', permission);
+            if (permission === 'granted') {
+              showSnackbar('Notificaciones activadas correctamente', 'success');
+            } else if (permission === 'denied') {
+              console.warn('🔔 Permisos de notificación denegados por el usuario');
+              showSnackbar('Permisos de notificación denegados. Puedes activarlos en la configuración del navegador.', 'info');
+            }
+          } catch (error) {
+            console.error('Error solicitando permisos:', error);
           }
-        } catch (error) {
-          console.error('Error solicitando permisos:', error);
+        } else if (currentPermission === 'denied') {
+          console.warn('🔔 Permisos de notificación previamente denegados');
+          showSnackbar('Permisos de notificación denegados. Para activarlos, ve a Configuración > Privacidad > Notificaciones.', 'info');
+        } else {
+          console.log('🔔 Permisos de notificación ya concedidos');
         }
       }
 
@@ -499,7 +517,7 @@ const AgentDashboardPro: React.FC = () => {
 
     setLoading(true);
     setMessageDateFilter(dateFilter); // Actualizar el filtro actual
-    
+
     try {
       const token = sessionStorage.getItem('token');
       // Por defecto cargar solo mensajes de HOY para velocidad
@@ -511,7 +529,7 @@ const AgentDashboardPro: React.FC = () => {
       if (data.success) {
         setMessages(data.messages || []);
         console.log(`[AGENT-PRO] ✅ Mensajes cargados (${dateFilter}):`, data.messages?.length || 0);
-        
+
         // Mostrar notificación según el filtro
         const filterNames: { [key: string]: string } = {
           today: 'de hoy',
@@ -538,16 +556,16 @@ const AgentDashboardPro: React.FC = () => {
   }, [agentId, sessionId, loadAgentChats]);
 
   // ==================== POLLING LIGERO PARA AGENTES (Fallback) ====================
-  // Socket.IO es la fuente principal, pero polling cada 30s asegura sincronización
+  // Socket.IO es la fuente principal, pero polling cada 60s asegura sincronización
   useEffect(() => {
     if (!agentId || !sessionId) return;
 
-    console.log('🔄 [AGENT-PRO] Activando auto-refresh cada 30 segundos como fallback');
+    console.log('🔄 [AGENT-PRO] Activando auto-refresh cada 60 segundos como fallback');
 
     const refreshInterval = setInterval(() => {
       console.log('🔄 [AGENT-PRO] Auto-refresh de chats (fallback)');
       loadAgentChats(chatListDateFilter);
-    }, 30000); // Cada 30 segundos (ligero)
+    }, 60000); // Cada 60 segundos (más ligero)
 
     return () => {
       console.log('🛑 [AGENT-PRO] Limpiando auto-refresh');
@@ -567,16 +585,21 @@ const AgentDashboardPro: React.FC = () => {
 
   // ==================== SOCKET EVENTOS ====================
 
+  // ==================== NOTIFICACIONES DE TRANSFERENCIA ====================
+
+  // Activar hook de notificaciones con el userId del agente
+  useTransferNotifications(socket, agentId || undefined);
+
   useEffect(() => {
     if (!socket || !isConnected || !agentId) return;
 
     console.log('🔌 [AGENT-PRO] Socket conectado, escuchando eventos...');
-    
+
     // Unirse a la sala específica del agente para recibir eventos personalizados
     if (socket && agentId) {
       console.log('🔌 [AGENT-PRO] Intentando unirse a sala agent-' + agentId);
       socket.emit('join-agent-room', { agentId });
-      
+
       // Verificar confirmación de unión
       socket.on('joined-agent-room', (data: any) => {
         console.log('✅ [AGENT-PRO] Confirmación de unión a sala:', data);
@@ -591,7 +614,7 @@ const AgentDashboardPro: React.FC = () => {
       showDesktopNotification('✨ Nuevo chat asignado', `Chat con ${data.chatName || 'un contacto'}`);
       showSnackbar(`✨ Nuevo chat asignado: ${data.chatName || 'contacto'}`, 'success');
       setNotifications(prev => [...prev, { type: 'new_chat', data, timestamp: new Date() }]);
-      
+
       // Actualizar el chat con estado de nueva asignación
       setChats(prevChats => {
         const existingChat = prevChats.find(c => c.id === data.chatJid);
@@ -602,7 +625,7 @@ const AgentDashboardPro: React.FC = () => {
         }
         return prevChats;
       });
-      
+
       // Recargar chats inmediatamente
       setTimeout(() => loadAgentChats(), 500);
     };
@@ -610,9 +633,11 @@ const AgentDashboardPro: React.FC = () => {
     const handleNewMessage = (data: any) => {
       console.log('💬 [AGENT-PRO] Nuevo mensaje recibido:', data);
 
-      // ⚡ IMPORTANTE: Siempre recargar la lista de chats para ver actualizaciones
-      console.log('[AGENT-PRO] 🔄 Recargando lista de chats (mensaje nuevo)');
-      loadAgentChats(chatListDateFilter);
+      // Solo recargar lista de chats si NO es del chat actual
+      if (!selectedChat || data.chatJid !== selectedChat.id) {
+        console.log('[AGENT-PRO] 🔄 Recargando lista de chats (mensaje nuevo de otro chat)');
+        loadAgentChats(chatListDateFilter);
+      }
 
       // Si es del chat actual, agregar mensaje
       if (selectedChat && data.chatJid === selectedChat.id) {
@@ -677,8 +702,8 @@ const AgentDashboardPro: React.FC = () => {
       if (selectedChat && data.chatJid === selectedChat.id) {
         setMessages(prev => {
           // Buscar mensaje pendiente con el mismo contenido
-          const pendingIndex = prev.findIndex(msg => 
-            msg.status === 'pending' && 
+          const pendingIndex = prev.findIndex(msg =>
+            msg.status === 'pending' &&
             msg.chatJid === data.chatJid &&
             msg.id.toString().startsWith('temp-')
           );
@@ -819,7 +844,7 @@ const AgentDashboardPro: React.FC = () => {
           avatar: data.avatar,
           phoneNumber: data.phoneNumber
         });
-        
+
         // 🔥 Mostrar notificación moderna con avatar
         setTransferNotification({
           open: true,
@@ -827,7 +852,7 @@ const AgentDashboardPro: React.FC = () => {
           avatar: data.avatar,
           phoneNumber: data.phoneNumber
         });
-        
+
         showDesktopNotification('📨 Chat Transferido', `Nuevo chat de ${data.chatName || 'un contacto'}`);
         playNotificationSound();
         loadAgentChats();
@@ -849,18 +874,18 @@ const AgentDashboardPro: React.FC = () => {
     // 🔐 Cierre de sesión forzado por admin
     on('force-logout', (data: any) => {
       console.log('🔐 [AGENT-PRO] Cierre de sesión forzado:', data);
-      
+
       // Verificar si este agente está en la lista de usuarios a cerrar
       const userId = parseInt(sessionStorage.getItem('userId') || '0');
       if (data.userIds && data.userIds.includes(userId)) {
         showSnackbar(`Tu administrador cerró sesión. Debes iniciar sesión nuevamente.`, 'info');
-        
+
         // Cerrar sesión después de 3 segundos
         setTimeout(() => {
           // Limpiar sessionStorage
           sessionStorage.clear();
           localStorage.removeItem('agentDashboardTheme');
-          
+
           // Redirigir al login
           window.location.href = '/login';
         }, 3000);
@@ -872,7 +897,7 @@ const AgentDashboardPro: React.FC = () => {
       console.log('📵 [AGENT-PRO] Admin desconectó WhatsApp:', data);
       showSnackbar('⚠️ Tu administrador cerró WhatsApp. No podrás enviar mensajes hasta que se reconecte.', 'error');
       setWhatsappConnected(false);
-      
+
       // Limpiar chats y selección
       setChats([]);
       setSelectedChat(null);
@@ -883,7 +908,7 @@ const AgentDashboardPro: React.FC = () => {
       console.log('✅ [AGENT-PRO] Admin reconectó WhatsApp:', data);
       showSnackbar('✅ Tu administrador reconectó WhatsApp. Recargando chats...', 'success');
       setWhatsappConnected(true);
-      
+
       // Recargar chats después de 1 segundo
       setTimeout(() => {
         loadAgentChats();
@@ -1068,11 +1093,11 @@ const AgentDashboardPro: React.FC = () => {
     setSelectedChat(chat);
     setMessages([]);
     setShowChatInfo(false);
-    
+
     // Marcar mensajes como leídos
     if (chat.unreadCount > 0) {
-      setChats(prevChats => 
-        prevChats.map(c => 
+      setChats(prevChats =>
+        prevChats.map(c =>
           c.id === chat.id ? { ...c, unreadCount: 0 } : c
         )
       );
@@ -1117,8 +1142,17 @@ const AgentDashboardPro: React.FC = () => {
     setShowEmojiPicker(false);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     console.log('🚪 [AGENT-PRO] Cerrando sesión del agente...');
+
+    // Intentar cambiar estado a offline antes de salir
+    try {
+      if (agentId) {
+        await handleChangeStatus('offline');
+      }
+    } catch (error) {
+      console.error('Error al cambiar estado a offline:', error);
+    }
 
     // Desconectar socket si está conectado
     if (socket && isConnected) {
@@ -1164,6 +1198,61 @@ const AgentDashboardPro: React.FC = () => {
     }
   };
 
+  // Manejar cambio de estado del agente
+  const handleChangeStatus = async (newStatus: 'online' | 'offline' | 'paused' | 'busy') => {
+    if (!agentId) return;
+
+    try {
+      const token = sessionStorage.getItem('token') || localStorage.getItem('agentToken');
+      const response = await fetch(`${apiUrl}/api/agents/${agentId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setAgentStatus(newStatus);
+        const statusLabels = {
+          online: 'Disponible',
+          busy: 'Ocupado',
+          paused: 'En pausa',
+          offline: 'Desconectado'
+        };
+        showSnackbar(`Estado cambiado a: ${statusLabels[newStatus]}`, 'success');
+      } else {
+        showSnackbar('Error al cambiar estado', 'error');
+      }
+    } catch (error) {
+      console.error('Error cambiando estado:', error);
+      showSnackbar('Error de conexión al cambiar estado', 'error');
+    }
+    setStatusMenuAnchor(null);
+  };
+
+  const getStatusColor = (status: typeof agentStatus) => {
+    switch (status) {
+      case 'online': return '#4caf50';
+      case 'busy': return '#f44336';
+      case 'paused': return '#ff9800';
+      case 'offline': return '#9e9e9e';
+      default: return '#9e9e9e';
+    }
+  };
+
+  const getStatusLabel = (status: typeof agentStatus) => {
+    switch (status) {
+      case 'online': return 'Disponible';
+      case 'busy': return 'Ocupado';
+      case 'paused': return 'En pausa';
+      case 'offline': return 'Desconectado';
+      default: return 'Desconocido';
+    }
+  };
+
   const handleCloseConversation = async () => {
     if (!selectedChat || !agentId || !sessionId) return;
 
@@ -1185,7 +1274,7 @@ const AgentDashboardPro: React.FC = () => {
       const data = await response.json();
       if (data.success) {
         showSnackbar('Conversación cerrada', 'success');
-        
+
         // Actualizar estado del chat
         setChats(prevChats =>
           prevChats.map(chat =>
@@ -1194,7 +1283,7 @@ const AgentDashboardPro: React.FC = () => {
               : chat
           )
         );
-        
+
         // Actualizar chat seleccionado
         setSelectedChat(prev => prev ? { ...prev, status: 'closed' as const } : null);
         handleMenuClose();
@@ -1388,8 +1477,8 @@ const AgentDashboardPro: React.FC = () => {
     // Filtro por búsqueda
     const searchLower = (searchTerm || '').toLowerCase();
     const matchesSearch = !searchTerm ||
-                         (chat.name && chat.name.toLowerCase().includes(searchLower)) ||
-                         (chat.phoneNumber && chat.phoneNumber.includes(searchTerm));
+      (chat.name && chat.name.toLowerCase().includes(searchLower)) ||
+      (chat.phoneNumber && chat.phoneNumber.includes(searchTerm));
 
     // Filtro por tipo de chat
     let matchesFilter = false;
@@ -1744,6 +1833,66 @@ const AgentDashboardPro: React.FC = () => {
               </IconButton>
             </Tooltip>
 
+            {/* Selector de estado del agente */}
+            <Tooltip title="Cambiar estado">
+              <Chip
+                icon={<StatusIcon sx={{ fontSize: 14, color: getStatusColor(agentStatus) + ' !important' }} />}
+                label={getStatusLabel(agentStatus)}
+                size="small"
+                onClick={(e) => setStatusMenuAnchor(e.currentTarget)}
+                sx={{
+                  bgcolor: 'rgba(255,255,255,0.2)',
+                  color: 'white',
+                  fontWeight: 600,
+                  border: `1px solid ${getStatusColor(agentStatus)}`,
+                  cursor: 'pointer',
+                  '&:hover': {
+                    bgcolor: 'rgba(255,255,255,0.3)'
+                  }
+                }}
+              />
+            </Tooltip>
+            <Menu
+              anchorEl={statusMenuAnchor}
+              open={Boolean(statusMenuAnchor)}
+              onClose={() => setStatusMenuAnchor(null)}
+              PaperProps={{
+                sx: {
+                  mt: 1,
+                  minWidth: 180
+                }
+              }}
+            >
+              <MenuItem
+                onClick={() => handleChangeStatus('online')}
+                selected={agentStatus === 'online'}
+              >
+                <Circle sx={{ fontSize: 12, color: '#4caf50', mr: 1.5 }} />
+                <Typography variant="body2">Disponible</Typography>
+              </MenuItem>
+              <MenuItem
+                onClick={() => handleChangeStatus('busy')}
+                selected={agentStatus === 'busy'}
+              >
+                <Circle sx={{ fontSize: 12, color: '#f44336', mr: 1.5 }} />
+                <Typography variant="body2">Ocupado</Typography>
+              </MenuItem>
+              <MenuItem
+                onClick={() => handleChangeStatus('paused')}
+                selected={agentStatus === 'paused'}
+              >
+                <Circle sx={{ fontSize: 12, color: '#ff9800', mr: 1.5 }} />
+                <Typography variant="body2">En pausa</Typography>
+              </MenuItem>
+              <MenuItem
+                onClick={() => handleChangeStatus('offline')}
+                selected={agentStatus === 'offline'}
+              >
+                <Circle sx={{ fontSize: 12, color: '#9e9e9e', mr: 1.5 }} />
+                <Typography variant="body2">Desconectado</Typography>
+              </MenuItem>
+            </Menu>
+
             {/* Perfil del agente */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 1, pl: 2, borderLeft: '1px solid rgba(255,255,255,0.3)' }}>
               <Avatar
@@ -1817,7 +1966,7 @@ const AgentDashboardPro: React.FC = () => {
                 </IconButton>
               </Tooltip>
             </Box>
-            
+
             {/* Botones de acción para lista de chats */}
             {!chatListMinimized && (
               <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
@@ -1827,7 +1976,7 @@ const AgentDashboardPro: React.FC = () => {
                     variant="outlined"
                     startIcon={<SyncIcon />}
                     onClick={() => loadAgentChats(chatListDateFilter)}
-                    sx={{ 
+                    sx={{
                       borderColor: '#00a884',
                       color: '#00a884',
                       '&:hover': { borderColor: '#008c6d', bgcolor: 'rgba(0,168,132,0.04)' },
@@ -1838,20 +1987,20 @@ const AgentDashboardPro: React.FC = () => {
                     Sincronizar
                   </Button>
                 </Tooltip>
-                
+
                 <Tooltip title="Filtrar por fecha">
                   <Button
                     size="small"
                     variant={chatListDateFilter !== 'today' ? 'contained' : 'outlined'}
                     startIcon={<FilterListIcon />}
                     onClick={() => setFilterDialogOpen(true)}
-                    sx={{ 
+                    sx={{
                       borderColor: '#00a884',
                       bgcolor: chatListDateFilter !== 'today' ? '#00a884' : 'transparent',
                       color: chatListDateFilter !== 'today' ? 'white' : '#00a884',
-                      '&:hover': { 
-                        borderColor: '#008c6d', 
-                        bgcolor: chatListDateFilter !== 'today' ? '#008c6d' : 'rgba(0,168,132,0.04)' 
+                      '&:hover': {
+                        borderColor: '#008c6d',
+                        bgcolor: chatListDateFilter !== 'today' ? '#008c6d' : 'rgba(0,168,132,0.04)'
                       },
                       textTransform: 'none',
                       fontSize: '0.75rem'
@@ -1867,86 +2016,86 @@ const AgentDashboardPro: React.FC = () => {
               </Box>
             )}
           </Box>
-          
+
           {!chatListMinimized && (
             <Box sx={{ px: 2, pt: 2, pb: 2 }}>
-            <TextField
-              fullWidth
-              size="small"
-              placeholder="Buscar chat o número..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon sx={{ color: currentTheme.text.secondary }} />
-                  </InputAdornment>
-                ),
-                sx: {
-                  borderRadius: '4px',
-                  bgcolor: darkMode ? currentTheme.bg.secondary : 'white',
-                  color: currentTheme.text.primary,
-                  '& fieldset': { borderColor: currentTheme.border },
-                  '&:hover fieldset': { borderColor: '#00a884 !important' },
-                  '&.Mui-focused fieldset': { borderColor: '#00a884 !important' },
-                  '& input': { color: currentTheme.text.primary }
-                }
-              }}
-            />
-
-            {/* Pestañas de filtro de chats */}
-            <Box sx={{ mt: 2 }}>
-              <Tabs
-                value={chatFilter}
-                onChange={(e, newValue) => setChatFilter(newValue)}
-                textColor="inherit"
-                indicatorColor="primary"
-                variant="scrollable"
-                scrollButtons="auto"
-                sx={{
-                  minHeight: 36,
-                  '& .MuiTab-root': {
-                    minHeight: 36,
-                    fontSize: '0.75rem',
-                    textTransform: 'none',
-                    fontWeight: 500,
-                    color: currentTheme.text.secondary,
-                    minWidth: 'auto',
-                    px: 1.5,
-                    '&.Mui-selected': {
-                      color: '#00a884',
-                      fontWeight: 600
-                    }
-                  },
-                  '& .MuiTabs-indicator': {
-                    backgroundColor: '#00a884',
-                    height: 2
+              <TextField
+                fullWidth
+                size="small"
+                placeholder="Buscar chat o número..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon sx={{ color: currentTheme.text.secondary }} />
+                    </InputAdornment>
+                  ),
+                  sx: {
+                    borderRadius: '4px',
+                    bgcolor: darkMode ? currentTheme.bg.secondary : 'white',
+                    color: currentTheme.text.primary,
+                    '& fieldset': { borderColor: currentTheme.border },
+                    '&:hover fieldset': { borderColor: '#00a884 !important' },
+                    '&.Mui-focused fieldset': { borderColor: '#00a884 !important' },
+                    '& input': { color: currentTheme.text.primary }
                   }
                 }}
-              >
-                <Tab
-                  label={`📋 Todos (${chats.length})`}
-                  value="all"
-                />
-                <Tab
-                  label={`🟡 Activos (${chats.filter(c => c.status === 'active').length})`}
-                  value="active"
-                />
-                <Tab
-                  label={`🟢 Pendientes (${chats.filter(c => c.status === 'pending' || c.status === 'new_assignment' || c.status === 'transferred').length})`}
-                  value="pending"
-                />
-                <Tab
-                  label={`🔴 Cerrados (${chats.filter(c => c.status === 'closed').length})`}
-                  value="closed"
-                />
-                <Tab
-                  label={`💬 Sin leer (${chats.filter(c => c.unreadCount > 0).length})`}
-                  value="unread"
-                />
-              </Tabs>
+              />
+
+              {/* Pestañas de filtro de chats */}
+              <Box sx={{ mt: 2 }}>
+                <Tabs
+                  value={chatFilter}
+                  onChange={(e, newValue) => setChatFilter(newValue)}
+                  textColor="inherit"
+                  indicatorColor="primary"
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  sx={{
+                    minHeight: 36,
+                    '& .MuiTab-root': {
+                      minHeight: 36,
+                      fontSize: '0.75rem',
+                      textTransform: 'none',
+                      fontWeight: 500,
+                      color: currentTheme.text.secondary,
+                      minWidth: 'auto',
+                      px: 1.5,
+                      '&.Mui-selected': {
+                        color: '#00a884',
+                        fontWeight: 600
+                      }
+                    },
+                    '& .MuiTabs-indicator': {
+                      backgroundColor: '#00a884',
+                      height: 2
+                    }
+                  }}
+                >
+                  <Tab
+                    label={`📋 Todos (${chats.length})`}
+                    value="all"
+                  />
+                  <Tab
+                    label={`🟡 Activos (${chats.filter(c => c.status === 'active').length})`}
+                    value="active"
+                  />
+                  <Tab
+                    label={`🟢 Pendientes (${chats.filter(c => c.status === 'pending' || c.status === 'new_assignment' || c.status === 'transferred').length})`}
+                    value="pending"
+                  />
+                  <Tab
+                    label={`🔴 Cerrados (${chats.filter(c => c.status === 'closed').length})`}
+                    value="closed"
+                  />
+                  <Tab
+                    label={`💬 Sin leer (${chats.filter(c => c.unreadCount > 0).length})`}
+                    value="unread"
+                  />
+                </Tabs>
+              </Box>
             </Box>
-          </Box>
           )}
 
           {/* Lista de chats */}
@@ -2048,8 +2197,8 @@ const AgentDashboardPro: React.FC = () => {
                               <Avatar
                                 src={chat.avatar}
                                 alt={chat.name}
-                                sx={{ 
-                                  width: 50, 
+                                sx={{
+                                  width: 50,
                                   height: 50,
                                   border: `3px solid ${getAvatarColor(chat.name || chat.phoneNumber || 'unknown')}`,
                                   boxShadow: `0 0 0 2px ${currentTheme.bg.secondary}`
@@ -2062,8 +2211,8 @@ const AgentDashboardPro: React.FC = () => {
                             <Avatar
                               src={chat.avatar}
                               alt={chat.name}
-                              sx={{ 
-                                width: 50, 
+                              sx={{
+                                width: 50,
                                 height: 50,
                                 border: `3px solid ${getAvatarColor(chat.name || chat.phoneNumber || 'unknown')}`,
                                 boxShadow: `0 0 0 2px ${currentTheme.bg.secondary}`
@@ -2091,37 +2240,37 @@ const AgentDashboardPro: React.FC = () => {
                         </Box>
                       </ListItemAvatar>
                       <ListItemText
-                    primary={
-                      <Box display="flex" justifyContent="space-between" alignItems="center">
-                        <Typography
-                          variant="subtitle1"
-                          fontWeight={chat.unreadCount > 0 ? 600 : 400}
-                          sx={{ color: currentTheme.text.primary }}
-                        >
-                          {chat.name || chat.phoneNumber}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: currentTheme.text.secondary }}>
-                          {formatTime(chat.timestamp)}
-                        </Typography>
-                      </Box>
-                    }
-                    secondary={
-                      <Box>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            fontWeight: chat.unreadCount > 0 ? 500 : 400,
-                            fontStyle: chat.isTyping ? 'italic' : 'normal',
-                            color: chat.isTyping ? '#00a884' : currentTheme.text.secondary
-                          }}
-                        >
-                          {chat.isTyping ? 'Escribiendo...' : (chat.lastMessage || 'Sin mensajes')}
-                        </Typography>
-                      </Box>
-                    }
+                        primary={
+                          <Box display="flex" justifyContent="space-between" alignItems="center">
+                            <Typography
+                              variant="subtitle1"
+                              fontWeight={chat.unreadCount > 0 ? 600 : 400}
+                              sx={{ color: currentTheme.text.primary }}
+                            >
+                              {chat.name || chat.phoneNumber}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: currentTheme.text.secondary }}>
+                              {formatTime(chat.timestamp)}
+                            </Typography>
+                          </Box>
+                        }
+                        secondary={
+                          <Box>
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                fontWeight: chat.unreadCount > 0 ? 500 : 400,
+                                fontStyle: chat.isTyping ? 'italic' : 'normal',
+                                color: chat.isTyping ? '#00a884' : currentTheme.text.secondary
+                              }}
+                            >
+                              {chat.isTyping ? 'Escribiendo...' : (chat.lastMessage || 'Sin mensajes')}
+                            </Typography>
+                          </Box>
+                        }
                       />
                     </>
                   )}
@@ -2200,11 +2349,11 @@ const AgentDashboardPro: React.FC = () => {
                 <PendingIcon sx={{ mr: 1 }} /> Todos los mensajes
               </MenuItem>
               <Divider />
-              <MenuItem 
+              <MenuItem
                 onClick={handleCloseConversation}
                 disabled={selectedChat?.status === 'closed'}
               >
-                <BlockIcon sx={{ mr: 1 }} /> 
+                <BlockIcon sx={{ mr: 1 }} />
                 {selectedChat?.status === 'closed' ? 'Conversación cerrada' : 'Cerrar conversación'}
               </MenuItem>
               <MenuItem onClick={() => { handleMenuClose(); }}>
@@ -2214,10 +2363,10 @@ const AgentDashboardPro: React.FC = () => {
 
             {/* Indicador de filtro de fecha */}
             {messageDateFilter !== 'all' && (
-              <Box 
-                sx={{ 
-                  p: 1, 
-                  textAlign: 'center', 
+              <Box
+                sx={{
+                  p: 1,
+                  textAlign: 'center',
                   bgcolor: currentTheme.bg.secondary,
                   borderBottom: `1px solid ${currentTheme.border}`
                 }}
@@ -2227,11 +2376,11 @@ const AgentDashboardPro: React.FC = () => {
                   icon={<PendingIcon sx={{ fontSize: 16 }} />}
                   label={
                     messageDateFilter === 'today' ? '📅 Mostrando mensajes de hoy' :
-                    messageDateFilter === 'week' ? '📅 Mostrando última semana' :
-                    messageDateFilter === 'month' ? '📅 Mostrando este mes' : ''
+                      messageDateFilter === 'week' ? '📅 Mostrando última semana' :
+                        messageDateFilter === 'month' ? '📅 Mostrando este mes' : ''
                   }
-                  sx={{ 
-                    bgcolor: '#00a884', 
+                  sx={{
+                    bgcolor: '#00a884',
                     color: 'white',
                     fontWeight: 500,
                     fontSize: '0.75rem'
@@ -2264,9 +2413,9 @@ const AgentDashboardPro: React.FC = () => {
                   <Typography variant="body1" color="text.secondary">
                     No hay mensajes {
                       messageDateFilter === 'today' ? 'hoy' :
-                      messageDateFilter === 'week' ? 'esta semana' :
-                      messageDateFilter === 'month' ? 'este mes' :
-                      'en este chat'
+                        messageDateFilter === 'week' ? 'esta semana' :
+                          messageDateFilter === 'month' ? 'este mes' :
+                            'en este chat'
                     }
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -2290,7 +2439,7 @@ const AgentDashboardPro: React.FC = () => {
                       </Typography>
                       <Typography variant="caption" color={upload.status === 'error' ? 'error' : 'text.secondary'}>
                         {upload.status === 'uploading' ? `${upload.progress}%` :
-                         upload.status === 'complete' ? 'Completado' : 'Error'}
+                          upload.status === 'complete' ? 'Completado' : 'Error'}
                       </Typography>
                     </Box>
                     <LinearProgress
@@ -2380,8 +2529,8 @@ const AgentDashboardPro: React.FC = () => {
               />
 
               <Tooltip title={
-                selectedChat?.status === 'closed' 
-                  ? 'Conversación cerrada. Solicita al admin que la transfiera de nuevo.' 
+                selectedChat?.status === 'closed'
+                  ? 'Conversación cerrada. Solicita al admin que la transfiera de nuevo.'
                   : messageText.trim() ? 'Enviar mensaje' : 'Escribe un mensaje primero'
               }>
                 <span>
@@ -2529,7 +2678,7 @@ const AgentDashboardPro: React.FC = () => {
               justifyContent: 'center',
               alignItems: 'center',
               bgcolor: currentTheme.bg.chat,
-              background: darkMode 
+              background: darkMode
                 ? 'linear-gradient(135deg, #0b141a 0%, #111b21 100%)'
                 : 'linear-gradient(135deg, #f0f2f5 0%, #e4e9eb 100%)'
             }}
@@ -2689,8 +2838,8 @@ const AgentDashboardPro: React.FC = () => {
       </Snackbar>
 
       {/* ==================== DIALOG DE FILTROS AVANZADOS ==================== */}
-      <Dialog 
-        open={filterDialogOpen} 
+      <Dialog
+        open={filterDialogOpen}
         onClose={() => setFilterDialogOpen(false)}
         maxWidth="sm"
         fullWidth
@@ -2826,7 +2975,7 @@ const AgentDashboardPro: React.FC = () => {
           <Button onClick={() => setFilterDialogOpen(false)} sx={{ color: 'text.secondary' }}>
             Cancelar
           </Button>
-          <Button 
+          <Button
             variant="contained"
             startIcon={<FilterListIcon />}
             onClick={() => {
@@ -2840,7 +2989,7 @@ const AgentDashboardPro: React.FC = () => {
               }
               setFilterDialogOpen(false);
             }}
-            sx={{ 
+            sx={{
               bgcolor: '#00a884',
               '&:hover': { bgcolor: '#008c6d' }
             }}

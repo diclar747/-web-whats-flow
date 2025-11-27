@@ -40,26 +40,47 @@ const pool = mysql.createPool({
 router.get('/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
-    
+
+    // Verificar que el pool de conexiones esté disponible
+    if (!pool) {
+      console.error('Pool de conexiones no disponible');
+      return res.status(503).json({
+        success: false,
+        error: 'Servicio de base de datos no disponible'
+      });
+    }
+
     const [campaigns] = await pool.execute(
-      `SELECT id, session_id as sessionId, name as nombre, message_text as mensaje, 
+      `SELECT id, session_id as sessionId, name as nombre, message_text as mensaje,
               message_media_url as archivo, contacts, status as estado, created_at as createdAt,
-              progress_total as totalContactos, progress_sent as enviados, 
+              progress_total as totalContactos, progress_sent as enviados,
               (progress_total - progress_sent - progress_failed) as pendientes,
               progress_failed as errores
-       FROM campaigns 
+       FROM campaigns
        WHERE session_id = ? AND type = 'personalized'
        ORDER BY created_at DESC`,
       [sessionId]
     );
 
-    // Parsear el JSON de contactos
-    const parsedCampaigns = campaigns.map(c => ({
-      ...c,
-      contactos: c.contacts ? JSON.parse(c.contacts) : [],
-      archivo: c.archivo || null,
-      archivoNombre: c.archivo ? path.basename(c.archivo) : null
-    }));
+    // Parsear el JSON de contactos con manejo de errores
+    const parsedCampaigns = campaigns.map(c => {
+      try {
+        return {
+          ...c,
+          contactos: c.contacts ? JSON.parse(c.contacts) : [],
+          archivo: c.archivo || null,
+          archivoNombre: c.archivo ? path.basename(c.archivo) : null
+        };
+      } catch (parseError) {
+        console.error(`Error parseando contactos para campaña ${c.id}:`, parseError);
+        return {
+          ...c,
+          contactos: [],
+          archivo: c.archivo || null,
+          archivoNombre: c.archivo ? path.basename(c.archivo) : null
+        };
+      }
+    });
 
     res.json({
       success: true,
@@ -67,7 +88,10 @@ router.get('/:sessionId', async (req, res) => {
     });
   } catch (error) {
     console.error('Error obteniendo campañas:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({
+      success: false,
+      error: 'Error interno del servidor al obtener campañas'
+    });
   }
 });
 
@@ -75,7 +99,7 @@ router.get('/:sessionId', async (req, res) => {
 router.post('/create', upload.single('archivo'), async (req, res) => {
   try {
     const { sessionId, nombre, mensaje, contactos } = req.body;
-    
+
     if (!sessionId || !nombre || !mensaje || !contactos) {
       return res.status(400).json({
         success: false,
@@ -138,11 +162,11 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
     const sessions = req.app.get('whatsappSessions');
     const sessionData = sessions?.get(sessionId);
 
-    if (!sessionData || !sessionData.client) {
+    if (!sessionData || !sessionData.sock) {
       return res.json({ success: false, error: 'Cliente no conectado', sent: 0 });
     }
 
-    const whatsappClient = sessionData.client;
+    const whatsappClient = sessionData.sock;
 
     // Obtener configuración de envíos
     const [settings] = await pool.execute(
@@ -165,16 +189,16 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
     const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
     const currentTime = now.toTimeString().split(' ')[0]; // HH:MM:SS
     const currentHour = currentTime.substring(0, 5); // HH:MM
-    
+
     // Verificar si estamos dentro del horario permitido
     const startTime = config.send_hour_start.substring(0, 5); // HH:MM
     const endTime = config.send_hour_end.substring(0, 5); // HH:MM
-    
+
     if (currentHour < startTime || currentHour > endTime) {
-      return res.json({ 
-        success: true, 
-        sent: 0, 
-        message: `Fuera del horario de envío (${startTime} - ${endTime})` 
+      return res.json({
+        success: true,
+        sent: 0,
+        message: `Fuera del horario de envío (${startTime} - ${endTime})`
       });
     }
 
@@ -214,7 +238,7 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
 
         // Si el contacto tiene hora específica, respetarla
         const contactHour = contact.hora || startTime;
-        
+
         const shouldSend = contactHour <= currentHour;
 
         if (shouldSend) {
@@ -255,14 +279,40 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
             sentCount++;
             campaignUpdated = true;
 
+            // Guardar mensaje en la base de datos para historial
+            try {
+              const messageId = uuidv4();
+              await pool.execute(
+                `INSERT INTO messages (
+                  id, session_id, chat_jid, sender_jid, from_me, 
+                  message_type, text_content, media_url, status, timestamp, is_read
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+                [
+                  messageId,
+                  sessionId,
+                  phoneNumber,
+                  whatsappClient.user?.id?.split(':')[0] || sessionId, // Sender JID
+                  true, // from_me
+                  campaign.archivo ? 'image' : 'text',
+                  personalizedMessage,
+                  campaign.archivo || null,
+                  'sent',
+                  true // is_read
+                ]
+              );
+              console.log(`[CAMPAIGN-MSG] Mensaje guardado en historial: ${messageId}`);
+            } catch (dbError) {
+              console.error('[CAMPAIGN-MSG] Error guardando mensaje en historial:', dbError);
+            }
+
             console.log(`✅ Mensaje enviado a ${contact.nombre} (${contact.numero})`);
 
             // Esperar tiempo aleatorio entre mensajes según configuración
             const minDelay = (config.interval_min_seconds || 60) * 1000;
             const maxDelay = (config.interval_max_seconds || 120) * 1000;
             const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-            
-            console.log(`⏱️  Esperando ${Math.floor(randomDelay/1000)} segundos antes del próximo envío...`);
+
+            console.log(`⏱️  Esperando ${Math.floor(randomDelay / 1000)} segundos antes del próximo envío...`);
             await new Promise(resolve => setTimeout(resolve, randomDelay));
 
           } catch (error) {
@@ -356,7 +406,7 @@ router.post('/reprogram/:campaignId', async (req, res) => {
 router.delete('/:campaignId', async (req, res) => {
   try {
     const { campaignId } = req.params;
-    
+
     // Obtener campaña de la base de datos
     const [campaigns] = await pool.execute(
       'SELECT * FROM campaigns WHERE id = ?',

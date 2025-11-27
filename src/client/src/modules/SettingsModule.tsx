@@ -1187,7 +1187,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
             ⚙️ Configuración Enterprise
           </Typography>
           <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>
-            Usuarios • Seguridad • WhatsApp • Mi Plan • API REST
+            General • Seguridad • WhatsApp • Mi Plan • API REST
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 2 }}>
@@ -1220,7 +1220,6 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
       <Paper sx={{ mb: 3 }}>
         <Tabs value={selectedTab} onChange={(_, newValue) => setSelectedTab(newValue)}>
           <Tab label="General" />
-          <Tab label={`Usuarios (${users.length})`} />
           <Tab label="Seguridad" />
           <Tab label="WhatsApp" />
           <Tab label="Mi Plan" />
@@ -1472,133 +1471,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
         </Grid>
       )}
 
-      {selectedTab === 1 && (
-        <Grid container spacing={3}>
-          {/* Lista de usuarios */}
-          <Grid item xs={12}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                  <Typography variant="h6">👥 Gestión de Usuarios</Typography>
-                  <Button
-                    variant="contained"
-                    startIcon={<PersonAdd />}
-                    onClick={() => handleOpenUserDialog()}
-                  >
-                    Añadir Usuario
-                  </Button>
-                </Box>
-                <TableContainer>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Usuario</TableCell>
-                        <TableCell>Rol</TableCell>
-                        <TableCell>Departamento</TableCell>
-                        <TableCell>Estado</TableCell>
-                        <TableCell>Último Acceso</TableCell>
-                        <TableCell>Acciones</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {users.map((user) => (
-                        <TableRow key={user.id} hover>
-                          <TableCell>
-                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                              <Avatar sx={{ mr: 2, bgcolor: user.isOnline ? '#4caf50' : '#9e9e9e' }}>
-                                {user.name.charAt(0)}
-                              </Avatar>
-                              <Box>
-                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                  {user.name}
-                                </Typography>
-                                <Typography variant="caption" sx={{ color: '#64748b' }}>
-                                  {user.email}
-                                </Typography>
-                              </Box>
-                            </Box>
-                          </TableCell>
-                          <TableCell>
-                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                              {getRoleIcon(user.role)}
-                              <Typography variant="body2" sx={{ ml: 1, textTransform: 'capitalize' }}>
-                                {user.role}
-                              </Typography>
-                            </Box>
-                          </TableCell>
-                          <TableCell>{user.department}</TableCell>
-                          <TableCell>
-                            <Chip
-                              label={user.status}
-                              size="small"
-                              sx={{
-                                bgcolor: `${getStatusColor(user.status)}20`,
-                                color: getStatusColor(user.status),
-                                textTransform: 'capitalize'
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2">
-                              {new Date(user.lastLogin).toLocaleDateString()}
-                            </Typography>
-                            <Typography variant="caption" sx={{ color: '#64748b' }}>
-                              {new Date(user.lastLogin).toLocaleTimeString()}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                              <Tooltip title="Editar">
-                                <IconButton
-                                  size="small"
-                                  onClick={() => handleOpenUserDialog(user)}
-                                >
-                                  <Edit />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Gestionar Privilegios">
-                                <IconButton
-                                  size="small"
-                                  color="primary"
-                                  onClick={() => handleOpenPermissionsDialog(user)}
-                                >
-                                  <Shield />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Cambiar contraseña">
-                                <IconButton
-                                  size="small"
-                                  onClick={() => {
-                                    setSelectedUser(user);
-                                    setPasswordDialogOpen(true);
-                                  }}
-                                >
-                                  <VpnKey />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Eliminar">
-                                <IconButton 
-                                  size="small" 
-                                  color="error"
-                                  onClick={() => openDeleteUserConfirmation(user)}
-                                >
-                                  <Delete />
-                                </IconButton>
-                              </Tooltip>
-                            </Box>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      )}
-
-      {selectedTab === 2 && securitySettings && (
+      {selectedTab === 1 && securitySettings && (
         <Grid container spacing={3}>
           {/* Configuración de seguridad */}
           <Grid item xs={12} md={6}>
@@ -1792,7 +1665,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
       )}
 
       {/* Tab 3: WhatsApp - Configuración Avanzada */}
-      {selectedTab === 3 && (
+      {selectedTab === 2 && (
         <Grid container spacing={3}>
           <Grid item xs={12}>
             <Card>
@@ -1815,7 +1688,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
 
 
       {/* Tab 4: Mi Plan - ajustado de índice 5 a 4 */}
-      {selectedTab === 4 && mySubscription && (
+      {selectedTab === 3 && mySubscription && (
         <Grid container spacing={3}>
           {/* Plan actual */}
           <Grid item xs={12} md={6}>
@@ -1956,13 +1829,13 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
 
       {/* Tab 6: API REST */}
       {/* Tab 5: API REST - ajustado de índice 6 a 5 */}
-      {selectedTab === 5 && (
+      {selectedTab === 4 && (
         <APIRestSettings sessionId={sessionId} />
       )}
 
       {/* Tab 8: Panel de Administrador (solo para admin) */}
       {/* Tab 6: Panel Admin - ajustado de índice 8 a 6 */}
-      {isAdmin && selectedTab === 6 && (
+      {isAdmin && selectedTab === 5 && (
         <AdminSubscriptionPanel sessionId={sessionId} userPhone={sessionId} />
       )}
 

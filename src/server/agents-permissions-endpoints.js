@@ -3,13 +3,16 @@ const { v4: uuidv4 } = require('uuid');
 
 module.exports = function(app, pool) {
 
+// Importar middleware de autenticación
+const { authenticateToken } = require('./middleware/auth');
+
 // ==================== GESTIÓN DE AGENTES CON PRIVILEGIOS ====================
 
 /**
  * Obtener todos los agentes creados por el usuario actual
  * GET /api/agents/list
  */
-app.get('/api/agents/list', async (req, res) => {
+app.get('/api/agents/list', authenticateToken, async (req, res) => {
     try {
         if (!pool) {
             return res.status(503).json({ success: false, error: 'DB service unavailable' });
@@ -18,96 +21,50 @@ app.get('/api/agents/list', async (req, res) => {
         const connection = await pool.getConnection();
 
         try {
-            let userPhone = null;
+            // El middleware authenticateToken ya verificó la autenticación
+            // El usuario autenticado está disponible en req.user
+            const user = req.user;
+            
+            console.log('[AGENTS-LIST] 🔍 Usuario autenticado:', {
+                id: user.id,
+                phone: user.phone,
+                role: user.role
+            });
 
-            // Método 1: Intentar con JWT token
-            const authHeader = req.headers.authorization;
-            if (authHeader && authHeader.startsWith('Bearer ')) {
-                try {
-                    const token = authHeader.split(' ')[1];
-                    const jwt = require('jsonwebtoken');
-                    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-
-                    // Para agentes de tipo 'agent', usar directamente el teléfono del agente
-                    if (decoded.type === 'agent' && decoded.id) {
-                        const [agents] = await connection.execute(
-                            'SELECT phone FROM agents WHERE id = ?',
-                            [decoded.id]
-                        );
-
-                        if (agents.length > 0) {
-                            userPhone = agents[0].phone || decoded.id; // Usar el teléfono si existe, sino el ID
-                            console.log('✅ [LIST] Autenticación de agente por JWT exitosa:', userPhone);
-                        }
-                    }
-                    // Para usuarios tipo 'user', obtener el teléfono
-                    else if (decoded.type !== 'agent' && decoded.id) {
-                        const [users] = await connection.execute(
-                            'SELECT phone FROM users WHERE id = ?',
-                            [decoded.id]
-                        );
-
-                        if (users.length > 0) {
-                            userPhone = users[0].phone;
-                            console.log('✅ [LIST] Autenticación por JWT exitosa:', userPhone);
-                        }
-                    }
-                } catch (jwtError) {
-                    console.log('⚠️ [LIST] JWT inválido, intentando con sessionId:', jwtError.message);
-                }
-            }
-
-            // Método 2: Intentar con sessionId de query params o body
-            if (!userPhone && (req.query.sessionId || req.body.sessionId)) {
-                const sessionId = req.query.sessionId || req.body.sessionId;
-                const [users] = await connection.execute(
-                    'SELECT phone FROM users WHERE phone = ?',
-                    [sessionId]
-                );
-
-                if (users.length > 0) {
-                    userPhone = users[0].phone;
-                    console.log('✅ [LIST] Autenticación por sessionId exitosa:', userPhone);
-                } else {
-                    // También verificar si es un agente con ese sessionId
-                    const [agents] = await connection.execute(
-                        'SELECT phone FROM agents WHERE id = ?',
-                        [sessionId]
-                    );
-
-                    if (agents.length > 0) {
-                        userPhone = agents[0].phone || sessionId;
-                        console.log('✅ [LIST] Autenticación de agente por sessionId exitosa:', userPhone);
-                    }
-                }
-            }
-
-            // Si no se pudo autenticar
-            if (!userPhone) {
+            // Obtener teléfono del admin autenticado
+            const adminPhone = user.phone;
+            
+            if (!adminPhone) {
                 connection.release();
+                console.log('[AGENTS-LIST] ❌ Error: No se pudo obtener phone del usuario autenticado');
                 return res.status(401).json({
                     success: false,
-                    error: 'No autorizado. Debe iniciar sesión primero.'
+                    error: 'Usuario no válido'
                 });
             }
 
-            // SOLO mostrar agentes que tienen relación explícita con este admin
-            // Esto evita que agentes de otros admins aparezcan en la lista
+            // Obtener agentes del admin actual
             const query = `
-                SELECT 
-                    a.*,
-                    aar.admin_phone,
-                    COUNT(DISTINCT ap.permission_id) as total_permissions
-                FROM agents a
-                INNER JOIN agent_admin_relations aar ON a.id = aar.agent_id
-                LEFT JOIN agent_permissions ap ON a.id = ap.agent_id
-                WHERE aar.admin_phone = ?
-                GROUP BY a.id
-                ORDER BY a.created_at DESC
+                SELECT
+                    id,
+                    name,
+                    email,
+                    phone,
+                    COALESCE(agent_status, 'offline') as status,
+                    CASE WHEN status = 'active' THEN 1 ELSE 0 END as is_active,
+                    last_activity,
+                    COALESCE(max_concurrent_chats, 5) as max_concurrent_chats,
+                    created_at,
+                    updated_at
+                FROM users
+                WHERE role = 'agent'
+                AND admin_phone = ?
+                ORDER BY created_at DESC
             `;
-            const params = [userPhone];
 
-            const [agents] = await connection.execute(query, params);
+            console.log('[AGENTS-LIST] 🔍 Ejecutando query para admin:', adminPhone);
+            const [agents] = await connection.execute(query, [adminPhone]);
+            console.log('✅ [AGENTS-LIST] Agentes obtenidos para admin', adminPhone + ':', agents.length);
             res.json({ success: true, agents });
         } finally {
             connection.release();
@@ -187,72 +144,41 @@ app.post('/api/agents/create', async (req, res) => {
             }
 
             // Verificar si el email ya existe
-            const [existingAgents] = await connection.execute(
-                'SELECT id FROM agents WHERE email = ?',
+            const [existingUsers] = await connection.execute(
+                'SELECT id FROM users WHERE email = ?',
                 [email]
             );
 
-            if (existingAgents.length > 0) {
+            if (existingUsers.length > 0) {
                 return res.status(400).json({ success: false, error: 'El email ya está registrado' });
             }
 
-            // Generar ID único para el agente
-            const agentId = uuidv4();
+            // Hashear contraseña
+            const hashedPassword = await bcrypt.hash(password, 12);
 
-            // Hashear contraseña si se proporciona
-            let hashedPassword = null;
-            if (password) {
-                hashedPassword = await bcrypt.hash(password, 12);
-            }
-
-            // Crear agente
-            await connection.execute(`
-                INSERT INTO agents (
-                    id, name, email, phone, password, login_type, 
-                    status, is_active, created_by, parent_session_id
-                ) VALUES (?, ?, ?, ?, ?, ?, 'offline', 1, ?, ?)
+            // Crear agente en tabla users
+            const [result] = await connection.execute(`
+                INSERT INTO users (
+                    name, email, phone, password, role,
+                    status, agent_status, max_concurrent_chats
+                ) VALUES (?, ?, ?, ?, 'agent', 'active', 'offline', ?)
             `, [
-                agentId,
                 name,
                 email,
                 phone || null,
                 hashedPassword,
-                password ? 'email' : 'qr',
-                decoded.id,
-                decoded.session_id || null
+                req.body.max_concurrent_chats || 5
             ]);
 
-            // Crear relación admin-agente
-            await connection.execute(`
-                INSERT INTO agent_admin_relations (admin_phone, agent_id)
-                VALUES (?, ?)
-            `, [adminPhone, agentId]);
-
-            // Asignar permisos si se proporcionan
-            if (permissions && Array.isArray(permissions)) {
-                for (const perm of permissions) {
-                    await connection.execute(`
-                        INSERT INTO agent_permissions (
-                            agent_id, permission_id, can_view, can_create, can_edit, can_delete
-                        ) VALUES (?, ?, ?, ?, ?, ?)
-                    `, [
-                        agentId,
-                        perm.permission_id,
-                        perm.can_view ? 1 : 0,
-                        perm.can_create ? 1 : 0,
-                        perm.can_edit ? 1 : 0,
-                        perm.can_delete ? 1 : 0
-                    ]);
-                }
-            }
+            const agentId = result.insertId;
 
             await connection.commit();
 
-            console.log(`✅ Agente creado: ${email} por admin: ${adminPhone}`);
-            res.json({ 
-                success: true, 
+            console.log(`✅ Agente creado: ${email}`);
+            res.json({
+                success: true,
                 agentId,
-                message: 'Agente creado exitosamente' 
+                message: 'Agente creado exitosamente'
             });
         } catch (error) {
             await connection.rollback();
@@ -419,8 +345,8 @@ app.put('/api/agents/:agentId', async (req, res) => {
                 params.push(hashedPassword);
             }
             if (is_active !== undefined) {
-                updates.push('is_active = ?');
-                params.push(is_active ? 1 : 0);
+                updates.push('status = ?');
+                params.push(is_active ? 'active' : 'inactive');
             }
             if (max_concurrent_chats !== undefined) {
                 updates.push('max_concurrent_chats = ?');
@@ -434,14 +360,14 @@ app.put('/api/agents/:agentId', async (req, res) => {
             params.push(agentId);
 
             await connection.execute(
-                `UPDATE agents SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`,
+                `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND role = 'agent'`,
                 params
             );
 
             console.log(`✅ Agente actualizado: ${agentId}`);
-            res.json({ 
-                success: true, 
-                message: 'Agente actualizado exitosamente' 
+            res.json({
+                success: true,
+                message: 'Agente actualizado exitosamente'
             });
         } finally {
             connection.release();
@@ -467,14 +393,14 @@ app.delete('/api/agents/:agentId', async (req, res) => {
 
         try {
             await connection.execute(
-                'DELETE FROM agents WHERE id = ?',
+                'DELETE FROM users WHERE id = ? AND role = \'agent\'',
                 [agentId]
             );
 
             console.log(`✅ Agente eliminado: ${agentId}`);
-            res.json({ 
-                success: true, 
-                message: 'Agente eliminado exitosamente' 
+            res.json({
+                success: true,
+                message: 'Agente eliminado exitosamente'
             });
         } finally {
             connection.release();
@@ -555,7 +481,7 @@ app.post('/api/agents/login', async (req, res) => {
         try {
             // Buscar agente por email
             const [agents] = await connection.execute(
-                'SELECT * FROM agents WHERE email = ? AND is_active = 1',
+                'SELECT * FROM users WHERE email = ? AND role = "agent" AND status = "active"',
                 [email]
             );
 
@@ -671,6 +597,105 @@ app.post('/api/agents/check-permission', async (req, res) => {
     } catch (error) {
         console.error('Error verificando permisos:', error);
         res.status(500).json({ success: false, error: 'Error verificando permisos' });
+    }
+});
+
+/**
+ * Obtener agentes en línea
+ * GET /api/agents/online
+ */
+app.get('/api/agents/online', async (req, res) => {
+    try {
+        if (!pool) {
+            return res.status(503).json({ success: false, error: 'DB service unavailable' });
+        }
+
+        const connection = await pool.getConnection();
+
+        try {
+            // Obtener agentes que han estado activos en los últimos 5 minutos
+            const [agents] = await connection.execute(`
+                SELECT
+                    id,
+                    name,
+                    email,
+                    phone,
+                    role,
+                    status,
+                    last_activity as lastActivity,
+                    created_at as createdAt
+                FROM agents
+                WHERE status = 'online'
+                AND last_activity >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+                ORDER BY last_activity DESC
+            `);
+
+            res.json({
+                success: true,
+                agents,
+                total: agents.length
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('Error obteniendo agentes en línea:', error);
+        res.status(500).json({ success: false, error: 'Error obteniendo agentes en línea' });
+    }
+});
+
+/**
+ * Cambiar estado de un agente
+ * PUT /api/agents/:agentId/status
+ */
+app.put('/api/agents/:agentId/status', async (req, res) => {
+    try {
+        if (!pool) {
+            return res.status(503).json({ success: false, error: 'DB service unavailable' });
+        }
+
+        const { agentId } = req.params;
+        const { status } = req.body;
+
+        // Validar el estado
+        const validStatuses = ['online', 'offline', 'paused', 'busy'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                error: `Estado inválido. Debe ser uno de: ${validStatuses.join(', ')}`
+            });
+        }
+
+        const connection = await pool.getConnection();
+
+        try {
+            // Actualizar estado del agente en tabla users
+            await connection.execute(
+                'UPDATE users SET agent_status = ?, last_activity = NOW() WHERE id = ? AND role = \'agent\'',
+                [status, agentId]
+            );
+
+            console.log(`✅ Estado de agente actualizado: ${agentId} -> ${status}`);
+
+            // Emitir evento por Socket.IO si está disponible
+            if (global.io) {
+                global.io.emit('agent-status-changed', {
+                    agentId,
+                    status
+                });
+            }
+
+            res.json({
+                success: true,
+                message: 'Estado actualizado exitosamente',
+                status
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('Error actualizando estado de agente:', error);
+        res.status(500).json({ success: false, error: 'Error actualizando estado' });
     }
 });
 

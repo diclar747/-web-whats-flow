@@ -429,7 +429,7 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setMediaFile(file);
-      
+
       // Crear preview
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -511,7 +511,7 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
       formData.append('nombre', campaignName);
       formData.append('mensaje', messageTemplate);
       formData.append('contactos', JSON.stringify(contacts));
-      
+
       if (mediaFile) {
         formData.append('archivo', mediaFile);
       }
@@ -647,7 +647,7 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
     ];
 
     const ws = XLSX.utils.json_to_sheet(template);
-    
+
     // Ajustar ancho de columnas para mejor visualización
     ws['!cols'] = [
       { wch: 15 }, // numero
@@ -658,7 +658,7 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
       { wch: 12 }, // fecha
       { wch: 8 }   // hora
     ];
-    
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Contactos');
     XLSX.writeFile(wb, 'plantilla_campana_personalizada.xlsx');
@@ -726,9 +726,9 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
       {/* Descripción */}
       <Alert severity="info" sx={{ mb: 3 }}>
         <Typography variant="body2">
-          <strong>Envíos programados con recordatorios:</strong> Carga un Excel con fechas de vencimiento y usa plantillas personalizadas. 
-          En Configuración puedes elegir enviar recordatorios 1 día antes, 2 días antes, 3 días antes, 1 semana antes o el mismo día. 
-          Los mensajes se envían en horarios aleatorios entre {settings.sendHourStart} y {settings.sendHourEnd} 
+          <strong>Envíos programados con recordatorios:</strong> Carga un Excel con fechas de vencimiento y usa plantillas personalizadas.
+          En Configuración puedes elegir enviar recordatorios 1 día antes, 2 días antes, 3 días antes, 1 semana antes o el mismo día.
+          Los mensajes se envían en horarios aleatorios entre {settings.sendHourStart} y {settings.sendHourEnd}
           con intervalos de {settings.intervalMinSeconds}-{settings.intervalMaxSeconds} segundos para evitar patrones repetitivos.
         </Typography>
       </Alert>
@@ -748,16 +748,17 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                       Creada: {new Date(campaign.createdAt).toLocaleDateString()}
                     </Typography>
                   </Box>
-                  <Chip 
-                    label={campaign.estado} 
+                  <Chip
+                    label={campaign.estado}
                     color={campaign.estado === 'activa' ? 'success' : 'default'}
                     size="small"
                   />
                 </Box>
 
+                {/* Mensaje oculto en la tarjeta, visible solo en detalles */}
                 <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                    {campaign.mensaje.substring(0, 100)}...
+                  <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                    (Ver detalles para leer el mensaje)
                   </Typography>
                 </Box>
 
@@ -824,9 +825,9 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                   </Grid>
                 </Grid>
 
-                <LinearProgress 
-                  variant="determinate" 
-                  value={(campaign.enviados / campaign.totalContactos) * 100} 
+                <LinearProgress
+                  variant="determinate"
+                  value={(campaign.enviados / campaign.totalContactos) * 100}
                   sx={{ mb: 2 }}
                 />
 
@@ -839,7 +840,7 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                       setShowCampaignDetail(true);
                     }}
                   >
-                    Ver Detalles
+                    Ver Detalles / Mensaje
                   </Button>
                   <Button
                     size="small"
@@ -885,8 +886,8 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
       )}
 
       {/* Dialog Crear Campaña */}
-      <Dialog 
-        open={showCreateDialog} 
+      <Dialog
+        open={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}
         maxWidth="md"
         fullWidth
@@ -969,7 +970,7 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
               <Typography variant="subtitle2" gutterBottom>
                 2. Seleccionar Plantilla o Mensaje Personalizado
               </Typography>
-              
+
               {/* Selector de Plantillas */}
               <Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
@@ -1413,18 +1414,18 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
               </TableContainer>
 
               {selectedCampaign.contactos.filter((contact) => {
-                const matchesSearch = 
+                const matchesSearch =
                   contact.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   contact.nombre.toLowerCase().includes(searchTerm.toLowerCase());
                 const matchesStatus = statusFilter === 'todos' || contact.estado === statusFilter;
                 return matchesSearch && matchesStatus;
               }).length === 0 && (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography color="text.secondary">
-                    No se encontraron contactos con los filtros aplicados
-                  </Typography>
-                </Box>
-              )}
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography color="text.secondary">
+                      No se encontraron contactos con los filtros aplicados
+                    </Typography>
+                  </Box>
+                )}
             </Box>
           )}
         </DialogContent>
@@ -1521,7 +1522,7 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
               if (editingContact && selectedCampaign) {
                 // Actualizar en el servidor
                 const success = await updateContactInCampaign(selectedCampaign.id, editingContact);
-                
+
                 if (success) {
                   // Actualizar estado local solo si el servidor confirma
                   const updatedContacts = selectedCampaign.contactos.map(c =>
@@ -1533,7 +1534,7 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                   });
                   setShowEditDialog(false);
                   setEditingContact(null);
-                  
+
                   // Recargar campañas para reflejar cambios
                   loadCampaigns();
                 }
@@ -1571,7 +1572,7 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Alert severity="info">
-              Las plantillas con etiqueta "Demo" son ejemplos predefinidos del sistema. Puedes editarlas para personalizarlas, 
+              Las plantillas con etiqueta "Demo" son ejemplos predefinidos del sistema. Puedes editarlas para personalizarlas,
               pero no se pueden eliminar. También puedes crear tus propias plantillas desde cero.
             </Alert>
 
@@ -1682,47 +1683,47 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                 Mensaje de la Plantilla
               </Typography>
               <Stack direction="row" spacing={1} sx={{ mb: 1, flexWrap: 'wrap', gap: 1 }}>
-                <Button 
-                  size="small" 
-                  onClick={() => setTemplateForm({ 
-                    ...templateForm, 
-                    messageText: templateForm.messageText + '{nombre}' 
+                <Button
+                  size="small"
+                  onClick={() => setTemplateForm({
+                    ...templateForm,
+                    messageText: templateForm.messageText + '{nombre}'
                   })}
                 >
                   {'{nombre}'}
                 </Button>
-                <Button 
-                  size="small" 
-                  onClick={() => setTemplateForm({ 
-                    ...templateForm, 
-                    messageText: templateForm.messageText + '{dato1}' 
+                <Button
+                  size="small"
+                  onClick={() => setTemplateForm({
+                    ...templateForm,
+                    messageText: templateForm.messageText + '{dato1}'
                   })}
                 >
                   {'{dato1}'}
                 </Button>
-                <Button 
-                  size="small" 
-                  onClick={() => setTemplateForm({ 
-                    ...templateForm, 
-                    messageText: templateForm.messageText + '{dato2}' 
+                <Button
+                  size="small"
+                  onClick={() => setTemplateForm({
+                    ...templateForm,
+                    messageText: templateForm.messageText + '{dato2}'
                   })}
                 >
                   {'{dato2}'}
                 </Button>
-                <Button 
-                  size="small" 
-                  onClick={() => setTemplateForm({ 
-                    ...templateForm, 
-                    messageText: templateForm.messageText + '{dato3}' 
+                <Button
+                  size="small"
+                  onClick={() => setTemplateForm({
+                    ...templateForm,
+                    messageText: templateForm.messageText + '{dato3}'
                   })}
                 >
                   {'{dato3}'}
                 </Button>
-                <Button 
-                  size="small" 
-                  onClick={() => setTemplateForm({ 
-                    ...templateForm, 
-                    messageText: templateForm.messageText + '{fecha}' 
+                <Button
+                  size="small"
+                  onClick={() => setTemplateForm({
+                    ...templateForm,
+                    messageText: templateForm.messageText + '{fecha}'
                   })}
                 >
                   {'{fecha}'}
@@ -1740,9 +1741,9 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
             </Box>
 
             <Alert severity="info" sx={{ fontSize: '0.85rem' }}>
-              <strong>Variables disponibles:</strong><br/>
-              • <strong>{'{nombre}'}</strong> - Nombre del contacto<br/>
-              • <strong>{'{dato1}, {dato2}, {dato3}'}</strong> - Datos personalizados del Excel<br/>
+              <strong>Variables disponibles:</strong><br />
+              • <strong>{'{nombre}'}</strong> - Nombre del contacto<br />
+              • <strong>{'{dato1}, {dato2}, {dato3}'}</strong> - Datos personalizados del Excel<br />
               • <strong>{'{fecha}'}</strong> - Fecha de vencimiento
             </Alert>
 
@@ -1819,7 +1820,7 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
             </FormControl>
 
             <Divider />
-            
+
             <Typography variant="subtitle2" fontWeight="bold">
               Horario de Envío
             </Typography>
@@ -1885,10 +1886,10 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
             </Grid>
 
             <Alert severity="success" sx={{ fontSize: '0.85rem' }}>
-              <strong>Ejemplo:</strong> Con intervalo de {settings.intervalMinSeconds} a {settings.intervalMaxSeconds} segundos:<br/>
-              • Mensaje 1: 13:01<br/>
-              • Mensaje 2: 13:{String(1 + Math.floor(settings.intervalMinSeconds / 60)).padStart(2, '0')}<br/>
-              • Mensaje 3: 13:{String(1 + Math.floor((settings.intervalMinSeconds + settings.intervalMaxSeconds) / 60 / 2)).padStart(2, '0')}<br/>
+              <strong>Ejemplo:</strong> Con intervalo de {settings.intervalMinSeconds} a {settings.intervalMaxSeconds} segundos:<br />
+              • Mensaje 1: 13:01<br />
+              • Mensaje 2: 13:{String(1 + Math.floor(settings.intervalMinSeconds / 60)).padStart(2, '0')}<br />
+              • Mensaje 3: 13:{String(1 + Math.floor((settings.intervalMinSeconds + settings.intervalMaxSeconds) / 60 / 2)).padStart(2, '0')}<br />
               Cada mensaje sale en un horario diferente de forma aleatoria.
             </Alert>
           </Stack>

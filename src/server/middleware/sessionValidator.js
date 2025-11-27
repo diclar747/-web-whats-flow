@@ -68,41 +68,26 @@ const validateUniqueSession = (req, res, next) => {
 
 /**
  * Crear una nueva sesión única
- * IMPORTANTE: Cierra todas las sesiones previas del mismo usuario
+ * IMPORTANTE: Permite múltiples sesiones por usuario (no cierra sesiones previas)
  */
 const createUniqueSession = (userId, deviceId, email, role, io = null) => {
-    // PRIMERO: Cerrar todas las sesiones previas de este usuario
-    let closedSessions = 0;
-    const oldTokens = [];
+    // NO cerrar sesiones previas - Permitir múltiples sesiones por usuario
+    console.log(`[SESSION] 🔐 Creando nueva sesión para ${email} en dispositivo ${deviceId.substr(0, 20)}...`);
     
+    // Verificar si ya existe una sesión para este dispositivo específico
+    let existingSessionForDevice = null;
     for (const [token, session] of activeSessions.entries()) {
-        if (session.userId === userId) {
-            console.log(`[SESSION] 🔐 Cerrando sesión previa de ${email} en ${session.deviceId.substr(0, 20)}...`);
-            oldTokens.push(token);
-            activeSessions.delete(token);
-            closedSessions++;
+        if (session.userId === userId && session.deviceId === deviceId) {
+            existingSessionForDevice = token;
+            break;
         }
     }
     
-    if (closedSessions > 0) {
-        console.log(`[SESSION] ⚠️ ${closedSessions} sesión(es) previa(s) cerrada(s) para ${email}`);
-        
-        // 🔐 DESACTIVADO TEMPORALMENTE - No emitir evento de cierre
-        // Este evento causa que se cierren sesiones de usuarios diferentes
-        // TODO: Reactivar cuando el middleware de validación esté completamente funcional
-        /*
-        if (io) {
-            io.emit('session-closed', {
-                userId: userId,
-                email: email,
-                reason: 'Nueva sesión iniciada en otro dispositivo',
-                oldTokens: oldTokens,
-                timestamp: new Date().toISOString()
-            });
-            console.log(`[SESSION] 📢 Evento session-closed emitido para ${email}`);
-        }
-        */
-        console.log(`[SESSION] ℹ️ Evento session-closed NO emitido (sistema de sesión única desactivado)`);
+    // Si ya existe una sesión para este dispositivo, reutilizarla
+    if (existingSessionForDevice) {
+        console.log(`[SESSION] 🔄 Reutilizando sesión existente para dispositivo ${deviceId.substr(0, 20)}...`);
+        activeSessions.get(existingSessionForDevice).lastActivity = Date.now();
+        return existingSessionForDevice;
     }
     
     // SEGUNDO: Crear la nueva sesión

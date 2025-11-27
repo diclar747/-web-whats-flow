@@ -84,7 +84,7 @@ const AnalyticsModule = lazy(() => import('../modules/AnalyticsModule'));
 const SettingsModule = lazy(() => import('../modules/SettingsModule'));
 const DashboardOverview = lazy(() => import('../modules/DashboardOverview'));
 const UsersModule = lazy(() => import('../modules/UsersModule'));
-const AgentsStatusModule = lazy(() => import('../modules/AgentsStatusModule'));
+const AgentsManagementModule = lazy(() => import('../modules/AgentsManagementModule'));
 const KanbanContactsModule = lazy(() => import('../modules/KanbanContactsModule'));
 const AgentPermissionsManager = lazy(() => import('../components/AgentPermissionsManager'));
 const WhatsAppStatusModule = lazy(() => import('../modules/WhatsAppStatusModule'));
@@ -299,7 +299,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     },
     {
       id: 'agents',
-      label: 'Agentes en Línea',
+      label: 'Agentes',
       icon: <AgentsIcon />,
       path: '/dashboard/agents',
       color: '#00bcd4'
@@ -310,13 +310,6 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       icon: <KanbanIcon />,
       path: '/dashboard/kanban',
       color: '#673ab7'
-    },
-    {
-      id: 'permissions',
-      label: 'Gestión de Usuarios',
-      icon: <SecurityIcon />,
-      path: '/dashboard/settings',
-      color: '#f44336'
     }
   ];
 
@@ -436,8 +429,17 @@ const fetchDashboardStats = useCallback(async () => {
   if (!sessionId || sessionValid === false) return;
 
   try {
+    console.log('[STATS] 🔄 Obteniendo estadísticas desde API para sessionId:', sessionId);
     const response = await fetch(`/api/dashboard/stats/${sessionId}`);
     const data = await response.json();
+
+    console.log('[STATS] 📦 Respuesta API recibida:', {
+      success: data.success,
+      agents: data.stats?.agents,
+      chatbots: data.stats?.chatbots,
+      kanbans: data.stats?.kanbans,
+      fullStats: data.stats
+    });
 
     if (data.success && data.stats) {
       // Estructurar los datos correctamente para el dashboard
@@ -474,7 +476,13 @@ useEffect(() => {
 
 // ✅ FIX: Memoizar handlers de Socket.IO para evitar recrearlos en cada render
 const handleStatsUpdate = useCallback((stats: any) => {
-  console.log('[SOCKET] 📊 Estadísticas actualizadas en tiempo real:', stats);
+  console.log('[SOCKET] 📊 Estadísticas actualizadas en tiempo real desde Socket.IO:', {
+    agents: stats.agents,
+    chatbots: stats.chatbots,
+    kanbans: stats.kanbans,
+    fullStats: stats
+  });
+
   const updatedStats = {
     contacts: stats.contacts?.total || 0,
     groups: stats.contacts?.groups || 0,
@@ -488,6 +496,13 @@ const handleStatsUpdate = useCallback((stats: any) => {
     kanbans: stats.kanbans || 0,
     appointments: stats.appointments || 0
   };
+
+  console.log('[SOCKET] ✅ Actualizando dashboardStats con:', {
+    agents: updatedStats.agents,
+    chatbots: updatedStats.chatbots,
+    kanbans: updatedStats.kanbans
+  });
+
   setDashboardStats(updatedStats);
 }, []);
 
@@ -1214,6 +1229,17 @@ return (
                       <HistoryModule sessionId={sessionId} />
                     </ProtectedRoute>
                   } />
+                  <Route path="/messages/*" element={
+                    <ProtectedRoute module="chat" action="view">
+                      <Suspense fallback={<ModuleLoadingFallback />}>
+                        <div style={{ padding: '20px', textAlign: 'center' }}>
+                          <Typography variant="h6" color="textSecondary">
+                            El módulo de mensajes está disponible en el módulo de Chat
+                          </Typography>
+                        </div>
+                      </Suspense>
+                    </ProtectedRoute>
+                  } />
                   <Route path="/crm/*" element={
                     <ProtectedRoute module="contacts" action="view">
                       <ContactsManagerModule sessionId={sessionId} />
@@ -1244,7 +1270,7 @@ return (
                   } />
                   <Route path="/agents/*" element={
                     <ProtectedRoute module="users" action="view">
-                      <AgentsStatusModule sessionId={sessionId} />
+                      <AgentsManagementModule sessionId={sessionId} />
                     </ProtectedRoute>
                   } />
                   <Route path="/kanban/*" element={
