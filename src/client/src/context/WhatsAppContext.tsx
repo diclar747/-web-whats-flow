@@ -664,6 +664,15 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           });
 
           if (!chatExists && mappedMessage.chatJid) {
+            // 🚫 FILTRO: NO agregar si es el propio número del usuario
+            const currentPhoneNumber = session?.sessionId?.split(':')[0];
+            const chatNumber = mappedMessage.chatJid.split('@')[0].split(':')[0];
+            
+            if (currentPhoneNumber && chatNumber === currentPhoneNumber) {
+              // NO agregar el propio número a la lista
+              return prev;
+            }
+            
             console.log('➕ Agregando nuevo chat desde mensaje:', mappedMessage.chatJid);
             const msgTime = new Date(mappedMessage.timestamp || Date.now()).getTime();
             const isRecent = msgTime >= (connectedAtRef.current - 5000);

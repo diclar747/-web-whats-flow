@@ -3032,6 +3032,21 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                 // Filtrar grupos si includeGroups es false
                 if (!includeGroups && isGroup) continue;
 
+                // 🔥 FILTRO CRÍTICO: NO mostrar chat con el propio número del usuario
+                const chatNumber = chatJid.split('@')[0];
+                
+                // Verificar contra phoneNumber
+                if (phoneNumber && chatNumber === phoneNumber.split(':')[0]) {
+                    console.log(`[MEMORY-CHATLIST] 🚫 Filtrando chat propio: ${chatNumber}`);
+                    continue;
+                }
+                
+                // TAMBIÉN verificar contra sessionId (fallback)
+                if (sessionId && chatNumber === sessionId.split('@')[0].split(':')[0]) {
+                    console.log(`[MEMORY-CHATLIST] 🚫 Filtrando chat propio (por sessionId): ${chatNumber}`);
+                    continue;
+                }
+
                 if (!chatMap.has(chatJid) || new Date(message.timestamp) > new Date(chatMap.get(chatJid).timestamp)) {
                     const contact = memoryStorage.contacts.get(chatJid);
                     chatMap.set(chatJid, {
@@ -3073,11 +3088,11 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         const groupFilterSubquery = includeGroups ? '' : " AND chat_jid NOT LIKE '%@g.us'";
         const groupFilterMain = includeGroups ? '' : " AND m.chat_jid NOT LIKE '%@g.us'";
 
-        // 📅 Filtro de fecha - Por defecto solo hoy
+        // 📅 Filtro de fecha - Por defecto últimos 7 DÍAS (cambio: era solo HOY)
         let dateFilterSQL = '';
         if (dateFilter === 'today') {
-            dateFilterSQL = " AND DATE(timestamp) = CURDATE()";
-            console.log(`[CHATLIST] 📅 Filtrando solo conversaciones de HOY`);
+            dateFilterSQL = " AND timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+            console.log(`[CHATLIST] 📅 Filtrando últimos 7 DÍAS (fue: solo HOY)`);
         } else if (dateFilter === 'week') {
             dateFilterSQL = " AND timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
             console.log(`[CHATLIST] 📅 Filtrando últimos 7 días`);
@@ -4825,14 +4840,14 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     }
                 };
 
-                console.log(`[${sessionId}] 🚀🚀🚀 EMITIENDO EN TIEMPO REAL:`, {
-                    id: messageId.substring(0, 20),
-                    from: senderJid.substring(0, 30),
-                    rawJid: rawSenderJid !== senderJid ? rawSenderJid.substring(0, 30) : 'igual',
-                    text: textContent.substring(0, 30),
-                    isGroup: senderJid.includes('@g.us'),
-                    fromMe: msg.key.fromMe
-                });
+                // console.log(`[${sessionId}] 🚀🚀🚀 EMITIENDO EN TIEMPO REAL:`, {
+                //     id: messageId.substring(0, 20),
+                //     from: senderJid.substring(0, 30),
+                //     rawJid: rawSenderJid !== senderJid ? rawSenderJid.substring(0, 30) : 'igual',
+                //     text: textContent.substring(0, 30),
+                //     isGroup: senderJid.includes('@g.us'),
+                //     fromMe: msg.key.fromMe
+                // });
 
                 // 🔥 DEBUG: Log específico para los usuarios del problema
                 if (sessionId === '595984219248' || sessionId === '595985768793') {
@@ -4883,13 +4898,30 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             console.log(`[${sessionId}] 🏁 EMISIÓN COMPLETADA`);
             // ═══════════════════════════════════════════════════════════
 
-            // CAMBIO: Procesar mensajes de tipo 'notify' Y 'append' recientes (últimos 2 minutos)
-            const shouldProcess = m.type === 'notify' || (m.type === 'append' && m.messages.some(msg => {
-                const msgTime = msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : 0;
-                const now = Date.now();
-                const isRecent = (now - msgTime) < 120000; // 2 minutos
-                return isRecent;
-            }));
+            // CAMBIO: Procesar mensajes de tipo 'notify' Y también mensajes enviados (fromMe=true) incluso si son append/prepend
+            // Los mensajes enviados SIEMPRE deben guardarse, sin importar el tiempo o tipo
+            const hasOwnMessages = m.messages.some(msg => Boolean(msg.key.fromMe));
+            const shouldProcess = m.type === 'notify' || 
+                                 hasOwnMessages || // Si hay algún mensaje enviado por mí
+                                 (m.type === 'append' && m.messages.some(msg => {
+                                     const msgTime = msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : 0;
+                                     const now = Date.now();
+                                     const isRecent = (now - msgTime) < 120000; // 2 minutos
+                                     return isRecent;
+                                 }));
+
+            // 🔥 LOG SOLO para mensajes enviados (debug del problema)
+            if (hasOwnMessages) {
+                console.log(`\n${'='.repeat(80)}`);
+                console.log(`[${sessionId}] 🔥 MENSAJES ENVIADOS DETECTADOS - shouldProcess=${shouldProcess}, type=${m.type}`);
+                m.messages.forEach((msg, idx) => {
+                    if (msg.key.fromMe) {
+                        const text = (msg.message?.conversation || 'media').substring(0, 50);
+                        console.log(`[${sessionId}] ✅ Mensaje enviado #${idx}: "${text}"`);
+                    }
+                });
+                console.log(`${'='.repeat(80)}\n`);
+            }
 
             if (shouldProcess) {
                 for (const msg of m.messages) {
@@ -4948,8 +4980,12 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     }
 
                     // 2. Procesar y guardar mensaje en la DB
-                    // Solo procesar mensajes con contenido visible o de sistema que queramos registrar
-                    if (msg.message && messageId) {
+                    // IMPORTANTE: Para mensajes enviados (fromMe=true), SIEMPRE guardar incluso sin contenido visible
+                    // Para mensajes recibidos, solo guardar si tienen contenido
+                    const isOwnMessage = msg.key.fromMe;
+                    const shouldSaveMessage = isOwnMessage || (msg.message && messageId);
+                    
+                    if (shouldSaveMessage && messageId) {
                         const messageType = Object.keys(msg.message)[0] || 'unknown';
                         let textContent = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
                         let mediaUrl = null;
@@ -5104,6 +5140,16 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             timestamp: msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000) : new Date(),
                             status: msg.key.fromMe ? 'sent' : 'received' // Estado inicial
                         };
+
+                        // 🔥 LOG SOLO para mensajes ENVIADOS
+                        if (msg.key.fromMe) {
+                            console.log(`\n${'='.repeat(80)}`);
+                            console.log(`[${sessionId}] 🔥 GUARDANDO MENSAJE ENVIADO`);
+                            console.log(`[${sessionId}] Destinatario: ${senderJid}`);
+                            console.log(`[${sessionId}] Texto: ${textContent?.substring(0, 50) || '(sin texto)'}`);
+                            console.log(`[${sessionId}] Timestamp: ${msg.messageTimestamp}`);
+                            console.log(`${'='.repeat(80)}\n`);
+                        }
 
                         await saveMessageToDB(sessionId, dbMessage);
 
@@ -8033,16 +8079,19 @@ app.get('/api/messages/:sessionId', async (req, res) => {
         const queryParams = [phoneNumber, phoneNumber]; // Buscar por phone_number O session_id
 
         if (number) {
-            const chatJid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
-            query += ' AND m.chat_jid = ?';
-            queryParams.push(chatJid);
+            // Normalizar número de teléfono (eliminar sufijos como :0, :82)
+            const normalizedNumber = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+            const cleanedJid = normalizedNumber.split(':')[0]; // Remover sufijos de dispositivo
+            query += ' AND (m.chat_jid = ? OR m.chat_jid LIKE ?)';
+            queryParams.push(cleanedJid);
+            queryParams.push(cleanedJid + ':%'); // Buscar también con sufijos
         }
 
-        // ⚡ OPTIMIZACIÓN: Filtro de fecha por defecto (solo mensajes de HOY)
+        // ⚡ OPTIMIZACIÓN: Filtro de fecha por defecto (últimos 7 DÍAS para cargar todo lo relevante)
         if (dateFilter === 'today' && !startDate && !endDate) {
-            // Solo mensajes de hoy (desde las 00:00:00 de hoy)
-            query += ' AND DATE(m.timestamp) = CURDATE()';
-            console.log('[API-MSG] 📅 Cargando solo mensajes de HOY (optimización de rendimiento)');
+            // Cambio: En lugar de solo hoy, cargar últimos 7 días para asegurar que se ven todos los mensajes
+            query += ' AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
+            console.log('[API-MSG] 📅 Cargando mensajes de los últimos 7 DÍAS (fue: solo HOY)');
         } else if (dateFilter === 'week') {
             query += ' AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
             console.log('[API-MSG] 📅 Cargando mensajes de la SEMANA');
@@ -8205,7 +8254,7 @@ app.post('/api/force-sync/:sessionId', async (req, res) => {
 // Obtener chats/contactos
 app.get('/api/chats/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
-    const { dateFilter = 'all' } = req.query; // 📅 Por defecto 'all' para mostrar todos los chats
+    const { dateFilter = 'today' } = req.query; // 📅 Por defecto 'today' para mostrar solo chats de hoy
     // 🚫 GRUPOS BLOQUEADOS - Siempre false, no permitir incluir grupos
     const includeGroups = false; // Forzado a false - No sincronizar grupos
     const phoneNumber = await getUserPhoneNumber(sessionId);
@@ -8246,6 +8295,26 @@ app.get('/api/chats/:sessionId', async (req, res) => {
                         if (!includeGroups && chat.id.includes('@g.us')) return false;
                         // Filtrar status broadcasts
                         if (chat.id.includes('status@broadcast')) return false;
+                        
+                        // 🔥 FILTRO CRÍTICO: NO mostrar chat con el propio número del usuario
+                        const chatNumber = chat.id.split('@')[0];
+                        
+                        // Verificar contra phoneNumber
+                        if (phoneNumber) {
+                            const normalizedPhoneNumber = phoneNumber.split(':')[0];
+                            const normalizedChatNumber = chatNumber.split(':')[0];
+                            if (normalizedChatNumber === normalizedPhoneNumber) {
+                                console.log(`[API][${sessionId}] 🚫 Filtrando chat propio: ${chatNumber}`);
+                                return false;
+                            }
+                        }
+                        
+                        // TAMBIÉN verificar contra sessionId (por si phoneNumber es NULL)
+                        if (sessionId && chatNumber === sessionId.split('@')[0]) {
+                            console.log(`[API][${sessionId}] 🚫 Filtrando chat propio (por sessionId): ${chatNumber}`);
+                            return false;
+                        }
+                        
                         return true;
                     })
                     .map(chat => ({

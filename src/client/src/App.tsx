@@ -24,6 +24,10 @@ import { AuthProvider } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { MobileStatusPublisher } from './modules/MobileStatusPublisher';
 import { setupFetchInterceptor } from './utils/fetchInterceptor';
+import { initSilentLogs } from './utils/silenceLogs';
+
+// Silenciar logs verbosos al iniciar
+initSilentLogs();
 
 
 
