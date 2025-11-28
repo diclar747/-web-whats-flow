@@ -535,7 +535,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       });
 
       newSocket.on('message', (newMessage: WhatsAppMessage) => {
-        console.log('%c🎉🎉🎉 LISTENER MESSAGE EJECUTÁNDOSE', 'background: #00ff00; color: black; font-size: 16px; padding: 5px;');
+        // 🔥 LOG INMEDIATO - debe aparecer SIEMPRE
+        console.error(`\n${'='.repeat(80)}\n🔥🔥🔥 MENSAJE RECIBIDO EN TIEMPO REAL 🔥🔥🔥\nID: ${newMessage.id}\nDe: ${newMessage.from}\nTexto: ${newMessage.message?.substring(0, 50)}\n${'='.repeat(80)}\n`);
 
         // ✅ CORRECCIÓN: TODOS los usuarios deben procesar mensajes en tiempo real
         console.log('🎉🎉🎉 MENSAJE RECIBIDO - INICIANDO PROCESAMIENTO');
@@ -688,11 +689,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             };
             updatedChats.unshift(newChat);
 
-            // Recargar chats completos desde el servidor para obtener información actualizada
-            console.log('🔄 Recargando lista completa de chats desde el servidor...');
-            if (loadChats && session?.sessionId) {
-              loadChats(session.sessionId);
-            }
+            // ✅ NO recargar lista completa - ya tenemos el chat actualizado
+            // Esto evita latencia y hace el chat INSTANTÁNEO
           }
 
           return updatedChats.sort((a, b) => {

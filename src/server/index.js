@@ -5221,15 +5221,22 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 message: clientMessage.message?.substring(0, 50),
                                 contactName: contactName
                             });
-                            // Emitir a ambas salas: sessionId y phoneNumber
-                            io.to(`session-${sessionId}`).emit('message', clientMessage);
-                            if (phoneNumber && phoneNumber !== sessionId) {
-                                io.to(`session-${phoneNumber}`).emit('message', clientMessage);
-                                console.log(`[${sessionId}] ✅ Mensaje emitido a session-${sessionId} Y session-${phoneNumber}`);
-                            } else {
-                                console.log(`[${sessionId}] ✅ Mensaje emitido a session-${sessionId}`);
+                            // Emitir a ambas salas: sessionId y phoneNumber (garantizar que llega)
+                            console.log(`\n${'='.repeat(80)}`);
+                            console.log(`[${sessionId}] 🔥🔥🔥 EMITIENDO MENSAJE EN TIEMPO REAL 🔥🔥🔥`);
+                            console.log(`[${sessionId}] Sala 1: session-${sessionId}`);
+                            if (phoneNumber) {
+                                console.log(`[${sessionId}] Sala 2: session-${phoneNumber}`);
                             }
-                            console.log(`[${sessionId}] 📨 De ${contactName}: ${clientMessage.message?.substring(0, 50)}`);
+                            console.log(`[${sessionId}] De: ${dbMessage.sender_jid}`);
+                            console.log(`[${sessionId}] Texto: ${dbMessage.text_content?.substring(0, 50)}`);
+                            console.log(`${'='.repeat(80)}\n`);
+                            
+                            // SIEMPRE emitir a ambas salas
+                            io.to(`session-${sessionId}`).emit('message', clientMessage);
+                            if (phoneNumber) {
+                                io.to(`session-${phoneNumber}`).emit('message', clientMessage);
+                            }
 
                             // 🔥 EMITIR TAMBIÉN A AGENTES ASIGNADOS
                             if (pool && phoneNumber && dbMessage.chat_jid) {
