@@ -3,7 +3,6 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useWhatsApp } from '../context/WhatsAppContext';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import { SubscriptionGuard } from '../components/SubscriptionGuard';
-import SyncProgressBar from '../components/SyncProgressBar';
 import ModernMessageMedia from '../components/ModernMessageMedia';
 import ModernMessageActions from '../components/ModernMessageActions';
 import {
@@ -45,7 +44,6 @@ import {
   DoneAll as DoneAllIcon,
   Reply as ReplyIcon,
   Close as CloseIcon,
-  Refresh as RefreshIcon,
   WhatsApp,
   TransferWithinAStation as TransferIcon,
   Person,
@@ -567,8 +565,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
 
   return (
     <>
-      {/* 🆕 Indicador de sincronización moderno tipo WhatsApp Web */}
-      <SyncProgressBar sessionId={sessionId} />
+      {/* 🆕 Socket.IO maneja todo en tiempo real - Sin sincronización manual */}
 
       <div style={{
         display: 'flex',
@@ -613,7 +610,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
             sx={{ color: isDarkMode ? '#aebac1' : '#667781' }}
             title="Recargar chats"
           >
-            <RefreshIcon sx={{ fontSize: 20 }} />
+            {/* RefreshIcon eliminado - Socket.IO maneja todo en tiempo real */}
           </IconButton>
           <IconButton
             onClick={async () => {

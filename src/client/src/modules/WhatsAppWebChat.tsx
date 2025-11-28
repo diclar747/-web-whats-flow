@@ -65,7 +65,6 @@ import {
   Download,
   Description,
   Image as ImageIcon,
-  Sync,
   PictureAsPdf,
   FilterList
 } from '@mui/icons-material';
@@ -134,16 +133,6 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   const [dateFilter, setDateFilter] = useState('');
   const [quickFilter, setQuickFilter] = useState('');
 
-  // Estado de sincronización
-  const [syncStatus, setSyncStatus] = useState<{
-    isSync: boolean;
-    progress: number;
-    message: string;
-  }>({
-    isSync: false,
-    progress: 0,
-    message: ''
-  });
 
   // Estados para multimedia
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -153,6 +142,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
   const socketRef = useRef<any>(null);
 
   const commonReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '👏', '✅', '❌'];
@@ -346,46 +336,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       // Sincronización automática deshabilitada - Solo manual desde configuración
       console.log('ℹ️ Sincronización automática deshabilitada. Use el botón "Sincronizar" en Configuración.');
       return;
-
-      setSyncStatus({ isSync: true, progress: 0, message: 'Iniciando sincronización...' });
-      console.log('🔄 Iniciando sincronización completa...');
-
-      // 1. Sincronizar contactos
-      setSyncStatus({ isSync: true, progress: 25, message: 'Sincronizando contactos...' });
-      const contactsResponse = await fetch(
-        `${getAPIBaseURL()}/api/contacts/sync/${sessionId}`,
-        { method: 'POST' }
-      );
-      const contactsData = await contactsResponse.json();
-      console.log('✅ Contactos sincronizados:', contactsData);
-
-      // 2. Sincronizar grupos
-      setSyncStatus({ isSync: true, progress: 50, message: 'Sincronizando grupos...' });
-      const groupsResponse = await fetch(
-        `${getAPIBaseURL()}/api/groups/sync/${sessionId}`,
-        { method: 'POST' }
-      );
-      const groupsData = await groupsResponse.json();
-      console.log('✅ Grupos sincronizados:', groupsData);
-
-      // 3. Cargar todos los chats
-      setSyncStatus({ isSync: true, progress: 75, message: 'Cargando chats...' });
-      if (loadChats) {
-        await loadChats(sessionId);
-        console.log('✅ Chats cargados');
-      }
-
-      // 4. Completado
-      setSyncStatus({ isSync: true, progress: 100, message: 'Completado' });
-
-      // Ocultar indicador después de 2 segundos
-      setTimeout(() => {
-        setSyncStatus({ isSync: false, progress: 0, message: '' });
-      }, 2000);
-
     } catch (error) {
       console.error('❌ Error en sincronización:', error);
-      setSyncStatus({ isSync: false, progress: 0, message: '' });
       setSnackbar({
         open: true,
         message: '⚠️ Error en sincronización automática',
@@ -625,6 +577,11 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       setReplyMessage?.(null);
       setShowEmojiPicker(false);
       // ✅ WhatsAppContext recibirá el mensaje vía Socket.IO y lo agregará automáticamente
+
+      // ✅ Enfocar el cuadro de texto después de enviar
+      setTimeout(() => {
+        messageInputRef.current?.focus();
+      }, 100);
 
     } catch (error) {
       console.error('Error enviando mensaje:', error);
@@ -1317,52 +1274,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 </Box>
               </Box>
 
-              {/* Indicador de sincronización - Visible cuando está sincronizando o cargando */}
-              {(syncStatus.isSync || isLoading) && (
-                <Box sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  bgcolor: '#25d366',
-                  color: 'white',
-                  px: 2,
-                  py: 0.8,
-                  borderRadius: 3,
-                  fontSize: '0.85rem',
-                  boxShadow: '0 2px 8px rgba(37, 211, 102, 0.3)',
-                  animation: 'pulse 2s ease-in-out infinite',
-                  '@keyframes pulse': {
-                    '0%, 100%': { opacity: 1 },
-                    '50%': { opacity: 0.8 }
-                  }
-                }}>
-                  <CircularProgress size={16} sx={{ color: 'white' }} />
-                  <Typography variant="body2" sx={{ color: 'white', fontWeight: 600 }}>
-                    {isLoading ? 'Sincronizando chat...' : syncStatus.message || 'Sincronizando...'}
-                  </Typography>
-                </Box>
-              )}
 
-              {/* Botón de sincronización manual */}
-              <Tooltip title="Actualizar mensajes">
-                <IconButton
-                  onClick={() => activeChat && loadMessages && loadMessages(activeChat.id)}
-                  disabled={syncStatus.isSync || isLoading}
-                  sx={{
-                    color: colors.textSecondary,
-                    transition: 'all 0.2s ease',
-                    animation: (syncStatus.isSync || isLoading) ? 'rotate 1s linear infinite' : 'none',
-                    '@keyframes rotate': {
-                      from: { transform: 'rotate(0deg)' },
-                      to: { transform: 'rotate(360deg)' }
-                    },
-                    '&:hover': { color: colors.text, bgcolor: colors.hover },
-                    '&:disabled': { color: colors.divider }
-                  }}
-                >
-                  <Sync sx={{ fontSize: 20 }} />
-                </IconButton>
-              </Tooltip>
 
               <Tooltip title="Buscar por fecha">
                 <IconButton
@@ -2204,6 +2116,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               />
 
               <TextField
+                inputRef={messageInputRef}
                 fullWidth
                 multiline
                 maxRows={5}

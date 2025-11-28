@@ -1145,6 +1145,13 @@ async function getOrInsertContact(jid, name = null, notifyName = null, phoneNumb
         return null;
     }
 
+    // 🔥 FILTRO CRÍTICO: NO guardar el propio número del usuario como contacto
+    const jidNumber = jid.split('@')[0];
+    if (phoneNumber && jidNumber === phoneNumber) {
+        console.log(`[DB-CONTACT-SKIP] ⚠️ Skipping own number (${jidNumber}) - User should not see themselves in contact list`);
+        return null;
+    }
+
     // Validar que el phone_number tenga valor
     if (!phoneNumber) {
         console.warn(`[DB-CONTACT-WARN] Called getOrInsertContact without phone_number for jid: ${jid}.`);
@@ -1791,7 +1798,7 @@ async function saveMessageToDB(sessionId, msg) {
             shouldEmit: !chat_jid.includes('@lid') && !from_me
         });
 
-        if (!chat_jid.includes('@lid') && !from_me) { // Solo mensajes ENTRANTES
+        if (!chat_jid.includes('@lid')) { // Emitir TODOS los mensajes (enviados y recibidos), excepto LIDs
             console.log(`[${sessionId}] 🚀💾 EMITIENDO desde saveMessageToDB:`, messageId.substring(0, 20));
             console.log(`[${sessionId}] 📡 Emitiendo a sala: session-${phoneNumber}`);
             io.to(`session-${phoneNumber}`).emit('message', {
@@ -4807,13 +4814,32 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     msg.message?.imageMessage?.caption ||
                     'Media';
 
+                const debugLog = (msg) => {
+                    try {
+                        const fs = require('fs');
+                        const path = require('path');
+                        const logPath = path.join(__dirname, 'debug_sync.log');
+                        fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`);
+                    } catch (e) {
+                        console.error('Error writing to debug log:', e);
+                    }
+                };
+
                 console.log(`[${sessionId}] 🚀🚀🚀 EMITIENDO EN TIEMPO REAL:`, {
                     id: messageId.substring(0, 20),
                     from: senderJid.substring(0, 30),
                     rawJid: rawSenderJid !== senderJid ? rawSenderJid.substring(0, 30) : 'igual',
                     text: textContent.substring(0, 30),
-                    isGroup: senderJid.includes('@g.us')
+                    isGroup: senderJid.includes('@g.us'),
+                    fromMe: msg.key.fromMe
                 });
+
+                // 🔥 DEBUG: Log específico para los usuarios del problema
+                if (sessionId === '595984219248' || sessionId === '595985768793') {
+                    const logMsg = `[DEBUG-SYNC] Procesando mensaje para ${sessionId}. fromMe: ${msg.key.fromMe}, remoteJid: ${msg.key.remoteJid}`;
+                    console.log(logMsg);
+                    debugLog(logMsg);
+                }
 
                 // 🔥 FIX: Cuando isFromMe=true, 'from' debe ser el usuario, NO el contacto
                 const sockUserId = sock.user?.id?.split(':')[0];

@@ -63,14 +63,12 @@ import {
   Phone as PhoneIcon,
   Notifications as NotificationsIcon,
   NotificationsActive as NotificationsActiveIcon,
-  Refresh as RefreshIcon,
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
   WhatsApp as WhatsAppIcon,
   FiberManualRecord as StatusIcon,
   Block as BlockIcon,
   FilterList as FilterListIcon,
-  Sync as SyncIcon,
   CalendarToday as CalendarIcon,
   Circle
 } from '@mui/icons-material';
@@ -1821,17 +1819,6 @@ const AgentDashboardPro: React.FC = () => {
               </IconButton>
             </Tooltip>
 
-            {/* Actualizar */}
-            <Tooltip title="Actualizar chats">
-              <IconButton
-                color="inherit"
-                size="small"
-                onClick={handleRefresh}
-                sx={{ color: 'white' }}
-              >
-                <RefreshIcon />
-              </IconButton>
-            </Tooltip>
 
             {/* Selector de estado del agente */}
             <Tooltip title="Cambiar estado">
@@ -1974,7 +1961,6 @@ const AgentDashboardPro: React.FC = () => {
                   <Button
                     size="small"
                     variant="outlined"
-                    startIcon={<SyncIcon />}
                     onClick={() => loadAgentChats(chatListDateFilter)}
                     sx={{
                       borderColor: '#00a884',
@@ -2337,7 +2323,7 @@ const AgentDashboardPro: React.FC = () => {
               onClose={handleMenuClose}
             >
               <MenuItem onClick={() => { loadMessages('today'); handleMenuClose(); }}>
-                <RefreshIcon sx={{ mr: 1 }} /> Mensajes de hoy
+                {/* RefreshIcon eliminado - Socket.IO maneja todo en tiempo real */} Mensajes de hoy
               </MenuItem>
               <MenuItem onClick={() => { loadMessages('week'); handleMenuClose(); }}>
                 <PendingIcon sx={{ mr: 1 }} /> Última semana
@@ -2648,7 +2634,6 @@ const AgentDashboardPro: React.FC = () => {
                       <Button
                         fullWidth
                         variant="outlined"
-                        startIcon={<RefreshIcon />}
                         onClick={() => loadMessages(messageDateFilter)}
                         sx={{ mb: 1, justifyContent: 'flex-start' }}
                       >
@@ -3049,7 +3034,7 @@ const AgentDashboardPro: React.FC = () => {
               }
             }}
           >
-            <SyncIcon sx={{ fontSize: 40, color: 'white' }} />
+            {/* SyncIcon eliminado - Socket.IO maneja todo en tiempo real */}
           </Box>
 
           <Typography

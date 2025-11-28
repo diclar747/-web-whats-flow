@@ -537,15 +537,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       newSocket.on('message', (newMessage: WhatsAppMessage) => {
         console.log('%c🎉🎉🎉 LISTENER MESSAGE EJECUTÁNDOSE', 'background: #00ff00; color: black; font-size: 16px; padding: 5px;');
 
-        // 🚫 FILTRO: Agentes NO deben procesar eventos en WhatsAppContext
-        const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
-        console.log('🔍 Verificando rol de usuario:', { userRole, sessionStorage: sessionStorage.getItem('userRole'), localStorage: localStorage.getItem('userRole') });
-
-        if (userRole === 'agent') {
-          console.log('🚫 [WhatsAppContext] Ignorando mensaje - Usuario es agente (debe usar AgentDashboardPro)');
-          return;
-        }
-
+        // ✅ CORRECCIÓN: TODOS los usuarios deben procesar mensajes en tiempo real
         console.log('🎉🎉🎉 MENSAJE RECIBIDO - INICIANDO PROCESAMIENTO');
 
         // Normalizar chatJid - puede venir en diferentes formatos
@@ -704,10 +696,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       // Listener para actualizaciones de estado de mensaje (✓ ✓✓)
       newSocket.on('message-status-update', (update: any) => {
-        // 🚫 FILTRO: Agentes NO deben procesar en WhatsAppContext
-        const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
-        if (userRole === 'agent') return;
-
+        // ✅ CORRECCIÓN: TODOS los usuarios deben procesar actualizaciones de estado
         console.log('📬 Actualización de estado recibida:', update);
         const { messageId, id, status, chatJid } = update;
         const msgId = messageId || id;
@@ -726,10 +715,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       // Nuevo evento: sync-complete - se emite cuando se completa la sincronización
       newSocket.on('sync-complete', (data: any) => {
-        // 🚫 FILTRO: Agentes NO deben procesar en WhatsAppContext
-        const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
-        if (userRole === 'agent') return;
-
+        // ✅ CORRECCIÓN: TODOS los usuarios deben procesar eventos de sincronización
         console.log('🔄 Sincronización completa recibida:', data);
         if (data?.success) {
           console.log(`✅ Sincronización exitosa: ${data.chatCount} chats`);
