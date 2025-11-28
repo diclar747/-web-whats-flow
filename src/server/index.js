@@ -4815,10 +4815,25 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     isGroup: senderJid.includes('@g.us')
                 });
 
-                io.to(`session-${sessionId}`).emit('message', {
-                    id: messageId,
-                    from: senderJid,
+                // 🔥 FIX: Cuando isFromMe=true, 'from' debe ser el usuario, NO el contacto
+                const sockUserId = sock.user?.id?.split(':')[0];
+                const actualFrom = msg.key.fromMe ?
+                    (sockUserId ? `${sockUserId}@s.whatsapp.net` : (phoneNumber ? `${phoneNumber}@s.whatsapp.net` : senderJid)) :
+                    senderJid;
+
+                console.log(`[${sessionId}] 🔥🔥🔥 DATOS DE EMISIÓN:`, {
+                    isFromMe: msg.key.fromMe,
+                    sockUserId: sockUserId,
+                    phoneNumber: phoneNumber,
+                    actualFrom: actualFrom,
                     chatJid: senderJid,
+                    sessionIdEmit: `session-${sessionId}`
+                });
+
+                const messageData = {
+                    id: messageId,
+                    from: actualFrom,  // 🔥 Corregido: TU número si isFromMe=true
+                    chatJid: senderJid,  // Siempre es el contacto/chat
                     message: textContent,
                     text: textContent,
                     timestamp: new Date(msgTime).toISOString(),
@@ -4826,7 +4841,16 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     isFromMe: Boolean(msg.key.fromMe),
                     isGroup: senderJid.includes('@g.us'),
                     status: msg.key.fromMe ? 'sent' : 'received'
-                });
+                };
+
+                // Emitir a la sala del sessionId temporal
+                io.to(`session-${sessionId}`).emit('message', messageData);
+
+                // 🔥 TAMBIÉN emitir a la sala del phoneNumber (si es diferente del sessionId)
+                if (phoneNumber && phoneNumber !== sessionId) {
+                    io.to(`session-${phoneNumber}`).emit('message', messageData);
+                    console.log(`[${sessionId}] ✅✅✅ TAMBIÉN EMITIDO a session-${phoneNumber}`);
+                }
 
                 console.log(`[${sessionId}] ✅✅✅ EMITIDO a session-${sessionId}`);
             }
@@ -8675,12 +8699,13 @@ async function getDashboardStats(sessionId) {
                 stats.campanasActivas = campanas[0].activas || 0;
                 stats.campanasPendientes = campanas[0].pendientes || 0;
 
-                // CONSULTA 4: Agentes y líneas activas (datos globales)
+                // CONSULTA 4: Agentes y líneas activas (filtrado por admin_phone del usuario actual)
                 const [globales] = await connection.execute(
                     `SELECT
-                        (SELECT COUNT(*) FROM users WHERE status = 'active') as agentes,
-                        (SELECT COUNT(*) FROM user_sessions WHERE is_active = 1) as lineas
-                    FROM DUAL`
+                        (SELECT COUNT(*) FROM users WHERE status = 'active' AND role = 'agent' AND admin_phone = ?) as agentes,
+                        (SELECT COUNT(*) FROM user_sessions WHERE is_active = 1 AND session_id = ?) as lineas
+                    FROM DUAL`,
+                    [sessionFilter, sessionFilter]
                 );
                 stats.agentesActivos = globales[0].agentes || 0;
                 stats.lineasActivas = globales[0].lineas || 0;

@@ -21,7 +21,9 @@ root.render(
 // or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
 reportWebVitals();
 
-// Register Service Worker for PWA
+// Service Worker DESHABILITADO - Causaba problemas de caché
+// Si necesitas eliminar el SW antiguo, visita: https://web.whats-flow.com/clear-cache.html
+/*
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/service-worker.js')
@@ -31,5 +33,17 @@ if ('serviceWorker' in navigator) {
       .catch(registrationError => {
         console.log('SW registration failed: ', registrationError);
       });
+  });
+}
+*/
+
+// Desregistrar Service Workers existentes
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(registrations => {
+    for (const registration of registrations) {
+      registration.unregister().then(() => {
+        console.log('✅ Service Worker desregistrado:', registration.scope);
+      });
+    }
   });
 }

@@ -529,11 +529,18 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       // LOG DE DEBUG: Capturar TODOS los eventos para debugging
       newSocket.onAny((eventName: string, ...args: any[]) => {
         console.log(`🔔 [SOCKET-EVENT] Evento recibido: ${eventName}`, args);
+        if (eventName === 'message') {
+          console.log(`%c📨 EVENTO MESSAGE DETECTADO`, 'background: #ff0000; color: white; font-size: 16px; padding: 5px;', args);
+        }
       });
 
       newSocket.on('message', (newMessage: WhatsAppMessage) => {
+        console.log('%c🎉🎉🎉 LISTENER MESSAGE EJECUTÁNDOSE', 'background: #00ff00; color: black; font-size: 16px; padding: 5px;');
+
         // 🚫 FILTRO: Agentes NO deben procesar eventos en WhatsAppContext
         const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+        console.log('🔍 Verificando rol de usuario:', { userRole, sessionStorage: sessionStorage.getItem('userRole'), localStorage: localStorage.getItem('userRole') });
+
         if (userRole === 'agent') {
           console.log('🚫 [WhatsAppContext] Ignorando mensaje - Usuario es agente (debe usar AgentDashboardPro)');
           return;
