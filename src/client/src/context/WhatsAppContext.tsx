@@ -609,13 +609,48 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
         if (isActiveChat) {
           setMessages(prev => {
-            const exists = prev.some(msg => msg.id === mappedMessage.id);
-            if (exists) {
+            // ✅ DEDUPLICACIÓN MEJORADA:
+            // 1. Buscar por ID exacto del servidor
+            // 2. Buscar por ID temporal (temp-*) si el mensaje es mío
+            // 3. No duplicar si el contenido y timestamp son iguales
+            
+            const messageExists = prev.some(msg => {
+              // Mismo ID del servidor
+              if (msg.id === mappedMessage.id) {
+                console.log('📝 Mensaje duplicado por ID exacto, ignorando:', mappedMessage.id);
+                return true;
+              }
+              
+              // Si es mensaje propio y hay un temporal con el mismo contenido y chatJid
+              if (mappedMessage.isFromMe && msg.id.startsWith('temp-') && 
+                  msg.message === mappedMessage.message &&
+                  msg.chatJid === mappedMessage.chatJid &&
+                  Math.abs(new Date(msg.timestamp).getTime() - new Date(mappedMessage.timestamp).getTime()) < 5000) {
+                console.log('📝 Mensaje duplicado (temporal detectado), reemplazando:', msg.id, '→', mappedMessage.id);
+                // Reemplazar el temporal con el real
+                return false; // Permitir que se agregue, pero removeremos el temporal
+              }
+              
+              return false;
+            });
+            
+            if (messageExists && !prev.some(msg => msg.id.startsWith('temp-') && msg.message === mappedMessage.message)) {
               console.log('📝 Mensaje duplicado, ignorando:', mappedMessage.id);
               return prev;
             }
+            
+            // Remover mensaje temporal si existe y agregar el real
+            let filteredMessages = prev;
+            if (mappedMessage.isFromMe) {
+              filteredMessages = prev.filter(msg => 
+                !(msg.id.startsWith('temp-') && 
+                  msg.message === mappedMessage.message &&
+                  msg.chatJid === mappedMessage.chatJid)
+              );
+            }
+            
             console.log('✅✅✅ AGREGANDO MENSAJE AL CHAT ACTIVO:', mappedMessage.id, mappedMessage.message?.substring(0, 50));
-            const newMessages = [...prev, mappedMessage].sort((a, b) =>
+            const newMessages = [...filteredMessages, mappedMessage].sort((a, b) =>
               new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
             );
             console.log(`📊 Total mensajes en chat: ${newMessages.length}`);

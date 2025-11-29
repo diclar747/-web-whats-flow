@@ -2,6 +2,7 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const express = require('express');
+const compression = require('compression');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, downloadMediaMessage } = require('@whiskeysockets/baileys');
@@ -165,6 +166,20 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+// ✅ Compression middleware para optimizar transferencia
+app.use(compression({
+    level: 6,              // Nivel 1-9 (6 es balance óptimo)
+    threshold: 1024,       // Solo comprimir respuestas > 1KB
+    type: [
+        'application/json',
+        'application/javascript',
+        'text/css',
+        'text/html',
+        'text/plain'
+    ]
+}));
+
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.options('*', cors(corsOptions));
@@ -186,9 +201,7 @@ const publicRoutes = [
     '/api/register-session',
     '/api/logout-session',
     '/health',
-    '/api/subscriptions/webhook',
-    '/api/pwa/subscribe',
-    '/api/pwa/test-notification'
+    '/api/subscriptions/webhook'
 ];
 
 // 🔐 MIDDLEWARE TEMPORALMENTE DESACTIVADO
@@ -7866,18 +7879,44 @@ app.post('/api/send/document', async (req, res) => {
     }
 });
 
-// Middleware para servir archivos estáticos
-app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
-app.use('/media', express.static(path.join(__dirname, '../../media')));
-app.use('/status-media', express.static(path.join(__dirname, 'public/status-media')));
+// ✅ Middleware para servir archivos estáticos CON cache optimizado
+app.use('/uploads', express.static(path.join(__dirname, '../../uploads'), {
+    maxAge: '24h',
+    etag: false
+}));
 
-// Servir archivos estáticos del frontend React con headers no-cache
+app.use('/media', express.static(path.join(__dirname, '../../media'), {
+    maxAge: '24h',
+    etag: false
+}));
+
+app.use('/status-media', express.static(path.join(__dirname, 'public/status-media'), {
+    maxAge: '24h',
+    etag: false
+}));
+
+// ✅ Servir archivos estáticos del frontend React CON cache inteligente
 app.use(express.static(path.join(__dirname, 'public'), {
+    maxAge: '1d',
+    etag: false,
     setHeaders: (res, filepath) => {
-        if (filepath.endsWith('.html') || filepath.endsWith('.js')) {
-            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        // HTML: NO cachear (cambios en deployment)
+        if (filepath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
             res.setHeader('Pragma', 'no-cache');
             res.setHeader('Expires', '0');
+        }
+        // JavaScript/CSS: Cachear con versioning (build agrega hash)
+        else if (filepath.match(/\.(js|css)$/)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+        // Imágenes: Cachear por 7 días
+        else if (filepath.match(/\.(png|jpg|jpeg|gif|svg|ico|webp)$/)) {
+            res.setHeader('Cache-Control', 'public, max-age=604800');
+        }
+        // Otros: Cachear por 1 día
+        else {
+            res.setHeader('Cache-Control', 'public, max-age=86400');
         }
     }
 }));
@@ -18465,11 +18504,9 @@ const statusesRouter = require('./routes/statuses')(app, io);
 app.use('/api/statuses', statusesRouter);
 console.log('✅ Sistema de Estados de WhatsApp cargado correctamente');
 
-// ============= ENDPOINTS DE PWA (Progressive Web App) =============
-const pwaRouter = require('./routes/pwa')(app, io);
-app.use('/api/pwa', pwaRouter);
-console.log('✅ Sistema PWA de publicación de estados cargado correctamente');
-// ============= FIN ENDPOINTS DE PWA =============
+// ============= PWA REMOVIDA - NO REQUERIDA =============
+// Los endpoints PWA han sido eliminados para optimización
+// ============= FIN PWA =============
 
 
 // Endpoint para obtener/actualizar la configuración de sincronización

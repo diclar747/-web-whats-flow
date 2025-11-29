@@ -5,7 +5,7 @@ import './styles/modern.css';
 import App from './App';
 import reportWebVitals from './reportWebVitals';
 
-// Version 2.0.0 - WhatsApp Groups Removed
+// Version 3.0.0 - PWA Removed, Optimized for Speed
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
@@ -16,34 +16,21 @@ root.render(
   </React.StrictMode>
 );
 
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
+// Performance monitoring
 reportWebVitals();
 
-// Service Worker DESHABILITADO - Causaba problemas de caché
-// Si necesitas eliminar el SW antiguo, visita: https://web.whats-flow.com/clear-cache.html
-/*
+// ✅ Desregistrar todos los Service Workers (PWA removal)
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js')
-      .then(registration => {
-        console.log('SW registered: ', registration);
-      })
-      .catch(registrationError => {
-        console.log('SW registration failed: ', registrationError);
+    navigator.serviceWorker.getRegistrations().then(registrations => {
+      registrations.forEach(registration => {
+        registration.unregister().then(() => {
+          console.log('✅ Service Worker removed:', registration.scope);
+        });
       });
+    }).catch(error => {
+      console.log('No service workers to remove:', error);
+    });
   });
 }
-*/
 
-// Desregistrar Service Workers existentes
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(registrations => {
-    for (const registration of registrations) {
-      registration.unregister().then(() => {
-        console.log('✅ Service Worker desregistrado:', registration.scope);
-      });
-    }
-  });
-}
