@@ -13571,87 +13571,91 @@ app.post('/api/auth/login', async (req, res) => {
             // Para TODOS los usuarios (admin, agente, supervisor), obtener el sessionId activo del sistema
             let sessionId = null;
 
-            // IMPORTANTE: Cada usuario tiene su propio session_id vinculado en la tabla users
-            // Primero buscar si este usuario tiene un session_id asignado
-            const [userSessionData] = await connection.execute(
-                'SELECT session_id FROM users WHERE id = ? AND session_id IS NOT NULL',
-                [user.id]
-            );
-
-            if (userSessionData.length > 0 && userSessionData[0].session_id) {
-                sessionId = userSessionData[0].session_id;
-                console.log(`[AUTH] ✅ Usuario ${email} (${user.role}) usando su sesión asignada: ${sessionId}`);
-
-                // Verificar que la sesión esté activa en user_sessions
-                const [sessionCheck] = await connection.execute(
-                    'SELECT session_id, phone_number, is_active FROM user_sessions WHERE session_id = ?',
-                    [sessionId]
+            // ✅ PRIORIDAD 1: Si es AGENTE o SUPERVISOR, SIEMPRE usar session_id del ADMIN
+            // El agente NO debe usar su propio session_id
+            if (user.role === 'agent' || user.role === 'supervisor') {
+                console.log(`[AUTH] 🔍 ${user.role.toUpperCase()} ${email} - buscando sesión de su admin...`);
+                
+                const [agentData] = await connection.execute(
+                    'SELECT admin_phone FROM users WHERE id = ?',
+                    [user.id]
                 );
 
-                if (sessionCheck.length > 0) {
-                    if (!sessionCheck[0].is_active) {
-                        console.log(`[AUTH] ⚠️ La sesión ${sessionId} existe pero no está activa`);
-                    } else {
-                        console.log(`[AUTH] ✅ Sesión ${sessionId} está activa con número: ${sessionCheck[0].phone_number || 'sin vincular'}`);
-                    }
-                } else {
-                    console.log(`[AUTH] ⚠️ Sesión ${sessionId} no encontrada en user_sessions - usuario debe escanear QR`);
-                }
-            } else {
-                console.log(`[AUTH] ⚠️ Usuario ${email} no tiene session_id asignado en su cuenta`);
+                if (agentData.length > 0 && agentData[0].admin_phone) {
+                    const adminPhone = agentData[0].admin_phone;
+                    console.log(`[AUTH] 🔍 ${user.role} ${email} pertenece al admin: ${adminPhone}`);
 
-                // Si es AGENTE, buscar session_id del admin específico que lo creó
-                if (user.role === 'agent' || user.role === 'supervisor') {
-                    // 🔥 Primero obtener el admin_phone del agente
-                    const [agentData] = await connection.execute(
-                        'SELECT admin_phone FROM users WHERE id = ?',
-                        [user.id]
+                    // Buscar el session_id del admin específico
+                    const [adminUser] = await connection.execute(
+                        'SELECT session_id, name FROM users WHERE phone = ? AND role = "admin" AND session_id IS NOT NULL',
+                        [adminPhone]
                     );
 
-                    if (agentData.length > 0 && agentData[0].admin_phone) {
-                        const adminPhone = agentData[0].admin_phone;
-                        console.log(`[AUTH] 🔍 Agente ${email} pertenece al admin: ${adminPhone}`);
+                    if (adminUser.length > 0 && adminUser[0].session_id) {
+                        sessionId = adminUser[0].session_id;
+                        console.log(`[AUTH] ✅ ${user.role} ${email} usando sesión de su admin: ${adminUser[0].name} (${sessionId})`);
 
-                        // Buscar el session_id del admin específico
-                        const [adminUser] = await connection.execute(
-                            'SELECT session_id, name FROM users WHERE phone = ? AND role = "admin"',
-                            [adminPhone]
+                        // Verificar que la sesión esté activa
+                        const [sessionCheck] = await connection.execute(
+                            'SELECT is_active, phone_number FROM user_sessions WHERE session_id = ?',
+                            [sessionId]
                         );
 
-                        if (adminUser.length > 0 && adminUser[0].session_id) {
-                            sessionId = adminUser[0].session_id;
-                            console.log(`[AUTH] ✅ Agente ${email} usando sesión de su admin: ${adminUser[0].name} (${sessionId})`);
-
-                            // Verificar que la sesión esté activa
-                            const [sessionCheck] = await connection.execute(
-                                'SELECT is_active FROM user_sessions WHERE session_id = ?',
-                                [sessionId]
-                            );
-
-                            if (sessionCheck.length === 0 || !sessionCheck[0].is_active) {
-                                console.log(`[AUTH] ⚠️ Sesión ${sessionId} del admin no está activa - agente debe esperar que admin conecte WhatsApp`);
-                                sessionId = null;
-                            }
+                        if (sessionCheck.length > 0 && sessionCheck[0].is_active) {
+                            console.log(`[AUTH] ✅ Sesión ${sessionId} del admin está ACTIVA con número: ${sessionCheck[0].phone_number}`);
                         } else {
-                            console.log(`[AUTH] ⚠️ Admin ${adminPhone} no tiene session_id asignado - admin debe conectar WhatsApp primero`);
+                            console.log(`[AUTH] ⚠️ Sesión ${sessionId} del admin NO está activa - agente debe esperar que admin conecte WhatsApp`);
+                            sessionId = null;
                         }
                     } else {
-                        console.log(`[AUTH] ⚠️ Agente ${email} no tiene admin_phone asignado - debe ser configurado por un admin`);
+                        console.log(`[AUTH] ❌ Admin ${adminPhone} no tiene session_id activo - admin debe conectar WhatsApp primero`);
                     }
+                } else {
+                    console.log(`[AUTH] ❌ ${user.role} ${email} no tiene admin_phone asignado`);
                 }
-                // Si es SUPER ADMIN, puede usar cualquier sesión disponible para administrar
-                else if (user.role === 'super_admin' || user.role === 'superadmin') {
-                    const [anySessions] = await connection.execute(
-                        `SELECT session_id, phone_number FROM user_sessions
-                         WHERE is_active = true
-                         ORDER BY last_activity DESC
-                         LIMIT 1`
+            } 
+            // ✅ PRIORIDAD 2: Si es ADMIN, usar su propio session_id
+            else if (user.role === 'admin') {
+                const [userSessionData] = await connection.execute(
+                    'SELECT session_id FROM users WHERE id = ? AND session_id IS NOT NULL',
+                    [user.id]
+                );
+
+                if (userSessionData.length > 0 && userSessionData[0].session_id) {
+                    sessionId = userSessionData[0].session_id;
+                    console.log(`[AUTH] ✅ Admin ${email} usando su sesión asignada: ${sessionId}`);
+
+                    // Verificar que la sesión esté activa
+                    const [sessionCheck] = await connection.execute(
+                        'SELECT session_id, phone_number, is_active FROM user_sessions WHERE session_id = ?',
+                        [sessionId]
                     );
 
-                    if (anySessions.length > 0) {
-                        sessionId = anySessions[0].session_id;
-                        console.log(`[AUTH] ✅ Super Admin ${email} puede ver sesión activa: ${sessionId} (administración)`);
+                    if (sessionCheck.length > 0) {
+                        if (!sessionCheck[0].is_active) {
+                            console.log(`[AUTH] ⚠️ La sesión ${sessionId} existe pero no está activa`);
+                        } else {
+                            console.log(`[AUTH] ✅ Sesión ${sessionId} está activa con número: ${sessionCheck[0].phone_number || 'sin vincular'}`);
+                        }
+                    } else {
+                        console.log(`[AUTH] ⚠️ Sesión ${sessionId} no encontrada en user_sessions`);
                     }
+                } else {
+                    console.log(`[AUTH] ⚠️ Admin ${email} no tiene session_id asignado - debe escanear QR`);
+                }
+            }
+            // ✅ PRIORIDAD 3: Si es SUPER ADMIN, puede usar cualquier sesión disponible
+            else if (user.role === 'super_admin' || user.role === 'superadmin') {
+                const [anySessions] = await connection.execute(
+                    `SELECT session_id, phone_number FROM user_sessions
+                     WHERE is_active = true
+                     ORDER BY last_activity DESC
+                     LIMIT 1`
+                );
+
+                if (anySessions.length > 0) {
+                    sessionId = anySessions[0].session_id;
+                    console.log(`[AUTH] ✅ Super Admin ${email} - sesión activa disponible: ${sessionId} (${anySessions[0].phone_number})`);
                 }
             }
 
