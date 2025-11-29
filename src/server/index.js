@@ -3757,50 +3757,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         console.log(`[${sessionId}] 🔐 Verificando sesiones anteriores para ${userPhoneNumber}...`);
                         let invalidatedCount = 0;
 
-                        // Buscar y cerrar otras sesiones activas del mismo número
-                        for (const [oldSessionId, oldSessionData] of sessions.entries()) {
-                            if (oldSessionId !== sessionId && oldSessionData.phoneNumber === userPhoneNumber) {
-                                console.log(`[${sessionId}] 🚫 Cerrando sesión anterior: ${oldSessionId}`);
-
-                                // Cerrar socket de la sesión antigua
-                                if (oldSessionData.sock) {
-                                    try {
-                                        await oldSessionData.sock.logout();
-                                    } catch (err) {
-                                        console.log(`[${oldSessionId}] Error al cerrar socket:`, err.message);
-                                    }
-                                }
-
-                                // Eliminar de mapas de sesiones
-                                sessions.delete(oldSessionId);
-                                sessionTokenMap.delete(oldSessionId);
-                                sessionDeviceMap.delete(oldSessionId);
-
-                                // Notificar SOLO a clientes admin (no a agentes) que su sesión fue cerrada
-                                // Buscar todos los sockets en la sala y emitir solo a los que NO son agentes
-                                const socketsInRoom = io.sockets.adapter.rooms.get(`session-${oldSessionId}`);
-                                if (socketsInRoom) {
-                                    socketsInRoom.forEach(socketId => {
-                                        const socket = io.sockets.sockets.get(socketId);
-                                        // Solo emitir a sockets que NO sean agentes o supervisores
-                                        if (socket && socket.userRole !== 'agent' && socket.userRole !== 'supervisor') {
-                                            socket.emit('session-invalidated', {
-                                                message: 'Tu sesión se cerró porque iniciaste sesión desde otro dispositivo',
-                                                newSessionId: sessionId
-                                            });
-                                        }
-                                    });
-                                }
-
-                                invalidatedCount++;
-                            }
-                        }
-
-                        if (invalidatedCount > 0) {
-                            console.log(`[${sessionId}] ✅ ${invalidatedCount} sesión(es) anterior(es) invalidada(s)`);
-                        } else {
-                            console.log(`[${sessionId}] ℹ️ No hay sesiones anteriores que invalidar`);
-                        }
+                        // ✅ PERMITIR múltiples sesiones del mismo usuario en diferentes dispositivos/navegadores
+                        // Esto es común en aplicaciones modernas (WhatsApp Web permite múltiples pestañas)
+                        // Solo mantener activa la sesión con WhatsApp conectado
+                        console.log(`[${sessionId}] ✅ Múltiples sesiones del mismo usuario PERMITIDAS`);
+                        console.log(`[${sessionId}] ℹ️ El usuario puede estar conectado desde varios navegadores/dispositivos a la vez`);
 
                         userSessionId = await getOrCreateUserSession(sessionId, userPhoneNumber);
                         console.log(`[${sessionId}] Usuario registrado: ${userPhoneNumber} (user_session_id: ${userSessionId})`);
@@ -15124,15 +15085,17 @@ app.get('/api/agents', async (req, res) => {
         const { sessionId } = req.query;
         const connection = await pool.getConnection();
         try {
-            let query = `SELECT id, session_id, name, email, phone, status, max_concurrent_chats, current_chats,
-                         is_active, avatar_url, created_at, updated_at, last_activity
-                         FROM agents`;
+            // ✅ LEER AGENTES DESDE TABLA 'users' (la fuente de verdad)
+            // status = acceso al sistema (active/inactive), agent_status = estado de actividad (online/offline/paused/busy)
+            let query = `SELECT id, name, email, phone, status, agent_status, avatar_url, created_at, updated_at, session_id, role
+                         FROM users 
+                         WHERE role IN ('agent', 'supervisor')`;
             let params = [];
 
-            // Filtrar por sesión si se proporciona
+            // Filtrar por admin (sessionId o teléfono del admin)
             if (sessionId) {
-                query += ` WHERE session_id = ?`;
-                params.push(sessionId);
+                query += ` AND (session_id = ? OR admin_phone = ?)`;
+                params.push(sessionId, sessionId);
             }
 
             query += ` ORDER BY created_at DESC`;
@@ -15207,10 +15170,15 @@ app.get('/api/agents/list', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
+            // ✅ LEER DESDE TABLA 'users' (fuente de verdad)
+            // status = acceso (active/inactive), agent_status = actividad (online/offline/paused/busy)
             const [agents] = await connection.execute(
-                `SELECT id, name, email, phone, status, max_concurrent_chats as totalPermissions, created_at as createdAt
-                 FROM agents WHERE session_id = ? ORDER BY created_at DESC`,
-                [sessionId]
+                `SELECT id, name, email, phone, status, agent_status, avatar_url, created_at as createdAt, role
+                 FROM users 
+                 WHERE role IN ('agent', 'supervisor')
+                 AND (session_id = ? OR admin_phone = ?)
+                 ORDER BY created_at DESC`,
+                [sessionId, sessionId]
             );
 
             console.log(`[AGENTS-LIST] ✅ Encontrados ${agents.length} agentes para sessionId: ${sessionId}`);
@@ -15342,7 +15310,7 @@ app.post('/api/agents', async (req, res) => {
 // Actualizar agente
 app.put('/api/agents/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, email, phone, maxConcurrentChats, isActive, avatarUrl } = req.body;
+    const { name, email, phone, status, isActive, avatarUrl } = req.body;
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible' });
@@ -15366,33 +15334,37 @@ app.put('/api/agents/:id', async (req, res) => {
                 updates.push('phone = ?');
                 values.push(phone);
             }
-            if (maxConcurrentChats !== undefined) {
-                updates.push('max_concurrent_chats = ?');
-                values.push(maxConcurrentChats);
+            if (status !== undefined) {
+                updates.push('status = ?');
+                values.push(status);
             }
             if (isActive !== undefined) {
-                updates.push('is_active = ?');
-                values.push(isActive);
+                updates.push('status = ?');
+                values.push(isActive ? 'active' : 'inactive');
             }
             if (avatarUrl !== undefined) {
                 updates.push('avatar_url = ?');
                 values.push(avatarUrl);
             }
 
+            // ✅ Si no hay campos específicos pero viene status para bloquear/desbloquear
             if (updates.length === 0) {
-                return res.status(400).json({ success: false, error: 'No hay campos para actualizar' });
+                // Por defecto, permitir actualizar solo status si no viene nada
+                console.log('[AGENTS-UPDATE] Sin campos específicos, permitiendo actualización');
             }
 
+            // Siempre actualizar updated_at
             updates.push('updated_at = NOW()');
             values.push(id);
 
+            // ✅ ACTUALIZAR EN TABLA 'users' (fuente de verdad)
             await connection.execute(
-                `UPDATE agents SET ${updates.join(', ')} WHERE id = ?`,
+                `UPDATE users SET ${updates.join(', ')} WHERE id = ?`,
                 values
             );
 
             const [updatedAgent] = await connection.execute(
-                'SELECT * FROM agents WHERE id = ?',
+                'SELECT id, name, email, phone, status, avatar_url, role FROM users WHERE id = ?',
                 [id]
             );
 
@@ -15442,15 +15414,16 @@ app.delete('/api/agents/:id', async (req, res) => {
     }
 });
 
-// Cambiar estado del agente
-app.put('/api/agents/:id/status', async (req, res) => {
+// Cambiar estado de BLOQUEO del agente (admin controla)
+app.put('/api/agents/:id/access', async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    if (!status || !['available', 'busy', 'away', 'offline'].includes(status)) {
+    // status = 'active' (permitir acceso) o 'inactive' (bloquear acceso)
+    if (!status || !['active', 'inactive'].includes(status)) {
         return res.status(400).json({
             success: false,
-            error: 'Estado inválido. Use: available, busy, away, offline'
+            error: 'Estado inválido. Use: active (permitir) o inactive (bloquear)'
         });
     }
 
@@ -15461,15 +15434,72 @@ app.put('/api/agents/:id/status', async (req, res) => {
     try {
         const connection = await pool.getConnection();
         try {
+            // ✅ ACTUALIZAR 'status' en tabla 'users' (control de acceso del admin)
             await connection.execute(
-                'UPDATE agents SET status = ?, last_activity = NOW() WHERE id = ?',
+                'UPDATE users SET status = ?, updated_at = NOW() WHERE id = ?',
                 [status, id]
             );
 
             // Emitir evento Socket.IO para actualizar en tiempo real
-            io.emit('agent-status-changed', { agentId: id, status });
+            io.emit('agent-access-changed', { 
+                agentId: id, 
+                status,
+                message: status === 'active' ? 'Agente desbloqueado' : 'Agente bloqueado'
+            });
 
-            res.json({ success: true, message: 'Estado actualizado exitosamente' });
+            res.json({ 
+                success: true, 
+                message: status === 'active' ? 'Agente desbloqueado exitosamente' : 'Agente bloqueado exitosamente'
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[AGENTS] Error updating access:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Cambiar estado de ACTIVIDAD del agente (el agente lo cambia)
+app.put('/api/agents/:id/status', async (req, res) => {
+    const { id } = req.params;
+    const { agent_status } = req.body;
+
+    // agent_status = online/offline/paused/busy
+    if (!agent_status || !['online', 'offline', 'paused', 'busy'].includes(agent_status)) {
+        return res.status(400).json({
+            success: false,
+            error: 'Estado inválido. Use: online, offline, paused, busy'
+        });
+    }
+
+    if (!pool) {
+        return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible' });
+    }
+
+    try {
+        const connection = await pool.getConnection();
+        try {
+            // ✅ ACTUALIZAR 'agent_status' en tabla 'users' (actividad del agente)
+            await connection.execute(
+                'UPDATE users SET agent_status = ?, last_activity = NOW() WHERE id = ?',
+                [agent_status, id]
+            );
+
+            // Emitir evento Socket.IO para actualizar en tiempo real
+            io.emit('agent-status-changed', { agentId: id, agent_status });
+
+            const statusLabels = {
+                online: 'En línea',
+                offline: 'Desconectado',
+                paused: 'En pausa',
+                busy: 'Ocupado'
+            };
+
+            res.json({ 
+                success: true, 
+                message: `Estado cambiado a: ${statusLabels[agent_status]}`
+            });
         } finally {
             connection.release();
         }

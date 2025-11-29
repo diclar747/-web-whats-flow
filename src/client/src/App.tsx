@@ -504,7 +504,10 @@ const App: React.FC = () => {
     initializeSession();
   }, []);
 
-  // Listener para detectar cuando la sesión fue cerrada en otro dispositivo
+  // ✅ DESACTIVADO: Permitir múltiples sesiones del mismo usuario
+  // Las aplicaciones modernas (WhatsApp Web, Gmail, etc.) permiten múltiples sesiones simultaneas
+  // El usuario puede estar conectado desde varios navegadores/dispositivos a la vez
+  /*
   useEffect(() => {
     // Solo activar si hay usuario logueado
     const userId = sessionStorage.getItem('userId');
@@ -542,6 +545,7 @@ const App: React.FC = () => {
       };
     });
   }, [user]);
+  */
 
   // Listener para eventos de sesión invalidada desde SocketContext
   useEffect(() => {

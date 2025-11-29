@@ -67,17 +67,21 @@ interface AgentsManagementModuleProps {
 }
 
 type AgentStatus = 'online' | 'offline' | 'paused' | 'busy';
+type AgentAccess = 'active' | 'inactive' | 'suspended';
 
 interface Agent {
   id: string;
   name: string;
   email: string;
   phone?: string;
-  status: AgentStatus;
-  is_active: boolean;
+  status: AgentAccess;            // ✅ ACCESO: active/inactive (control del admin)
+  agent_status: AgentStatus;      // ✅ ACTIVIDAD: online/offline/paused/busy
   created_at: string;
+  createdAt?: string;
   last_activity?: string;
+  avatar_url?: string;
   max_concurrent_chats?: number;
+  role?: string;
 }
 
 interface SnackbarState {
@@ -146,9 +150,9 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
       );
     }
 
-    // Filtrar por estado
+    // Filtrar por estado de ACTIVIDAD (online/offline/paused/busy)
     if (statusFilter !== 'all') {
-      filtered = filtered.filter(agent => agent.status === statusFilter);
+      filtered = filtered.filter(agent => agent.agent_status === statusFilter as AgentStatus);
     }
 
     setFilteredAgents(filtered);
@@ -160,9 +164,17 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
     const newSocket = io(socketURL);
     setSocket(newSocket);
 
-    // Escuchar actualizaciones de estado de agentes
-    newSocket.on('agent-status-changed', (data: { agentId: string; status: AgentStatus }) => {
-      console.log('🔔 [AGENTS-MODULE] Estado cambiado:', data);
+    // ✅ Escuchar actualizaciones de ACTIVIDAD (online/offline/paused/busy)
+    newSocket.on('agent-status-changed', (data: { agentId: string; agent_status: AgentStatus }) => {
+      console.log('🔔 [AGENTS-MODULE] Estado de actividad cambiado:', data);
+      setAgents(prev => prev.map(agent =>
+        String(agent.id) === String(data.agentId) ? { ...agent, agent_status: data.agent_status } : agent
+      ));
+    });
+
+    // ✅ Escuchar actualizaciones de ACCESO (bloqueado/desbloqueado)
+    newSocket.on('agent-access-changed', (data: { agentId: string; status: AgentAccess }) => {
+      console.log('🔔 [AGENTS-MODULE] Acceso cambió:', data);
       setAgents(prev => prev.map(agent =>
         String(agent.id) === String(data.agentId) ? { ...agent, status: data.status } : agent
       ));
@@ -326,14 +338,18 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
   // Bloquear/Desbloquear agente
   const handleToggleBlockAgent = async (agent: Agent) => {
     try {
-      const response = await fetch(`${getAPIBaseURL()}/api/agents/${agent.id}`, {
+      // ✅ USAR ENDPOINT CORRECTO: /api/agents/:id/access
+      // Cambiar entre 'active' (permitir) e 'inactive' (bloquear)
+      const newStatus = agent.status === 'active' ? 'inactive' : 'active';
+      
+      const response = await fetch(`${getAPIBaseURL()}/api/agents/${agent.id}/access`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('agentToken') || sessionStorage.getItem('token')}`
         },
         body: JSON.stringify({
-          is_active: !agent.is_active
+          status: newStatus
         })
       });
 
@@ -341,15 +357,15 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
 
       if (data.success) {
         showSnackbar(
-          agent.is_active ? 'Agente bloqueado' : 'Agente desbloqueado',
+          newStatus === 'inactive' ? 'Agente bloqueado' : 'Agente desbloqueado',
           'success'
         );
         loadAgents();
       } else {
-        showSnackbar(data.error || 'Error al cambiar estado del agente', 'error');
+        showSnackbar(data.error || 'Error al cambiar acceso del agente', 'error');
       }
     } catch (error) {
-      console.error('Error cambiando estado de agente:', error);
+      console.error('Error cambiando acceso de agente:', error);
       showSnackbar('Error de conexión', 'error');
     }
   };
@@ -395,11 +411,11 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
   // Estadísticas de agentes
   const stats = {
     total: agents.length,
-    online: agents.filter(a => a.status === 'online').length,
-    busy: agents.filter(a => a.status === 'busy').length,
-    paused: agents.filter(a => a.status === 'paused').length,
-    offline: agents.filter(a => a.status === 'offline').length,
-    blocked: agents.filter(a => !a.is_active).length
+    online: agents.filter(a => a.agent_status === 'online').length,
+    busy: agents.filter(a => a.agent_status === 'busy').length,
+    paused: agents.filter(a => a.agent_status === 'paused').length,
+    offline: agents.filter(a => a.agent_status === 'offline').length,
+    blocked: agents.filter(a => a.status === 'inactive').length
   };
 
   return (
@@ -593,7 +609,7 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
                               <Circle
                                 sx={{
                                   fontSize: 14,
-                                  color: getStatusColor(agent.status)
+                                  color: getStatusColor(agent.agent_status)
                                 }}
                               />
                             }
@@ -626,14 +642,15 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
                           )}
                         </Stack>
                       </TableCell>
+                      {/* ✅ MOSTRAR ESTADO DE ACTIVIDAD (online/offline/paused/busy) */}
                       <TableCell align="center">
                         <Chip
-                          icon={getStatusIcon(agent.status)}
-                          label={getStatusLabel(agent.status)}
+                          icon={getStatusIcon(agent.agent_status)}
+                          label={getStatusLabel(agent.agent_status)}
                           size="small"
                           sx={{
-                            bgcolor: `${getStatusColor(agent.status)}20`,
-                            color: getStatusColor(agent.status),
+                            bgcolor: `${getStatusColor(agent.agent_status)}20`,
+                            color: getStatusColor(agent.agent_status),
                             fontWeight: 600
                           }}
                         />
@@ -660,10 +677,11 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
                         />
                       </TableCell>
                       <TableCell align="center">
+                        {/* ✅ MOSTRAR STATUS DE ACCESO (bloqueado/activo) - Controlado por admin */}
                         <Chip
-                          label={agent.is_active ? 'Activo' : 'Bloqueado'}
+                          label={agent.status === 'active' ? 'Activo' : 'Bloqueado'}
                           size="small"
-                          color={agent.is_active ? 'success' : 'error'}
+                          color={agent.status === 'active' ? 'success' : 'error'}
                         />
                       </TableCell>
                       <TableCell align="center">
@@ -677,13 +695,14 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
                               <Edit />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title={agent.is_active ? 'Bloquear' : 'Desbloquear'}>
+                          {/* ✅ BLOQUEAR/DESBLOQUEAR - Cambiar status de acceso */}
+                          <Tooltip title={agent.status === 'active' ? 'Bloquear acceso' : 'Permitir acceso'}>
                             <IconButton
                               size="small"
-                              color={agent.is_active ? 'warning' : 'success'}
+                              color={agent.status === 'active' ? 'warning' : 'success'}
                               onClick={() => handleToggleBlockAgent(agent)}
                             >
-                              {agent.is_active ? <Lock /> : <LockOpen />}
+                              {agent.status === 'active' ? <Lock /> : <LockOpen />}
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="Eliminar">
