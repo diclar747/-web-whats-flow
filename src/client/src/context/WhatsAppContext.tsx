@@ -535,7 +535,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       });
 
       newSocket.on('message', (newMessage: WhatsAppMessage) => {
-        console.log('%c🎉🎉🎉 LISTENER MESSAGE EJECUTÁNDOSE', 'background: #00ff00; color: black; font-size: 16px; padding: 5px;');
+        // 🔥 LOG INMEDIATO - debe aparecer SIEMPRE
+        console.error(`\n${'='.repeat(80)}\n🔥🔥🔥 MENSAJE RECIBIDO EN TIEMPO REAL 🔥🔥🔥\nID: ${newMessage.id}\nDe: ${newMessage.from}\nTexto: ${newMessage.message?.substring(0, 50)}\n${'='.repeat(80)}\n`);
 
         // ✅ CORRECCIÓN: TODOS los usuarios deben procesar mensajes en tiempo real
         console.log('🎉🎉🎉 MENSAJE RECIBIDO - INICIANDO PROCESAMIENTO');
@@ -609,51 +610,39 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
         if (isActiveChat) {
           setMessages(prev => {
-            // ✅ DEDUPLICACIÓN MEJORADA:
-            // 1. Buscar por ID exacto del servidor
-            // 2. Buscar por ID temporal (temp-*) si el mensaje es mío
-            // 3. No duplicar si el contenido y timestamp son iguales
+            // ⚡ OPTIMIZACIÓN: Sistema de deduplicación mejorado con caché de IDs
+            const existingIds = new Set(prev.map(msg => msg.id));
             
-            const messageExists = prev.some(msg => {
-              // Mismo ID del servidor
-              if (msg.id === mappedMessage.id) {
-                console.log('📝 Mensaje duplicado por ID exacto, ignorando:', mappedMessage.id);
-                return true;
-              }
-              
-              // Si es mensaje propio y hay un temporal con el mismo contenido y chatJid
-              if (mappedMessage.isFromMe && msg.id.startsWith('temp-') && 
-                  msg.message === mappedMessage.message &&
-                  msg.chatJid === mappedMessage.chatJid &&
-                  Math.abs(new Date(msg.timestamp).getTime() - new Date(mappedMessage.timestamp).getTime()) < 5000) {
-                console.log('📝 Mensaje duplicado (temporal detectado), reemplazando:', msg.id, '→', mappedMessage.id);
-                // Reemplazar el temporal con el real
-                return false; // Permitir que se agregue, pero removeremos el temporal
-              }
-              
-              return false;
-            });
-            
-            if (messageExists && !prev.some(msg => msg.id.startsWith('temp-') && msg.message === mappedMessage.message)) {
-              console.log('📝 Mensaje duplicado, ignorando:', mappedMessage.id);
+            // Si ya existe exactamente el mismo mensaje, ignorar
+            if (existingIds.has(mappedMessage.id)) {
+              console.log('[PERFORMANCE] 📝 Mensaje duplicado por ID exacto, ignorando:', mappedMessage.id);
               return prev;
             }
             
-            // Remover mensaje temporal si existe y agregar el real
-            let filteredMessages = prev;
+            // Para mensajes propios, buscar y reemplazar temporales
             if (mappedMessage.isFromMe) {
-              filteredMessages = prev.filter(msg => 
-                !(msg.id.startsWith('temp-') && 
-                  msg.message === mappedMessage.message &&
-                  msg.chatJid === mappedMessage.chatJid)
+              const tempMessageIndex = prev.findIndex(msg =>
+                msg.id.startsWith('temp-') &&
+                msg.message === mappedMessage.message &&
+                msg.chatJid === mappedMessage.chatJid &&
+                Math.abs(new Date(msg.timestamp).getTime() - new Date(mappedMessage.timestamp).getTime()) < 5000
               );
+              
+              if (tempMessageIndex !== -1) {
+                console.log('[PERFORMANCE] 🔄 Reemplazando mensaje temporal con real:', prev[tempMessageIndex].id, '→', mappedMessage.id);
+                const newMessages = [...prev];
+                newMessages[tempMessageIndex] = mappedMessage;
+                console.log('[PERFORMANCE] ✅ Mensaje reemplazado, total:', newMessages.length);
+                return newMessages;
+              }
             }
             
-            console.log('✅✅✅ AGREGANDO MENSAJE AL CHAT ACTIVO:', mappedMessage.id, mappedMessage.message?.substring(0, 50));
-            const newMessages = [...filteredMessages, mappedMessage].sort((a, b) =>
+            // Agregar nuevo mensaje y ordenar
+            console.log('[PERFORMANCE] ✅✅✅ AGREGANDO NUEVO MENSAJE:', mappedMessage.id, mappedMessage.message?.substring(0, 50));
+            const newMessages = [...prev, mappedMessage].sort((a, b) =>
               new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
             );
-            console.log(`📊 Total mensajes en chat: ${newMessages.length}`);
+            console.log(`[PERFORMANCE] 📊 Total mensajes en chat: ${newMessages.length}`);
             return newMessages;
           });
 
@@ -723,11 +712,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             };
             updatedChats.unshift(newChat);
 
-            // Recargar chats completos desde el servidor para obtener información actualizada
-            console.log('🔄 Recargando lista completa de chats desde el servidor...');
-            if (loadChats && session?.sessionId) {
-              loadChats(session.sessionId);
-            }
+            // ✅ NO recargar lista completa - ya tenemos el chat actualizado
+            // Esto evita latencia y hace el chat INSTANTÁNEO
           }
 
           return updatedChats.sort((a, b) => {

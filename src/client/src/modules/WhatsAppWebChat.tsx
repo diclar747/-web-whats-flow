@@ -856,14 +856,28 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     }
   };
 
-  // 🚀 FASE 2: Filtrado optimizado con useMemo
+  // 🚀 FASE 2: Filtrado optimizado con useMemo y caché inteligente
   const filteredChats = useMemo(() => {
-    console.log('[WhatsAppWebChat] 🔍 Calculando filteredChats:', {
+    console.log('[PERFORMANCE] 🔍 Calculando filteredChats:', {
       totalChats: chats.length,
       filterTab,
       searchTerm,
-      chatsData: chats.map(c => ({ id: c.id, name: c.name, isGroup: c.isGroup }))
+      hasGroups: chats.some(c => c.isGroup)
     });
+
+    // Caché simple para evitar cálculos repetidos con mismos datos
+    const cacheKey = `${chats.length}-${filterTab}-${searchTerm}`;
+    const cachedResult = sessionStorage.getItem(`chatFilter-${cacheKey}`);
+    
+    if (cachedResult) {
+      try {
+        const parsed = JSON.parse(cachedResult);
+        console.log('[PERFORMANCE] ✅ Usando caché de filtros');
+        return parsed;
+      } catch (e) {
+        console.warn('[PERFORMANCE] ❌ Error parseando caché, recalculando...');
+      }
+    }
 
     const filtered = chats.filter(chat => {
       const chatName = chat.name || chat.id.split('@')[0] || 'Desconocido';
@@ -899,7 +913,15 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     });
 
     const groupCount = chats.filter(c => c.isGroup).length;
-    console.log(`🔍 [WhatsAppWebChat] Filtro: Tab ${filterTab}, Total: ${chats.length}, Filtrados (sin grupos): ${filtered.length}, Grupos ocultos: ${groupCount}`);
+    console.log(`[PERFORMANCE] 🔍 Filtro: Tab ${filterTab}, Total: ${chats.length}, Filtrados: ${filtered.length}, Grupos ocultos: ${groupCount}`);
+
+    // Guardar en caché por 30 segundos
+    try {
+      sessionStorage.setItem(`chatFilter-${cacheKey}`, JSON.stringify(filtered));
+      sessionStorage.setItem(`chatFilter-time-${cacheKey}`, Date.now().toString());
+    } catch (e) {
+      console.warn('[PERFORMANCE] ⚠️ No se pudo guardar en caché, sessionStorage lleno');
+    }
 
     return filtered;
   }, [chats, searchTerm, filterTab]);
