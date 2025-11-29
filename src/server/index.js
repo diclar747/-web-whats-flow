@@ -3110,17 +3110,21 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber]
         );
 
-        const chatList = rows.map(row => ({
-            id: row.chat_jid,
-            name: row.contact_name || row.chat_jid.split('@')[0],
-            isGroup: !!row.is_group,
-            lastMessage: row.last_message_text,
-            timestamp: new Date(row.last_message_timestamp).toISOString(),
-            fromMe: !!row.last_message_from_me,
-            status: row.last_message_status,
-            unreadCount: row.unread_count || 0,
-            avatar: row.avatar_url || null // Ahora incluimos el avatar
-        }));
+        const chatList = rows.map(row => {
+            const normalizedJid = normalizeJid(row.chat_jid);
+            const phoneOnly = normalizedJid.split('@')[0];
+            return {
+                id: normalizedJid,
+                name: row.contact_name || phoneOnly,
+                isGroup: !!row.is_group,
+                lastMessage: row.last_message_text,
+                timestamp: new Date(row.last_message_timestamp).toISOString(),
+                fromMe: !!row.last_message_from_me,
+                status: row.last_message_status,
+                unreadCount: row.unread_count || 0,
+                avatar: row.avatar_url && row.avatar_url.trim() ? row.avatar_url : null
+            };
+        });
 
         console.log(`[DB-CHATLIST] Loaded ${chatList.length} chats for phone number ${phoneNumber}`);
         return chatList;
@@ -8157,17 +8161,21 @@ app.get('/api/chats/:sessionId', async (req, res) => {
                         if (chat.id.includes('status@broadcast')) return false;
                         return true;
                     })
-                    .map(chat => ({
-                        id: chat.id,
-                        name: chat.name || chat.subject || chat.id.split('@')[0],
-                        isGroup: chat.id.includes('@g.us'),
-                        lastMessage: chat.lastMessage?.message || 'Sin mensajes',
-                        timestamp: chat.conversationTimestamp ? new Date(chat.conversationTimestamp * 1000).toISOString() : new Date().toISOString(),
-                        fromMe: chat.lastMessage?.key?.fromMe || false,
-                        unreadCount: chat.unreadCount || 0,
-                        avatar: null,
-                        isOnline: !chat.id.includes('@g.us')
-                    }))
+                    .map(chat => {
+                        const normalizedId = normalizeJid(chat.id);
+                        const phoneOnly = normalizedId.split('@')[0];
+                        return {
+                            id: normalizedId,
+                            name: chat.name || chat.subject || phoneOnly,
+                            isGroup: chat.id.includes('@g.us'),
+                            lastMessage: chat.lastMessage?.message || 'Sin mensajes',
+                            timestamp: chat.conversationTimestamp ? new Date(chat.conversationTimestamp * 1000).toISOString() : new Date().toISOString(),
+                            fromMe: chat.lastMessage?.key?.fromMe || false,
+                            unreadCount: chat.unreadCount || 0,
+                            avatar: null,
+                            isOnline: !chat.id.includes('@g.us')
+                        };
+                    })
                     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
                 source = 'memory';

@@ -1158,7 +1158,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                   {(selectedChat.name || '?').charAt(0).toUpperCase()}
                 </Avatar>
                 <Typography variant="body2">
-                  {selectedChat.name || selectedChat.jid.split('@')[0]}
+                  {selectedChat.name || selectedChat.jid.split('@')[0].split(':')[0]}
                 </Typography>
               </Box>
             </Paper>
