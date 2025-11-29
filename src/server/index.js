@@ -8164,36 +8164,13 @@ app.get('/api/chats/:sessionId', async (req, res) => {
     }
 });
 
-// ✅ Alias ligero para cargar lista de chats (compatible con cliente nuevo)
-app.get('/api/chats-list/:sessionId', async (req, res) => {
-    const { sessionId } = req.params;
-    try {
-        // Redireccionar al endpoint existente que ya funciona
-        const response = await fetch(`http://localhost:3002/api/chats/${sessionId}?dateFilter=all`, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' }
-        });
-        const data = await response.json();
-        
-        if (data.success) {
-            // Retornar en formato simplificado
-            res.json({
-                success: true,
-                chats: data.chats,
-                count: data.chats?.length || 0
-            });
-        } else {
-            res.json(data);
-        }
-    } catch (error) {
-        console.error(`[CHATS-LIST] Error:`, error.message);
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            chats: [],
-            count: 0
-        });
-    }
+// ✅ Endpoint alias para cargar lista de chats (compatible con cliente nuevo)
+// Este endpoint es simplemente un wrapper que redirige a /api/chats/
+// NOTA: NO usar fetch aquí - eso causa deadlock. Redirigir HTTP directamente.
+app.get('/api/chats-list/:sessionId', (req, res) => {
+    // Redirigir al endpoint real que ya funciona
+    // El cliente seguirá la redirección automáticamente
+    res.redirect(`/api/chats/${req.params.sessionId}?dateFilter=all`);
 });
 
 // Obtener mensajes de un chat específico
