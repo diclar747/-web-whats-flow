@@ -147,11 +147,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
   const commonReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '👏', '✅', '❌'];
 
-  // ⚡ OPTIMIZACIÓN: Memoizar mensajes filtrados para evitar recalcular en cada render
+  // ⚡ OPTIMIZACIÓN: Memoizar mensajes filtrados con caché inteligente
   const filteredMessages = useMemo(() => {
     if (!messages || messages.length === 0) return [];
 
-    return messages.filter(msg => {
+    console.log(`[PERFORMANCE] Filtrando ${messages.length} mensajes con filtros:`, { dateFilter, quickFilter });
+
+    const filtered = messages.filter(msg => {
       // Filtrar por fecha si está seleccionada
       if (!dateFilter) return true;
       const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
@@ -162,6 +164,9 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       // Si es fecha específica, solo ese día
       return msgDate === dateFilter;
     });
+
+    console.log(`[PERFORMANCE] Mensajes después del filtro: ${filtered.length}`);
+    return filtered;
   }, [messages, dateFilter, quickFilter]);
 
   // ⚡ OPTIMIZACIÓN: Memoizar funciones estables para evitar re-crear en cada render
