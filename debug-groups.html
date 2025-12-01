@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIS GRUPOS - Debug</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .info-bar {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .stat {
+            background: #f0f0f0;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .stat.total {
+            background: #667eea;
+            color: white;
+        }
+        
+        .stat.members {
+            background: #48bb78;
+            color: white;
+        }
+        
+        .groups-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        
+        .group-card {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .group-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0,0,0,0.2);
+        }
+        
+        .group-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .group-icon {
+            width: 50px;
+            height: 50px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        
+        .group-title {
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .group-title h2 {
+            font-size: 18px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 5px;
+        }
+        
+        .group-title .jid {
+            font-size: 12px;
+            opacity: 0.8;
+            word-break: break-all;
+        }
+        
+        .group-body {
+            padding: 20px;
+        }
+        
+        .group-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .info-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+        }
+        
+        .info-label {
+            font-size: 12px;
+            color: #888;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+        }
+        
+        .members-section {
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+            margin-top: 15px;
+        }
+        
+        .members-label {
+            font-size: 12px;
+            color: #888;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .members-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .member {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            font-size: 13px;
+            gap: 8px;
+        }
+        
+        .member-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #667eea;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+        
+        .member-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .member-role {
+            font-size: 11px;
+            background: #e0e7ff;
+            color: #667eea;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .error {
+            background: #fee;
+            border: 1px solid #fcc;
+            color: #c33;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        
+        .empty {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 10px;
+            color: #999;
+        }
+        
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        
+        .badge {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        
+        .scroll-indicator {
+            color: #999;
+            font-size: 11px;
+            font-style: italic;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📱 MIS GRUPOS</h1>
+            <p>Visualización de grupos y miembros en tiempo real</p>
+            <div class="info-bar">
+                <div class="stat total">Total Grupos: <span id="totalGroups">0</span></div>
+                <div class="stat members">Total Miembros: <span id="totalMembers">0</span></div>
+            </div>
+        </div>
+        
+        <div id="content"></div>
+    </div>
+    
+    <script>
+        async function loadGroups() {
+            const content = document.getElementById('content');
+            content.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Cargando grupos...</p>
+                </div>
+            `;
+            
+            try {
+                // Obtener sessionId del localStorage
+                const sessionId = sessionStorage.getItem('sessionId') || localStorage.getItem('sessionId');
+                
+                if (!sessionId) {
+                    throw new Error('No hay sesión activa. Por favor inicia sesión primero.');
+                }
+                
+                // Llamar API para obtener grupos
+                const response = await fetch(`/api/chats/${sessionId}?page=1&limit=100`, {
+                    headers: {
+                        'Authorization': `Bearer ${sessionStorage.getItem('token') || ''}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Error en API: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                const chats = data.chats || data || [];
+                
+                // Filtrar solo grupos
+                const groups = chats.filter(chat => 
+                    chat.id?.includes('@g.us') || 
+                    chat.jid?.includes('@g.us') ||
+                    chat.isGroup === true
+                );
+                
+                if (groups.length === 0) {
+                    content.innerHTML = `
+                        <div class="empty">
+                            <div class="empty-icon">📭</div>
+                            <p>No hay grupos descargados aún</p>
+                        </div>
+                    `;
+                    document.getElementById('totalGroups').textContent = '0';
+                    document.getElementById('totalMembers').textContent = '0';
+                    return;
+                }
+                
+                // Calcular total de miembros
+                let totalMembers = 0;
+                groups.forEach(group => {
+                    totalMembers += (group.members?.length || 0) + (group.participant_list?.length || 0);
+                });
+                
+                document.getElementById('totalGroups').textContent = groups.length;
+                document.getElementById('totalMembers').textContent = totalMembers;
+                
+                // Renderizar grupos
+                let html = '<div class="groups-container">';
+                
+                groups.forEach((group, index) => {
+                    const groupId = group.id || group.jid || '';
+                    const groupName = group.name || group.subject || groupId.split('@')[0];
+                    const members = group.members || group.participant_list || [];
+                    const isActive = group.is_online ? '🟢' : '⚪';
+                    const unreadCount = group.unread_count || group.unreadCount || 0;
+                    
+                    html += `
+                        <div class="group-card">
+                            <div class="group-header">
+                                <div class="group-icon">${isActive} 👥</div>
+                                <div class="group-title">
+                                    <h2>${escapeHtml(groupName)}${unreadCount > 0 ? `<span class="badge">${unreadCount}</span>` : ''}</h2>
+                                    <div class="jid">${escapeHtml(groupId)}</div>
+                                </div>
+                            </div>
+                            
+                            <div class="group-body">
+                                <div class="group-info">
+                                    <div class="info-item">
+                                        <div class="info-label">MIEMBROS</div>
+                                        <div class="info-value">${members.length}</div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="info-label">ESTADO</div>
+                                        <div class="info-value">${group.is_online ? 'Online' : 'Offline'}</div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="info-label">CREADO</div>
+                                        <div class="info-value">${formatDate(group.created_at || group.timestamp)}</div>
+                                    </div>
+                                    <div class="info-item">
+                                        <div class="info-label">ÚLTIMO MSG</div>
+                                        <div class="info-value">${formatDate(group.last_message_time || group.timestamp)}</div>
+                                    </div>
+                                </div>
+                                
+                                ${members.length > 0 ? `
+                                    <div class="members-section">
+                                        <div class="members-label">MIEMBROS (${members.length})</div>
+                                        <div class="members-list">
+                                            ${members.map((member, idx) => `
+                                                <div class="member">
+                                                    <div class="member-avatar">${getMemberInitial(member)}</div>
+                                                    <div class="member-name">${escapeHtml(getMemberName(member))}</div>
+                                                    ${getMemberRole(member) ? `<div class="member-role">${getMemberRole(member)}</div>` : ''}
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                        ${members.length > 5 ? '<div class="scroll-indicator">↓ Desplaza para más</div>' : ''}
+                                    </div>
+                                ` : '<div class="empty" style="background: #f8f9fa; padding: 15px; margin: 0; border-radius: 6px; text-align: center;">Sin miembros</div>'}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += '</div>';
+                content.innerHTML = html;
+                
+            } catch (error) {
+                content.innerHTML = `
+                    <div class="error">
+                        <strong>❌ Error:</strong> ${error.message}
+                        <p style="margin-top: 10px; font-size: 12px;">Asegúrate de tener una sesión activa iniciada.</p>
+                    </div>
+                `;
+                console.error('Error:', error);
+            }
+        }
+        
+        function getMemberInitial(member) {
+            const name = getMemberName(member);
+            return name.charAt(0).toUpperCase();
+        }
+        
+        function getMemberName(member) {
+            if (typeof member === 'string') {
+                return member.split('@')[0];
+            }
+            return member.name || member.notify || member.jid?.split('@')[0] || 'Usuario';
+        }
+        
+        function getMemberRole(member) {
+            if (typeof member === 'string') return '';
+            if (member.admin || member.is_admin) return 'Admin';
+            if (member.owner) return 'Propietario';
+            return '';
+        }
+        
+        function formatDate(dateString) {
+            if (!dateString) return '-';
+            try {
+                const date = new Date(dateString);
+                return date.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
+            } catch {
+                return '-';
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Cargar grupos al abrir
+        loadGroups();
+        
+        // Recargar cada 10 segundos
+        setInterval(loadGroups, 10000);
+    </script>
+</body>
+</html>

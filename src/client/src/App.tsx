@@ -53,6 +53,9 @@ const AppContent: React.FC<{
   React.useEffect(() => {
     if (onNavigate) {
       (window as any).__reactNavigate = navigate;
+      console.log('✅ [AppContent] __reactNavigate asignado', navigate);
+    } else {
+      console.warn('⚠️ [AppContent] onNavigate no está definido, __reactNavigate no se asignará');
     }
   }, [navigate, onNavigate]);
 
@@ -776,13 +779,14 @@ const App: React.FC = () => {
           console.log('✅ [APP] Sesión registrada en el servidor');
           // Navegación fluida al dashboard (sin recarga)
           console.log('🚀 [APP] Navegando al dashboard...');
-          setTimeout(() => {
-            const nav = (window as any).__reactNavigate;
-            if (nav) {
-              nav('/dashboard');
-            }
-            // ✅ ELIMINADO: window.location.href - Usar solo navigate de React Router
-          }, 500);
+          const nav = (window as any).__reactNavigate;
+          if (nav) {
+            console.log('✅ [APP] Usando __reactNavigate');
+            nav('/dashboard');
+          } else {
+            console.warn('⚠️ [APP] __reactNavigate no definido, usando window.location.href');
+            window.location.href = '/dashboard';
+          }
         } else {
           console.error('❌ [APP] Error registrando sesión:', data.error);
           alert('Error al iniciar sesión. Por favor, intenta de nuevo.');

@@ -1,0 +1,31 @@
+{
+  "optimization": {
+    "pagination": {
+      "enabled": true,
+      "pageSize": 50,
+      "loadThreshold": 100
+    },
+    "virtualization": {
+      "enabled": false,
+      "itemSize": 80
+    },
+    "caching": {
+      "enabled": true,
+      "maxCacheSize": 1000,
+      "ttl": 300000
+    },
+    "debouncing": {
+      "enabled": true,
+      "delay": 300
+    },
+    "memoization": {
+      "enabled": true,
+      "deepCompare": false
+    }
+  },
+  "performance": {
+    "maxMessagesPerChat": 5000,
+    "batchUpdates": true,
+    "lazyLoading": true
+  }
+}

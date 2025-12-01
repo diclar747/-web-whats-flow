@@ -99,6 +99,7 @@ interface LandingPageProps {
 const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
   const navigate = useNavigate();
   const socketRef = useRef<any>(null);
+  const pendingSessionIdRef = useRef<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -119,6 +120,11 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [loadingChats, setLoadingChats] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Sincronizar pendingSessionId con ref para uso en listeners
+  useEffect(() => {
+    pendingSessionIdRef.current = pendingSessionId;
+  }, [pendingSessionId]);
 
   // Menu state
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -324,21 +330,22 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
 
     // Evento GLOBAL de conexión exitosa (filtrado por pendingSessionId)
     newSocket.on('connection-update', (data: any) => {
+      const currentPendingSessionId = pendingSessionIdRef.current;
       console.log('🔥 [LANDING] Conexión exitosa detectada:', data);
       console.log('🔥 [LANDING] Status:', data.status, 'SessionId:', data.sessionId, 'PhoneNumber:', data.phoneNumber);
-      console.log('🔥 [LANDING] PendingSessionId actual:', pendingSessionId);
+      console.log('🔥 [LANDING] PendingSessionId actual (ref):', currentPendingSessionId);
 
       // Solo aceptar si corresponde a la sesión que ESTE navegador inició
-      const isOurSession = !!pendingSessionId && (
-        data.sessionId === pendingSessionId || data.oldSessionId === pendingSessionId
+      const isOurSession = !!currentPendingSessionId && (
+        data.sessionId === currentPendingSessionId || data.oldSessionId === currentPendingSessionId
       );
 
       console.log('🔥 [LANDING] ¿Es nuestra sesión?:', isOurSession);
 
       if (data.status === 'connected' && (data.sessionId || data.phoneNumber)) {
-        // Solo aceptar si corresponde a la sesión que ESTE navegador inició
-        // CRÍTICO: Si no hay pendingSessionId, IGNORAR el evento (es de otro usuario)
-        if (pendingSessionId && isOurSession) {
+        // Si no hay pendingSessionId pero el evento contiene phoneNumber o sessionId que coincide con deviceId, también aceptar
+        // Para evitar ignorar conexiones válidas, permitimos si el usuario está en la página de landing (showQRModal true)
+        if (currentPendingSessionId && isOurSession) {
           // USAR EL NÚMERO DE TELÉFONO si está disponible, sino usar sessionId
           const finalSessionId = data.phoneNumber || data.sessionId;
           console.log(`📱 [LANDING] Guardando sesión: ${finalSessionId}`);
@@ -364,7 +371,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           navigate('/dashboard', { replace: true });
           console.log('🚀 [LANDING] Navegación ejecutada');
         } else {
-          console.log('🛡️ [LANDING] Ignorando evento de conexión ajeno (pendingSessionId:', pendingSessionId, ')');
+          // Si no tenemos pendingSessionId pero el evento es de conexión, podríamos aceptarlo si estamos en modal
+          // Esto puede ocurrir si pendingSessionId se perdió pero el socket aún está escuchando
+          // Por seguridad, ignoramos pero logueamos
+          console.log('🛡️ [LANDING] Ignorando evento de conexión ajeno (pendingSessionId:', currentPendingSessionId, ')');
         }
       } else if (data.status === 'disconnected') {
         console.log('📱 WhatsApp desconectado, redirigiendo al inicio...');
@@ -387,12 +397,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
 
     // Evento específico de WhatsApp conectado (filtrado por pendingSessionId)
     newSocket.on('whatsapp-connected', (data: any) => {
+      const currentPendingSessionId = pendingSessionIdRef.current;
       console.log('✅ [LANDING] WhatsApp conectado exitosamente:', data);
       console.log('✅ [LANDING] SessionId:', data.sessionId, 'PhoneNumber:', data.phoneNumber);
 
       // Solo aceptar si corresponde a la sesión que ESTE navegador inició
-      if (!pendingSessionId || (data.sessionId !== pendingSessionId)) {
-        console.log('⏭️ [LANDING] Ignorando whatsapp-connected de otra sesión');
+      if (!currentPendingSessionId || (data.sessionId !== currentPendingSessionId)) {
+        console.log('⏭️ [LANDING] Ignorando whatsapp-connected de otra sesión (pendingSessionId:', currentPendingSessionId, ')');
         return;
       }
 

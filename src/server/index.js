@@ -2381,12 +2381,13 @@ async function createDefaultKanbanBoards(phoneNumber) {
             return;
         }
 
-        // Crear 4 tableros por defecto
+        // Crear 5 tableros por defecto
         const defaultBoards = [
             { name: 'Sin Categoría', color: '#607d8b', order: 0, is_default: 1 },
             { name: 'Interesados', color: '#2196f3', order: 1, is_default: 0 },
             { name: 'Clientes', color: '#4caf50', order: 2, is_default: 0 },
-            { name: 'Prospectos', color: '#ff9800', order: 3, is_default: 0 }
+            { name: 'Prospectos', color: '#ff9800', order: 3, is_default: 0 },
+            { name: 'Varios', color: '#9c27b0', order: 4, is_default: 0 }
         ];
 
         console.log(`[KANBAN-DEFAULT] Creando ${defaultBoards.length} tableros por defecto para ${phoneNumber}...`);
@@ -3100,14 +3101,14 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                   ${dateFilterSQL}
                 GROUP BY chat_jid
             ) latest_msg ON m.chat_jid = latest_msg.chat_jid AND m.timestamp = latest_msg.max_timestamp
-            LEFT JOIN contacts c ON m.chat_jid = c.jid AND (c.phone_number = ? OR c.session_id = ?)
+            LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = ?
             LEFT JOIN contact_groups cg ON m.chat_jid = cg.jid AND cg.session_id = ?
             WHERE (m.phone_number = ? OR m.session_id = ?)
               AND m.chat_jid NOT LIKE CONCAT(?, '%')
               ${groupFilterMain}
             ORDER BY m.timestamp DESC
             LIMIT 50;`,
-            [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber]
+            [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber]
         );
 
         const chatList = rows.map(row => {
@@ -3769,22 +3770,21 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         // ✅ CREAR/ACTUALIZAR registro en tabla users para auto_sync
                         if (pool) {
                             try {
-                                const [existingUser] = await pool.query('SELECT id, auto_sync, session_id FROM users WHERE phone = ?', [userPhoneNumber]);
+                                const [existingUser] = await pool.query('SELECT id, auto_sync FROM users WHERE phone = ?', [userPhoneNumber]);
 
                                 if (existingUser.length === 0) {
-                                    // Crear nuevo usuario con auto_sync activado por defecto y session_id asignado
+                                    // Crear nuevo usuario con auto_sync activado por defecto
                                     await pool.query(
-                                        `INSERT INTO users (name, email, password, phone, role, status, auto_sync, session_id, subscription_status, subscription_plan, subscription_days)
-                                         VALUES (?, ?, ?, ?, 'admin', 'active', 1, ?, 'inactive', 'free', 0)`,
+                                        `INSERT INTO users (name, email, password, phone, role, status, auto_sync, subscription_status, subscription_plan, subscription_days)
+                                         VALUES (?, ?, ?, ?, 'admin', 'active', 1, 'inactive', 'free', 0)`,
                                         [
                                             `Usuario ${userPhoneNumber}`,
                                             `${userPhoneNumber}@whatsapp.local`,
                                             'no-password',  // Sin password porque es usuario de WhatsApp
-                                            userPhoneNumber,
-                                            sessionId  // Asignar el session_id actual
+                                            userPhoneNumber
                                         ]
                                     );
-                                    console.log(`[${sessionId}] ✅ Usuario creado en tabla users con auto_sync=1, session_id=${sessionId}, plan=free (inactivo)`);
+                                    console.log(`[${sessionId}] ✅ Usuario creado en tabla users con auto_sync=1, plan=free (inactivo)`);
                                     console.log(`[${sessionId}] ⚠️ Super Admin debe asignar plan activo para que pueda usar el sistema`);
                                 } else {
                                     // Si ya existe, actualizar el session_id si es necesario
@@ -3819,7 +3819,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                             console.error(`[${sessionId}] ❌ Error actualizando chat_assignments:`, updateErr.message);
                                         }
                                     } else {
-                                        console.log(`[${sessionId}] ℹ️ Usuario ya existe en tabla users (auto_sync: ${existingUser[0].auto_sync}, session_id: ${existingUser[0].session_id})`);
+                                        console.log(`[${sessionId}] ℹ️ Usuario ya existe en tabla users (auto_sync: ${existingUser[0].auto_sync})`);
                                     }
                                 }
                             } catch (userErr) {
@@ -4688,16 +4688,13 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 }
             }
 
-            // PERMITIR mensajes históricos (append/prepend) SOLO si syncHistory O auto_sync están activos
+            // 🚫 BLOQUEAR mensajes históricos SIEMPRE (append/prepend)
             if (m.type === 'append' || m.type === 'prepend') {
-                if (!syncHistory && !autoSync) {
-                    console.log(`[${sessionId}] 🚫 BLOQUEADO - Sincronización desactivada, ignorando ${m.messages.length} mensajes históricos tipo ${m.type}`);
-                    return;
-                }
-                console.log(`[${sessionId}] 📥 Procesando ${m.messages.length} mensajes HISTÓRICOS tipo ${m.type} (sincronización activa)`);
-            } else {
-                console.log(`[${sessionId}] Procesando ${m.messages.length} mensajes tipo: ${m.type}`);
+                console.log(`[${sessionId}] 🚫 BLOQUEADO - Ignorando ${m.messages.length} mensajes HISTÓRICOS tipo ${m.type} (solo tiempo real)`);
+                return;
             }
+            
+            console.log(`[${sessionId}] ✅ Procesando ${m.messages.length} mensajes en TIEMPO REAL tipo: ${m.type}`);
 
             // ═══════════════════════════════════════════════════════════
             // EMISIÓN FORZADA EN TIEMPO REAL - EJECUTAR SIEMPRE
@@ -4769,15 +4766,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             console.log(`[${sessionId}] 🏁 EMISIÓN COMPLETADA`);
             // ═══════════════════════════════════════════════════════════
 
-            // CAMBIO: Procesar mensajes de tipo 'notify' Y 'append' recientes (últimos 2 minutos)
-            const shouldProcess = m.type === 'notify' || (m.type === 'append' && m.messages.some(msg => {
-                const msgTime = msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : 0;
-                const now = Date.now();
-                const isRecent = (now - msgTime) < 120000; // 2 minutos
-                return isRecent;
-            }));
-
-            if (shouldProcess) {
+            // Procesar solo mensajes de tipo 'notify' (tiempo real)
+            // Los 'append' y 'prepend' ya fueron bloqueados arriba
+            if (m.type === 'notify') {
+                console.log(`[${sessionId}] 💾 GUARDANDO ${m.messages.length} mensajes de tipo notify`);
                 for (const msg of m.messages) {
                     const rawSenderJid = msg.key.remoteJid;
                     const senderJid = normalizeJid(rawSenderJid); // Normalizar JID
@@ -4794,36 +4786,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             await updateContactWithAvailableInfo(sock, senderJid, pushName, pushName, phoneNumber);
                             console.log(`[${sessionId}] ✅ Contacto guardado/actualizado: ${pushName || senderJid.split('@')[0]} (${senderJid.split('@')[0]})`);
 
-                            // Descargar avatar si no existe en la base de datos
-                            if (pool) {
-                                const connection = await pool.getConnection();
-                                try {
-                                    // Verificar si ya tiene avatar
-                                    const [existingContact] = await connection.execute(
-                                        'SELECT avatar_url FROM contacts WHERE jid = ? AND session_id = ?',
-                                        [senderJid, phoneNumber]
-                                    );
-
-                                    const needsAvatar = !existingContact[0] || !existingContact[0].avatar_url;
-
-                                    if (needsAvatar) {
-                                        try {
-                                            const avatarUrl = await sock.profilePictureUrl(senderJid, 'image').catch(() => null);
-                                            if (avatarUrl) {
-                                                await connection.execute(
-                                                    'UPDATE contacts SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                                                    [avatarUrl, senderJid, phoneNumber]
-                                                );
-                                                console.log(`[${sessionId}] 📸 Avatar descargado para ${pushName || senderJid.split('@')[0]}`);
-                                            }
-                                        } catch (avatarErr) {
-                                            console.log(`[${sessionId}] ⚠️ No se pudo descargar avatar para ${senderJid.split('@')[0]}`);
-                                        }
-                                    }
-                                } finally {
-                                    connection.release();
-                                }
-                            }
+                            // 🚀 Avatar se descarga en background separado - NO BLOQUEAR mensajes en tiempo real
+                            // Esto mejora la velocidad de procesamiento de mensajes
                         } catch (contactErr) {
                             console.error(`[${sessionId}] Error guardando contacto:`, contactErr);
                         }
@@ -5557,19 +5521,46 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         // ⭐ EVENTO CRÍTICO: messaging-history.set - Historial de mensajes completo
         sock.ev.on('messaging-history.set', async (historySet) => {
             const phoneNumber = await getUserPhoneNumber(sessionId);
-            const userSessionId = await getUserSessionId(sessionId);
 
-            console.log(`[${sessionId}] 📥 Procesando historial completo (chats: ${historySet.chats?.length || 0}, contactos: ${historySet.contacts?.length || 0}, mensajes: ${historySet.messages?.length || 0}) - SINCRONIZANDO SIEMPRE`);
+            console.log(`[${sessionId}] 📥 Historial recibido (chats: ${historySet.chats?.length || 0}, contactos: ${historySet.contacts?.length || 0}, mensajes: ${historySet.messages?.length || 0})`);
+            console.log(`[${sessionId}] ℹ️ Solo procesaremos CONTACTOS, mensajes ignorados`);
 
             if (!phoneNumber) {
-                console.error(`[${sessionId}] ❌ No se pudo obtener phoneNumber para sessionId. Saltando sincronización de historial.`);
+                console.error(`[${sessionId}] ❌ No se pudo obtener phoneNumber para sessionId.`);
                 return;
             }
-
-            if (!userSessionId) {
-                console.error(`[${sessionId}] ❌ No se pudo obtener userSessionId para sessionId. Saltando sincronización de historial.`);
-                return;
+            
+            // Procesar solo CONTACTOS del historial
+            if (historySet.contacts && historySet.contacts.length > 0) {
+                console.log(`[${sessionId}] 👥 Guardando ${historySet.contacts.length} contactos del historial...`);
+                for (const contact of historySet.contacts) {
+                    try {
+                        const contactJid = contact.id;
+                        if (!contactJid || !contactJid.includes('@s.whatsapp.net')) continue;
+                        
+                        await getOrInsertContact(contactJid, contact.name, contact.notify, phoneNumber, sock);
+                    } catch (err) {
+                        console.error(`[${sessionId}] Error guardando contacto:`, err.message);
+                    }
+                }
+                console.log(`[${sessionId}] ✅ Contactos del historial guardados`);
             }
+            
+            // Cargar contactos en tablero "Sin Categoría" después de procesar contactos
+            setTimeout(async () => {
+                try {
+                    console.log(`[${sessionId}] 📋 Cargando contactos en tablero Kanban "Sin Categoría"...`);
+                    if (phoneNumber && pool) {
+                        await loadContactsToDefaultBoard(phoneNumber);
+                    }
+                } catch (err) {
+                    console.error(`[${sessionId}] Error cargando contactos a tablero:`, err.message);
+                }
+            }, 2000);
+            
+            // 🚫 IGNORAR TODO LO DEMÁS (chats y mensajes)
+            console.log(`[${sessionId}] 🚫 Chats y mensajes del historial ignorados - Solo tiempo real`);
+            return; // Salir sin procesar más
 
             // ═══════════════════════════════════════════════════════════
             // FILTRO DE GRUPOS: No procesar chats de grupos
@@ -8327,9 +8318,9 @@ app.get('/api/history/messages', async (req, res) => {
                      FROM messages m
                      LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id IN (${placeholders})
                      LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id IN (${placeholders})
-                     WHERE m.session_id IN (${placeholders})
+                     WHERE (m.session_id IN (${placeholders}) OR m.phone_number IN (${placeholders}))
                      AND m.chat_jid NOT LIKE '%@g.us'`;
-        const queryParams = [...sessionIds, ...sessionIds, ...sessionIds];
+        const queryParams = [...sessionIds, ...sessionIds, ...sessionIds, ...sessionIds];
 
         if (chatJid) {
             const fullChatJid = chatJid.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`;
@@ -8359,7 +8350,7 @@ app.get('/api/history/messages', async (req, res) => {
 
         const countQuery = query.replace(/SELECT .+ FROM/, 'SELECT COUNT(*) as total FROM');
         const [totalRows] = await connection.execute(countQuery, queryParams);
-        const totalMessages = totalRows[0].total;
+        const totalMessages = totalRows && totalRows[0] ? totalRows[0].total : 0;
 
         query += ' LIMIT ? OFFSET ?';
         queryParams.push(parseInt(limit, 10));

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Limpiar Cache y Service Worker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9f9f9;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px 0;
+        }
+        button:hover { background: #0056b3; }
+        .success { color: green; font-weight: bold; }
+        .info { color: #666; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Limpiar Cache y Service Worker</h1>
+        
+        <div class="section">
+            <h3>1. Desregistrar Service Workers</h3>
+            <button onclick="clearServiceWorkers()">Limpiar Service Workers</button>
+            <p class="info">Esto desregistrará todos los service workers</p>
+        </div>
+        
+        <div class="section">
+            <h3>2. Limpiar Cache Storage</h3>
+            <button onclick="clearCacheStorage()">Limpiar Cache Storage</button>
+            <p class="info">Esto limpiará todos los caches almacenados</p>
+        </div>
+        
+        <div class="section">
+            <h3>3. Limpiar LocalStorage y SessionStorage</h3>
+            <button onclick="clearStorage()">Limpiar Storage</button>
+            <p class="info">Esto limpiará datos guardados en el navegador</p>
+        </div>
+        
+        <div class="section">
+            <h3>4. Limpiar Todo (RECOMENDADO)</h3>
+            <button onclick="clearEverything()" style="background: #dc3545;">Limpiar TODO</button>
+            <p class="info">Esto ejecutará todos los pasos anteriores</p>
+        </div>
+        
+        <div id="status" style="margin-top: 20px; padding: 15px; background: #e8f4f8; border-radius: 4px; display: none;">
+            <p class="success" id="status-text"></p>
+        </div>
+        
+        <hr style="margin: 20px 0;">
+        <h3>⏭️ Próximos Pasos</h3>
+        <ol>
+            <li>Presiona "Limpiar TODO" abajo</li>
+            <li>Cierra completamente el navegador (o cierra todas las pestañas)</li>
+            <li>Abre nuevamente WhatsFlow</li>
+            <li>Crea una campaña nueva</li>
+            <li>Abre F12 → Console y busca logs [UI-CAMPAIGNS-DEBUG]</li>
+            <li>Envía una captura de los logs</li>
+        </ol>
+    </div>
+
+    <script>
+        function showStatus(message) {
+            const status = document.getElementById('status');
+            const text = document.getElementById('status-text');
+            text.textContent = message;
+            status.style.display = 'block';
+        }
+
+        function clearServiceWorkers() {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                registrations.forEach(reg => {
+                    reg.unregister();
+                });
+                showStatus('✅ Service Workers desregistrados');
+            }).catch(err => {
+                showStatus('⚠️ Error al desregistrar: ' + err.message);
+            });
+        }
+
+        function clearCacheStorage() {
+            caches.keys().then(cacheNames => {
+                cacheNames.forEach(cacheName => {
+                    caches.delete(cacheName);
+                });
+                showStatus('✅ Cache Storage limpiado');
+            }).catch(err => {
+                showStatus('⚠️ Error al limpiar cache: ' + err.message);
+            });
+        }
+
+        function clearStorage() {
+            localStorage.clear();
+            sessionStorage.clear();
+            showStatus('✅ LocalStorage y SessionStorage limpiados');
+        }
+
+        function clearEverything() {
+            clearServiceWorkers();
+            clearCacheStorage();
+            clearStorage();
+            showStatus('✅ TODO LIMPIADO - Cierra el navegador completamente y reabre');
+        }
+
+        // Mostrar instrucciones al cargar
+        window.addEventListener('load', () => {
+            console.log('📋 Página de limpieza de cache cargada');
+        });
+    </script>
+</body>
+</html>
