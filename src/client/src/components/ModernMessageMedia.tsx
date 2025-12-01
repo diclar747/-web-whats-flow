@@ -46,6 +46,7 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
   const [hasError, setHasError] = useState(false);
   const [showImagePreview, setShowImagePreview] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   if (!mediaUrl) {
     console.warn('[ModernMessageMedia] ⚠️ mediaUrl está vacío para tipo:', type);
@@ -100,7 +101,7 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
     return <InsertDriveFile sx={{ fontSize: 40, color: '#9e9e9e' }} />;
   };
 
-  // 🖼️ IMAGEN
+  // 🖼️ IMAGEN - Optimizada con lazy loading
   if (type === 'image' || type === 'imageMessage') {
     return (
       <>
@@ -128,15 +129,21 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
           <img
             src={getMediaUrl(mediaUrl)}
             alt="Imagen"
+            loading="lazy" // ⚡ Optimización: Lazy loading
             style={{
               display: isLoading ? 'none' : 'block',
               width: '100%',
               maxHeight: '300px',
               objectFit: 'cover',
               borderRadius: '8px',
-              marginBottom: message ? '8px' : '0'
+              marginBottom: message ? '8px' : '0',
+              transition: 'opacity 0.3s ease-in-out',
+              opacity: imageLoaded ? 1 : 0
             }}
-            onLoad={() => setIsLoading(false)}
+            onLoad={() => {
+              setIsLoading(false);
+              setImageLoaded(true);
+            }}
             onError={(e) => {
               console.error('[ModernMessageMedia] ❌ Error cargando imagen:', {
                 originalUrl: mediaUrl,
