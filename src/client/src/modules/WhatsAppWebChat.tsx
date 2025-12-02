@@ -1125,7 +1125,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
         {/* Lista de chats - Mostrar solo avatares si está colapsado */}
         <List sx={{ flex: 1, overflow: 'auto', p: 0 }}>
-          {filteredChats.map((chat) => (
+          {filteredChats.map((chat: any) => (
             <ListItemButton
               key={chat.id}
               selected={activeChat?.id === chat.id}

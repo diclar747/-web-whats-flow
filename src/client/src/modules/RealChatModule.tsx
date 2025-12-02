@@ -51,7 +51,8 @@ import {
   Forward as ForwardIcon,
   AddReaction as AddReactionIcon,
   AccessTime,
-  Error as ErrorIcon
+  Error as ErrorIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 
 // Función para normalizar números de teléfono (eliminar sufijos como :0, :82, etc.)
@@ -118,6 +119,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [reactionDetailsDialog, setReactionDetailsDialog] = useState<{ open: boolean; messageId: string | null }>({ open: false, messageId: null });
   const [reactionDetails, setReactionDetails] = useState<any[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -191,6 +193,21 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
     setTransferDialogOpen(true);
     setSelectedAgent('');
     setTransferReason('');
+  };
+
+  const handleSyncChat = async () => {
+    if (!activeChat || isSyncing) return;
+    
+    setIsSyncing(true);
+    try {
+      // Recargar mensajes del chat activo
+      await loadMessages(activeChat.id);
+      console.log('✅ Chat sincronizado correctamente');
+    } catch (error) {
+      console.error('❌ Error sincronizando chat:', error);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const loadKanbanBoards = async () => {
@@ -975,6 +992,23 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                   )}
                 </div>
               </div>
+              <IconButton 
+                onClick={handleSyncChat}
+                disabled={isSyncing}
+                title="Sincronizar mensajes"
+                sx={{ 
+                  color: isDarkMode ? '#aebac1' : '#54656f',
+                  '&:hover': {
+                    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'
+                  }
+                }}
+              >
+                {isSyncing ? (
+                  <CircularProgress size={24} sx={{ color: '#00a884' }} />
+                ) : (
+                  <RefreshIcon />
+                )}
+              </IconButton>
               <IconButton onClick={(e) => setMoreMenuAnchor(e.currentTarget)}>
                 <MoreIcon />
               </IconButton>

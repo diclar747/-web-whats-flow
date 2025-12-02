@@ -549,6 +549,30 @@ async function createTables() {
             }
         }
 
+        // 🔧 MIGRACIÓN: Agregar nuevas columnas a messages (agente, sender info, caption, file info)
+        const newColumns = [
+            { name: 'agent_id', type: 'INT NULL', description: 'ID del agente asignado' },
+            { name: 'agent_name', type: 'VARCHAR(255) NULL', description: 'Nombre del agente' },
+            { name: 'sender_name', type: 'VARCHAR(255) NULL', description: 'Nombre del remitente' },
+            { name: 'sender_avatar', type: 'VARCHAR(1024) NULL', description: 'Avatar del remitente' },
+            { name: 'caption', type: 'VARCHAR(1024) NULL', description: 'Caption de media' },
+            { name: 'file_name', type: 'VARCHAR(255) NULL', description: 'Nombre del archivo' },
+            { name: 'file_size', type: 'INT NULL', description: 'Tamaño del archivo en bytes' }
+        ];
+
+        for (const col of newColumns) {
+            try {
+                await connection.query(`ALTER TABLE messages ADD COLUMN ${col.name} ${col.type}`);
+                console.log(`[DB-MIGRATION] ✅ Columna '${col.name}' agregada - ${col.description}`);
+            } catch (error) {
+                if (error.code === 'ER_DUP_FIELDNAME') {
+                    // Columna ya existe, todo bien
+                } else {
+                    console.error(`[DB-MIGRATION] ⚠️ Error agregando columna '${col.name}':`, error.message);
+                }
+            }
+        }
+
         await connection.query(
             'CREATE TABLE IF NOT EXISTS campaigns ('
             + 'id INT AUTO_INCREMENT PRIMARY KEY,'
@@ -1774,11 +1798,12 @@ async function saveMessageToDB(sessionId, msg) {
             chat_jid: chat_jid.substring(0, 30),
             isLid: chat_jid.includes('@lid'),
             from_me: from_me,
-            shouldEmit: !chat_jid.includes('@lid') && !from_me
+            shouldEmit: !chat_jid.includes('@lid')
         });
 
-        if (!chat_jid.includes('@lid') && !from_me) { // Solo mensajes ENTRANTES
-            console.log(`[${sessionId}] 🚀💾 EMITIENDO desde saveMessageToDB:`, messageId.substring(0, 20));
+        // 🔧 CORREGIDO: Emitir TODOS los mensajes (entrantes Y salientes desde teléfono)
+        if (!chat_jid.includes('@lid')) {
+            console.log(`[${sessionId}] 🚀💾 EMITIENDO desde saveMessageToDB:`, messageId.substring(0, 20), from_me ? '(FROM_ME)' : '(ENTRANTE)');
             console.log(`[${sessionId}] 📡 Emitiendo a sala: session-${phoneNumber}`);
             io.to(`session-${phoneNumber}`).emit('message', {
                 id: messageId,
@@ -2040,7 +2065,7 @@ async function getOrCreateUserSession(sessionId, phoneNumber) {
             const deviceId = sessionDeviceMap.get(sessionId) || null;
             const sessionToken = sessionTokenMap.get(sessionId)?.sessionToken || null;
             await connection.execute(
-                'UPDATE user_sessions SET session_id = ?, is_active = TRUE, device_id = ?, session_token = ?, last_activity = CURRENT_TIMESTAMP WHERE phone_number = ?',
+                'UPDATE user_sessions SET session_id = ?, is_active = TRUE, device_id = ?, session_token = ?, last_activity = CURRENT_TIMESTAMP, last_connection_time = CURRENT_TIMESTAMP WHERE phone_number = ?',
                 [sessionId, deviceId, sessionToken, phoneNumber]
             );
             console.log(`[DB-USER] Sesión existente actualizada para ${phoneNumber}: user_session_id ${userSessionId}, deviceId: ${deviceId?.substring(0, 20)}...`);
@@ -2049,7 +2074,7 @@ async function getOrCreateUserSession(sessionId, phoneNumber) {
             const deviceId = sessionDeviceMap.get(sessionId) || null;
             const sessionToken = sessionTokenMap.get(sessionId)?.sessionToken || null;
             const [result] = await connection.execute(
-                'INSERT INTO user_sessions (session_id, phone_number, is_active, device_id, session_token) VALUES (?, ?, TRUE, ?, ?)',
+                'INSERT INTO user_sessions (session_id, phone_number, is_active, device_id, session_token, last_connection_time) VALUES (?, ?, TRUE, ?, ?, CURRENT_TIMESTAMP)',
                 [sessionId, phoneNumber, deviceId, sessionToken]
             );
             userSessionId = result.insertId;
@@ -2517,88 +2542,108 @@ async function downloadAllAvatars(sessionId, sock) {
             return;
         }
 
-        // Obtener contactos individuales sin avatar
+        // Obtener TODOS los contactos individuales sin avatar
         const [contacts] = await connection.execute(
-            'SELECT jid, name FROM contacts WHERE session_id = ? AND jid LIKE "%@s.whatsapp.net" AND (avatar_url IS NULL OR avatar_url = "") LIMIT 100',
+            'SELECT jid, name FROM contacts WHERE session_id = ? AND jid LIKE "%@s.whatsapp.net" AND (avatar_url IS NULL OR avatar_url = "")',
             [phoneNumber]
         );
 
-        // Obtener grupos sin avatar
+        // Obtener TODOS los grupos sin avatar
         const [groups] = await connection.execute(
-            'SELECT jid, name FROM contact_groups WHERE session_id = ? AND (avatar_url IS NULL OR avatar_url = "") LIMIT 100',
+            'SELECT jid, name FROM contact_groups WHERE session_id = ? AND (avatar_url IS NULL OR avatar_url = "")',
             [phoneNumber]
         );
 
         const totalToDownload = contacts.length + groups.length;
-        console.log(`[${sessionId}] 🖼️ Descargando avatares para ${contacts.length} contactos y ${groups.length} grupos (total: ${totalToDownload})...`);
+        console.log(`[${sessionId}] 🖼️ Iniciando descarga de avatares para ${contacts.length} contactos y ${groups.length} grupos (total: ${totalToDownload})...`);
+        
+        if (totalToDownload === 0) {
+            console.log(`[${sessionId}] ✅ No hay avatares pendientes de descargar`);
+            return;
+        }
+        
         let downloadedCount = 0;
         let errorCount = 0;
 
-        // Descargar avatares de contactos individuales
-        for (const contact of contacts) {
-            try {
-                const profilePicUrl = await safeGetProfilePicture(sock, contact.jid, 'image');
+        // Descargar avatares de contactos individuales en lotes
+        const BATCH_SIZE = 50;
+        for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
+            const batch = contacts.slice(i, i + BATCH_SIZE);
+            console.log(`[${sessionId}] 🖼️ Procesando lote ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(contacts.length/BATCH_SIZE)} de contactos...`);
+            
+            for (const contact of batch) {
+                try {
+                    const profilePicUrl = await safeGetProfilePicture(sock, contact.jid, 'image');
 
-                if (profilePicUrl) {
-                    await connection.execute(
-                        'UPDATE contacts SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                        [profilePicUrl, contact.jid, phoneNumber]
-                    );
-                    downloadedCount++;
-
-                    if (downloadedCount % 10 === 0) {
-                        console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados...`);
-                    }
-                } else {
-                    const previewUrl = await safeGetProfilePicture(sock, contact.jid, 'preview');
-                    if (previewUrl) {
+                    if (profilePicUrl) {
                         await connection.execute(
                             'UPDATE contacts SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                            [previewUrl, contact.jid, phoneNumber]
+                            [profilePicUrl, contact.jid, phoneNumber]
                         );
                         downloadedCount++;
+                    } else {
+                        const previewUrl = await safeGetProfilePicture(sock, contact.jid, 'preview');
+                        if (previewUrl) {
+                            await connection.execute(
+                                'UPDATE contacts SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
+                                [previewUrl, contact.jid, phoneNumber]
+                            );
+                            downloadedCount++;
+                        }
+                    }
+
+                    if (downloadedCount % 50 === 0) {
+                        console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados (${Math.round(downloadedCount/totalToDownload*100)}%)...`);
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 30));
+                } catch (err) {
+                    errorCount++;
+                    if (errorCount <= 5) {
+                        console.error(`[${sessionId}] ❌ Error descargando avatar de contacto ${contact.jid}:`, err.message);
                     }
                 }
-
-                await new Promise(resolve => setTimeout(resolve, 50));
-            } catch (err) {
-                errorCount++;
-                console.error(`[${sessionId}] ❌ Error descargando avatar de contacto ${contact.jid}:`, err.message);
             }
         }
 
-        // Descargar avatares de grupos
-        for (const group of groups) {
-            try {
-                const profilePicUrl = await safeGetProfilePicture(sock, group.jid, 'image');
+        // Descargar avatares de grupos en lotes
+        for (let i = 0; i < groups.length; i += BATCH_SIZE) {
+            const batch = groups.slice(i, i + BATCH_SIZE);
+            console.log(`[${sessionId}] 🖼️ Procesando lote ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(groups.length/BATCH_SIZE)} de grupos...`);
+            
+            for (const group of batch) {
+                try {
+                    const profilePicUrl = await safeGetProfilePicture(sock, group.jid, 'image');
 
-                if (profilePicUrl) {
-                    await connection.execute(
-                        'UPDATE contact_groups SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                        [profilePicUrl, group.jid, phoneNumber]
-                    );
-                    downloadedCount++;
-
-                    if (downloadedCount % 10 === 0) {
-                        console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados...`);
-                    }
-                } else {
-                    const previewUrl = await safeGetProfilePicture(sock, group.jid, 'preview');
-                    if (previewUrl) {
+                    if (profilePicUrl) {
                         await connection.execute(
                             'UPDATE contact_groups SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                            [previewUrl, group.jid, phoneNumber]
+                            [profilePicUrl, group.jid, phoneNumber]
                         );
                         downloadedCount++;
+                    } else {
+                        const previewUrl = await safeGetProfilePicture(sock, group.jid, 'preview');
+                        if (previewUrl) {
+                            await connection.execute(
+                                'UPDATE contact_groups SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
+                                [previewUrl, group.jid, phoneNumber]
+                            );
+                            downloadedCount++;
+                        }
+                    }
+
+                    if (downloadedCount % 50 === 0) {
+                        console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados (${Math.round(downloadedCount/totalToDownload*100)}%)...`);
+                    }
+
+                    await new Promise(resolve => setTimeout(resolve, 30));
+
+                } catch (err) {
+                    errorCount++;
+                    if (errorCount <= 5) {
+                        console.error(`[${sessionId}] ❌ Error descargando avatar de grupo ${group.jid}:`, err.message);
                     }
                 }
-
-                // Delay pequeño para no saturar WhatsApp (reducido para acelerar)
-                await new Promise(resolve => setTimeout(resolve, 50));
-
-            } catch (err) {
-                errorCount++;
-                console.error(`[${sessionId}] ❌ Error descargando avatar de grupo ${group.jid}:`, err.message);
             }
         }
 
@@ -2648,7 +2693,95 @@ async function syncHistoricalData(sessionId, sock, userSessionId) {
     return stats;
 }
 
+// 🆕 Función para sincronizar SOLO CONTACTOS al conectar (NO chats históricos)
+// Esto evita bloquear los mensajes en tiempo real
+async function syncContactsOnly(sessionId, sock, userSessionId) {
+    console.log(`[CONTACTS-SYNC] 👤 Sincronizando SOLO contactos (sin chats históricos)...`);
+
+    const stats = {
+        contacts: 0,
+        errors: 0
+    };
+
+    try {
+        const connection = await pool.getConnection();
+
+        try {
+            // Obtener contactos del store de Baileys
+            const allContacts = sock.store?.contacts || new Map();
+            const contactArray = Array.from(allContacts.values());
+
+            console.log(`[CONTACTS-SYNC] 📱 ${contactArray.length} contactos en el store`);
+
+            io.to(`session-${sessionId}`).emit('sync-progress', {
+                message: 'Sincronizando contactos...',
+                progress: 50
+            });
+
+            for (const contact of contactArray) {
+                try {
+                    const contactJid = contact.id;
+
+                    // Ignorar status, broadcasts y lids
+                    if (contactJid.includes('@broadcast') ||
+                        contactJid.includes('status@') ||
+                        contactJid.includes('@lid') ||
+                        contactJid.includes('@g.us')) {
+                        continue;
+                    }
+
+                    // Verificar si ya existe
+                    const [existing] = await connection.query(
+                        'SELECT id FROM contacts WHERE jid = ? AND session_id = ?',
+                        [contactJid, sessionId]
+                    );
+
+                    if (existing.length === 0) {
+                        await connection.query(
+                            `INSERT INTO contacts (jid, name, notify_name, session_id, is_group, created_at)
+                             VALUES (?, ?, ?, ?, ?, NOW())`,
+                            [
+                                contactJid,
+                                contact.name || contact.notify || contactJid.split('@')[0],
+                                contact.notify || contact.name || null,
+                                sessionId,
+                                false
+                            ]
+                        );
+                        stats.contacts++;
+                    }
+                } catch (err) {
+                    console.error(`[CONTACTS-SYNC] Error guardando contacto ${contact.id}:`, err.message);
+                    stats.errors++;
+                }
+            }
+
+            console.log(`[CONTACTS-SYNC] ✅ ${stats.contacts} contactos nuevos sincronizados, ${stats.errors} errores`);
+
+            io.to(`session-${sessionId}`).emit('sync-complete', {
+                message: 'Contactos sincronizados',
+                contacts: stats.contacts
+            });
+
+        } finally {
+            connection.release();
+        }
+
+        // Descargar avatares después de sincronizar contactos
+        console.log(`[CONTACTS-SYNC] 🖼️ Descargando avatares de contactos...`);
+        await downloadAllAvatars(sessionId, sock);
+        console.log(`[CONTACTS-SYNC] 🖼️ Avatares descargados completamente`);
+
+    } catch (error) {
+        console.error(`[CONTACTS-SYNC] ❌ Error:`, error.message);
+        stats.errors++;
+    }
+
+    return stats;
+}
+
 // Función para realizar sincronización completa activa (no solo esperar eventos)
+// ⚠️ NOTA: Esta función sincroniza TODO, incluidos chats históricos. Puede bloquear mensajes en tiempo real.
 async function performFullSync(sessionId, sock, userSessionId) {
     console.log(`[FULL-SYNC] 🔄 Iniciando sincronización completa para ${sessionId}`);
 
@@ -2979,6 +3112,11 @@ async function performFullSync(sessionId, sock, userSessionId) {
             connection.release();
         }
 
+        // Descargar avatares después de sincronizar
+        console.log(`[FULL-SYNC] 🖼️ Descargando avatares de contactos y grupos...`);
+        await downloadAllAvatars(sessionId, sock);
+        console.log(`[FULL-SYNC] 🖼️ Avatares descargados completamente`);
+
     } catch (error) {
         console.error(`[FULL-SYNC] ❌ Error en sincronización:`, error);
         io.to(`session-${sessionId}`).emit('sync-error', {
@@ -3069,46 +3207,47 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             console.log(`[CHATLIST] 📅 Cargando TODAS las conversaciones`);
         }
 
+        // 🔧 CONSULTA OPTIMIZADA: Solo chats con mensajes DESDE el inicio de sesión
+        // Muestra el ÚLTIMO mensaje de cada chat (incluye from_me = true)
         const [rows] = await connection.execute(
             `SELECT
-                m.chat_jid,
-                COALESCE(
-                    CASE WHEN m.chat_jid LIKE '%@g.us' THEN cg.name ELSE c.name END,
-                    CASE WHEN m.chat_jid LIKE '%@g.us' THEN cg.name ELSE c.notify_name END,
-                    SUBSTRING_INDEX(m.chat_jid, '@', 1)
-                ) AS contact_name,
+                latest.chat_jid,
+                COALESCE(c.name, c.notify_name, SUBSTRING_INDEX(latest.chat_jid, '@', 1)) AS contact_name,
                 c.notify_name AS contact_notify_name,
-                CASE WHEN m.chat_jid LIKE '%@g.us' THEN 1 ELSE COALESCE(c.is_group, 0) END AS is_group,
-                COALESCE(
-                    CASE WHEN m.chat_jid LIKE '%@g.us' THEN cg.avatar_url ELSE c.avatar_url END
-                ) AS avatar_url,
-                m.text_content AS last_message_text,
-                m.timestamp AS last_message_timestamp,
-                m.from_me AS last_message_from_me,
-                m.status AS last_message_status,
+                CASE WHEN latest.chat_jid LIKE '%@g.us' THEN 1 ELSE COALESCE(c.is_group, 0) END AS is_group,
+                c.avatar_url,
+                latest.text_content AS last_message_text,
+                latest.timestamp AS last_message_timestamp,
+                latest.from_me AS last_message_from_me,
+                latest.status AS last_message_status,
                 (SELECT COUNT(*) FROM messages m2
-                 WHERE m2.chat_jid = m.chat_jid
-                   AND (m2.phone_number = ? OR m2.session_id = ?)
+                 WHERE m2.chat_jid = latest.chat_jid
+                   AND m2.session_id IN (?, ?)
                    AND m2.from_me = false
                    AND COALESCE(m2.is_read, false) = false) AS unread_count
-            FROM messages m
-            JOIN (
-                SELECT chat_jid, MAX(timestamp) AS max_timestamp
-                FROM messages
-                WHERE (phone_number = ? OR session_id = ?)
-                  AND chat_jid NOT LIKE CONCAT(?, '%')
-                  ${groupFilterSubquery}
-                  ${dateFilterSQL}
-                GROUP BY chat_jid
-            ) latest_msg ON m.chat_jid = latest_msg.chat_jid AND m.timestamp = latest_msg.max_timestamp
-            LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = ?
-            LEFT JOIN contact_groups cg ON m.chat_jid = cg.jid AND cg.session_id = ?
-            WHERE (m.phone_number = ? OR m.session_id = ?)
-              AND m.chat_jid NOT LIKE CONCAT(?, '%')
-              ${groupFilterMain}
-            ORDER BY m.timestamp DESC
-            LIMIT 50;`,
-            [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber]
+            FROM (
+                SELECT m.*
+                FROM messages m
+                INNER JOIN (
+                    SELECT chat_jid, MAX(timestamp) AS max_timestamp
+                    FROM messages
+                    WHERE session_id IN (?, ?)
+                      AND chat_jid NOT LIKE '%status@broadcast%'
+                      AND chat_jid NOT LIKE '%@lid%'
+                      ${includeGroups ? '' : 'AND chat_jid NOT LIKE \'%@g.us\''}
+                      AND timestamp >= COALESCE(
+                        (SELECT last_connection_time FROM user_sessions WHERE phone_number = ? LIMIT 1),
+                        DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                      )
+                      ${dateFilterSQL}
+                    GROUP BY chat_jid
+                ) max_m ON m.chat_jid = max_m.chat_jid AND m.timestamp = max_m.max_timestamp
+                WHERE m.session_id IN (?, ?)
+            ) latest
+            LEFT JOIN contacts c ON latest.chat_jid = c.jid AND c.session_id IN (?, ?)
+            ORDER BY latest.timestamp DESC
+            LIMIT 100;`,
+            [phoneNumber, sessionId, phoneNumber, sessionId, phoneNumber, phoneNumber, sessionId, phoneNumber, sessionId]
         );
 
         const chatList = rows.map(row => {
@@ -3118,10 +3257,10 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                 id: normalizedJid,
                 name: row.contact_name || phoneOnly,
                 isGroup: !!row.is_group,
-                lastMessage: row.last_message_text,
-                timestamp: new Date(row.last_message_timestamp).toISOString(),
+                lastMessage: row.last_message_text || 'Sin mensajes',
+                timestamp: row.last_message_timestamp ? new Date(row.last_message_timestamp).toISOString() : new Date().toISOString(),
                 fromMe: !!row.last_message_from_me,
-                status: row.last_message_status,
+                status: row.last_message_status || 'pending',
                 unreadCount: row.unread_count || 0,
                 avatar: row.avatar_url && row.avatar_url.trim() ? row.avatar_url : null
             };
@@ -3648,7 +3787,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             keepAliveIntervalMs: 30000,           // Enviar keep-alive cada 30 segundos
             connectTimeoutMs: 60000,              // Timeout de conexión de 60 segundos
             defaultQueryTimeoutMs: 60000,         // Timeout para queries de 60 segundos
-            emitOwnEvents: false,                 // No emitir eventos propios
+            emitOwnEvents: true,                  // 🔧 CORREGIDO: Emitir eventos propios para sincronizar mensajes del teléfono
             markOnlineOnConnect: true,            // Marcar como online al conectar
             retryRequestDelayMs: 250,             // Delay entre reintentos
             maxMsgRetryCount: 5,                  // Máximo de reintentos para mensajes
@@ -3753,6 +3892,63 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         // ✅ GUARDAR phoneNumber en la sesión para futuras consultas
                         sessionInfo.phoneNumber = userPhoneNumber;
                         console.log(`[${sessionId}] ✅ phoneNumber guardado en sesión: ${userPhoneNumber}`);
+
+                        // 🔄 POLLING: Verificar mensajes propios cada 15 segundos
+                        // Esto captura mensajes enviados desde el teléfono que emitOwnEvents no detecta
+                        if (!sessionInfo.ownMessagePolling) {
+                            sessionInfo.ownMessagePolling = setInterval(async () => {
+                                try {
+                                    // Obtener los últimos 3 mensajes de cada chat activo
+                                    const connection = await pool.getConnection();
+                                    try {
+                                        const [recentChats] = await connection.execute(
+                                            `SELECT DISTINCT chat_jid FROM messages 
+                                             WHERE session_id = ? AND timestamp > DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                                             ORDER BY timestamp DESC LIMIT 10`,
+                                            [userPhoneNumber]
+                                        );
+                                        
+                                        for (const chat of recentChats) {
+                                            try {
+                                                const messages = await sock.loadMessages(chat.chat_jid, 3);
+                                                for (const msg of messages) {
+                                                    if (msg.key.fromMe && msg.messageTimestamp) {
+                                                        const msgTime = Number(msg.messageTimestamp) * 1000;
+                                                        const ageSeconds = (Date.now() - msgTime) / 1000;
+                                                        
+                                                        // Solo procesar mensajes de los últimos 30 segundos
+                                                        if (ageSeconds < 30) {
+                                                            // Verificar si ya existe en BD
+                                                            const [existing] = await connection.execute(
+                                                                'SELECT id FROM messages WHERE id = ? AND session_id = ?',
+                                                                [msg.key.id, userPhoneNumber]
+                                                            );
+                                                            
+                                                            if (existing.length === 0) {
+                                                                console.log(`[${sessionId}] 📱 Mensaje propio detectado por polling: ${msg.key.id.substring(0, 20)}`);
+                                                                // Simular evento messages.upsert
+                                                                sock.ev.emit('messages.upsert', {
+                                                                    messages: [msg],
+                                                                    type: 'notify'
+                                                                });
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } catch (loadErr) {
+                                                // Silencioso, puede fallar si el chat no existe
+                                            }
+                                        }
+                                    } finally {
+                                        connection.release();
+                                    }
+                                } catch (pollErr) {
+                                    console.error(`[${sessionId}] Error en polling de mensajes propios:`, pollErr.message);
+                                }
+                            }, 15000); // Cada 15 segundos
+                            
+                            console.log(`[${sessionId}] ✅ Polling de mensajes propios activado (cada 15s)`);
+                        }
 
                         // 🔒 SEGURIDAD: Invalidar sesiones anteriores del mismo número
                         console.log(`[${sessionId}] 🔐 Verificando sesiones anteriores para ${userPhoneNumber}...`);
@@ -4192,9 +4388,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                     message: 'Sincronización automática iniciada'
                                 });
 
-                                // Ejecutar sincronización completa
-                                performFullSync(newSessionId, sock, userSessionId).then(stats => {
-                                    console.log(`[${newSessionId}] ✅ Sincronización completada:`, stats);
+                                // 🔧 CAMBIO: Sincronizar SOLO contactos (no chats históricos)
+                                syncContactsOnly(newSessionId, sock, userSessionId).then(stats => {
+                                    console.log(`[${newSessionId}] ✅ Sincronización de contactos completada:`, stats);
 
                                     // DESCARGAR AVATARES en background
                                     console.log(`[${newSessionId}] 🖼️ Iniciando descarga de avatares...`);
@@ -4258,6 +4454,12 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             } else {
                                 console.log(`[${newSessionId}] 🚫 Sincronización desactivada - Solo mensajes nuevos serán capturados`);
 
+                                // DESCARGAR AVATARES aunque no se sincronice
+                                console.log(`[${newSessionId}] 🖼️ Descargando avatares de contactos existentes...`);
+                                downloadAllAvatars(newSessionId, sock).catch(err => {
+                                    console.error(`[${newSessionId}] Error descargando avatares:`, err);
+                                });
+
                                 // Cargar chats existentes sin sincronizar
                                 loadChatListFromDB(newSessionId).then(initialChats => {
                                     io.emit(`initial-chats-${newSessionId}`, { chats: initialChats });
@@ -4290,9 +4492,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 sessionSyncPreferences.get(newSessionId) : true;
 
                             if (sessionSyncPref) {
-                                console.log(`[${newSessionId}] 🔄 Usando preferencia de memoria - Iniciando sincronización`);
-                                performFullSync(newSessionId, sock, userSessionId).then(stats => {
-                                    console.log(`[${newSessionId}] ✅ Sincronización completada:`, stats);
+                                console.log(`[${newSessionId}] 🔄 Usando preferencia de memoria - Sincronizando contactos`);
+                                syncContactsOnly(newSessionId, sock, userSessionId).then(stats => {
+                                    console.log(`[${newSessionId}] ✅ Sincronización de contactos completada:`, stats);
                                     downloadAllAvatars(newSessionId, sock).catch(err => {
                                         console.error(`[${newSessionId}] Error descargando avatares:`, err);
                                     });
@@ -4309,6 +4511,12 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 });
                             } else {
                                 console.log(`[${newSessionId}] 🚫 Sincronización desactivada - Solo mensajes nuevos serán capturados`);
+
+                                // DESCARGAR AVATARES aunque no se sincronice
+                                console.log(`[${newSessionId}] 🖼️ Descargando avatares de contactos existentes...`);
+                                downloadAllAvatars(newSessionId, sock).catch(err => {
+                                    console.error(`[${newSessionId}] Error descargando avatares:`, err);
+                                });
 
                                 // Cargar chats existentes sin sincronizar
                                 loadChatListFromDB(newSessionId).then(initialChats => {
@@ -4351,8 +4559,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         getOrCreateUserSession(newSessionId, await getUserPhoneNumber(newSessionId))
                             .then(newUserSessionId => {
                                 if (newUserSessionId) {
-                                    performFullSync(newSessionId, sock, newUserSessionId).then(stats => {
-                                        console.log(`[${newSessionId}] ✅ Sincronización completada:`, stats);
+                                    syncContactsOnly(newSessionId, sock, newUserSessionId).then(stats => {
+                                        console.log(`[${newSessionId}] ✅ Sincronización de contactos completada:`, stats);
                                         downloadAllAvatars(newSessionId, sock).catch(err => {
                                             console.error(`[${newSessionId}] Error descargando avatares:`, err);
                                         });
@@ -4447,6 +4655,13 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 const reason = lastDisconnect?.error?.output?.payload?.error || 'unknown';
 
                 console.log(`[${sessionId}] Conexión cerrada - Código: ${statusCode}, Razón: ${reason}`);
+                
+                // Limpiar polling de mensajes propios
+                if (sessionInfo.ownMessagePolling) {
+                    clearInterval(sessionInfo.ownMessagePolling);
+                    sessionInfo.ownMessagePolling = null;
+                    console.log(`[${sessionId}] ✅ Polling de mensajes propios detenido`);
+                }
 
                 io.emit(`connection-${sessionId}`, { status: 'disconnected', reason });
 
@@ -4748,7 +4963,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     isGroup: senderJid.includes('@g.us')
                 });
 
-                io.to(`session-${sessionId}`).emit('message', {
+                const messagePayload = {
                     id: messageId,
                     from: senderJid,
                     chatJid: senderJid,
@@ -4759,9 +4974,16 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     isFromMe: Boolean(msg.key.fromMe),
                     isGroup: senderJid.includes('@g.us'),
                     status: msg.key.fromMe ? 'sent' : 'received'
-                });
-
-                console.log(`[${sessionId}] ✅✅✅ EMITIDO a session-${sessionId}`);
+                };
+                
+                // Emitir a ambas salas: sessionId y phoneNumber
+                io.to(`session-${sessionId}`).emit('message', messagePayload);
+                console.log(`[${sessionId}] ✅ EMITIDO a session-${sessionId}`);
+                
+                if (phoneNumber && phoneNumber !== sessionId) {
+                    io.to(`session-${phoneNumber}`).emit('message', messagePayload);
+                    console.log(`[${sessionId}] ✅ EMITIDO a session-${phoneNumber}`);
+                }
             }
             console.log(`[${sessionId}] 🏁 EMISIÓN COMPLETADA`);
             // ═══════════════════════════════════════════════════════════
@@ -4802,16 +5024,27 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     if (msg.message && messageId) {
                         const messageType = Object.keys(msg.message)[0] || 'unknown';
                         let textContent = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+                        
+                        // 🔍 DEBUG: Log message structure when textContent is empty
+                        if (!textContent && messageType !== 'imageMessage' && messageType !== 'videoMessage' && messageType !== 'audioMessage') {
+                            console.log(`[${sessionId}] 🔍 DEBUG Mensaje sin texto - Tipo: ${messageType}, Keys:`, Object.keys(msg.message));
+                            console.log(`[${sessionId}] 🔍 DEBUG Contenido del mensaje:`, JSON.stringify(msg.message, null, 2).substring(0, 500));
+                        }
                         let mediaUrl = null;
                         let mediaMimeType = null;
+                        let caption = null;
+                        let fileName = null;
+                        let fileSize = null;
 
                         // Descargar y guardar multimedia SOLO si es mensaje tipo 'notify' (tiempo real)
                         // Los mensajes históricos (append/prepend) no tienen claves de media válidas
                         const isRealtimeMessage = m.type === 'notify';
 
                         if (messageType === 'imageMessage' && msg.message.imageMessage) {
-                            textContent = msg.message.imageMessage.caption || '';
+                            caption = msg.message.imageMessage.caption || null;
+                            textContent = caption || '📷 Imagen';
                             mediaMimeType = msg.message.imageMessage.mimetype;
+                            fileSize = msg.message.imageMessage.fileLength || null;
 
                             if (isRealtimeMessage) {
                                 try {
@@ -4820,10 +5053,12 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                         // Limpiar extensión: "image/jpeg" -> "jpeg"
                                         const ext = mediaMimeType?.split('/')[1]?.split(';')[0]?.trim() || 'jpg';
                                         const filename = `image-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
+                                        fileName = filename;
                                         const filepath = path.join(__dirname, '../../media', filename);
                                         fs.writeFileSync(filepath, buffer);
                                         mediaUrl = `/media/${filename}`;
-                                        console.log(`[${sessionId}] 📸 Imagen guardada: ${mediaUrl}`);
+                                        fileSize = buffer.length; // Tamaño real del archivo descargado
+                                        console.log(`[${sessionId}] 📸 Imagen guardada: ${mediaUrl} (${fileSize} bytes)`);
                                     }
                                 } catch (err) {
                                     console.error(`[${sessionId}] ❌ Error descargando imagen:`, err.message);
@@ -4835,8 +5070,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 textContent = textContent || '📷 Imagen';
                             }
                         } else if (messageType === 'videoMessage' && msg.message.videoMessage) {
-                            textContent = msg.message.videoMessage.caption || '';
+                            caption = msg.message.videoMessage.caption || null;
+                            textContent = caption || '🎥 Video';
                             mediaMimeType = msg.message.videoMessage.mimetype;
+                            fileSize = msg.message.videoMessage.fileLength || null;
 
                             if (isRealtimeMessage) {
                                 try {
@@ -4845,10 +5082,12 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                         // Limpiar extensión: "video/mp4" -> "mp4"
                                         const ext = mediaMimeType?.split('/')[1]?.split(';')[0]?.trim() || 'mp4';
                                         const filename = `video-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
+                                        fileName = filename;
                                         const filepath = path.join(__dirname, '../../media', filename);
                                         fs.writeFileSync(filepath, buffer);
                                         mediaUrl = `/media/${filename}`;
-                                        console.log(`[${sessionId}] 🎥 Video guardado: ${mediaUrl}`);
+                                        fileSize = buffer.length;
+                                        console.log(`[${sessionId}] 🎥 Video guardado: ${mediaUrl} (${fileSize} bytes)`);
                                     }
                                 } catch (err) {
                                     console.error(`[${sessionId}] ❌ Error descargando video:`, err.message);
@@ -4883,17 +5122,20 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 console.log(`[${sessionId}] ⏭️ Audio histórico ignorado (sin clave de descarga)`);
                             }
                         } else if (messageType === 'documentMessage' && msg.message.documentMessage) {
-                            textContent = msg.message.documentMessage.title || msg.message.documentMessage.fileName || 'Document';
+                            fileName = msg.message.documentMessage.fileName || 'document';
+                            textContent = msg.message.documentMessage.title || fileName || '📄 Documento';
                             mediaMimeType = msg.message.documentMessage.mimetype;
+                            fileSize = msg.message.documentMessage.fileLength || null;
                             try {
                                 const buffer = await downloadMediaMessage(msg, 'buffer', {});
                                 if (buffer) {
-                                    const ext = msg.message.documentMessage.fileName?.split('.').pop() || 'pdf';
-                                    const filename = `doc-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
-                                    const filepath = path.join(__dirname, '../../media', filename);
+                                    const ext = fileName?.split('.').pop() || 'pdf';
+                                    const savedFilename = `doc-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
+                                    const filepath = path.join(__dirname, '../../media', savedFilename);
                                     fs.writeFileSync(filepath, buffer);
-                                    mediaUrl = `/media/${filename}`;
-                                    console.log(`[${sessionId}] 📄 Documento guardado: ${mediaUrl}`);
+                                    mediaUrl = `/media/${savedFilename}`;
+                                    fileSize = buffer.length;
+                                    console.log(`[${sessionId}] 📄 Documento guardado: ${mediaUrl} (${fileName}, ${fileSize} bytes)`);
                                 }
                             } catch (err) {
                                 console.error(`[${sessionId}] Error descargando documento:`, err);
@@ -4951,6 +5193,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             text_content: textContent,
                             media_url: mediaUrl,
                             media_mime_type: mediaMimeType,
+                            caption: caption,
+                            file_name: fileName,
+                            file_size: fileSize,
                             timestamp: msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000) : new Date(),
                             status: msg.key.fromMe ? 'sent' : 'received' // Estado inicial
                         };
@@ -5523,6 +5768,13 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 }
             }
             console.log(`[${sessionId}] ✅ Contactos de contacts.set procesados`);
+
+            // Descargar avatares de los contactos recién sincronizados
+            setTimeout(async () => {
+                console.log(`[${sessionId}] 🖼️ Iniciando descarga automática de avatares...`);
+                await downloadAllAvatars(sessionId, sock);
+                console.log(`[${sessionId}] 🖼️ Descarga automática de avatares completada`);
+            }, 2000);
         });
 
         // ⭐ EVENTO CRÍTICO: messaging-history.set - Historial de mensajes completo
@@ -5551,6 +5803,13 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     }
                 }
                 console.log(`[${sessionId}] ✅ Contactos del historial guardados`);
+                
+                // DESCARGAR AVATARES de los contactos recién guardados
+                setTimeout(async () => {
+                    console.log(`[${sessionId}] 🖼️ Iniciando descarga de avatares después del historial...`);
+                    await downloadAllAvatars(sessionId, sock);
+                    console.log(`[${sessionId}] 🖼️ Descarga de avatares completada`);
+                }, 3000);
             }
             
             // Cargar contactos en tablero "Sin Categoría" después de procesar contactos
@@ -8374,6 +8633,7 @@ app.get('/api/history/messages', async (req, res) => {
             senderName: msg.sender_name || (msg.from_me ? 'Yo' : msg.sender_jid?.split('@')[0]),
             fromMe: !!msg.from_me,
             message: msg.text_content,
+            text: msg.text_content, // Agregar campo text para compatibilidad con frontend
             mediaUrl: msg.media_url,
             mediaMimeType: msg.media_mime_type,
             timestamp: new Date(msg.timestamp).toISOString(),
@@ -18646,10 +18906,10 @@ app.post('/api/sync-settings/:sessionId', async (req, res) => {
                 if (session && session.sock && session.isConnected) {
                     console.log(`[${sessionId}] 🔁 Iniciando sincronización completa por cambio de configuración`);
 
-                    // Ejecutar sincronización completa en background
+                    // 🔧 CAMBIO: Sincronizar solo contactos en background
                     setTimeout(async () => {
                         try {
-                            await performFullSync(sessionId, session.sock, await getUserSessionId(sessionId));
+                            await syncContactsOnly(sessionId, session.sock, await getUserSessionId(sessionId));
 
                             // Emitir evento para notificar al frontend sobre la sincronización
                             const updatedChats = await loadChatListFromDB(sessionId);
@@ -19041,6 +19301,70 @@ server.listen(PORT, '0.0.0.0', async () => {
 
     // Hacer io accesible globalmente en app
     app.set('io', io);
+
+    // 🔄 SINCRONIZACIÓN PERIÓDICA: Cada 5 segundos sincronizar últimos mensajes de chats activos
+    setInterval(async () => {
+        for (const [sessionKey, sessionInfo] of sessions.entries()) {
+            if (!sessionInfo.isConnected || !sessionInfo.sock || !sessionInfo.phoneNumber) continue;
+            
+            try {
+                const phoneNumber = sessionInfo.phoneNumber;
+                const sock = sessionInfo.sock;
+                
+                const connection = await pool.getConnection();
+                try {
+                    // Obtener chats con actividad en la última hora
+                    const [activeChats] = await connection.execute(
+                        `SELECT DISTINCT chat_jid, MAX(timestamp) as last_msg 
+                         FROM messages 
+                         WHERE session_id = ? AND timestamp > DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                         AND chat_jid NOT LIKE '%@g.us'
+                         GROUP BY chat_jid
+                         ORDER BY last_msg DESC 
+                         LIMIT 10`,
+                        [phoneNumber]
+                    );
+                    
+                    if (activeChats.length > 0) {
+                        console.log(`[${sessionKey}] 🔄 Sincronizando ${activeChats.length} chats activos...`);
+                    }
+                    
+                    for (const chat of activeChats) {
+                        try {
+                            // Descargar últimos 5 mensajes del chat
+                            const messages = await sock.loadMessages(chat.chat_jid, 5);
+                            
+                            for (const msg of messages) {
+                                if (msg.messageTimestamp) {
+                                    // Verificar si ya existe
+                                    const [existing] = await connection.execute(
+                                        'SELECT id FROM messages WHERE id = ? AND session_id = ?',
+                                        [msg.key.id, phoneNumber]
+                                    );
+                                    
+                                    if (existing.length === 0) {
+                                        // Mensaje nuevo encontrado - emitir como evento notify
+                                        console.log(`[${sessionKey}] 📱 Mensaje sincronizado: ${msg.key.fromMe ? 'ENVIADO' : 'RECIBIDO'} - ${msg.key.id.substring(0, 20)}`);
+                                        sock.ev.emit('messages.upsert', {
+                                            messages: [msg],
+                                            type: 'notify'
+                                        });
+                                    }
+                                }
+                            }
+                        } catch (loadErr) {
+                            // Silencioso - puede fallar si el chat fue eliminado
+                        }
+                    }
+                } finally {
+                    connection.release();
+                }
+            } catch (syncErr) {
+                console.error(`[${sessionKey}] Error en sincronización periódica:`, syncErr.message);
+            }
+        }
+    }, 5000); // Cada 5 segundos
+    console.log('✅ Sincronización periódica activada (cada 5 segundos)');
 
     // ============= SISTEMA MULTI-AGENTE =============
     // Cargar endpoints del sistema multi-agente después de inicializar BD
