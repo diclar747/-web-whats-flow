@@ -14185,38 +14185,39 @@ app.get('/api/users', async (req, res) => {
         // Verificar si el usuario que hace la petición es admin
         const connection = await pool.getConnection();
         try {
-            const [adminCheck] = await connection.execute(
-                'SELECT is_admin, is_super_admin FROM users WHERE phone = ? LIMIT 1',
+            // LÓGICA CORRECTA:
+            // - Admin por QR: SOLO existe en user_sessions, NO en users
+            // - Admin por QR puede ver sus agentes (que están en users con admin_phone = su número)
+            // - Si existe sesión activa en user_sessions, ES ADMIN
+            
+            const [sessionCheck] = await connection.execute(
+                'SELECT session_id, phone_number FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
                 [adminPhone]
             );
-
-            // Si no existe en users, verificar si tiene sesión activa de WhatsApp (admin por QR)
+            
             let isAdmin = false;
-            if (adminCheck.length === 0) {
-                console.log(`[USERS] ⚠️ Usuario ${adminPhone} no encontrado en tabla users, verificando sesión de WhatsApp...`);
-                const [sessionCheck] = await connection.execute(
-                    'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+            
+            if (sessionCheck.length > 0) {
+                // Tiene sesión activa de WhatsApp = Admin por QR
+                console.log(`[USERS] ✅ Usuario ${adminPhone} tiene sesión activa de WhatsApp - Admin por QR`);
+                isAdmin = true;
+            } else {
+                // No tiene sesión activa, verificar si es admin en tabla users
+                const [adminCheck] = await connection.execute(
+                    'SELECT is_admin, is_super_admin FROM users WHERE phone = ? LIMIT 1',
                     [adminPhone]
                 );
                 
-                if (sessionCheck.length > 0) {
-                    console.log(`[USERS] ✅ Usuario ${adminPhone} tiene sesión activa de WhatsApp - Admin por QR`);
-                    isAdmin = true; // Admin por QR
+                if (adminCheck.length > 0 && adminCheck[0].is_admin === 1) {
+                    console.log(`[USERS] ✅ Usuario ${adminPhone} es admin en tabla users`);
+                    isAdmin = true;
                 } else {
-                    console.log(`[USERS] ❌ Acceso denegado: ${adminPhone} no es admin y no tiene sesión activa`);
+                    console.log(`[USERS] ❌ Acceso denegado: ${adminPhone} no es admin`);
                     return res.status(403).json({
                         success: false,
                         error: 'No tiene permisos para ver usuarios'
                     });
                 }
-            } else if (adminCheck[0].is_admin !== 1) {
-                console.log(`[USERS] ❌ Acceso denegado: ${adminPhone} no es admin`);
-                return res.status(403).json({
-                    success: false,
-                    error: 'No tiene permisos para ver usuarios'
-                });
-            } else {
-                isAdmin = true;
             }
 
             // Cada admin solo ve sus propios agentes (is_admin = 0, admin_phone = su teléfono)
