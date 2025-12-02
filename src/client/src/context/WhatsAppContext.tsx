@@ -601,14 +601,21 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           mappedMessage.chatJid.split('@')[0] === activeChatRef.current.id.split('@')[0]
         );
 
+        console.log('%c🔍 VERIFICANDO CHAT ACTIVO', 'background: orange; color: black; font-size: 16px; padding: 5px;');
         console.log('🔍 Verificando si es chat activo:', {
           isActiveChat,
           mappedChatJid: mappedMessage.chatJid,
           activeChatId: activeChatRef.current?.id,
           comparison: mappedMessage.chatJid === activeChatRef.current?.id
         });
+        
+        if (!isActiveChat) {
+          console.log('%c❌ NO ES CHAT ACTIVO - MENSAJE NO SE MOSTRARÁ', 'background: red; color: white; font-size: 16px; padding: 5px;');
+          console.log('Razón: El chat del mensaje no coincide con el chat abierto actualmente');
+        }
 
         if (isActiveChat) {
+          console.log('%c✅ ES CHAT ACTIVO - AGREGANDO MENSAJE', 'background: green; color: white; font-size: 20px; padding: 10px;');
           setMessages(prev => {
             // ⚡ OPTIMIZACIÓN: Sistema de deduplicación mejorado con caché de IDs
             const existingIds = new Set(prev.map(msg => msg.id));
