@@ -4907,13 +4907,16 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 }
             }
 
-            // 🚫 BLOQUEAR mensajes históricos SIEMPRE (append/prepend)
-            if (m.type === 'append' || m.type === 'prepend') {
-                console.log(`[${sessionId}] 🚫 BLOQUEADO - Ignorando ${m.messages.length} mensajes HISTÓRICOS tipo ${m.type} (solo tiempo real)`);
+            // 🔧 CORREGIDO: Solo bloquear 'prepend' (históricos viejos), NO 'append' (desde teléfono)
+            // 'append' = mensajes enviados desde el teléfono (NECESARIOS para tiempo real)
+            // 'prepend' = mensajes históricos antiguos (NO necesarios)
+            // 'notify' = mensajes nuevos entrantes (NECESARIOS)
+            if (m.type === 'prepend') {
+                console.log(`[${sessionId}] 🚫 BLOQUEADO - Ignorando ${m.messages.length} mensajes HISTÓRICOS tipo prepend`);
                 return;
             }
             
-            console.log(`[${sessionId}] ✅ Procesando ${m.messages.length} mensajes en TIEMPO REAL tipo: ${m.type}`);
+            console.log(`[${sessionId}] ✅ Procesando ${m.messages.length} mensajes tipo: ${m.type} (${m.type === 'append' ? 'DESDE TELÉFONO' : m.type === 'notify' ? 'ENTRANTES' : 'OTROS'})`);
 
             // ═══════════════════════════════════════════════════════════
             // EMISIÓN FORZADA EN TIEMPO REAL - EJECUTAR SIEMPRE
