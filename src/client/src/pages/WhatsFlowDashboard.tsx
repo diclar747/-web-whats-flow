@@ -207,11 +207,12 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
 
   // 🔍 DEBUG: Loguear cambios en dashboardStats
   useEffect(() => {
-    console.log('[DASHBOARD] 📊 dashboardStats actualizado:', {
+    console.log('%c[DASHBOARD] 📊 dashboardStats CAMBIÓ:', 'background: red; color: white; font-weight: bold; padding: 5px;', {
       agents: dashboardStats.agents,
       chatbots: dashboardStats.chatbots,
       kanbans: dashboardStats.kanbans,
-      contacts: dashboardStats.contacts
+      contacts: dashboardStats.contacts,
+      STACK: new Error().stack
     });
   }, [dashboardStats]);
 
@@ -492,8 +493,8 @@ const fetchDashboardStats = useCallback(async () => {
         appointments: data.stats.appointments || 0
       };
       
-      console.log('[STATS-DEBUG] ✅ Stats estructuradas:', stats);
-      console.log('[STATS-DEBUG] 🎯 Detalle KANBANS:', {
+      console.log('%c[STATS-DEBUG] ✅ Stats estructuradas:', 'background: green; color: white; padding: 5px;', stats);
+      console.log('%c[STATS-DEBUG] 🎯 KANBANS RECIBIDOS DEL SERVIDOR:', 'background: yellow; color: black; font-weight: bold; padding: 5px;', {
         recibidoDelServidor: data.stats.kanbans,
         procesado: stats.kanbans,
         tipo: typeof stats.kanbans,
@@ -501,6 +502,7 @@ const fetchDashboardStats = useCallback(async () => {
         esCero: stats.kanbans === 0
       });
       
+      console.log('%c[STATS] 🚀 LLAMANDO setDashboardStats con kanbans=' + stats.kanbans, 'background: blue; color: white; font-weight: bold; padding: 5px;');
       setDashboardStats(stats);
       console.log('[STATS] 📊 Estadísticas actualizadas:', stats);
       console.log('[STATS-DEBUG] === FIN fetchDashboardStats ===');
@@ -543,10 +545,12 @@ const handleStatsUpdate = useCallback((stats: any) => {
     appointments: stats.appointments || 0
   };
 
-  console.log('[SOCKET] ✅ Actualizando dashboardStats con:', {
+  console.log('%c[SOCKET] ⚠️ SOCKET.IO SOBRESCRIBIENDO dashboardStats:', 'background: orange; color: black; font-weight: bold; padding: 5px;', {
     agents: updatedStats.agents,
     chatbots: updatedStats.chatbots,
-    kanbans: updatedStats.kanbans
+    kanbans: updatedStats.kanbans,
+    statsOriginales: stats,
+    STACK: new Error().stack
   });
 
   setDashboardStats(updatedStats);
