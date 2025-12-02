@@ -73,6 +73,11 @@ interface KanbanBoard {
   is_default: boolean;
 }
 
+// Layout constants for Kanban board columns
+const MAX_BOARDS_FULL_WIDTH = 5;
+const FIXED_COLUMN_WIDTH_PERCENT = 20;
+const MIN_COLUMN_WIDTH = '250px';
+
 const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }) => {
   const [boards, setBoards] = useState<KanbanBoard[]>([]);
   const [contacts, setContacts] = useState<{ [key: string]: Contact[] }>({});
@@ -821,11 +826,15 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
           flexWrap: 'nowrap',
           overflowX: 'auto',
           pb: 2,
-          '& > .MuiGrid-item': {
-            flex: boards.length <= 5 ? `0 0 ${100 / Math.max(boards.length, 1)}%` : '0 0 20%',
-            maxWidth: boards.length <= 5 ? `${100 / Math.max(boards.length, 1)}%` : '20%',
-            minWidth: '250px',
-          }
+          '& > .MuiGrid-item': (() => {
+            const columnWidthPercent = 100 / Math.max(boards.length, 1);
+            const useFullWidth = boards.length <= MAX_BOARDS_FULL_WIDTH;
+            return {
+              flex: useFullWidth ? `0 0 ${columnWidthPercent}%` : `0 0 ${FIXED_COLUMN_WIDTH_PERCENT}%`,
+              maxWidth: useFullWidth ? `${columnWidthPercent}%` : `${FIXED_COLUMN_WIDTH_PERCENT}%`,
+              minWidth: MIN_COLUMN_WIDTH,
+            };
+          })()
         }}
       >
         {boards.map(board => renderColumn(board))}
