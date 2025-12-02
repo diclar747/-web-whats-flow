@@ -659,7 +659,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
     const boardContacts = filterContacts(contacts[board.id] || []);
 
     return (
-      <Grid item xs={12} sm={6} md={4} lg={2.4} key={board.id}>
+      <Grid item key={board.id}>
         <Box
           onDragOver={handleDragOver}
           onDrop={() => handleDrop(board.id)}
@@ -809,8 +809,25 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
         </Tooltip>
       </Stack>
 
-      {/* Columnas Kanban */}
-      <Grid container spacing={2} sx={{ width: '100%', maxWidth: '100%', m: 0 }}>
+      {/* Columnas Kanban - Diseño responsivo para ocupar 100% del ancho */}
+      <Grid 
+        container 
+        spacing={2} 
+        sx={{ 
+          width: '100%', 
+          maxWidth: '100%', 
+          m: 0,
+          display: 'flex',
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
+          pb: 2,
+          '& > .MuiGrid-item': {
+            flex: boards.length <= 5 ? `0 0 ${100 / Math.max(boards.length, 1)}%` : '0 0 20%',
+            maxWidth: boards.length <= 5 ? `${100 / Math.max(boards.length, 1)}%` : '20%',
+            minWidth: '250px',
+          }
+        }}
+      >
         {boards.map(board => renderColumn(board))}
       </Grid>
 
