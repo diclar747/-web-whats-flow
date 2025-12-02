@@ -1694,9 +1694,10 @@ async function saveMessageToDB(sessionId, msg) {
         const chat_jid = normalizeJid(rawChatJid);
         const sender_jid = normalizeJid(rawSenderJid);
         
-        // 🚫 FILTRAR mensajes sin contenido (reacciones, ediciones, etc)
-        if (!text_content && !media_url && !message_type) {
-            console.log(`[DB-MSG] ⏭️ Mensaje ${messageId} ignorado: sin contenido, sin media, sin tipo`);
+        // 🚫 FILTRAR solo reacciones y mensajes completamente vacíos
+        // Permitir mensajes con al menos text_content O media_url
+        if (!text_content && !media_url) {
+            console.log(`[DB-MSG] ⏭️ Mensaje ${messageId} ignorado: sin texto y sin media (posible reacción/edición)`);
             return null;
         }
 
