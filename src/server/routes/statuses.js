@@ -119,10 +119,9 @@ module.exports = (app, io) => {
 
             const [statuses] = await getPool().query(statusQuery, params);
 
-            // Obtener programaciones activas
+            // Obtener programaciones activas (sin total_items ya que la tabla no existe)
             const [schedules] = await getPool().query(
-                `SELECT s.*, 
-         (SELECT COUNT(*) FROM status_schedule_items WHERE schedule_id = s.id) as total_items
+                `SELECT s.*
          FROM status_schedules s
          WHERE s.session_id = ?
          ORDER BY s.created_at DESC`,
