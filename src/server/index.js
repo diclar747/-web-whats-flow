@@ -4798,6 +4798,32 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
         // Manejar mensajes entrantes
         sock.ev.on('messages.upsert', async (m) => {
+            // 🔍 DEBUG: Log de TODOS los mensajes que llegan
+            console.log('');
+            console.log('═══════════════════════════════════════════════════════════');
+            console.log(`[${sessionId}] 📨 MENSAJE DETECTADO - Tipo: ${m.type}`);
+            console.log(`[${sessionId}] 📊 Cantidad: ${m.messages.length} mensaje(s)`);
+            
+            for (let i = 0; i < m.messages.length; i++) {
+                const msg = m.messages[i];
+                const isFromMe = msg.key?.fromMe;
+                const remoteJid = msg.key?.remoteJid;
+                const messageType = Object.keys(msg.message || {})[0];
+                const text = msg.message?.conversation || 
+                            msg.message?.extendedTextMessage?.text || 
+                            msg.message?.imageMessage?.caption || 
+                            msg.message?.videoMessage?.caption || 
+                            '(sin texto)';
+                
+                console.log(`[${sessionId}] ${i + 1}. ${isFromMe ? '📤 ENVIADO' : '📥 RECIBIDO'}`);
+                console.log(`   De/Para: ${remoteJid}`);
+                console.log(`   Tipo msg: ${messageType}`);
+                console.log(`   Texto: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
+                console.log(`   Timestamp: ${new Date(msg.messageTimestamp * 1000).toLocaleString()}`);
+            }
+            console.log('═══════════════════════════════════════════════════════════');
+            console.log('');
+            
             // ═══════════════════════════════════════════════════════════
             // CAPTURA DE LIDs ANTES DEL FILTRADO
             // ═══════════════════════════════════════════════════════════
