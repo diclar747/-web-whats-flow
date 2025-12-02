@@ -524,13 +524,15 @@ useEffect(() => {
 
 // ✅ FIX: Memoizar handlers de Socket.IO para evitar recrearlos en cada render
 const handleStatsUpdate = useCallback((stats: any) => {
-  console.log('[SOCKET] 📊 Estadísticas actualizadas en tiempo real desde Socket.IO:', {
-    agents: stats.agents,
-    chatbots: stats.chatbots,
-    kanbans: stats.kanbans,
-    fullStats: stats
-  });
-
+  console.log('%c[SOCKET] 🚫 BLOQUEADO - Socket.IO intentó actualizar stats pero está DESHABILITADO', 'background: red; color: white; font-weight: bold; padding: 5px;');
+  console.log('[SOCKET] Stats que intentó enviar:', stats);
+  console.log('[SOCKET] ℹ️ Solo el fetch inicial actualiza los stats, Socket.IO está deshabilitado para evitar sobrescribir con 0');
+  
+  // 🚫 DESHABILITADO: Socket.IO sobrescribe los stats con 0
+  // Solo usamos el fetch inicial de fetchDashboardStats()
+  // NO actualizar dashboardStats desde Socket.IO
+  
+  /* BLOQUEADO
   const updatedStats = {
     contacts: stats.contacts?.total || 0,
     groups: stats.contacts?.groups || 0,
@@ -544,16 +546,8 @@ const handleStatsUpdate = useCallback((stats: any) => {
     kanbans: stats.kanbans || 0,
     appointments: stats.appointments || 0
   };
-
-  console.log('%c[SOCKET] ⚠️ SOCKET.IO SOBRESCRIBIENDO dashboardStats:', 'background: orange; color: black; font-weight: bold; padding: 5px;', {
-    agents: updatedStats.agents,
-    chatbots: updatedStats.chatbots,
-    kanbans: updatedStats.kanbans,
-    statsOriginales: stats,
-    STACK: new Error().stack
-  });
-
   setDashboardStats(updatedStats);
+  */
 }, []);
 
 const handleConnectionUpdate = useCallback((data: any) => {
