@@ -2565,8 +2565,8 @@ async function downloadAllAvatars(sessionId, sock) {
         let downloadedCount = 0;
         let errorCount = 0;
 
-        // Descargar avatares de contactos individuales en lotes
-        const BATCH_SIZE = 50;
+        // Descargar avatares de contactos individuales en lotes pequeños
+        const BATCH_SIZE = 20; // Reducido de 50 a 20 para evitar sobrecarga
         for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
             const batch = contacts.slice(i, i + BATCH_SIZE);
             console.log(`[${sessionId}] 🖼️ Procesando lote ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(contacts.length/BATCH_SIZE)} de contactos...`);
@@ -2596,17 +2596,21 @@ async function downloadAllAvatars(sessionId, sock) {
                         console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados (${Math.round(downloadedCount/totalToDownload*100)}%)...`);
                     }
 
-                    await new Promise(resolve => setTimeout(resolve, 30));
+                    // Aumentado de 30ms a 200ms para evitar sobrecarga de WhatsApp
+                    await new Promise(resolve => setTimeout(resolve, 200));
                 } catch (err) {
                     errorCount++;
-                    if (errorCount <= 5) {
+                    if (errorCount <= 10) {
                         console.error(`[${sessionId}] ❌ Error descargando avatar de contacto ${contact.jid}:`, err.message);
                     }
                 }
             }
+            
+            // Pausa de 2 segundos entre lotes para no saturar
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
 
-        // Descargar avatares de grupos en lotes
+        // Descargar avatares de grupos en lotes pequeños
         for (let i = 0; i < groups.length; i += BATCH_SIZE) {
             const batch = groups.slice(i, i + BATCH_SIZE);
             console.log(`[${sessionId}] 🖼️ Procesando lote ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(groups.length/BATCH_SIZE)} de grupos...`);
@@ -2636,15 +2640,19 @@ async function downloadAllAvatars(sessionId, sock) {
                         console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados (${Math.round(downloadedCount/totalToDownload*100)}%)...`);
                     }
 
-                    await new Promise(resolve => setTimeout(resolve, 30));
+                    // Aumentado de 30ms a 200ms para evitar sobrecarga de WhatsApp
+                    await new Promise(resolve => setTimeout(resolve, 200));
 
                 } catch (err) {
                     errorCount++;
-                    if (errorCount <= 5) {
+                    if (errorCount <= 10) {
                         console.error(`[${sessionId}] ❌ Error descargando avatar de grupo ${group.jid}:`, err.message);
                     }
                 }
             }
+            
+            // Pausa de 2 segundos entre lotes para no saturar
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
 
         console.log(`[${sessionId}] ✅ Descarga de avatares completada: ${downloadedCount} exitosos, ${errorCount} errores`);
