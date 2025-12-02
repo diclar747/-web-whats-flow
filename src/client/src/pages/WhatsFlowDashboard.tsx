@@ -1059,18 +1059,24 @@ return (
             </Tooltip>
 
             {/* Kanbans activos */}
-            <Tooltip title={`Tableros Kanban: ${dashboardStats.kanbans || 0}`}>
+            <Tooltip title={`Tableros Kanban: ${dashboardStats.kanbans || 0} - Click para debug`}>
               <Chip
                 icon={<KanbanIcon sx={{ fontSize: 16 }} />}
                 label={`${dashboardStats.kanbans || 0} Kanbans`}
                 size="small"
                 variant="outlined"
+                onClick={() => {
+                  console.log('%c🔥 KANBAN DEBUG 🔥', 'background: red; color: white; font-size: 20px; padding: 10px;');
+                  console.log('dashboardStats:', dashboardStats);
+                  alert(`Kanbans: ${dashboardStats.kanbans}\nVer consola para más detalles`);
+                }}
                 sx={{
                   fontWeight: 600,
                   fontSize: '0.75rem',
                   height: 28,
                   borderColor: '#673ab7',
-                  color: '#673ab7'
+                  color: '#673ab7',
+                  cursor: 'pointer'
                 }}
               />
             </Tooltip>
