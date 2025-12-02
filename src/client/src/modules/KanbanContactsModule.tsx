@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import {
   Box,
@@ -124,6 +124,19 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
 
   // Menu contextual
   const [menuAnchor, setMenuAnchor] = useState<{ element: HTMLElement; board: KanbanBoard } | null>(null);
+
+  // Calculate column styles based on number of boards
+  const columnStyles = useMemo(() => {
+    const boardCount = Math.max(boards.length, 1);
+    const columnWidthPercent = Math.max(100 / boardCount, FIXED_COLUMN_WIDTH_PERCENT);
+    const useFullWidth = boards.length <= MAX_BOARDS_FULL_WIDTH;
+    
+    return {
+      flex: useFullWidth ? `0 0 ${columnWidthPercent}%` : `0 0 ${FIXED_COLUMN_WIDTH_PERCENT}%`,
+      maxWidth: useFullWidth ? `${columnWidthPercent}%` : `${FIXED_COLUMN_WIDTH_PERCENT}%`,
+      minWidth: MIN_COLUMN_WIDTH,
+    };
+  }, [boards.length]);
 
   useEffect(() => {
     loadBoards();
@@ -826,15 +839,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
           flexWrap: 'nowrap',
           overflowX: 'auto',
           pb: 2,
-          '& > .MuiGrid-item': (() => {
-            const columnWidthPercent = 100 / Math.max(boards.length, 1);
-            const useFullWidth = boards.length <= MAX_BOARDS_FULL_WIDTH;
-            return {
-              flex: useFullWidth ? `0 0 ${columnWidthPercent}%` : `0 0 ${FIXED_COLUMN_WIDTH_PERCENT}%`,
-              maxWidth: useFullWidth ? `${columnWidthPercent}%` : `${FIXED_COLUMN_WIDTH_PERCENT}%`,
-              minWidth: MIN_COLUMN_WIDTH,
-            };
-          })()
+          '& > .MuiGrid-item': columnStyles
         }}
       >
         {boards.map(board => renderColumn(board))}
