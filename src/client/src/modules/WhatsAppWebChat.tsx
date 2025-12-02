@@ -285,27 +285,27 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   // ✅ RECARGA AUTOMÁTICA DESACTIVADA - El sistema ya usa Socket.IO para tiempo real
   // WhatsAppContext maneja automáticamente los mensajes en tiempo real vía Socket.IO
 
-  // Socket.IO: HABILITADO - Necesario para recibir mensajes en tiempo real
+  // Socket.IO: Usar el socket global del contexto en lugar de crear uno nuevo
   useEffect(() => {
     if (!sessionId || !whatsappConnected) return;
 
-    // Crear conexión Socket.IO con query
-    const socket = io(getAPIBaseURL(), {
-      query: { sessionId },
-      transports: ['websocket', 'polling']
-    });
+    console.log('🔌 Configurando listeners de Socket.IO para mensajes en tiempo real');
+    
+    // Obtener socket del contexto global (ya conectado)
+    const globalSocket = (window as any).globalSocket;
+    if (!globalSocket) {
+      console.warn('⚠️ No hay socket global disponible');
+      return;
+    }
+    
+    const socket = globalSocket;
     socketRef.current = socket;
     
-    // Listener de conexión
-    socket.on('connect', () => {
-      console.log(`🔌 Socket.IO conectado para sesión: ${sessionId}`);
+    // Asegurarse de estar en la sala correcta
+    if (socket.connected) {
       socket.emit('join-session', sessionId);
-    });
-    
-    // Listener de desconexión
-    socket.on('disconnect', (reason: string) => {
-      console.log('🔌 Socket.IO desconectado:', reason);
-    });
+      console.log(`✅ Unido a sala: session-${sessionId}`);
+    }
     
     // Escuchar actualizaciones de estado de mensajes
     socket.on('message-status-update', (data: any) => {
@@ -326,15 +326,14 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       }
     });
     
-    // Cleanup al desmontar
+    // Cleanup al desmontar - solo remover listeners, NO desconectar socket global
     return () => {
-      console.log('🔌 Desconectando Socket.IO');
+      console.log('🧹 Limpiando listeners de Socket.IO');
       socket.off('message-status-update');
       socket.off('message');
-      socket.disconnect();
       socketRef.current = null;
     };
-  }, [sessionId, whatsappConnected, activeChat, loadChats, loadMessages]);
+  }, [sessionId, whatsappConnected, activeChat, loadMessages]);
 
   // Sincronización automática DESHABILITADA - Solo manual desde configuración
   // useEffect(() => {

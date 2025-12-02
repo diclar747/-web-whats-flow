@@ -74,6 +74,10 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     });
 
     setSocket(newSocket);
+    
+    // Exponer socket globalmente para otros componentes
+    (window as any).globalSocket = newSocket;
+    console.log('🌍 Socket expuesto globalmente en window.globalSocket');
 
     // Eventos de conexión
     newSocket.on('connect', () => {
