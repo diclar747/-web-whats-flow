@@ -3129,11 +3129,11 @@ async function performFullSync(sessionId, sock, userSessionId) {
 }
 
 // Helper function to load chat list from DB
-async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter = 'today') {
+async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter = 'all') {
     // Obtener el número de teléfono del usuario en lugar de la session_id temporal
     const phoneNumber = await getUserPhoneNumber(sessionId);
     
-    console.log(`[CHATLIST] 📅 Cargando chats con filtro: ${dateFilter}`);
+    console.log(`[CHATLIST] 📅 Cargando chats con filtro: ${dateFilter} (sessionId: ${sessionId}, phoneNumber: ${phoneNumber})`);
 
     // Modo memoria si no hay DB
     if (process.env.SKIP_DB === 'true' || !pool || memoryStorage.isMemoryMode) {
@@ -3235,10 +3235,6 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                       AND chat_jid NOT LIKE '%status@broadcast%'
                       AND chat_jid NOT LIKE '%@lid%'
                       ${includeGroups ? '' : 'AND chat_jid NOT LIKE \'%@g.us\''}
-                      AND timestamp >= COALESCE(
-                        (SELECT last_connection_time FROM user_sessions WHERE phone_number = ? LIMIT 1),
-                        DATE_SUB(NOW(), INTERVAL 1 HOUR)
-                      )
                       ${dateFilterSQL}
                     GROUP BY chat_jid
                 ) max_m ON m.chat_jid = max_m.chat_jid AND m.timestamp = max_m.max_timestamp
@@ -3247,7 +3243,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             LEFT JOIN contacts c ON latest.chat_jid = c.jid AND c.session_id IN (?, ?)
             ORDER BY latest.timestamp DESC
             LIMIT 100;`,
-            [phoneNumber, sessionId, phoneNumber, sessionId, phoneNumber, phoneNumber, sessionId, phoneNumber, sessionId]
+            [phoneNumber, sessionId, phoneNumber, sessionId, phoneNumber, sessionId, phoneNumber, sessionId]
         );
 
         const chatList = rows.map(row => {
@@ -17029,7 +17025,16 @@ app.get('/api/chat-assignments/agent/:userId', async (req, res) => {
 app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
 
+    console.log('[STATS-API-DEBUG] 🔍 === SOLICITUD DE STATS ===');
+    console.log('[STATS-API-DEBUG] 📋 SessionId recibido:', {
+        sessionId,
+        length: sessionId?.length,
+        type: typeof sessionId,
+        timestamp: new Date().toISOString()
+    });
+
     if (!pool) {
+        console.warn('[STATS-API-DEBUG] ⚠️ Pool de DB no disponible, devolviendo stats en 0');
         return res.json({
             success: true,
             stats: {
@@ -17046,7 +17051,14 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
     try {
         // Obtener todos los session_ids válidos para este usuario
         const sessionIds = await getAllSessionIds(sessionId);
+        console.log('[STATS-API-DEBUG] 🔑 SessionIds obtenidos:', {
+            original: sessionId,
+            encontrados: sessionIds,
+            cantidad: sessionIds?.length
+        });
+
         if (!sessionIds || sessionIds.length === 0) {
+            console.warn('[STATS-API-DEBUG] ⚠️ NO SE ENCONTRARON SESSION IDS - Devolviendo stats en 0');
             return res.json({
                 success: true,
                 stats: {
@@ -17152,22 +17164,32 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                 sessionIds
             );
 
+            const statsToSend = {
+                // Para el header (formato plano)
+                contacts: contactsResult[0].total || 0,
+                groups: groupsResult[0].total || 0,
+                messages: messagesResult[0].total || 0,
+                messagesToday: messagesTodayResult[0].total || 0,
+                agents: agentsResult[0].total || 0,
+                activeLines: activeLinesResult[0].total || 0,
+                unreadMessages: unreadMessagesResult[0].total || 0,
+                chatbots: chatbotsResult[0].total || 0,
+                campaigns: campaignsResult[0].total || 0,
+                kanbans: kanbansResult[0].total || 0,
+                appointments: appointmentsResult[0].total || 0
+            };
+
+            console.log('[STATS-API-DEBUG] 📊 Stats calculadas desde DB:', {
+                kanbans: statsToSend.kanbans,
+                contacts: statsToSend.contacts,
+                agents: statsToSend.agents,
+                chatbots: statsToSend.chatbots,
+                todasLasStats: statsToSend
+            });
+
             res.json({
                 success: true,
-                stats: {
-                    // Para el header (formato plano)
-                    contacts: contactsResult[0].total || 0,
-                    groups: groupsResult[0].total || 0,
-                    messages: messagesResult[0].total || 0,
-                    messagesToday: messagesTodayResult[0].total || 0,
-                    agents: agentsResult[0].total || 0,
-                    activeLines: activeLinesResult[0].total || 0,
-                    unreadMessages: unreadMessagesResult[0].total || 0,
-                    chatbots: chatbotsResult[0].total || 0,
-                    campaigns: campaignsResult[0].total || 0,
-                    kanbans: kanbansResult[0].total || 0,
-                    appointments: appointmentsResult[0].total || 0
-                },
+                stats: statsToSend,
                 // Para el DashboardOverview (formato anidado)
                 messages: {
                     total: parseInt(messageStatsDetailed[0].total) || 0,

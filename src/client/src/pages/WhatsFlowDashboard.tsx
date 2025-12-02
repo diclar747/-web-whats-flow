@@ -155,6 +155,14 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       localStorage.setItem('whatsflow_session', sessionId);
       sessionStorage.setItem('whatsflow_session', sessionId);
       console.log('[DASHBOARD] 💾 SessionId guardado para Socket.IO:', sessionId);
+      console.log('[DASHBOARD-DEBUG] 🔍 SessionId completo:', {
+        sessionId,
+        length: sessionId.length,
+        type: typeof sessionId,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.warn('[DASHBOARD-DEBUG] ⚠️ SessionId es NULL o undefined!');
     }
   }, [sessionId]);
   const { chats } = useWhatsApp();
@@ -423,12 +431,42 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
 
   // Función para obtener estadísticas del dashboard
 const fetchDashboardStats = useCallback(async () => {
-  if (!sessionId || sessionValid === false) return;
+  console.log('[STATS-DEBUG] 🔍 === INICIANDO fetchDashboardStats ===');
+  console.log('[STATS-DEBUG] 📋 Estado actual:', {
+    sessionId: sessionId || 'NULL',
+    sessionIdLength: sessionId?.length,
+    sessionValid,
+    timestamp: new Date().toISOString()
+  });
+
+  if (!sessionId || sessionValid === false) {
+    console.warn('[STATS-DEBUG] ⚠️ ABORTANDO - sessionId o sessionValid inválidos:', {
+      sessionId: sessionId || 'NULL',
+      sessionValid,
+      razón: !sessionId ? 'sessionId es null/undefined' : 'sessionValid es false'
+    });
+    return;
+  }
 
   try {
+    const url = `/api/dashboard/stats/${sessionId}`;
+    console.log('[STATS-DEBUG] 📡 Haciendo fetch a:', url);
     console.log('[STATS] 🔄 Obteniendo estadísticas desde API para sessionId:', sessionId);
-    const response = await fetch(`/api/dashboard/stats/${sessionId}`);
+    
+    const response = await fetch(url);
+    console.log('[STATS-DEBUG] 📥 Respuesta HTTP:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok
+    });
+
     const data = await response.json();
+
+    console.log('[STATS-DEBUG] 📦 Datos parseados:', {
+      success: data.success,
+      tieneStats: !!data.stats,
+      stats: data.stats
+    });
 
     console.log('[STATS] 📦 Respuesta API recibida:', {
       success: data.success,
@@ -453,8 +491,19 @@ const fetchDashboardStats = useCallback(async () => {
         kanbans: data.stats.kanbans || 0,
         appointments: data.stats.appointments || 0
       };
+      
+      console.log('[STATS-DEBUG] ✅ Stats estructuradas:', stats);
+      console.log('[STATS-DEBUG] 🎯 Detalle KANBANS:', {
+        recibidoDelServidor: data.stats.kanbans,
+        procesado: stats.kanbans,
+        tipo: typeof stats.kanbans,
+        esNumero: typeof stats.kanbans === 'number',
+        esCero: stats.kanbans === 0
+      });
+      
       setDashboardStats(stats);
       console.log('[STATS] 📊 Estadísticas actualizadas:', stats);
+      console.log('[STATS-DEBUG] === FIN fetchDashboardStats ===');
       // Las notificaciones se calculan automáticamente desde chats.unreadCount
     }
   } catch (error) {
