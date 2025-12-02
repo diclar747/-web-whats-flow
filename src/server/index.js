@@ -1640,7 +1640,7 @@ async function resolveLid(lid, sessionId, sock = null) {
 
 // Helper function to save a message to the database
 async function saveMessageToDB(sessionId, msg) {
-    console.log(`[DB-MSG-CALL] Called saveMessageToDB for session: ${sessionId}, messageId: ${msg.id}, chat_jid: ${msg.chat_jid}`);
+    console.log(`[DB-MSG-CALL] ⭐⭐⭐ saveMessageToDB LLAMADO - sessionId: ${sessionId}, messageId: ${msg.id}, chat_jid: ${msg.chat_jid}, from_me: ${msg.from_me}, text: ${(msg.text_content || '').substring(0, 30)}`);
 
     // Obtener el número de teléfono del usuario en lugar de la session_id temporal
     const phoneNumber = await getUserPhoneNumber(sessionId);
@@ -4962,11 +4962,15 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 const isRecent = (now - msgTime) < 300000; // Últimos 5 MINUTOS
 
                 console.log(`[${sessionId}] 🔍 Verificando mensaje:`, {
+                    id: msg.key?.id?.substring(0, 15),
+                    fromMe: msg.key?.fromMe,
                     ageSeconds: ageSeconds,
                     isRecent,
                     hasKey: !!msg.key,
                     remoteJid: msg.key?.remoteJid?.substring(0, 20),
-                    messageType: m.type
+                    messageType: m.type,
+                    hasMessage: !!msg.message,
+                    messageKeys: msg.message ? Object.keys(msg.message).join(',') : 'NONE'
                 });
 
                 if (!isRecent) {
