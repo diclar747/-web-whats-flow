@@ -1693,6 +1693,12 @@ async function saveMessageToDB(sessionId, msg) {
         // Normalizar JIDs para eliminar sufijos de dispositivo/hilo
         const chat_jid = normalizeJid(rawChatJid);
         const sender_jid = normalizeJid(rawSenderJid);
+        
+        // 🚫 FILTRAR mensajes sin contenido (reacciones, ediciones, etc)
+        if (!text_content && !media_url && !message_type) {
+            console.log(`[DB-MSG] ⏭️ Mensaje ${messageId} ignorado: sin contenido, sin media, sin tipo`);
+            return null;
+        }
 
         // Ensure timestamp is in YYYY-MM-DD HH:MM:SS format for MySQL DATETIME
         const mysqlTimestamp = new Date(timestamp).toISOString().slice(0, 19).replace('T', ' ');
