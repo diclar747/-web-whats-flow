@@ -106,7 +106,7 @@ module.exports = (app, io) => {
 
             let statusQuery = `
         SELECT * FROM whatsapp_statuses 
-        WHERE session_id = ?
+        WHERE phone_number = ?
       `;
             const params = [sessionId];
 
