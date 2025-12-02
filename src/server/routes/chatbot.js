@@ -160,7 +160,7 @@ router.put('/flows/:sessionId/:flowId', async (req, res) => {
       `UPDATE chatbot_flows SET 
         name = ?, description = ?, triggers = ?, responses = ?,
         response_type = ?, response_text = ?, response_media = ?, 
-        kanban_board_id = ?, active = ?, flow_type = ?,
+        kanban_board_id = ?, is_active = ?, flow_type = ?,
         ai_business_data = ?, ai_website_url = ?, ai_scraped_content = ?,
         ai_temperature = ?, ai_max_tokens = ?
       WHERE id = ? AND session_id = ?`,
@@ -231,7 +231,7 @@ router.patch('/flows/:sessionId/:flowId/toggle', async (req, res) => {
     const connection = await mysql.createConnection(dbConfig);
     
     await connection.query(
-      'UPDATE chatbot_flows SET active = ? WHERE id = ? AND session_id = ?',
+      'UPDATE chatbot_flows SET is_active = ? WHERE id = ? AND session_id = ?',
       [active ? 1 : 0, flowId, sessionId]
     );
     
@@ -495,7 +495,7 @@ router.post('/process-message/:sessionId', async (req, res) => {
     
     // Buscar flujos activos desde BD
     const [flows] = await connection.query(
-      'SELECT * FROM chatbot_flows WHERE session_id = ? AND active = 1',
+      'SELECT * FROM chatbot_flows WHERE session_id = ? AND is_active = 1',
       [sessionId]
     );
     
