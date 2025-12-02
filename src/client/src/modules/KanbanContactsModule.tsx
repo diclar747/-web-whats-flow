@@ -128,12 +128,14 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
   // Calculate column styles based on number of boards
   const columnStyles = useMemo(() => {
     const boardCount = Math.max(boards.length, 1);
-    const columnWidthPercent = Math.max(100 / boardCount, FIXED_COLUMN_WIDTH_PERCENT);
-    const useFullWidth = boards.length <= MAX_BOARDS_FULL_WIDTH;
+    const useFullWidth = boardCount <= MAX_BOARDS_FULL_WIDTH;
+    const columnWidthPercent = useFullWidth 
+      ? Math.max(100 / boardCount, FIXED_COLUMN_WIDTH_PERCENT) 
+      : FIXED_COLUMN_WIDTH_PERCENT;
     
     return {
-      flex: useFullWidth ? `0 0 ${columnWidthPercent}%` : `0 0 ${FIXED_COLUMN_WIDTH_PERCENT}%`,
-      maxWidth: useFullWidth ? `${columnWidthPercent}%` : `${FIXED_COLUMN_WIDTH_PERCENT}%`,
+      flex: `0 0 ${columnWidthPercent}%`,
+      maxWidth: `${columnWidthPercent}%`,
       minWidth: MIN_COLUMN_WIDTH,
     };
   }, [boards.length]);
