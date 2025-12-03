@@ -5,7 +5,14 @@ const express = require('express');
 const compression = require('compression');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, downloadMediaMessage } = require('@whiskeysockets/baileys');
+// ⚡ MIGRACIÓN A WPPCONNECT - Mantiene compatibilidad con código Baileys
+const { WPPConnectAdapter } = require('./wppconnect-adapter');
+const DisconnectReason = {
+    loggedOut: 401,
+    connectionClosed: 428,
+    connectionLost: 408,
+    timedOut: 408
+};
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
@@ -3762,9 +3769,15 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
     }
 
     try {
-        const { version } = await fetchLatestBaileysVersion();
-        const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-        console.log(`[${sessionId}] 🔐 Auth state cargado desde: ${AUTH_DIR}`);
+        console.log(`[${sessionId}] 🚀 Iniciando con WPPConnect...`);
+
+        // ⚡ CREAR CLIENTE WPPCONNECT con adaptador Baileys
+        const adapter = new WPPConnectAdapter();
+        const sock = await adapter.create(sessionId, {
+            syncHistory: syncHistory
+        });
+
+        console.log(`[${sessionId}] ✅ Cliente WPPConnect creado`);
 
         // Crear almacén personalizado para chats y contactos
         const customStore = {
@@ -3772,55 +3785,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             chats: new Map()
         };
 
-        const sock = makeWASocket({
-            version,
-            auth: state,
-            printQRInTerminal: false,
-            logger: pino({ level: 'silent' }),
-            browser: ['WhatsFlow', 'Chrome', '120.0.0'],
-            syncFullHistory: syncHistory, // Usar la preferencia del usuario
-            shouldSyncHistoryMessage: (msg) => {
-                // 🚫 NO sincronizar mensajes de estados/status
-                if (msg?.key?.remoteJid?.includes('status@broadcast') || msg?.key?.remoteJid?.includes('@broadcast')) {
-                    return false;
-                }
-                return syncHistory; // Usar la preferencia del usuario para otros mensajes
-            },
-            fireInitQueries: syncHistory, // CRÍTICO: Solo hacer queries iniciales si se quiere sincronizar
-            getMessage: async (key) => {
-                // 🚫 NO recuperar mensajes de estados/status
-                if (key.remoteJid?.includes('status@broadcast') || key.remoteJid?.includes('@broadcast')) {
-                    return undefined;
-                }
-                return { conversation: 'Message not available' };
-            },
-            // Configuración optimizada para estabilidad y uso eficiente de recursos
-            keepAliveIntervalMs: 30000,           // Enviar keep-alive cada 30 segundos
-            connectTimeoutMs: 60000,              // Timeout de conexión de 60 segundos
-            defaultQueryTimeoutMs: 60000,         // Timeout para queries de 60 segundos
-            emitOwnEvents: true,                  // 🔧 CORREGIDO: Emitir eventos propios para sincronizar mensajes del teléfono
-            markOnlineOnConnect: true,            // Marcar como online al conectar
-            retryRequestDelayMs: 250,             // Delay entre reintentos
-            maxMsgRetryCount: 5,                  // Máximo de reintentos para mensajes
-            shouldIgnoreJid: jid => {
-                if (!jid) return true; // Ignorar JIDs nulos/undefined
-                // 🚫 IGNORAR ESTADOS/STATUS - NO DESCARGAR
-                if (jid.includes('status@broadcast') || jid.includes('@broadcast')) return true;
-                // Rechazar @lid (canales de WhatsApp)
-                if (jid.includes('@lid')) return true;
-                // Los grupos y chats individuales se manejan normalmente
-                return false;
-            },
-            linkPreviewImageThumbnailWidth: 192,   // Tamaño de thumbnails para previews
-            // Optimizaciones para reducir uso de recursos
-            maxCachedMessages: 100,               // Limitar mensajes cacheados en store
-            msgRetryCount: 3,                     // Reducir reintentos para optimizar recursos
-            // Usar el store personalizado
-            ...customStore
-        });
-
         const sessionInfo = {
             sock,
+            adapter, // Guardar referencia al adaptador
             store: customStore,
             qr: null,
             isConnected: false,
@@ -3829,8 +3796,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             chats: []
         };
 
-        // Manejar actualizaciones de conexión
-        sock.ev.on('connection.update', async (update) => {
+        // Manejar actualizaciones de conexión (compatible con Baileys via adaptador)
+        sock.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
 
             if (qr) {
@@ -4804,7 +4771,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // Manejar mensajes entrantes
-        sock.ev.on('messages.upsert', async (m) => {
+        sock.on('messages.upsert', async (m) => {
             // 🔍 DEBUG: Log de TODOS los mensajes que llegan
             console.log('');
             console.log('═══════════════════════════════════════════════════════════');
@@ -5553,7 +5520,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // Manejar actualizaciones de estado de mensajes
-        sock.ev.on('messages.update', async (updates) => {
+        sock.on('messages.update', async (updates) => {
             console.log(`[${sessionId}] Processing ${updates.length} messages.update from Baileys`);
             for (const update of updates) {
                 if (update.key && update.update?.status) {
@@ -5648,7 +5615,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // Capturar contactos cuando se actualicen
-        sock.ev.on('contacts.update', async (contactsUpdate) => {
+        sock.on('contacts.update', async (contactsUpdate) => {
             // VALIDAR CONFIGURACIONES: syncHistory (localStorage) Y auto_sync (BD)
             const syncHistory = sessionSyncPreferences.get(sessionId) || false;
             const phoneNumber = await getUserPhoneNumber(sessionId);
@@ -5697,13 +5664,13 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // Capturar chats/grupos cuando se actualicen
-        sock.ev.on('chats.update', async (chatsUpdate) => {
+        sock.on('chats.update', async (chatsUpdate) => {
             console.log(`[${sessionId}] 🔄 chats.update: ${chatsUpdate?.length || 0} chats actualizados`);
             // Procesamiento habilitado
         });
 
         // ⭐ EVENTO CRÍTICO: chats.set - Se dispara al conectar con TODOS los chats
-        sock.ev.on('chats.set', async (chatsSet) => {
+        sock.on('chats.set', async (chatsSet) => {
             // Obtener phoneNumber
             const phoneNumber = await getUserPhoneNumber(sessionId);
 
@@ -5751,7 +5718,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // ⭐ EVENTO CRÍTICO: contacts.set - Se dispara al conectar con TODOS los contactos
-        sock.ev.on('contacts.set', async (contactsSet) => {
+        sock.on('contacts.set', async (contactsSet) => {
             // VALIDAR AMBAS CONFIGURACIONES: syncHistory (localStorage) Y auto_sync (BD)
             const syncHistory = sessionSyncPreferences.get(sessionId) || false;
 
@@ -5822,7 +5789,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // ⭐ EVENTO CRÍTICO: messaging-history.set - Historial de mensajes completo
-        sock.ev.on('messaging-history.set', async (historySet) => {
+        sock.on('messaging-history.set', async (historySet) => {
             const phoneNumber = await getUserPhoneNumber(sessionId);
 
             console.log(`[${sessionId}] 📥 Historial recibido (chats: ${historySet.chats?.length || 0}, contactos: ${historySet.contacts?.length || 0}, mensajes: ${historySet.messages?.length || 0})`);
@@ -6187,10 +6154,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             }, 3000);
         });
 
-        sock.ev.on('creds.update', async () => {
-            console.log(`[${sessionId}] 💾 Guardando credenciales en: ${AUTH_DIR}`);
-            await saveCreds();
-        });
+        // WPPConnect maneja las credenciales automáticamente
+        // No necesita creds.update listener
         sessions.set(sessionId, sessionInfo);
         return sessionInfo;
     } catch (error) {
