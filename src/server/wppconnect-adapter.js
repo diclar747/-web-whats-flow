@@ -26,8 +26,14 @@ class WPPConnectAdapter extends EventEmitter {
                 session: sessionId,
                 catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
                     console.log(`[WPPCONNECT] 📱 QR Code generado (intento ${attempts})`);
-                    // Emitir QR compatible con Baileys
-                    this.emit('qr', urlCode || asciiQR);
+                    // Emitir QR compatible con Baileys (ambos formatos)
+                    const qrCode = urlCode || asciiQR;
+                    this.emit('qr', qrCode);
+                    // CRÍTICO: También emitir connection.update con QR para compatibilidad con código existente
+                    this.emit('connection.update', {
+                        qr: qrCode,
+                        connection: 'connecting'
+                    });
                 },
                 statusFind: (statusSession, session) => {
                     console.log(`[WPPCONNECT] 📊 Estado: ${statusSession}`);
