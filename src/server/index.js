@@ -19280,7 +19280,13 @@ server.listen(PORT, '0.0.0.0', async () => {
     }
 
 
-    // Restaurar sesiones guardadas automáticamente
+    // ⚡ WPPCONNECT: Deshabilitar restauración automática de sesiones
+    console.log(`\n⚡ WPPConnect: Restauración automática DESHABILITADA`);
+    console.log(`📝 Las sesiones se cargarán bajo demanda al escanear QR`);
+    
+    // COMENTADO: No restaurar todas las sesiones al inicio con WPPConnect
+    // Consumiría demasiados recursos (Chrome por sesión)
+    if (false) { // Deshabilitado temporalmente
     console.log(`\n🔄 Buscando sesiones guardadas para restaurar...`);
     try {
         // Primero buscar sesiones activas en la BD
@@ -19353,6 +19359,7 @@ server.listen(PORT, '0.0.0.0', async () => {
     } catch (error) {
         console.log(`⚠️  Error buscando sesiones guardadas:`, error.message);
     }
+    } // Fin de if (false) - restauración deshabilitada
 
     // Hacer io accesible globalmente en app
     app.set('io', io);
