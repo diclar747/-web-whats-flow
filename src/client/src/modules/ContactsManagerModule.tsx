@@ -130,23 +130,44 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
     try {
       setSyncLoading(true);
       setError(null);
-      console.log('Sincronizando contactos...');
+      console.log('🔄 Sincronizando contactos y avatares...');
 
-      const response = await fetch(`${getAPIBaseURL()}/api/sync/contacts`, {
+      // Paso 1: Sincronizar contactos
+      console.log('📥 Paso 1/2: Sincronizando contactos desde WhatsApp...');
+      const contactsResponse = await fetch(`${getAPIBaseURL()}/api/sync/contacts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId })
       });
 
-      const data = await response.json();
+      const contactsData = await contactsResponse.json();
 
-      if (data.success) {
-        setSyncStats((prev: any) => ({ ...prev, contacts: data.stats }));
-        console.log('Contactos sincronizados:', data.stats);
-        setSuccess(`✅ Contactos sincronizados: ${data.stats.processedContacts} contactos individuales procesados, ${data.stats.skippedGroups} grupos omitidos`);
+      if (contactsData.success) {
+        setSyncStats((prev: any) => ({ ...prev, contacts: contactsData.stats }));
+        console.log('✅ Contactos sincronizados:', contactsData.stats);
+
+        // Paso 2: Actualizar avatares
+        console.log('🖼️ Paso 2/2: Actualizando avatares de contactos...');
+        const avatarsResponse = await fetch(`${getAPIBaseURL()}/api/update-contacts-avatars/${sessionId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        const avatarsData = await avatarsResponse.json();
+
+        if (avatarsData.success) {
+          console.log('✅ Avatares actualizados:', avatarsData.stats);
+          setSuccess(`✅ Sincronización completa: ${contactsData.stats.processedContacts} contactos y ${avatarsData.stats.updatedAvatars} avatares actualizados`);
+
+          // Recargar contactos para mostrar los cambios
+          await loadSyncedContacts();
+        } else {
+          console.error('⚠️ Error actualizando avatares:', avatarsData.error);
+          setSuccess(`✅ Contactos sincronizados: ${contactsData.stats.processedContacts} contactos (avatares: ${avatarsData.error})`);
+        }
       } else {
-        console.error('Error sincronizando contactos:', data.error);
-        setError(`❌ Error: ${data.error}`);
+        console.error('Error sincronizando contactos:', contactsData.error);
+        setError(`❌ Error: ${contactsData.error}`);
       }
     } catch (error) {
       console.error('Error en sincronización:', error);
@@ -701,23 +722,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
               onClick={handleSyncContacts}
               disabled={syncLoading}
             >
-              {syncLoading ? 'Sincronizando...' : 'Sync Contactos'}
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={syncLoading ? <CircularProgress size={20} /> : <Person />}
-              onClick={handleUpdateAvatars}
-              disabled={syncLoading}
-            >
-              {syncLoading ? 'Actualizando...' : 'Update Avatares'}
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={syncGroupsLoading ? <CircularProgress size={20} /> : <Group />}
-              onClick={handleSyncGroups}
-              disabled={syncGroupsLoading}
-            >
-              {syncGroupsLoading ? 'Sincronizando...' : 'Sync Grupos'}
+              {syncLoading ? 'Sincronizando...' : 'Sincronizar Contactos'}
             </Button>
             <Button
               variant="outlined"

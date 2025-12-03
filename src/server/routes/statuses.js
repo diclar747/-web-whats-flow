@@ -77,7 +77,7 @@ module.exports = (app, io) => {
 
             const [result] = await getPool().query(
                 `INSERT INTO whatsapp_statuses 
-        (session_id, text_content, media_url, media_type, background_color, font_style, status) 
+        (phone_number, text_content, media_url, media_type, background_color, font_style, status) 
         VALUES (?, ?, ?, ?, ?, ?, 'draft')`,
                 [sessionId, textContent || null, mediaUrl, mediaType, backgroundColor || '#075E54', fontStyle || 'default']
             );
@@ -144,7 +144,7 @@ module.exports = (app, io) => {
             // Obtener historial de estados publicados (últimos 30)
             const [history] = await getPool().query(
                 `SELECT * FROM whatsapp_statuses 
-         WHERE session_id = ? AND status = 'published'
+         WHERE phone_number = ? AND status = 'published'
          ORDER BY published_at DESC
          LIMIT 30`,
                 [sessionId]
@@ -513,13 +513,13 @@ module.exports = (app, io) => {
           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
           SUM(views_count) as total_views
          FROM whatsapp_statuses
-         WHERE session_id = ?`,
+         WHERE phone_number = ?`,
                 [sessionId]
             );
 
             const [recentPublished] = await getPool().query(
                 `SELECT * FROM whatsapp_statuses 
-         WHERE session_id = ? AND status = 'published'
+         WHERE phone_number = ? AND status = 'published'
          ORDER BY published_at DESC
          LIMIT 10`,
                 [sessionId]

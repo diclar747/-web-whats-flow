@@ -3227,7 +3227,26 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         const [rows] = await connection.execute(
             `SELECT
                 latest.chat_jid,
-                COALESCE(c.name, c.notify_name, SUBSTRING_INDEX(latest.chat_jid, '@', 1)) AS contact_name,
+                CASE
+                    -- Si notify_name existe y NO es un número, usarlo
+                    WHEN c.notify_name IS NOT NULL
+                         AND c.notify_name != ''
+                         AND c.notify_name != SUBSTRING_INDEX(latest.chat_jid, '@', 1)
+                    THEN c.notify_name
+                    -- Si name existe y NO es un número, usarlo
+                    WHEN c.name IS NOT NULL
+                         AND c.name != ''
+                         AND c.name != SUBSTRING_INDEX(latest.chat_jid, '@', 1)
+                    THEN c.name
+                    -- Si notify_name existe (aunque sea número), usarlo
+                    WHEN c.notify_name IS NOT NULL AND c.notify_name != ''
+                    THEN c.notify_name
+                    -- Si name existe, usarlo
+                    WHEN c.name IS NOT NULL AND c.name != ''
+                    THEN c.name
+                    -- Último recurso: usar el número del JID
+                    ELSE SUBSTRING_INDEX(latest.chat_jid, '@', 1)
+                END AS contact_name,
                 c.notify_name AS contact_notify_name,
                 CASE WHEN latest.chat_jid LIKE '%@g.us' THEN 1 ELSE COALESCE(c.is_group, 0) END AS is_group,
                 c.avatar_url,
@@ -3889,8 +3908,21 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                 try {
                     console.log(`[${sessionId}] 🔍 Obteniendo número de teléfono...`);
-                    userPhoneNumber = await getUserPhoneNumber(sessionId);
-                    console.log(`[${sessionId}] 🔍 Número obtenido: ${userPhoneNumber}`);
+
+                    // ESPERAR 100ms para que sock.user se inicialice completamente
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    console.log(`[${sessionId}] 🔍 DEBUG: sock.user = ${JSON.stringify(sock.user)}`);
+
+                    // PRIMERO: Intentar obtener directamente desde sock.user (disponible al conectar)
+                    if (sock.user && sock.user.id) {
+                        userPhoneNumber = sock.user.id.split(':')[0].replace(/\D/g, '');
+                        console.log(`[${sessionId}] ✅ Número extraído de sock.user.id: ${userPhoneNumber}`);
+                    } else {
+                        console.log(`[${sessionId}] ⚠️ sock.user no disponible aún, usando fallback`);
+                        // FALLBACK: Usar la función getUserPhoneNumber() para buscar en BD
+                        userPhoneNumber = await getUserPhoneNumber(sessionId);
+                        console.log(`[${sessionId}] 🔍 Número obtenido desde BD/fallback: ${userPhoneNumber}`);
+                    }
                     if (userPhoneNumber) {
                         // ✅ GUARDAR phoneNumber en la sesión para futuras consultas
                         sessionInfo.phoneNumber = userPhoneNumber;
@@ -4796,6 +4828,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // Manejar mensajes entrantes
+        console.log(`[${sessionId}] 🔔 LISTENER DE MENSAJES REGISTRADO - Esperando eventos messages.upsert`);
         sock.ev.on('messages.upsert', async (m) => {
             // 🔍 DEBUG: Log de TODOS los mensajes que llegan
             console.log('');
@@ -5723,13 +5756,26 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     const chatJid = chat.id;
                     if (!chatJid) continue;
 
-                    const chatName = chat.name || chat.subject || chatJid.split('@')[0];
+                    let chatName = chat.name || chat.subject || null;
 
                     if (chatJid.includes('@s.whatsapp.net')) {
+                        // 🔥 MEJORA: Obtener nombre desde store si disponible
+                        if (sock.store?.contacts) {
+                            const storeContact = sock.store.contacts.get(chatJid);
+                            if (storeContact) {
+                                if (storeContact.name && storeContact.name !== chatJid.split('@')[0]) {
+                                    chatName = storeContact.name;
+                                } else if (storeContact.notify && storeContact.notify !== chatJid.split('@')[0]) {
+                                    chatName = storeContact.notify;
+                                } else if (storeContact.verifiedName) {
+                                    chatName = storeContact.verifiedName;
+                                }
+                            }
+                        }
                         await getOrInsertContact(chatJid, chatName, chatName, phoneNumber, sock);
                     } else if (chatJid.includes('@g.us')) {
                         // 🚫 GRUPOS BLOQUEADOS - No guardar grupos
-                        console.log(`[${sessionId}] 🚫 Ignorando grupo: ${chatName}`);
+                        console.log(`[${sessionId}] 🚫 Ignorando grupo: ${chatName || chatJid.split('@')[0]}`);
                     } else if (chatJid.includes('status@broadcast') || chatJid.includes('@broadcast')) {
                         await getOrInsertBroadcast(chatJid, chatName || 'Status', phoneNumber, 'status');
                     } else if (chatJid.includes('@lid')) {
@@ -5776,21 +5822,54 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 return;
             }
 
+            // ✨ MEJORA: Obtener TODOS los nombres disponibles del store de Baileys
+            console.log(`[${sessionId}] 📝 Obteniendo nombres desde store de Baileys...`);
+            let namesFromStore = 0;
+            let processedCount = 0;
+            const totalContacts = contactsSet.contacts?.length || 0;
+
+            // Emitir inicio de sincronización
+            io.to(`session-${sessionId}`).emit('sync-progress', {
+                message: `Sincronizando ${totalContacts} contactos...`,
+                progress: 10,
+                current: 0,
+                total: totalContacts
+            });
+
             for (const contact of contactsSet.contacts) {
+                processedCount++;
                 try {
                     const contactJid = contact.id;
                     if (!contactJid) continue;
 
                     if (contactJid.includes('@s.whatsapp.net')) {
-                        // Para contactos individuales, validar si el nombre es solo el número antes de guardarlo
-                        const isNameJustNumber = contact.name && contact.name === contactJid.split('@')[0];
-                        const isNotifyJustNumber = contact.notify && contact.notify === contactJid.split('@')[0];
+                        // 🔥 MEJORA: Obtener MEJOR nombre disponible desde múltiples fuentes
+                        let bestName = contact.name || contact.notify || null;
+                        let bestNotify = contact.notify || contact.name || null;
 
-                        // Solo usar los nombres si no son solo números, de lo contrario dejar que getOrInsertContact los obtenga de WhatsApp
-                        const nameToUse = isNameJustNumber ? null : contact.name;
-                        const notifyToUse = isNotifyJustNumber ? null : contact.notify;
+                        // PRIORIDAD 1: Buscar en sock.store.contacts (nombres más actualizados)
+                        if (sock.store?.contacts) {
+                            const storeContact = sock.store.contacts.get(contactJid);
+                            if (storeContact) {
+                                // Priorizar nombres reales sobre números
+                                if (storeContact.name && storeContact.name !== contactJid.split('@')[0]) {
+                                    bestName = storeContact.name;
+                                    bestNotify = storeContact.notify || storeContact.name;
+                                    namesFromStore++;
+                                } else if (storeContact.notify && storeContact.notify !== contactJid.split('@')[0]) {
+                                    bestName = storeContact.notify;
+                                    bestNotify = storeContact.notify;
+                                    namesFromStore++;
+                                } else if (storeContact.verifiedName && storeContact.verifiedName !== contactJid.split('@')[0]) {
+                                    bestName = storeContact.verifiedName;
+                                    bestNotify = storeContact.verifiedName;
+                                    namesFromStore++;
+                                }
+                            }
+                        }
 
-                        await getOrInsertContact(contactJid, nameToUse, notifyToUse, phoneNumber, sock);
+                        // Guardar contacto con el mejor nombre encontrado
+                        await getOrInsertContact(contactJid, bestName, bestNotify, phoneNumber, sock);
                     } else if (contactJid.includes('@g.us')) {
                         // 🚫 GRUPOS BLOQUEADOS - No guardar grupos
                         console.log(`[${sessionId}] 🚫 Ignorando grupo en contacts.set: ${contact.name || contactJid.split('@')[0]}`);
@@ -5802,15 +5881,35 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 } catch (err) {
                     console.error(`[${sessionId}] Error guardando contacto de contacts.set:`, err.message);
                 }
-            }
-            console.log(`[${sessionId}] ✅ Contactos de contacts.set procesados`);
 
-            // Descargar avatares de los contactos recién sincronizados
-            setTimeout(async () => {
-                console.log(`[${sessionId}] 🖼️ Iniciando descarga automática de avatares...`);
-                await downloadAllAvatars(sessionId, sock);
-                console.log(`[${sessionId}] 🖼️ Descarga automática de avatares completada`);
-            }, 2000);
+                // Emitir progreso cada 50 contactos
+                if (processedCount % 50 === 0 || processedCount === totalContacts) {
+                    const progressPercent = Math.floor((processedCount / totalContacts) * 90) + 10; // 10-100%
+                    io.to(`session-${sessionId}`).emit('sync-progress', {
+                        message: `Sincronizando contactos: ${processedCount}/${totalContacts}`,
+                        progress: progressPercent,
+                        current: processedCount,
+                        total: totalContacts
+                    });
+                }
+            }
+            console.log(`[${sessionId}] ✅ Contactos de contacts.set procesados (${namesFromStore} nombres obtenidos del store)`);
+
+            // Emitir evento de finalización
+            io.to(`session-${sessionId}`).emit('sync-progress', {
+                message: `Sincronización completada: ${totalContacts} contactos`,
+                progress: 100,
+                current: totalContacts,
+                total: totalContacts
+            });
+
+            // ✨ DESCARGA INMEDIATA: Avatares + Nombres juntos, sin esperar
+            console.log(`[${sessionId}] 🚀 Iniciando descarga INMEDIATA de avatares...`);
+            downloadAllAvatars(sessionId, sock).then(() => {
+                console.log(`[${sessionId}] ✅ Avatares descargados completamente`);
+            }).catch(err => {
+                console.error(`[${sessionId}] ❌ Error descargando avatares:`, err.message);
+            });
         });
 
         // ⭐ EVENTO CRÍTICO: messaging-history.set - Historial de mensajes completo
@@ -6183,6 +6282,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             console.log(`[${sessionId}] 💾 Guardando credenciales en: ${AUTH_DIR}`);
             await saveCreds();
         });
+        console.log(`[${sessionId}] ✅ SESIÓN COMPLETAMENTE CONFIGURADA - Socket creado, listeners registrados, listo para recibir mensajes`);
         sessions.set(sessionId, sessionInfo);
         return sessionInfo;
     } catch (error) {
@@ -6974,8 +7074,8 @@ app.post('/api/send/message', async (req, res) => {
                         contactName = rows[0]?.name;
                     } else {
                         const [rows] = await connection.execute(
-                            'SELECT name, notify_name FROM contacts WHERE jid = ? AND (phone_number = ? OR session_id = ?) LIMIT 1',
-                            [jid, phoneNumber, phoneNumber]
+                            'SELECT name, notify_name FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
+                            [jid, phoneNumber]
                         );
                         contactName = rows[0]?.name || rows[0]?.notify_name;
                     }
@@ -7674,8 +7774,8 @@ app.post('/api/send/media', upload.single('file'), async (req, res) => {
                         contactName = rows[0]?.name;
                     } else {
                         const [rows] = await connection.execute(
-                            'SELECT name, notify_name FROM contacts WHERE jid = ? AND (phone_number = ? OR session_id = ?) LIMIT 1',
-                            [jid, phoneNumber, phoneNumber]
+                            'SELECT name, notify_name FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
+                            [jid, phoneNumber]
                         );
                         contactName = rows[0]?.name || rows[0]?.notify_name;
                     }
@@ -8980,7 +9080,12 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
     const { page = 0, limit = 999999, search = '' } = req.query; // Sin límite por defecto (999999 = todos)
 
-    console.log(`[API-CONTACTS] Request for sessionId: ${sessionId}, page: ${page}, limit: ${limit}, search: ${search}`);
+    console.log(`[API-CONTACTS] ========================================`);
+    console.log(`[API-CONTACTS] 🔍 BÚSQUEDA DE CONTACTOS`);
+    console.log(`[API-CONTACTS] SessionId: ${sessionId}`);
+    console.log(`[API-CONTACTS] Page: ${page}, Limit: ${limit}`);
+    console.log(`[API-CONTACTS] Search term: "${search}"`);
+    console.log(`[API-CONTACTS] ========================================`);
 
     if (!pool) {
         return res.status(503).json({
@@ -9032,6 +9137,9 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
                 searchCondition = ` AND (name LIKE ? OR notify_name LIKE ? OR jid LIKE ?)`;
                 const searchTerm = `%${search}%`;
                 searchParams = [searchTerm, searchTerm, searchTerm];
+                console.log(`[API-CONTACTS] 🔎 Aplicando búsqueda: "${searchTerm}"`);
+            } else {
+                console.log(`[API-CONTACTS] ℹ️ Sin término de búsqueda - Listando todos`);
             }
 
             // Primero obtener el total de contactos (sin paginación)
@@ -9047,7 +9155,7 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
             const offset = parseInt(page) * parseInt(limit);
 
             // Consultar SOLO contactos individuales (@s.whatsapp.net) con paginación
-            // 🆕 Ordenar por última actualización (updated_at) para mostrar contactos con actividad reciente primero
+            // 🆕 Ordenar por última actualización (updated_at) - Los más recientes al final, antiguos primero
             const [contacts] = await connection.execute(
                 `SELECT
                     jid,
@@ -9059,7 +9167,7 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
                     updated_at
                 FROM contacts
                 WHERE session_id IN (${placeholders}) AND jid LIKE '%@s.whatsapp.net'${searchCondition}
-                ORDER BY updated_at DESC, created_at DESC, name ASC
+                ORDER BY created_at ASC, updated_at ASC, name ASC
                 LIMIT ? OFFSET ?`,
                 [...allSessionIds, ...searchParams, parseInt(limit), offset]
             );
@@ -9077,6 +9185,11 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
                 createdAt: contact.created_at,
                 updatedAt: contact.updated_at
             }));
+
+            console.log(`[API-CONTACTS] ✅ Resultados encontrados: ${contacts.length} de ${totalContacts} total`);
+            if (search && search.trim() !== '' && contacts.length > 0) {
+                console.log(`[API-CONTACTS] 📋 Primeros resultados: ${contacts.slice(0, 3).map(c => c.name || c.notify_name).join(', ')}`);
+            }
 
             res.json({
                 success: true,
@@ -10479,7 +10592,7 @@ app.get('/api/sync/full/:sessionId', async (req, res) => {
 });
 
 // Función para actualizar directamente los contactos en la base de datos con información de nombre real
-async function forceUpdateContactNamesInDatabase(sessionId) {
+async function forceUpdateContactNamesInDatabase(sessionId, batchSize = 100) {
     console.log(`[FORCE-UPDATE-NAMES] Iniciando actualización forzada de nombres para sesión: ${sessionId}`);
 
     const session = sessions.get(sessionId);
@@ -10499,82 +10612,91 @@ async function forceUpdateContactNamesInDatabase(sessionId) {
     try {
         // Obtener contactos que solo tienen números como nombre
         const [contactsToUpdate] = await connection.execute(`
-            SELECT jid, name, session_id 
-            FROM contacts 
-            WHERE session_id = ? 
+            SELECT jid, name, session_id
+            FROM contacts
+            WHERE session_id = ?
             AND (name IS NULL OR name = '' OR name = SUBSTRING_INDEX(jid, '@', 1))
             AND jid LIKE '%@s.whatsapp.net'
         `, [phoneNumber]);
 
         console.log(`[FORCE-UPDATE-NAMES] Encontrados ${contactsToUpdate.length} contactos para actualizar`);
+        console.log(`[FORCE-UPDATE-NAMES] Procesando en lotes de ${batchSize} contactos`);
 
         let updatedCount = 0;
+        let processedCount = 0;
 
-        for (const contact of contactsToUpdate) {
-            try {
-                console.log(`[FORCE-UPDATE-NAMES] Procesando contacto: ${contact.jid}`);
+        // Procesar en lotes para mejorar rendimiento
+        for (let i = 0; i < contactsToUpdate.length; i += batchSize) {
+            const batch = contactsToUpdate.slice(i, i + batchSize);
+            console.log(`[FORCE-UPDATE-NAMES] 📦 Procesando lote ${Math.floor(i / batchSize) + 1}/${Math.ceil(contactsToUpdate.length / batchSize)} (${batch.length} contactos)`);
 
-                // Intentar obtener nombre real de WhatsApp
-                let realName = null;
-
+            // Procesar contactos del lote en paralelo
+            const promises = batch.map(async (contact) => {
                 try {
-                    realName = await sock.getName(contact.jid);
-                    console.log(`[FORCE-UPDATE-NAMES] Nombre obtenido de WhatsApp: ${realName}`);
-                } catch (getNameErr) {
-                    console.warn(`[FORCE-UPDATE-NAMES] Error con getName para ${contact.jid}:`, getNameErr.message);
-                }
+                    // Intentar obtener nombre real de WhatsApp
+                    let realName = null;
 
-                // Si getName no funciona, intentar con otros métodos
-                if (!realName || realName === contact.jid.split('@')[0]) {
-                    if (sock.store?.contacts) {
-                        const storeContact = sock.store.contacts.get(contact.jid);
-                        if (storeContact && storeContact.name && storeContact.name !== contact.jid.split('@')[0]) {
-                            realName = storeContact.name;
-                            console.log(`[FORCE-UPDATE-NAMES] Nombre obtenido del store: ${realName}`);
-                        }
-                    }
-                }
-
-                // Si aún no tenemos un nombre real (diferente del número), intentar con profilePictureUrl
-                if (!realName || realName === contact.jid.split('@')[0]) {
+                    // Método 1: sock.getName()
                     try {
-                        await sock.profilePictureUrl(contact.jid, 'image');
-                        // Esperar un poco para que se actualice el store
-                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        realName = await sock.getName(contact.jid);
+                        if (realName && realName !== contact.jid.split('@')[0]) {
+                            return { jid: contact.jid, name: realName, method: 'getName' };
+                        }
+                    } catch (getNameErr) {
+                        // Silencioso - continuamos con otros métodos
+                    }
 
-                        // Reintentar obtener del store
+                    // Método 2: sock.store.contacts
+                    if (!realName || realName === contact.jid.split('@')[0]) {
                         if (sock.store?.contacts) {
                             const storeContact = sock.store.contacts.get(contact.jid);
-                            if (storeContact && storeContact.name && storeContact.name !== contact.jid.split('@')[0]) {
-                                realName = storeContact.name;
-                                console.log(`[FORCE-UPDATE-NAMES] Nombre obtenido del store tras profilePictureUrl: ${realName}`);
+                            if (storeContact) {
+                                // Prioridad: name > notify > verifiedName
+                                if (storeContact.name && storeContact.name !== contact.jid.split('@')[0]) {
+                                    return { jid: contact.jid, name: storeContact.name, method: 'store.name' };
+                                } else if (storeContact.notify && storeContact.notify !== contact.jid.split('@')[0]) {
+                                    return { jid: contact.jid, name: storeContact.notify, method: 'store.notify' };
+                                } else if (storeContact.verifiedName && storeContact.verifiedName !== contact.jid.split('@')[0]) {
+                                    return { jid: contact.jid, name: storeContact.verifiedName, method: 'store.verified' };
+                                }
                             }
                         }
-                    } catch (picErr) {
-                        console.warn(`[FORCE-UPDATE-NAMES] No se pudo obtener avatar para ${contact.jid}:`, picErr.message);
                     }
-                }
 
-                // Si tenemos un nombre real (diferente del número), actualizar en la base de datos
-                if (realName && realName !== contact.jid.split('@')[0] && realName.trim() !== '') {
+                    return { jid: contact.jid, name: null };
+
+                } catch (contactErr) {
+                    console.error(`[FORCE-UPDATE-NAMES] Error procesando ${contact.jid}:`, contactErr.message);
+                    return { jid: contact.jid, name: null };
+                }
+            });
+
+            const results = await Promise.all(promises);
+
+            // Actualizar en la BD solo los que tienen nombre real
+            for (const result of results) {
+                processedCount++;
+                if (result.name && result.name.trim() !== '') {
                     await connection.execute(`
-                        UPDATE contacts 
+                        UPDATE contacts
                         SET name = ?, notify_name = ?, updated_at = NOW()
                         WHERE jid = ? AND session_id = ?
-                    `, [realName, realName, contact.jid, phoneNumber]);
+                    `, [result.name, result.name, result.jid, phoneNumber]);
 
-                    console.log(`[FORCE-UPDATE-NAMES] ✅ Contacto actualizado: ${contact.jid} -> "${realName}"`);
+                    console.log(`[FORCE-UPDATE-NAMES] ✅ ${result.jid.split('@')[0]} -> "${result.name}" (${result.method})`);
                     updatedCount++;
-                } else {
-                    console.log(`[FORCE-UPDATE-NAMES] ❌ No se pudo obtener nombre real para: ${contact.jid}`);
                 }
+            }
 
-            } catch (contactErr) {
-                console.error(`[FORCE-UPDATE-NAMES] Error procesando contacto ${contact.jid}:`, contactErr);
+            console.log(`[FORCE-UPDATE-NAMES] 📊 Progreso: ${processedCount}/${contactsToUpdate.length} procesados, ${updatedCount} actualizados`);
+
+            // Pequeña pausa entre lotes para no saturar WhatsApp
+            if (i + batchSize < contactsToUpdate.length) {
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
         }
 
-        console.log(`[FORCE-UPDATE-NAMES] ✅ Actualizados ${updatedCount} contactos`);
+        console.log(`[FORCE-UPDATE-NAMES] ✅ Actualización completa: ${updatedCount} contactos actualizados de ${contactsToUpdate.length} sin nombre`);
         return { updated: updatedCount, total: contactsToUpdate.length };
 
     } finally {
@@ -19146,6 +19268,96 @@ process.on('uncaughtException', async (err) => {
 // ========================================
 // 🔍 ENDPOINTS DE DEBUGGING - SESSION LOGS
 // ========================================
+
+// Endpoint temporal para activar polling manualmente
+app.post('/api/debug/activate-polling/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+
+    try {
+        const sessionInfo = sessions.get(sessionId);
+        if (!sessionInfo) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        // Obtener phoneNumber
+        let phoneNumber = sessionInfo.phoneNumber;
+        if (!phoneNumber && sessionInfo.sock && sessionInfo.sock.user) {
+            phoneNumber = sessionInfo.sock.user.id.split(':')[0].replace(/\D/g, '');
+            sessionInfo.phoneNumber = phoneNumber;
+        }
+
+        if (!phoneNumber) {
+            // Intentar obtener de BD
+            phoneNumber = await getUserPhoneNumber(sessionId);
+            if (phoneNumber) {
+                sessionInfo.phoneNumber = phoneNumber;
+            }
+        }
+
+        if (!phoneNumber) {
+            return res.status(400).json({ error: 'Could not determine phone number' });
+        }
+
+        // Activar polling si no existe
+        if (!sessionInfo.ownMessagePolling) {
+            const sock = sessionInfo.sock;
+            sessionInfo.ownMessagePolling = setInterval(async () => {
+                try {
+                    const connection = await pool.getConnection();
+                    try {
+                        const [recentChats] = await connection.execute(
+                            `SELECT DISTINCT chat_jid FROM messages
+                             WHERE session_id = ? AND timestamp > DATE_SUB(NOW(), INTERVAL 1 HOUR)
+                             ORDER BY timestamp DESC LIMIT 10`,
+                            [phoneNumber]
+                        );
+
+                        for (const chat of recentChats) {
+                            try {
+                                const messages = await sock.loadMessages(chat.chat_jid, 3);
+                                for (const msg of messages) {
+                                    if (msg.key.fromMe && msg.messageTimestamp) {
+                                        const msgTime = Number(msg.messageTimestamp) * 1000;
+                                        const ageSeconds = (Date.now() - msgTime) / 1000;
+
+                                        if (ageSeconds < 30) {
+                                            const [existing] = await connection.execute(
+                                                'SELECT id FROM messages WHERE id = ? AND session_id = ?',
+                                                [msg.key.id, phoneNumber]
+                                            );
+
+                                            if (existing.length === 0) {
+                                                console.log(`[${sessionId}] 📱 Mensaje propio detectado por polling: ${msg.key.id.substring(0, 20)}`);
+                                                sock.ev.emit('messages.upsert', {
+                                                    messages: [msg],
+                                                    type: 'notify'
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                            } catch (loadErr) {
+                                // Silencioso
+                            }
+                        }
+                    } finally {
+                        connection.release();
+                    }
+                } catch (pollErr) {
+                    console.error(`[${sessionId}] Error en polling:`, pollErr.message);
+                }
+            }, 15000);
+
+            console.log(`[${sessionId}] ✅ Polling activado manualmente para ${phoneNumber}`);
+            res.json({ success: true, message: `Polling activated for ${phoneNumber}`, sessionId, phoneNumber });
+        } else {
+            res.json({ success: true, message: 'Polling already active', sessionId, phoneNumber });
+        }
+    } catch (error) {
+        console.error('Error activating polling:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Endpoint para ver logs de sesión en formato HTML
 app.get('/api/debug/session-logs/:sessionId', (req, res) => {

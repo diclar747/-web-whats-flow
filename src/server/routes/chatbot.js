@@ -29,35 +29,38 @@ router.get('/flows/:sessionId', async (req, res) => {
     
     await connection.end();
     
-    // Parsear triggers y adaptar al formato del frontend
-    const parsedFlows = flows.map(flow => ({
-      id: flow.id,
-      name: flow.name,
-      description: flow.description,
-      active: Boolean(flow.active),
-      flowType: flow.flow_type || 'programmed',
-      triggers: JSON.parse(flow.triggers || '[]'),
-      responses: flow.responses ? JSON.parse(flow.responses) : [{
-        id: '1',
-        type: flow.response_type || 'text',
-        content: flow.response_text || '',
-        mediaUrl: flow.response_media || ''
-      }],
-      kanbanBoardId: flow.kanban_board_id || null,
-      createdAt: flow.created_at,
-      stats: {
-        totalTriggers: flow.stats_total_triggers || 0,
-        successRate: flow.stats_success_rate || 100,
-        lastTriggered: flow.stats_last_triggered
-      },
-      aiConfig: {
-        businessData: flow.ai_business_data || '',
-        websiteUrl: flow.ai_website_url || '',
-        scrapedContent: flow.ai_scraped_content || '',
-        temperature: parseFloat(flow.ai_temperature) || 0.7,
-        maxTokens: parseInt(flow.ai_max_tokens) || 500
-      }
-    }));
+    // Parsear flow_data y adaptar al formato del frontend
+    const parsedFlows = flows.map(flow => {
+      const flowData = flow.flow_data ? JSON.parse(flow.flow_data) : {};
+      return {
+        id: flow.id.toString(),
+        name: flowData.name || flow.flow_name,
+        description: flowData.description || '',
+        active: Boolean(flow.is_active),
+        flowType: flowData.flowType || 'programmed',
+        triggers: flowData.triggers || [],
+        responses: flowData.responses || [{
+          id: '1',
+          type: 'text',
+          content: '',
+          mediaUrl: ''
+        }],
+        kanbanBoardId: flowData.kanbanBoardId || null,
+        createdAt: flow.created_at,
+        stats: flowData.stats || {
+          totalTriggers: 0,
+          successRate: 100,
+          lastTriggered: null
+        },
+        aiConfig: flowData.aiConfig || {
+          businessData: '',
+          websiteUrl: '',
+          scrapedContent: '',
+          temperature: 0.7,
+          maxTokens: 500
+        }
+      };
+    });
     
     res.json({ success: true, flows: parsedFlows });
   } catch (error) {
@@ -72,54 +75,56 @@ router.post('/flows/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
     const flowData = req.body;
     
-    const flowId = Date.now().toString();
     const connection = await mysql.createConnection(dbConfig);
     
-    // Extraer la primera respuesta del array de respuestas (para compatibilidad)
-    const firstResponse = flowData.responses && flowData.responses.length > 0 
-      ? flowData.responses[0] 
-      : null;
+    // Guardar todos los datos del flujo en flow_data como JSON
+    const completeFlowData = {
+      name: flowData.name,
+      description: flowData.description || '',
+      triggers: flowData.triggers || [],
+      responses: flowData.responses || [],
+      flowType: flowData.flowType || 'programmed',
+      kanbanBoardId: flowData.kanbanBoardId || null,
+      aiConfig: flowData.aiConfig || {
+        businessData: '',
+        websiteUrl: '',
+        scrapedContent: '',
+        temperature: 0.7,
+        maxTokens: 500
+      },
+      stats: {
+        totalTriggers: 0,
+        successRate: 100,
+        lastTriggered: null
+      }
+    };
     
-    const responseType = firstResponse?.type || flowData.responseType || 'text';
-    const responseText = firstResponse?.content || flowData.responseText || '';
-    const responseMedia = firstResponse?.mediaUrl || flowData.responseMedia || '';
-    
-    const aiConfig = flowData.aiConfig || {};
-    
-    await connection.query(
+    const [result] = await connection.query(
       `INSERT INTO chatbot_flows (
-        id, session_id, name, description, triggers, responses,
-        response_type, response_text, response_media, 
-        kanban_board_id, active, flow_type,
-        ai_business_data, ai_website_url, ai_scraped_content, 
-        ai_temperature, ai_max_tokens
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        session_id, flow_name, flow_data, is_active
+      ) VALUES (?, ?, ?, ?)`,
       [
-        flowId,
         sessionId,
         flowData.name,
-        flowData.description || '',
-        JSON.stringify(flowData.triggers || []),
-        JSON.stringify(flowData.responses || []),
-        responseType,
-        responseText,
-        responseMedia,
-        flowData.kanbanBoardId || null,
-        flowData.active !== false,
-        flowData.flowType || 'programmed',
-        aiConfig.businessData || '',
-        aiConfig.websiteUrl || '',
-        aiConfig.scrapedContent || '',
-        aiConfig.temperature || 0.7,
-        aiConfig.maxTokens || 500
+        JSON.stringify(completeFlowData),
+        flowData.active !== false ? 1 : 0
       ]
     );
+    
+    const flowId = result.insertId.toString();
     
     await connection.end();
     
     const newFlow = {
       id: flowId,
-      ...flowData,
+      name: flowData.name,
+      description: flowData.description || '',
+      active: flowData.active !== false,
+      flowType: flowData.flowType || 'programmed',
+      triggers: flowData.triggers || [],
+      responses: flowData.responses || [],
+      kanbanBoardId: flowData.kanbanBoardId || null,
+      aiConfig: completeFlowData.aiConfig,
       createdAt: new Date().toISOString(),
       stats: {
         totalTriggers: 0,
@@ -145,41 +150,36 @@ router.put('/flows/:sessionId/:flowId', async (req, res) => {
     
     const connection = await mysql.createConnection(dbConfig);
     
-    // Extraer la primera respuesta del array de respuestas (para compatibilidad)
-    const firstResponse = updatedFlow.responses && updatedFlow.responses.length > 0 
-      ? updatedFlow.responses[0] 
-      : null;
-    
-    const responseType = firstResponse?.type || updatedFlow.responseType || 'text';
-    const responseText = firstResponse?.content || updatedFlow.responseText || '';
-    const responseMedia = firstResponse?.mediaUrl || updatedFlow.responseMedia || '';
-    
-    const aiConfig = updatedFlow.aiConfig || {};
+    // Guardar todos los datos del flujo en flow_data como JSON
+    const completeFlowData = {
+      name: updatedFlow.name,
+      description: updatedFlow.description || '',
+      triggers: updatedFlow.triggers || [],
+      responses: updatedFlow.responses || [],
+      flowType: updatedFlow.flowType || 'programmed',
+      kanbanBoardId: updatedFlow.kanbanBoardId || null,
+      aiConfig: updatedFlow.aiConfig || {
+        businessData: '',
+        websiteUrl: '',
+        scrapedContent: '',
+        temperature: 0.7,
+        maxTokens: 500
+      },
+      stats: updatedFlow.stats || {
+        totalTriggers: 0,
+        successRate: 100,
+        lastTriggered: null
+      }
+    };
     
     const [result] = await connection.query(
       `UPDATE chatbot_flows SET 
-        name = ?, description = ?, triggers = ?, responses = ?,
-        response_type = ?, response_text = ?, response_media = ?, 
-        kanban_board_id = ?, is_active = ?, flow_type = ?,
-        ai_business_data = ?, ai_website_url = ?, ai_scraped_content = ?,
-        ai_temperature = ?, ai_max_tokens = ?
+        flow_name = ?, flow_data = ?, is_active = ?
       WHERE id = ? AND session_id = ?`,
       [
         updatedFlow.name,
-        updatedFlow.description || '',
-        JSON.stringify(updatedFlow.triggers || []),
-        JSON.stringify(updatedFlow.responses || []),
-        responseType,
-        responseText,
-        responseMedia,
-        updatedFlow.kanbanBoardId || null,
-        updatedFlow.active !== false,
-        updatedFlow.flowType || 'programmed',
-        aiConfig.businessData || '',
-        aiConfig.websiteUrl || '',
-        aiConfig.scrapedContent || '',
-        aiConfig.temperature || 0.7,
-        aiConfig.maxTokens || 500,
+        JSON.stringify(completeFlowData),
+        updatedFlow.active !== false ? 1 : 0,
         flowId,
         sessionId
       ]
@@ -243,8 +243,24 @@ router.patch('/flows/:sessionId/:flowId/toggle', async (req, res) => {
     await connection.end();
     
     if (flows.length > 0) {
-      console.log(`[CHATBOT] ${active ? '▶️' : '⏸️'} Flujo ${active ? 'activado' : 'pausado'}: ${flows[0].name}`);
-      res.json({ success: true, flow: flows[0] });
+      const flow = flows[0];
+      const flowData = flow.flow_data ? JSON.parse(flow.flow_data) : {};
+      
+      const parsedFlow = {
+        id: flow.id.toString(),
+        name: flowData.name || flow.flow_name,
+        description: flowData.description || '',
+        active: Boolean(active),
+        flowType: flowData.flowType || 'programmed',
+        triggers: flowData.triggers || [],
+        responses: flowData.responses || [],
+        kanbanBoardId: flowData.kanbanBoardId || null,
+        aiConfig: flowData.aiConfig || {},
+        stats: flowData.stats || {}
+      };
+      
+      console.log(`[CHATBOT] ${active ? '▶️' : '⏸️'} Flujo ${active ? 'activado' : 'pausado'}: ${parsedFlow.name}`);
+      res.json({ success: true, flow: parsedFlow });
     } else {
       res.status(404).json({ success: false, error: 'Flujo no encontrado' });
     }
@@ -504,11 +520,22 @@ router.post('/process-message/:sessionId', async (req, res) => {
     const messageLower = message.toLowerCase().trim();
     let matchedFlow = null;
     
+    // Parsear flujos con flow_data
+    const parsedFlows = flows.map(flow => {
+      const flowData = flow.flow_data ? JSON.parse(flow.flow_data) : {};
+      return {
+        ...flow,
+        flowType: flowData.flowType || flow.flow_type || 'programmed',
+        triggers: flowData.triggers || [],
+        responses: flowData.responses || [],
+        aiConfig: flowData.aiConfig || {}
+      };
+    });
+    
     // Primero buscar flujos programados con triggers
-    for (const flow of flows) {
-      if (flow.flow_type === 'programmed') {
-        const triggers = JSON.parse(flow.triggers || '[]');
-        const matched = triggers.some(trigger => {
+    for (const flow of parsedFlows) {
+      if (flow.flowType === 'programmed') {
+        const matched = flow.triggers.some(trigger => {
           const triggerLower = trigger.toLowerCase().trim();
           return messageLower === triggerLower || 
                  messageLower.includes(' ' + triggerLower + ' ') ||
@@ -519,14 +546,6 @@ router.post('/process-message/:sessionId', async (req, res) => {
         
         if (matched) {
           matchedFlow = flow;
-          
-          // Actualizar stats en BD
-          const connection2 = await mysql.createConnection(dbConfig);
-          await connection2.query(
-            'UPDATE chatbot_flows SET stats_total_triggers = stats_total_triggers + 1, stats_last_triggered = NOW() WHERE id = ?',
-            [flow.id]
-          );
-          await connection2.end();
           
           // Actualizar stats globales
           const stats = chatbotStats.get(sessionId) || {
@@ -544,29 +563,38 @@ router.post('/process-message/:sessionId', async (req, res) => {
       }
     }
     
+    if (!matchedFlow) {
+      // Si no hay flujo con triggers, buscar el primer flujo con IA activo
+      matchedFlow = parsedFlows.find(f => f.flowType === 'ai');
+      if (matchedFlow) {
+        console.log(`[CHATBOT] 🤖 No hay flujo específico, usando IA: ${matchedFlow.flow_name}`);
+      }
+    }
+    
     if (matchedFlow) {
-      console.log(`[CHATBOT] 🎯 Flujo activado: ${matchedFlow.name} (${matchedFlow.flow_type}) por mensaje de ${from}`);
+      console.log(`[CHATBOT] 🎯 Flujo activado: ${matchedFlow.flow_name} (${matchedFlow.flowType}) por mensaje de ${from}`);
       
       // Si el flujo tiene un kanban asociado, agregar el contacto al kanban
-      if (matchedFlow.kanban_board_id) {
+      const kanbanBoardId = matchedFlow.aiConfig?.kanbanBoardId || matchedFlow.kanban_board_id;
+      if (kanbanBoardId) {
         try {
           const connection2 = await mysql.createConnection(dbConfig);
           
           // Verificar si el contacto ya existe en ese kanban
           const [existingContact] = await connection2.query(
             'SELECT id FROM kanban_contacts WHERE board_id = ? AND contact_jid = ?',
-            [matchedFlow.kanban_board_id, from]
+            [kanbanBoardId, from]
           );
           
           if (existingContact.length === 0) {
             // Agregar el contacto al kanban
             await connection2.query(
               'INSERT INTO kanban_contacts (board_id, contact_jid, notes) VALUES (?, ?, ?)',
-              [matchedFlow.kanban_board_id, from, `Agregado automáticamente por chatbot: ${matchedFlow.name}`]
+              [kanbanBoardId, from, `Agregado automáticamente por chatbot: ${matchedFlow.flow_name}`]
             );
-            console.log(`[CHATBOT] 📋 Contacto ${from} agregado al kanban ${matchedFlow.kanban_board_id}`);
+            console.log(`[CHATBOT] 📋 Contacto ${from} agregado al kanban ${kanbanBoardId}`);
           } else {
-            console.log(`[CHATBOT] 📋 Contacto ${from} ya existe en kanban ${matchedFlow.kanban_board_id}`);
+            console.log(`[CHATBOT] 📋 Contacto ${from} ya existe en kanban ${kanbanBoardId}`);
           }
           
           await connection2.end();
@@ -579,22 +607,22 @@ router.post('/process-message/:sessionId', async (req, res) => {
       let responses = [];
       
       // Verificar si es flujo con IA o programado
-      if (matchedFlow.flow_type === 'ai') {
+      if (matchedFlow.flowType === 'ai') {
         console.log(`[CHATBOT] 🤖 Generando respuesta con IA para: "${message}"`);
         
         try {
           const axios = require('axios');
           
-          // Construir contexto del negocio
+          // Construir contexto del negocio desde aiConfig
           let systemPrompt = 'Eres un asistente virtual de servicio al cliente. Responde de manera amable, profesional y útil en español.';
           
-          if (matchedFlow.ai_business_data || matchedFlow.ai_scraped_content) {
+          if (matchedFlow.aiConfig?.businessData || matchedFlow.aiConfig?.scrapedContent) {
             systemPrompt += '\n\nInformación del negocio:\n';
-            if (matchedFlow.ai_business_data) {
-              systemPrompt += matchedFlow.ai_business_data + '\n\n';
+            if (matchedFlow.aiConfig.businessData) {
+              systemPrompt += matchedFlow.aiConfig.businessData + '\n\n';
             }
-            if (matchedFlow.ai_scraped_content) {
-              systemPrompt += matchedFlow.ai_scraped_content;
+            if (matchedFlow.aiConfig.scrapedContent) {
+              systemPrompt += matchedFlow.aiConfig.scrapedContent;
             }
           }
           
@@ -608,8 +636,8 @@ router.post('/process-message/:sessionId', async (req, res) => {
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: message }
               ],
-              temperature: parseFloat(matchedFlow.ai_temperature) || 0.7,
-              max_tokens: parseInt(matchedFlow.ai_max_tokens) || 500,
+              temperature: parseFloat(matchedFlow.aiConfig?.temperature) || 0.7,
+              max_tokens: parseInt(matchedFlow.aiConfig?.maxTokens) || 500,
               stream: false
             },
             {
@@ -643,11 +671,11 @@ router.post('/process-message/:sessionId', async (req, res) => {
         
       } else {
         // Flujo programado - usar respuestas guardadas
-        responses = matchedFlow.responses ? JSON.parse(matchedFlow.responses) : [{
+        responses = matchedFlow.responses || [{
           id: '1',
-          type: matchedFlow.response_type || 'text',
-          content: matchedFlow.response_text || '',
-          mediaUrl: matchedFlow.response_media || ''
+          type: 'text',
+          content: 'Hola, ¿en qué puedo ayudarte?',
+          mediaUrl: ''
         }];
       }
       
@@ -656,142 +684,20 @@ router.post('/process-message/:sessionId', async (req, res) => {
         botResponse: responses,
         flow: {
           id: matchedFlow.id,
-          name: matchedFlow.name,
-          type: matchedFlow.flow_type
+          name: matchedFlow.flow_name,
+          type: matchedFlow.flowType
         }
       });
     } else {
-      // Si no hay flujo con triggers, buscar si hay algún flujo con IA activo
-      const aiFlows = flows.filter(f => f.flow_type === 'ai');
+      // No hay flujos activos
+      console.log(`[CHATBOT] ❌ No se encontró flujo activo para: "${message}"`);
       
-      if (aiFlows.length > 0) {
-        const aiFlow = aiFlows[0]; // Usar el primer flujo con IA
-        console.log(`[CHATBOT] 🤖 No hay flujo específico, usando IA: ${aiFlow.name}`);
-        
-        // Si el flujo con IA tiene un kanban asociado, agregar el contacto
-        if (aiFlow.kanban_board_id) {
-          try {
-            const connection3 = await mysql.createConnection(dbConfig);
-            
-            // Verificar si el contacto ya existe en ese kanban
-            const [existingContact] = await connection3.query(
-              'SELECT id FROM kanban_contacts WHERE board_id = ? AND contact_jid = ?',
-              [aiFlow.kanban_board_id, from]
-            );
-            
-            if (existingContact.length === 0) {
-              // Agregar el contacto al kanban
-              await connection3.query(
-                'INSERT INTO kanban_contacts (board_id, contact_jid, notes) VALUES (?, ?, ?)',
-                [aiFlow.kanban_board_id, from, `Agregado automáticamente por chatbot IA: ${aiFlow.name}`]
-              );
-              console.log(`[CHATBOT] 📋 Contacto ${from} agregado al kanban ${aiFlow.kanban_board_id} (IA)`);
-            } else {
-              console.log(`[CHATBOT] 📋 Contacto ${from} ya existe en kanban ${aiFlow.kanban_board_id}`);
-            }
-            
-            await connection3.end();
-          } catch (kanbanError) {
-            console.error('[CHATBOT] Error agregando contacto al kanban (IA):', kanbanError);
-            // No fallar la respuesta del bot si falla el kanban
-          }
-        }
-        
-        try {
-          const axios = require('axios');
-          
-          // Construir contexto del negocio
-          let systemPrompt = 'Eres un asistente virtual de servicio al cliente. Responde de manera amable, profesional y útil en español.';
-          
-          if (aiFlow.ai_business_data || aiFlow.ai_scraped_content) {
-            systemPrompt += '\n\nInformación del negocio:\n';
-            if (aiFlow.ai_business_data) {
-              systemPrompt += aiFlow.ai_business_data + '\n\n';
-            }
-            if (aiFlow.ai_scraped_content) {
-              systemPrompt += aiFlow.ai_scraped_content;
-            }
-          }
-          
-          systemPrompt += '\n\nResponde siempre basándote en la información proporcionada. Si no sabes algo, sé honesto y ofrece ayuda alternativa. Mantén las respuestas concisas y útiles.';
-          
-          const deepseekResponse = await axios.post(
-            'https://api.deepseek.com/v1/chat/completions',
-            {
-              model: 'deepseek-chat',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: message }
-              ],
-              temperature: parseFloat(aiFlow.ai_temperature) || 0.7,
-              max_tokens: parseInt(aiFlow.ai_max_tokens) || 500,
-              stream: false
-            },
-            {
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer sk-1a63bb1681514e0982ab42b0a13377c8'
-              },
-              timeout: 30000
-            }
-          );
-          
-          const aiResponse = deepseekResponse.data.choices[0].message.content;
-          
-          console.log(`[CHATBOT] 🤖 IA respondió (sin trigger): ${aiResponse.substring(0, 100)}...`);
-          
-          // Actualizar stats
-          const connection2 = await mysql.createConnection(dbConfig);
-          await connection2.query(
-            'UPDATE chatbot_flows SET stats_total_triggers = stats_total_triggers + 1, stats_last_triggered = NOW() WHERE id = ?',
-            [aiFlow.id]
-          );
-          await connection2.end();
-          
-          const stats = chatbotStats.get(sessionId) || {
-            totalInteractions: 0,
-            successfulResponses: 0,
-            transferredToAgent: 0,
-            avgResponseTime: 0
-          };
-          stats.totalInteractions++;
-          stats.successfulResponses++;
-          chatbotStats.set(sessionId, stats);
-          
-          res.json({
-            success: true,
-            botResponse: [{
-              id: '1',
-              type: 'text',
-              content: aiResponse
-            }],
-            flow: {
-              id: aiFlow.id,
-              name: aiFlow.name,
-              type: 'ai'
-            }
-          });
-          
-        } catch (aiError) {
-          console.error('[CHATBOT] ❌ Error con IA (sin trigger):', aiError.response?.data || aiError.message);
-          res.json({
-            success: false,
-            botResponse: null,
-            reason: 'AI error',
-            flow: null
-          });
-        }
-      } else {
-        console.log(`[CHATBOT] ❌ No se encontró flujo para: "${message}"`);
-        
-        // NO enviar mensaje de fallback - solo ignorar el mensaje
-        res.json({
-          success: false,
-          botResponse: null,
-          reason: 'No matching flow',
-          flow: null
-        });
-      }
+      res.json({
+        success: false,
+        botResponse: null,
+        reason: 'No matching flow',
+        flow: null
+      });
     }
   } catch (error) {
     console.error('Error procesando mensaje:', error);
