@@ -5,14 +5,7 @@ const express = require('express');
 const compression = require('compression');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
-// ⚡ MIGRACIÓN A WPPCONNECT - Mantiene compatibilidad con código Baileys
-const { WPPConnectAdapter } = require('./wppconnect-adapter');
-const DisconnectReason = {
-    loggedOut: 401,
-    connectionClosed: 428,
-    connectionLost: 408,
-    timedOut: 408
-};
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
@@ -3769,15 +3762,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
     }
 
     try {
-        console.log(`[${sessionId}] 🚀 Iniciando con WPPConnect...`);
-
-        // ⚡ CREAR CLIENTE WPPCONNECT con adaptador Baileys
-        const adapter = new WPPConnectAdapter();
-        const sock = await adapter.create(sessionId, {
-            syncHistory: syncHistory
-        });
-
-        console.log(`[${sessionId}] ✅ Cliente WPPConnect creado`);
+        const { version } = await fetchLatestBaileysVersion();
+        const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+        console.log(`[${sessionId}] 🔐 Auth state cargado desde: ${AUTH_DIR}`);
 
         // Crear almacén personalizado para chats y contactos
         const customStore = {
@@ -3785,9 +3772,47 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             chats: new Map()
         };
 
+        const sock = makeWASocket({
+            version,
+            auth: state,
+            printQRInTerminal: false,
+            logger: pino({ level: 'silent' }),
+            browser: ['WhatsFlow', 'Chrome', '120.0.0'],
+            syncFullHistory: syncHistory,
+            shouldSyncHistoryMessage: (msg) => {
+                if (msg?.key?.remoteJid?.includes('status@broadcast') || msg?.key?.remoteJid?.includes('@broadcast')) {
+                    return false;
+                }
+                return syncHistory;
+            },
+            fireInitQueries: syncHistory,
+            getMessage: async (key) => {
+                if (key.remoteJid?.includes('status@broadcast') || key.remoteJid?.includes('@broadcast')) {
+                    return undefined;
+                }
+                return { conversation: 'Message not available' };
+            },
+            keepAliveIntervalMs: 30000,
+            connectTimeoutMs: 60000,
+            defaultQueryTimeoutMs: 60000,
+            emitOwnEvents: true,
+            markOnlineOnConnect: true,
+            retryRequestDelayMs: 250,
+            maxMsgRetryCount: 5,
+            shouldIgnoreJid: jid => {
+                if (!jid) return true;
+                if (jid.includes('status@broadcast') || jid.includes('@broadcast')) return true;
+                if (jid.includes('@lid')) return true;
+                return false;
+            },
+            linkPreviewImageThumbnailWidth: 192,
+            maxCachedMessages: 100,
+            msgRetryCount: 3,
+            ...customStore
+        });
+
         const sessionInfo = {
             sock,
-            adapter, // Guardar referencia al adaptador
             store: customStore,
             qr: null,
             isConnected: false,
@@ -3797,7 +3822,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         };
 
         // Manejar actualizaciones de conexión (compatible con Baileys via adaptador)
-        sock.on('connection.update', async (update) => {
+        sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
 
             if (qr) {
@@ -4771,7 +4796,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // Manejar mensajes entrantes
-        sock.on('messages.upsert', async (m) => {
+        sock.ev.on('messages.upsert', async (m) => {
             // 🔍 DEBUG: Log de TODOS los mensajes que llegan
             console.log('');
             console.log('═══════════════════════════════════════════════════════════');
@@ -5520,7 +5545,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // Manejar actualizaciones de estado de mensajes
-        sock.on('messages.update', async (updates) => {
+        sock.ev.on('messages.update', async (updates) => {
             console.log(`[${sessionId}] Processing ${updates.length} messages.update from Baileys`);
             for (const update of updates) {
                 if (update.key && update.update?.status) {
@@ -5615,7 +5640,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // Capturar contactos cuando se actualicen
-        sock.on('contacts.update', async (contactsUpdate) => {
+        sock.ev.on('contacts.update', async (contactsUpdate) => {
             // VALIDAR CONFIGURACIONES: syncHistory (localStorage) Y auto_sync (BD)
             const syncHistory = sessionSyncPreferences.get(sessionId) || false;
             const phoneNumber = await getUserPhoneNumber(sessionId);
@@ -5664,13 +5689,13 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // Capturar chats/grupos cuando se actualicen
-        sock.on('chats.update', async (chatsUpdate) => {
+        sock.ev.on('chats.update', async (chatsUpdate) => {
             console.log(`[${sessionId}] 🔄 chats.update: ${chatsUpdate?.length || 0} chats actualizados`);
             // Procesamiento habilitado
         });
 
         // ⭐ EVENTO CRÍTICO: chats.set - Se dispara al conectar con TODOS los chats
-        sock.on('chats.set', async (chatsSet) => {
+        sock.ev.on('chats.set', async (chatsSet) => {
             // Obtener phoneNumber
             const phoneNumber = await getUserPhoneNumber(sessionId);
 
@@ -5718,7 +5743,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // ⭐ EVENTO CRÍTICO: contacts.set - Se dispara al conectar con TODOS los contactos
-        sock.on('contacts.set', async (contactsSet) => {
+        sock.ev.on('contacts.set', async (contactsSet) => {
             // VALIDAR AMBAS CONFIGURACIONES: syncHistory (localStorage) Y auto_sync (BD)
             const syncHistory = sessionSyncPreferences.get(sessionId) || false;
 
@@ -5789,7 +5814,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         // ⭐ EVENTO CRÍTICO: messaging-history.set - Historial de mensajes completo
-        sock.on('messaging-history.set', async (historySet) => {
+        sock.ev.on('messaging-history.set', async (historySet) => {
             const phoneNumber = await getUserPhoneNumber(sessionId);
 
             console.log(`[${sessionId}] 📥 Historial recibido (chats: ${historySet.chats?.length || 0}, contactos: ${historySet.contacts?.length || 0}, mensajes: ${historySet.messages?.length || 0})`);
@@ -6154,8 +6179,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             }, 3000);
         });
 
-        // WPPConnect maneja las credenciales automáticamente
-        // No necesita creds.update listener
+        sock.ev.on('creds.update', async () => {
+            console.log(`[${sessionId}] 💾 Guardando credenciales en: ${AUTH_DIR}`);
+            await saveCreds();
+        });
         sessions.set(sessionId, sessionInfo);
         return sessionInfo;
     } catch (error) {
@@ -19280,13 +19307,7 @@ server.listen(PORT, '0.0.0.0', async () => {
     }
 
 
-    // ⚡ WPPCONNECT: Deshabilitar restauración automática de sesiones
-    console.log(`\n⚡ WPPConnect: Restauración automática DESHABILITADA`);
-    console.log(`📝 Las sesiones se cargarán bajo demanda al escanear QR`);
-    
-    // COMENTADO: No restaurar todas las sesiones al inicio con WPPConnect
-    // Consumiría demasiados recursos (Chrome por sesión)
-    if (false) { // Deshabilitado temporalmente
+    // Restaurar sesiones guardadas automáticamente
     console.log(`\n🔄 Buscando sesiones guardadas para restaurar...`);
     try {
         // Primero buscar sesiones activas en la BD
@@ -19359,7 +19380,6 @@ server.listen(PORT, '0.0.0.0', async () => {
     } catch (error) {
         console.log(`⚠️  Error buscando sesiones guardadas:`, error.message);
     }
-    } // Fin de if (false) - restauración deshabilitada
 
     // Hacer io accesible globalmente en app
     app.set('io', io);

@@ -19,7 +19,6 @@
   "license": "ISC",
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
-    "@wppconnect-team/wppconnect": "^1.37.8",
     "axios": "^1.6.0",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
