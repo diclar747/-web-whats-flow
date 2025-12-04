@@ -357,6 +357,82 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     }
   }, [sessionId]);
 
+  // Cargar plantillas
+  const loadTemplates = useCallback(async () => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/campaign-templates/${sessionId}`);
+      const data = await response.json();
+      if (data.success) {
+        setTemplates(data.data);
+      }
+    } catch (error) {
+      console.error('Error cargando plantillas:', error);
+    }
+  }, [sessionId]);
+
+  // Crear plantilla
+  const createTemplate = async () => {
+    if (!newTemplate.name || !newTemplate.message) {
+      setError('Complete todos los campos de la plantilla');
+      return;
+    }
+
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/campaign-templates/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newTemplate.name,
+          message_template: newTemplate.message,
+          category: newTemplate.category
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setSuccess('Plantilla creada exitosamente');
+        setShowCreateTemplateDialog(false);
+        setNewTemplate({ name: '', message: '', category: 'general' });
+        loadTemplates();
+      } else {
+        setError(data.error || 'Error al crear plantilla');
+      }
+    } catch (error) {
+      console.error('Error creando plantilla:', error);
+      setError('Error de conexión');
+    }
+  };
+
+  // Eliminar plantilla
+  const deleteTemplate = async (templateId: number) => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/campaign-templates/${sessionId}/${templateId}`, {
+        method: 'DELETE'
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setSuccess('Plantilla eliminada');
+        loadTemplates();
+      } else {
+        setError(data.error || 'Error al eliminar plantilla');
+      }
+    } catch (error) {
+      console.error('Error eliminando plantilla:', error);
+      setError('Error de conexión');
+    }
+  };
+
+  // Aplicar plantilla
+  const applyTemplate = (template: any) => {
+    setNewCampaign(prev => ({
+      ...prev,
+      message: { text: template.message_template }
+    }));
+    setShowTemplatesDialog(false);
+    setSuccess(`Plantilla "${template.name}" aplicada`);
+  };
+
   const loadWhatsAppContacts = useCallback(async (resetContacts = true) => {
     try {
       setContactsLoading(true);
@@ -502,6 +578,10 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   useEffect(() => {
     loadContactGroups();
   }, [loadContactGroups]);
+
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
 
   useEffect(() => {
     updateMessagePreview();
@@ -2158,6 +2238,28 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
                   {/* Barra de herramientas multimedia y emojis */}
                   <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      startIcon={<Description />}
+                      onClick={() => setShowTemplatesDialog(true)}
+                      sx={{ 
+                        bgcolor: '#00a884',
+                        '&:hover': { bgcolor: '#008069' }
+                      }}
+                    >
+                      Plantillas
+                    </Button>
+
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<Settings />}
+                      onClick={() => setShowCreateTemplateDialog(true)}
+                    >
+                      Crear Plantilla
+                    </Button>
+
                     <IconButton
                       size="small"
                       onClick={() => setShowEmojiPicker(!showEmojiPicker)}
@@ -2689,6 +2791,165 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
               </Box>
             </Stack>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog de Plantillas */}
+      <Dialog
+        open={showTemplatesDialog}
+        onClose={() => setShowTemplatesDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Description />
+          Plantillas de Mensajes
+        </DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            {templates.map((template) => (
+              <Grid item xs={12} sm={6} key={template.id}>
+                <Card
+                  sx={{
+                    cursor: 'pointer',
+                    '&:hover': {
+                      boxShadow: 4,
+                      transform: 'translateY(-2px)',
+                      transition: 'all 0.2s'
+                    }
+                  }}
+                >
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                      <Typography variant="h6" sx={{ fontSize: '1rem' }}>
+                        {template.name}
+                      </Typography>
+                      <Chip
+                        label={template.category}
+                        size="small"
+                        color="primary"
+                      />
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      {template.message_template}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        startIcon={<ContentCopy />}
+                        onClick={() => applyTemplate(template)}
+                        sx={{
+                          bgcolor: '#00a884',
+                          '&:hover': { bgcolor: '#008069' }
+                        }}
+                      >
+                        Usar
+                      </Button>
+                      {template.phone_number !== 'ALL' && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="error"
+                          startIcon={<Delete />}
+                          onClick={() => deleteTemplate(template.id)}
+                        >
+                          Eliminar
+                        </Button>
+                      )}
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+
+          {templates.length === 0 && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              No hay plantillas disponibles. Crea tu primera plantilla personalizada.
+            </Alert>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Crear Plantilla */}
+      <Dialog
+        open={showCreateTemplateDialog}
+        onClose={() => setShowCreateTemplateDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Settings />
+          Crear Plantilla Personalizada
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 2 }}>
+            <Alert severity="info">
+              <Typography variant="body2">
+                <strong>Variables disponibles:</strong><br />
+                {'{nombre}'} - Nombre del contacto<br />
+                {'{telefono}'} - Número de teléfono
+              </Typography>
+            </Alert>
+
+            <TextField
+              fullWidth
+              label="Nombre de la Plantilla"
+              value={newTemplate.name}
+              onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })}
+              placeholder="Ej: Saludo Personalizado"
+            />
+
+            <FormControl fullWidth>
+              <InputLabel>Categoría</InputLabel>
+              <Select
+                value={newTemplate.category}
+                onChange={(e) => setNewTemplate({ ...newTemplate, category: e.target.value })}
+                label="Categoría"
+              >
+                <MenuItem value="general">General</MenuItem>
+                <MenuItem value="saludos">Saludos</MenuItem>
+                <MenuItem value="recordatorios">Recordatorios</MenuItem>
+                <MenuItem value="marketing">Marketing</MenuItem>
+                <MenuItem value="seguimiento">Seguimiento</MenuItem>
+                <MenuItem value="pagos">Pagos</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              fullWidth
+              label="Mensaje"
+              multiline
+              rows={4}
+              value={newTemplate.message}
+              onChange={(e) => setNewTemplate({ ...newTemplate, message: e.target.value })}
+              placeholder="Hola {nombre}, ¿cómo estás?"
+              helperText="Usa {nombre} y {telefono} para personalizar"
+            />
+
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
+              <Button
+                variant="outlined"
+                onClick={() => {
+                  setShowCreateTemplateDialog(false);
+                  setNewTemplate({ name: '', message: '', category: 'general' });
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                variant="contained"
+                onClick={createTemplate}
+                sx={{
+                  bgcolor: '#00a884',
+                  '&:hover': { bgcolor: '#008069' }
+                }}
+              >
+                Crear Plantilla
+              </Button>
+            </Box>
+          </Stack>
         </DialogContent>
       </Dialog>
 
