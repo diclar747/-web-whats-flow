@@ -225,6 +225,8 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const [showCreateTemplateDialog, setShowCreateTemplateDialog] = useState(false);
   const [newTemplate, setNewTemplate] = useState({ name: '', message: '', category: 'general' });
   const [showTemplateEmojiPicker, setShowTemplateEmojiPicker] = useState(false);
+  const [showDeleteTemplateConfirm, setShowDeleteTemplateConfirm] = useState(false);
+  const [templateToDelete, setTemplateToDelete] = useState<any>(null);
   const [contactSearchTerm, setContactSearchTerm] = useState('');
 
   const [newCampaign, setNewCampaign] = useState<Partial<CampaignData>>({
@@ -405,16 +407,26 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     }
   };
 
+  // Mostrar confirmación para eliminar plantilla
+  const confirmDeleteTemplate = (template: any) => {
+    setTemplateToDelete(template);
+    setShowDeleteTemplateConfirm(true);
+  };
+
   // Eliminar plantilla
-  const deleteTemplate = async (templateId: number) => {
+  const deleteTemplate = async () => {
+    if (!templateToDelete) return;
+
     try {
-      const response = await fetch(`${getAPIBaseURL()}/api/campaign-templates/${sessionId}/${templateId}`, {
+      const response = await fetch(`${getAPIBaseURL()}/api/campaign-templates/${sessionId}/${templateToDelete.id}`, {
         method: 'DELETE'
       });
 
       const data = await response.json();
       if (data.success) {
-        setSuccess('Plantilla eliminada');
+        setSuccess('Plantilla eliminada exitosamente');
+        setShowDeleteTemplateConfirm(false);
+        setTemplateToDelete(null);
         loadTemplates();
       } else {
         setError(data.error || 'Error al eliminar plantilla');
@@ -2926,7 +2938,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                           variant="outlined"
                           color="error"
                           startIcon={<Delete />}
-                          onClick={() => deleteTemplate(template.id)}
+                          onClick={() => confirmDeleteTemplate(template)}
                         >
                           Eliminar
                         </Button>
@@ -3084,6 +3096,76 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
               </Button>
             </Box>
           </Stack>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Confirmar Eliminar Plantilla */}
+      <Dialog
+        open={showDeleteTemplateConfirm}
+        onClose={() => {
+          setShowDeleteTemplateConfirm(false);
+          setTemplateToDelete(null);
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1,
+          bgcolor: '#ffebee',
+          color: '#c62828'
+        }}>
+          <ErrorIcon />
+          Confirmar Eliminación
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Esta acción no se puede deshacer
+          </Alert>
+          
+          <Typography variant="body1" gutterBottom>
+            ¿Estás seguro de que deseas eliminar la plantilla?
+          </Typography>
+          
+          {templateToDelete && (
+            <Card sx={{ mt: 2, bgcolor: '#f5f5f5' }}>
+              <CardContent>
+                <Typography variant="h6" sx={{ fontSize: '0.95rem', mb: 1 }}>
+                  {templateToDelete.name}
+                </Typography>
+                <Chip
+                  label={templateToDelete.category}
+                  size="small"
+                  color="primary"
+                  sx={{ mb: 1 }}
+                />
+                <Typography variant="body2" color="text.secondary">
+                  {templateToDelete.message_template}
+                </Typography>
+              </CardContent>
+            </Card>
+          )}
+
+          <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mt: 3 }}>
+            <Button
+              variant="outlined"
+              onClick={() => {
+                setShowDeleteTemplateConfirm(false);
+                setTemplateToDelete(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<Delete />}
+              onClick={deleteTemplate}
+            >
+              Eliminar
+            </Button>
+          </Box>
         </DialogContent>
       </Dialog>
 
