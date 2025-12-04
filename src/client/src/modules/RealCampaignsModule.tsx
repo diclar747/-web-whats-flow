@@ -640,6 +640,78 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     };
   }, [showHistoryDialog, selectedCampaignDetails, sessionId]);
 
+  // Socket.IO para progreso de campañas en tiempo real
+  useEffect(() => {
+    const socket = io(getAPIBaseURL(), {
+      query: { sessionId },
+      transports: ['websocket', 'polling']
+    });
+
+    // Unirse a la sala de sesión
+    socket.emit('join-session', sessionId);
+
+    // Escuchar progreso de campañas
+    socket.on('campaign-progress', (data: any) => {
+      console.log('📊 Progreso de campaña:', data);
+      const { campaignId, sent, failed, total } = data;
+      
+      const percentage = Math.round(((sent + failed) / total) * 100);
+      
+      setSendingProgress(prev => ({
+        ...prev,
+        [campaignId]: percentage
+      }));
+
+      // Actualizar el estado de la campaña en la lista
+      setCampaigns(prev => prev.map(c => {
+        if (c.id === campaignId.toString()) {
+          return {
+            ...c,
+            progress: {
+              ...c.progress,
+              sent,
+              failed,
+              total
+            }
+          };
+        }
+        return c;
+      }));
+    });
+
+    // Escuchar cuando la campaña se completa
+    socket.on('campaign-completed', (data: any) => {
+      console.log('✅ Campaña completada:', data);
+      const { campaignId } = data;
+      
+      setSendingProgress(prev => ({
+        ...prev,
+        [campaignId]: 100
+      }));
+
+      // Actualizar estado a completado
+      setCampaigns(prev => prev.map(c => {
+        if (c.id === campaignId.toString()) {
+          return {
+            ...c,
+            status: 'completed' as const,
+            completedAt: new Date().toISOString()
+          };
+        }
+        return c;
+      }));
+
+      setSuccess('Campaña completada exitosamente');
+      
+      // Recargar campañas desde el servidor
+      setTimeout(() => loadCampaigns(), 2000);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [sessionId, loadCampaigns]);
+
   const saveCampaigns = (campaignsToSave: CampaignData[]) => {
     localStorage.setItem(`campaigns_${sessionId}`, JSON.stringify(campaignsToSave));
   };
