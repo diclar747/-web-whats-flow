@@ -736,7 +736,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       setIsLoading(true);
       console.log(`🔄 Cargando mensajes para chat: ${chatId}`);
 
-      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&limit=100`);
+      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&limit=25`);
       const data = await response.json();
 
       if (data.success && data.messages) {

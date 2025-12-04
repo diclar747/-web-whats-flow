@@ -140,6 +140,17 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
         body: JSON.stringify({ sessionId })
       });
 
+      if (!contactsResponse.ok) {
+        throw new Error(`HTTP ${contactsResponse.status}: ${contactsResponse.statusText}`);
+      }
+
+      const contentType = contactsResponse.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await contactsResponse.text();
+        console.error('Respuesta no JSON:', text.substring(0, 200));
+        throw new Error('La respuesta del servidor no es JSON válido');
+      }
+
       const contactsData = await contactsResponse.json();
 
       if (contactsData.success) {

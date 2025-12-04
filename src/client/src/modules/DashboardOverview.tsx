@@ -64,7 +64,10 @@ import {
   Pause,
   Stop,
   AccessTime,
-  DoneAll
+  DoneAll,
+  CalendarToday,
+  Contacts as ContactsIcon,
+  ViewKanban
 } from '@mui/icons-material';
 
 interface DashboardOverviewProps {
@@ -222,6 +225,61 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
             color: '#f44336',
             gradient: 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)',
             trend: { value: 0, isPositive: false, period: 'errores' }
+          },
+          // ✨ NUEVAS TARJETAS
+          {
+            title: 'Bots Activos',
+            value: (stats.chatbots || 0).toLocaleString(),
+            subtitle: 'Automatización activa',
+            icon: <SmartToy />,
+            color: '#9c27b0',
+            gradient: 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)',
+            trend: { value: 0, isPositive: true, period: 'activos' }
+          },
+          {
+            title: 'Campañas',
+            value: (stats.campaigns || 0).toLocaleString(),
+            subtitle: 'Activas y programadas',
+            icon: <Campaign />,
+            color: '#e91e63',
+            gradient: 'linear-gradient(135deg, #e91e63 0%, #c2185b 100%)',
+            trend: { value: 0, isPositive: true, period: 'activas' }
+          },
+          {
+            title: 'Agenda',
+            value: (stats.appointments || 0).toLocaleString(),
+            subtitle: 'Citas programadas',
+            icon: <CalendarToday />,
+            color: '#3f51b5',
+            gradient: 'linear-gradient(135deg, #3f51b5 0%, #303f9f 100%)',
+            trend: { value: 0, isPositive: true, period: 'citas' }
+          },
+          {
+            title: 'Contactos',
+            value: (stats.contacts || 0).toLocaleString(),
+            subtitle: 'Base de datos',
+            icon: <ContactsIcon />,
+            color: '#ff5722',
+            gradient: 'linear-gradient(135deg, #ff5722 0%, #e64a19 100%)',
+            trend: { value: 0, isPositive: true, period: 'total' }
+          },
+          {
+            title: 'Agentes',
+            value: (stats.agents || 0).toLocaleString(),
+            subtitle: 'Operadores activos',
+            icon: <People />,
+            color: '#009688',
+            gradient: 'linear-gradient(135deg, #009688 0%, #00796b 100%)',
+            trend: { value: 0, isPositive: true, period: 'activos' }
+          },
+          {
+            title: 'Tableros Kanban',
+            value: (stats.kanbans || 0).toLocaleString(),
+            subtitle: 'Organización visual',
+            icon: <ViewKanban />,
+            color: '#607d8b',
+            gradient: 'linear-gradient(135deg, #607d8b 0%, #455a64 100%)',
+            trend: { value: 0, isPositive: true, period: 'activos' }
           }
         ];
 
@@ -237,15 +295,18 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
       } else {
         // Fallback a datos mock si falla la API
         const fallbackMetrics: MetricCard[] = [
-          {
-            title: 'Mensajes Hoy',
-            value: 0,
-            subtitle: 'Sin datos',
-            icon: <Message />,
-            color: '#00a884',
-            gradient: 'linear-gradient(135deg, #00a884 0%, #25d366 100%)',
-            trend: { value: 0, isPositive: true, period: 'hoy' }
-          }
+          { title: 'Mensajes Totales', value: 0, subtitle: 'Sin datos', icon: <Message />, color: '#00a884', gradient: 'linear-gradient(135deg, #00a884 0%, #25d366 100%)' },
+          { title: 'Mensajes Hoy', value: 0, subtitle: 'Sin datos', icon: <WhatsApp />, color: '#25d366', gradient: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)' },
+          { title: 'Pendientes', value: 0, subtitle: 'Sin datos', icon: <Timer />, color: '#ff9800', gradient: 'linear-gradient(135deg, #ff9800 0%, #f57c00 100%)' },
+          { title: 'Entregados', value: 0, subtitle: 'Sin datos', icon: <Send />, color: '#2196f3', gradient: 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)' },
+          { title: 'Leídos', value: 0, subtitle: 'Sin datos', icon: <CheckCircle />, color: '#4caf50', gradient: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)' },
+          { title: 'Fallidos', value: 0, subtitle: 'Sin datos', icon: <ErrorIcon />, color: '#f44336', gradient: 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)' },
+          { title: 'Bots Activos', value: 0, subtitle: 'Sin datos', icon: <SmartToy />, color: '#9c27b0', gradient: 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)' },
+          { title: 'Campañas', value: 0, subtitle: 'Sin datos', icon: <Campaign />, color: '#e91e63', gradient: 'linear-gradient(135deg, #e91e63 0%, #c2185b 100%)' },
+          { title: 'Agenda', value: 0, subtitle: 'Sin datos', icon: <CalendarToday />, color: '#3f51b5', gradient: 'linear-gradient(135deg, #3f51b5 0%, #303f9f 100%)' },
+          { title: 'Contactos', value: 0, subtitle: 'Sin datos', icon: <ContactsIcon />, color: '#ff5722', gradient: 'linear-gradient(135deg, #ff5722 0%, #e64a19 100%)' },
+          { title: 'Agentes', value: 0, subtitle: 'Sin datos', icon: <People />, color: '#009688', gradient: 'linear-gradient(135deg, #009688 0%, #00796b 100%)' },
+          { title: 'Tableros Kanban', value: 0, subtitle: 'Sin datos', icon: <ViewKanban />, color: '#607d8b', gradient: 'linear-gradient(135deg, #607d8b 0%, #455a64 100%)' }
         ];
 
         const fallbackQuickStats: QuickStat[] = [
@@ -424,8 +485,12 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
         { title: 'Entregados', value: '0', subtitle: 'Error cargando datos', icon: <Send />, color: '#2196f3', gradient: 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)' },
         { title: 'Leídos', value: '0', subtitle: 'Error cargando datos', icon: <CheckCircle />, color: '#4caf50', gradient: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)' },
         { title: 'Fallidos', value: '0', subtitle: 'Error cargando datos', icon: <ErrorIcon />, color: '#f44336', gradient: 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)' },
-        { title: 'Contactos', value: '0', subtitle: 'Error cargando datos', icon: <PersonAdd />, color: '#9c27b0', gradient: 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)' },
-        { title: 'Grupos', value: '0', subtitle: 'Error cargando datos', icon: <Group />, color: '#673ab7', gradient: 'linear-gradient(135deg, #673ab7 0%, #512da8 100%)' }
+        { title: 'Bots Activos', value: '0', subtitle: 'Error cargando datos', icon: <SmartToy />, color: '#9c27b0', gradient: 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)' },
+        { title: 'Campañas', value: '0', subtitle: 'Error cargando datos', icon: <Campaign />, color: '#e91e63', gradient: 'linear-gradient(135deg, #e91e63 0%, #c2185b 100%)' },
+        { title: 'Agenda', value: '0', subtitle: 'Error cargando datos', icon: <CalendarToday />, color: '#3f51b5', gradient: 'linear-gradient(135deg, #3f51b5 0%, #303f9f 100%)' },
+        { title: 'Contactos', value: '0', subtitle: 'Error cargando datos', icon: <ContactsIcon />, color: '#ff5722', gradient: 'linear-gradient(135deg, #ff5722 0%, #e64a19 100%)' },
+        { title: 'Agentes', value: '0', subtitle: 'Error cargando datos', icon: <People />, color: '#009688', gradient: 'linear-gradient(135deg, #009688 0%, #00796b 100%)' },
+        { title: 'Tableros Kanban', value: '0', subtitle: 'Error cargando datos', icon: <ViewKanban />, color: '#607d8b', gradient: 'linear-gradient(135deg, #607d8b 0%, #455a64 100%)' }
       ];
       setMetrics(errorMetrics);
     } finally {

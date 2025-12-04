@@ -228,8 +228,8 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [dateFrom, setDateFrom] = useState<Dayjs | null>(dayjs().subtract(7, 'days'));
-  const [dateTo, setDateTo] = useState<Dayjs | null>(dayjs());
+  const [dateFrom, setDateFrom] = useState<Dayjs | null>(null); // ⚡ Sin filtro de fecha - Mostrar TODO el historial
+  const [dateTo, setDateTo] = useState<Dayjs | null>(null); // ⚡ Sin filtro de fecha - Mostrar TODO el historial
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncStats, setSyncStats] = useState<any>(null);
   const [debugInfo, setDebugInfo] = useState<any>(null);
@@ -422,9 +422,9 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         }
       }
 
-      // Cargar solo mensajes (NO grupos) - optimizado para velocidad
-      // Reducido a 1000 mensajes iniciales para carga rápida
-      const response = await fetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${sessionId}&limit=1000&offset=0`);
+      // ⚡ OPTIMIZADO: Cargar TODO el historial de mensajes (sin límite)
+      // El backend ya está optimizado con índices para carga rápida
+      const response = await fetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${sessionId}&limit=100000&offset=0`);
       const data = await response.json();
 
       console.log('📦 Respuesta de la API /api/history/messages:', data);
@@ -433,24 +433,21 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       if (data.success && data.messages && Array.isArray(data.messages)) {
         // Filtrar grupos inmediatamente - SOLO chats individuales
         const apiMessages: MessageHistory[] = data.messages
-          .filter((msg: any) => {
-            const chatJid = msg.chatJid || msg.chat_jid || '';
-            return !chatJid.includes('@g.us'); // Excluir grupos
-          })
+          .filter((msg: any) => true) // Mostrar todos los mensajes, incluyendo grupos
           .map((msg: any) => {
             const chatJid = msg.chatJid || msg.chat_jid || 'unknown';
             const senderJid = msg.senderJid || msg.sender_jid || chatJid;
             const isFromMe = msg.fromMe || msg.from_me || false;
-            
+
             // ✅ CORRECCIÓN: Usar sender info si es mensaje enviado (from_me=true)
-            const displayName = isFromMe 
+            const displayName = isFromMe
               ? (msg.senderName || msg.sender_name || senderJid.split('@')[0] || 'Yo')
               : (msg.chatName || msg.chat_name || chatJid.split('@')[0] || 'Desconocido');
-            
+
             const displayPhone = isFromMe
               ? (senderJid.split('@')[0] || 'unknown')
               : (chatJid.split('@')[0] || 'unknown');
-            
+
             const displayAvatar = isFromMe
               ? `${getAPIBaseURL()}/api/avatar/${sessionId}/${senderJid}`
               : (msg.contactAvatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chatJid}`);
@@ -1202,12 +1199,12 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
 
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
-    
+
       // Encabezado
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
       doc.text('Historial de Mensajes - WhatsFlow', pageWidth / 2, 15, { align: 'center' });
-      
+
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.text(`Fecha de exportación: ${new Date().toLocaleString('es-ES')}`, pageWidth / 2, 22, { align: 'center' });
@@ -1279,9 +1276,9 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   const exportToExcel = async (data: any[]) => {
     try {
       const XLSX = await import('xlsx');
-    
+
       let worksheetData: any[];
-      
+
       if (viewMode === 'messages') {
         worksheetData = data.map((msg: any) => ({
           'Fecha/Hora': msg.timestamp ? new Date(msg.timestamp).toLocaleString('es-ES') : '-',
@@ -1289,13 +1286,13 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           'Número': msg.from?.split('@')[0] || msg.phoneNumber || '',
           'Mensaje': msg.body || msg.text || msg.message || '(Sin texto)',
           'Tipo': msg.fromMe || msg.isFromMe ? 'Enviado' : 'Recibido',
-          'Estado': msg.fromMe || msg.isFromMe ? 
-            (msg.status === 'read' ? 'Visto' : 
-             msg.status === 'delivered' ? 'Entregado' : 
-             msg.status === 'sent' ? 'Enviado' : 
-             msg.ack === 3 ? 'Visto' : 
-             msg.ack === 2 ? 'Entregado' : 
-             msg.ack === 1 ? 'Enviado' : 'Pendiente') : '-'
+          'Estado': msg.fromMe || msg.isFromMe ?
+            (msg.status === 'read' ? 'Visto' :
+              msg.status === 'delivered' ? 'Entregado' :
+                msg.status === 'sent' ? 'Enviado' :
+                  msg.ack === 3 ? 'Visto' :
+                    msg.ack === 2 ? 'Entregado' :
+                      msg.ack === 1 ? 'Enviado' : 'Pendiente') : '-'
         }));
       } else {
         worksheetData = data.map((conv: any) => ({
@@ -1310,7 +1307,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       }
 
       const worksheet = XLSX.utils.json_to_sheet(worksheetData);
-      
+
       // Ajustar ancho de columnas
       const colWidths = Object.keys(worksheetData[0] || {}).map(() => ({ wch: 20 }));
       worksheet['!cols'] = colWidths;
@@ -1346,7 +1343,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       }
 
       let tableHTML = '';
-      
+
       if (viewMode === 'messages') {
         tableHTML = `
           <table>
@@ -1366,10 +1363,10 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                   <td>${msg.contactName || msg.pushName || msg.from?.split('@')[0] || 'Desconocido'}</td>
                   <td>${((msg.body || msg.text || msg.message || '(Sin texto)').substring(0, 80))}</td>
                   <td>${msg.fromMe || msg.isFromMe ? 'Enviado' : 'Recibido'}</td>
-                  <td>${msg.fromMe || msg.isFromMe ? 
-                    (msg.status === 'read' ? 'Visto' : 
-                     msg.status === 'delivered' ? 'Entregado' : 
-                     msg.status === 'sent' ? 'Enviado' : 'Pendiente') : '-'}</td>
+                  <td>${msg.fromMe || msg.isFromMe ?
+            (msg.status === 'read' ? 'Visto' :
+              msg.status === 'delivered' ? 'Entregado' :
+                msg.status === 'sent' ? 'Enviado' : 'Pendiente') : '-'}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -1402,7 +1399,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         `;
       }
 
-    const htmlContent = `
+      const htmlContent = `
       <!DOCTYPE html>
       <html>
       <head>
@@ -2187,23 +2184,23 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                               </TableCell>
                               <TableCell>
                                 <Box sx={{ display: 'flex' }}>
-                                  <Tooltip 
+                                  <Tooltip
                                     title={
                                       <Box sx={{ maxWidth: 380, p: 1.5 }}>
                                         <Typography variant="caption" sx={{ color: '#ffd54f', fontWeight: 600, display: 'block', mb: 1 }}>
                                           {getMessageTypeLabel(message.messageType, message.fileName)}
                                         </Typography>
-                                        
+
                                         {(() => {
                                           const msgType = String(message.messageType || '').toLowerCase();
-                                          
+
                                           if ((msgType.includes('image') || message.messageType === 'image') && message.mediaUrl) {
                                             return (
                                               <Box sx={{ mb: 1 }}>
-                                                <img 
-                                                  src={message.mediaUrl} 
-                                                  alt="Preview" 
-                                                  style={{ maxWidth: '100%', maxHeight: '180px', borderRadius: '6px' }} 
+                                                <img
+                                                  src={message.mediaUrl}
+                                                  alt="Preview"
+                                                  style={{ maxWidth: '100%', maxHeight: '180px', borderRadius: '6px' }}
                                                 />
                                                 {message.content && (
                                                   <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
@@ -2238,15 +2235,15 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                                             );
                                           }
                                         })()}
-                                        
+
                                         <Divider sx={{ my: 1, bgcolor: 'rgba(255,255,255,0.15)' }} />
                                         <Typography variant="caption" sx={{ color: '#90a4ae' }}>
-                                          {new Date(message.timestamp).toLocaleString('es-ES', { 
-                                            day: '2-digit', 
-                                            month: '2-digit', 
+                                          {new Date(message.timestamp).toLocaleString('es-ES', {
+                                            day: '2-digit',
+                                            month: '2-digit',
                                             year: 'numeric',
-                                            hour: '2-digit', 
-                                            minute: '2-digit' 
+                                            hour: '2-digit',
+                                            minute: '2-digit'
                                           })}
                                         </Typography>
                                       </Box>

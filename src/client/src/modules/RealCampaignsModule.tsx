@@ -176,22 +176,22 @@ interface CampaignData {
 
 const RealCampaignsModule: React.FC<RealCampaignsModuleProps> = ({ sessionId }) => {
   const { isDarkMode } = useTheme();
-  
+
   // SubscriptionGuard temporalmente deshabilitado para debugging
   return <RealCampaignsModuleContent sessionId={sessionId} />;
 };
 
 const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessionId }) => {
   const { isDarkMode } = useTheme();
-  
+
   const [campaigns, setCampaigns] = useState<CampaignData[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [activeStep, setActiveStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [sendingProgress, setSendingProgress] = useState<{[key: string]: number}>({});
+  const [sendingProgress, setSendingProgress] = useState<{ [key: string]: number }>({});
   const [currentTab, setCurrentTab] = useState(0);
-  
+
   // Estados para manejo de contactos y grupos
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactGroups, setContactGroups] = useState<ContactGroup[]>([]);
@@ -216,7 +216,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const [contactsLoading, setContactsLoading] = useState(false);
   const [totalContacts, setTotalContacts] = useState(0);
   const [contactSearchTerm, setContactSearchTerm] = useState('');
-  
+
   const [newCampaign, setNewCampaign] = useState<Partial<CampaignData>>({
     name: '',
     type: 'direct',
@@ -230,7 +230,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       timeSpanMinutes: 1 // ✅ Cada 1 minuto
     }
   });
-  
+
   const [contactsInput, setContactsInput] = useState('');
   const [previewMessage, setPreviewMessage] = useState('');
   const [selectedMedia, setSelectedMedia] = useState<File | null>(null);
@@ -242,7 +242,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const [selectedCampaignDetails, setSelectedCampaignDetails] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [loading, setLoading] = useState(false);
-  
+
   // Estados para filtros de historial
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('all');
   const [historySearchTerm, setHistorySearchTerm] = useState<string>('');
@@ -251,15 +251,49 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingCampaign, setEditingCampaign] = useState<CampaignData | null>(null);
 
-  const loadCampaigns = useCallback(() => {
+  const loadCampaigns = useCallback(async () => {
     try {
-      const savedCampaigns = localStorage.getItem(`campaigns_${sessionId}`);
-      if (savedCampaigns) {
-        const loadedCampaigns = JSON.parse(savedCampaigns);
-        setCampaigns(loadedCampaigns);
+      setLoading(true);
+      const response = await fetch(`${getAPIBaseURL()}/api/campaigns/${sessionId}`);
+      const data = await response.json();
+
+      if (data.success && data.data && data.data.campaigns) {
+        // Mapear datos del backend al formato del frontend
+        const mappedCampaigns: CampaignData[] = data.data.campaigns.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          type: c.scheduled_at ? 'scheduled' : 'direct',
+          status: c.status,
+          message: { text: c.message_template },
+          mediaUrl: null, // TODO: Recuperar media si es necesario
+          mediaType: null,
+          contacts: Array(c.total_recipients).fill({}), // Placeholder para conteo
+          scheduledAt: c.scheduled_at,
+          progress: {
+            total: c.total_recipients,
+            sent: c.sent_count,
+            delivered: c.sent_count,
+            failed: c.failed_count
+          },
+          createdAt: c.created_at,
+          useIdFlow: c.use_id_flow === 1,
+          useRandomTiming: c.use_random_timing === 1,
+          flowConfig: {
+            messagesCount: c.random_timing_msg_count,
+            timeSpanMinutes: c.random_timing_time_span_minutes
+          }
+        }));
+        setCampaigns(mappedCampaigns);
       }
     } catch (error) {
       console.error('Error cargando campañas:', error);
+      // Fallback a localStorage si falla la API
+      const savedCampaigns = localStorage.getItem(`campaigns_${sessionId}`);
+      if (savedCampaigns) {
+        setCampaigns(JSON.parse(savedCampaigns));
+      }
+    } finally {
+      setLoading(false);
     }
   }, [sessionId]);
 
@@ -422,14 +456,14 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     if (newCampaign.message?.text && newCampaign.contacts && newCampaign.contacts.length > 0) {
       const firstContact = newCampaign.contacts[0];
       let preview = newCampaign.message.text;
-      
+
       if (firstContact.variables) {
         Object.keys(firstContact.variables).forEach(key => {
           const regex = new RegExp(`{${key}}`, 'g');
           preview = preview.replace(regex, firstContact.variables![key]);
         });
       }
-      
+
       setPreviewMessage(preview);
     } else {
       setPreviewMessage(newCampaign.message?.text || '');
@@ -496,18 +530,18 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     // Escuchar actualizaciones de estado de mensajes
     socket.on('message-status-update', (update: any) => {
       console.log('📩 Actualización de estado de mensaje recibida:', update);
-      
+
       // Si el mensaje pertenece a la campaña actual, actualizar el destinatario
       setSelectedCampaignDetails((prev: any) => {
         if (!prev || !prev.recipients) return prev;
-        
+
         const updatedRecipients = prev.recipients.map((r: any) => {
           if (r.message_id === update.messageId || r.message_id === update.id) {
             return { ...r, status: update.status };
           }
           return r;
         });
-        
+
         return { ...prev, recipients: updatedRecipients };
       });
     });
@@ -535,7 +569,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const getIdFlowSizes = (totalMessages: number): number[] => {
     const baseSizes = [64, 45, 32, 28, 56, 40, 35, 48, 52, 38];
     const sizes: number[] = [];
-    
+
     for (let i = 0; i < totalMessages; i++) {
       if (i < baseSizes.length) {
         sizes.push(baseSizes[i]);
@@ -551,13 +585,13 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const calculateTimeDistribution = (messagesCount: number, timeSpanMinutes: number): number[] => {
     const delays: number[] = [];
     const totalTimeMs = timeSpanMinutes * 60 * 1000; // Convertir a millisegundos
-    
+
     // Generar tiempos aleatorios dentro del rango
     for (let i = 0; i < messagesCount; i++) {
       const randomDelay = Math.random() * totalTimeMs;
       delays.push(randomDelay);
     }
-    
+
     // Ordenar para envío secuencial
     return delays.sort((a, b) => a - b);
   };
@@ -644,10 +678,10 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
   const handleGroupSelection = (groupId: string) => {
     setSelectedGroups(prev => {
-      const newSelection = prev.includes(groupId) 
+      const newSelection = prev.includes(groupId)
         ? prev.filter(id => id !== groupId)
         : [...prev, groupId];
-      
+
       // Convertir grupos seleccionados a contactos de campaña
       const groupContacts: CampaignContact[] = [];
       newSelection.forEach(gId => {
@@ -665,12 +699,12 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           });
         }
       });
-      
+
       // Eliminar duplicados
-      const uniqueContacts = groupContacts.filter((contact, index, self) => 
+      const uniqueContacts = groupContacts.filter((contact, index, self) =>
         index === self.findIndex(c => c.phone === contact.phone)
       );
-      
+
       setNewCampaign(prev => ({ ...prev, contacts: uniqueContacts }));
       return newSelection;
     });
@@ -929,7 +963,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         });
 
         const uploadResult = await uploadResponse.json();
-        
+
         if (uploadResult.success) {
           // Construir URL absoluta del archivo
           mediaUrl = `${getAPIBaseURL()}${uploadResult.data.mediaUrl}`;
@@ -1015,267 +1049,45 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       const scheduledTime = new Date(campaign.scheduledAt).getTime();
       const currentTime = new Date().getTime();
 
-      // Si la fecha programada es futura, programar la campaña
+      // Si la fecha programada es futura, solo actualizamos UI
+      // El backend (Scheduler) se encargará de ejecutarla
       if (scheduledTime > currentTime) {
+        setSuccess(`Campaña programada para ${new Date(campaign.scheduledAt).toLocaleString('es-ES')}. El servidor la ejecutará automáticamente.`);
+        loadCampaigns(); // Recargar para ver estado actualizado
+        return;
+      }
+    }
+
+    // Si es directa o ya pasó la fecha, forzar inicio en backend
+    try {
+      setLoading(true);
+      const response = await fetch(`${getAPIBaseURL()}/api/campaigns/send/${encodeURIComponent(sessionId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess('Campaña iniciada en el servidor');
+        // Actualizar estado local inmediatamente
         const updatedCampaigns = campaigns.map(c =>
-          c.id === campaignId
-            ? { ...c, status: 'scheduled' as const }
-            : c
+          c.id === campaignId ? { ...c, status: 'sending' as const } : c
         );
         setCampaigns(updatedCampaigns);
-        saveCampaigns(updatedCampaigns);
-
-        setSuccess(`Campaña programada para ${new Date(campaign.scheduledAt).toLocaleString('es-ES')}`);
-
-        // Programar la ejecución
-        const delay = scheduledTime - currentTime;
-        console.log(`⏰ Campaña programada. Se ejecutará en ${Math.round(delay / 1000 / 60)} minutos`);
-
-        setTimeout(() => {
-          console.log(`🚀 Ejecutando campaña programada: ${campaign.name}`);
-          executeCampaign(campaignId);
-        }, delay);
-
-        return;
       } else {
-        // Si la fecha ya pasó, ejecutar inmediatamente
-        console.warn('⚠️ La fecha programada ya pasó. Ejecutando inmediatamente.');
+        setError(data.error || 'Error al iniciar campaña');
       }
-    }
-
-    // Si no es programada o la fecha ya pasó, ejecutar inmediatamente
-    executeCampaign(campaignId);
-  };
-
-  const executeCampaign = async (campaignId: string) => {
-    const campaign = campaigns.find(c => c.id === campaignId);
-    if (!campaign) return;
-
-    console.log('🚀 [CAMPAIGN-START] Iniciando campaña:', {
-      id: campaignId,
-      name: campaign.name,
-      hasMedia: !!campaign.mediaUrl,
-      mediaUrl: campaign.mediaUrl,
-      mediaType: campaign.mediaType,
-      contactsCount: campaign.contacts.length
-    });
-
-    const updatedCampaigns = campaigns.map(c =>
-      c.id === campaignId
-        ? { ...c, status: 'sending' as const, startedAt: new Date().toISOString() }
-        : c
-    );
-    setCampaigns(updatedCampaigns);
-    saveCampaigns(updatedCampaigns);
-
-    let sent = 0;
-    let failed = 0;
-
-    try {
-      // Configurar distribución temporal si usa flow
-      let timeDistribution: number[] = [];
-      let idFlowSizes: number[] = [];
-
-      if (campaign.useRandomTiming && campaign.flowConfig) {
-        // Generar distribución para TODOS los contactos, no solo para messagesCount
-        const contactsToSend = campaign.contacts.length;
-        console.log(`🎲 Generando distribución aleatoria para ${contactsToSend} contactos en ${campaign.flowConfig.timeSpanMinutes} minutos`);
-        timeDistribution = calculateTimeDistribution(
-          contactsToSend,
-          campaign.flowConfig.timeSpanMinutes
-        );
-        console.log(`⏰ Tiempos generados:`, timeDistribution.map((t, i) => `${i+1}: ${Math.round(t/1000)}s`).join(', '));
-      }
-      
-      if (campaign.useIdFlow) {
-        idFlowSizes = getIdFlowSizes(campaign.contacts.length);
-      }
-
-      const startTime = Date.now();
-
-      for (let i = 0; i < campaign.contacts.length; i++) {
-        const contact = campaign.contacts[i];
-        
-        try {
-          // Personalizar mensaje
-          let personalizedMessage = campaign.message.text;
-          if (contact.variables) {
-            Object.keys(contact.variables).forEach(key => {
-              const regex = new RegExp(`{${key}}`, 'g');
-              personalizedMessage = personalizedMessage.replace(regex, contact.variables![key]);
-            });
-          }
-
-          // Agregar ID FLOW si está habilitado
-          if (campaign.useIdFlow && idFlowSizes[i]) {
-            const idFlow = generateIdFlow(idFlowSizes[i]);
-            personalizedMessage += `\n\nID: ${idFlow}`;
-          }
-
-          // Calcular delay ENTRE mensajes (no acumulativo)
-          if (campaign.useRandomTiming && campaign.flowConfig && timeDistribution[i]) {
-            // Usar distribución temporal aleatoria (configuración personalizada del usuario)
-            if (i > 0) {
-              const waitTime = timeDistribution[i] - timeDistribution[i - 1];
-              await new Promise(resolve => setTimeout(resolve, waitTime));
-            }
-          } else {
-            // ✅ ENVÍO ALEATORIO POR DEFECTO: Cada mensaje espera entre 1-2 minutos
-            // Genera intervalos aleatorios: 60s - 120s (1:00 - 2:00)
-            // Ejemplos: 1:05, 1:40, 1:25, 1:10, 1:51, 1:37, 1:34, 1:45, 1:52, etc.
-            if (i > 0) {
-              // Tiempo aleatorio entre 60 y 120 segundos (1:00 - 2:00)
-              const minDelay = 60000; // 1 minuto
-              const maxDelay = 120000; // 2 minutos
-              const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-              
-              const minutes = Math.floor(randomDelay / 60000);
-              const seconds = Math.floor((randomDelay % 60000) / 1000);
-              console.log(`⏰ Mensaje ${i + 1}: Esperando ${minutes}:${seconds.toString().padStart(2, '0')} antes de enviar`);
-              
-              await new Promise(resolve => setTimeout(resolve, randomDelay));
-            }
-          }
-
-          // Enviar mensaje con o sin multimedia
-          let response;
-          
-          console.log(`📤 [Campaign ${campaign.id}] Enviando a ${contact.name}:`, {
-            hasMedia: !!campaign.mediaUrl,
-            mediaType: campaign.mediaType,
-            mediaUrl: campaign.mediaUrl
-          });
-          
-          if (campaign.mediaUrl && campaign.mediaType) {
-            // Enviar con multimedia
-            if (campaign.mediaType.startsWith('image/')) {
-              console.log(`🖼️ Enviando imagen a ${contact.phone}`);
-              response = await fetch(`${getAPIBaseURL()}/api/send/image`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  sessionId,
-                  number: contact.phone.replace('+', '') + '@c.us',
-                  url: campaign.mediaUrl,
-                  caption: personalizedMessage
-                }),
-              });
-            } else if (campaign.mediaType.startsWith('video/')) {
-              response = await fetch(`${getAPIBaseURL()}/api/send/video`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  sessionId,
-                  number: contact.phone.replace('+', '') + '@c.us',
-                  url: campaign.mediaUrl,
-                  caption: personalizedMessage
-                }),
-              });
-            } else if (campaign.mediaType.startsWith('audio/')) {
-              response = await fetch(`${getAPIBaseURL()}/api/send/audio`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  sessionId,
-                  number: contact.phone.replace('+', '') + '@c.us',
-                  url: campaign.mediaUrl
-                }),
-              });
-            } else {
-              // Documentos (PDF, DOC, etc.)
-              response = await fetch(`${getAPIBaseURL()}/api/send/document`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  sessionId,
-                  number: contact.phone.replace('+', '') + '@c.us',
-                  url: campaign.mediaUrl,
-                  caption: personalizedMessage,
-                  fileName: campaign.mediaUrl.split('/').pop()
-                }),
-              });
-            }
-          } else {
-            // Enviar solo texto
-            response = await fetch(`${getAPIBaseURL()}/api/send/message`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                sessionId,
-                number: contact.phone.replace('+', '') + '@c.us',
-                message: personalizedMessage
-              }),
-            });
-          }
-
-          const data = await response.json();
-          
-          console.log(`📥 Respuesta del servidor:`, data);
-          
-          if (data.success) {
-            sent++;
-            console.log(`✅ Mensaje enviado a ${contact.name} (${contact.phone})${campaign.useIdFlow ? ` - ID Flow: ${idFlowSizes[i]} chars` : ''}${campaign.mediaUrl ? ' con archivo' : ''}`);
-          } else {
-            failed++;
-            console.error(`❌ Error enviando a ${contact.name}: ${data.message || data.error}`);
-          }
-
-          // Actualizar progreso
-          const progress = Math.round(((sent + failed) / campaign.contacts.length) * 100);
-          setSendingProgress(prev => ({ ...prev, [campaignId]: progress }));
-
-          // Actualizar campaña con progreso
-          const currentCampaigns = [...campaigns];
-          const campaignIndex = currentCampaigns.findIndex(c => c.id === campaignId);
-          if (campaignIndex !== -1) {
-            currentCampaigns[campaignIndex].progress = {
-              total: campaign.contacts.length,
-              sent,
-              delivered: sent,
-              failed
-            };
-            setCampaigns(currentCampaigns);
-            saveCampaigns(currentCampaigns);
-          }
-
-        } catch (error) {
-          failed++;
-          console.error(`Error enviando mensaje a ${contact.name}:`, error);
-        }
-      }
-
-      // Campaña completada
-      const finalCampaigns = campaigns.map(c => 
-        c.id === campaignId 
-          ? { 
-              ...c, 
-              status: 'completed' as const, 
-              completedAt: new Date().toISOString(),
-              progress: { total: campaign.contacts.length, sent, delivered: sent, failed }
-            }
-          : c
-      );
-      setCampaigns(finalCampaigns);
-      saveCampaigns(finalCampaigns);
-      
-      setSendingProgress(prev => ({ ...prev, [campaignId]: 100 }));
-      const options = [];
-      if (campaign.useIdFlow) options.push('ID Flow');
-      if (campaign.useRandomTiming) options.push('Envío Aleatorio');
-      const optionsText = options.length > 0 ? ` (con ${options.join(' + ')})` : '';
-      setSuccess(`Campaña completada: ${sent} enviados, ${failed} fallidos${optionsText}`);
-
     } catch (error) {
-      console.error('Error en campaña:', error);
-      setError('Error durante el envío de la campaña');
-      
-      const failedCampaigns = campaigns.map(c => 
-        c.id === campaignId ? { ...c, status: 'failed' as const } : c
-      );
-      setCampaigns(failedCampaigns);
-      saveCampaigns(failedCampaigns);
+      console.error('Error iniciando campaña:', error);
+      setError('Error de conexión al iniciar campaña');
+    } finally {
+      setLoading(false);
     }
   };
+
+  // executeCampaign eliminado - La ejecución ahora es manejada por el backend
 
   const deleteCampaign = (campaignId: string) => {
     const updatedCampaigns = campaigns.filter(c => c.id !== campaignId);
@@ -1477,220 +1289,220 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
       {/* Campaigns List */}
       {currentTab !== 1 && (
-      <Grid container spacing={3}>
-        {campaigns
-          .filter(campaign => {
-            if (currentTab === 1) return campaign.type === 'direct';
-            if (currentTab === 2) return campaign.type === 'scheduled';
-            if (currentTab === 3) return campaign.status === 'completed' || campaign.status === 'failed';
-            return true;
-          })
-          .map((campaign) => (
-            <Grid item xs={12} md={6} lg={4} key={campaign.id}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
-                    <Box>
-                      <Typography variant="h6" gutterBottom>
-                        {campaign.name}
-                      </Typography>
-                    </Box>
-                    <Chip
-                      icon={getStatusIcon(campaign.status)}
-                      label={campaign.status.toUpperCase()}
-                      color={getStatusColor(campaign.status) as any}
-                      size="small"
-                    />
-                  </Box>
-
-                  <Box sx={{ mb: 2 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="body2">
-                        Progreso: {campaign.progress.sent}/{campaign.progress.total}
-                      </Typography>
-                      <Typography variant="body2">
-                        {Math.round((campaign.progress.sent / campaign.progress.total) * 100)}%
-                      </Typography>
-                    </Box>
-                    <LinearProgress 
-                      variant="determinate" 
-                      value={(campaign.progress.sent / campaign.progress.total) * 100}
-                      sx={{ height: 8, borderRadius: 4 }}
-                    />
-                  </Box>
-
-                  <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-                    <Chip
-                      icon={campaign.type === 'direct' ? <Bolt /> : <AccessTime />}
-                      label={campaign.type === 'direct' ? 'Directa' : 'Programada'}
-                      size="small"
-                      color={campaign.type === 'direct' ? 'primary' : 'secondary'}
-                    />
-                    <Chip
-                      icon={<People />}
-                      label={`${campaign.contacts.length} contactos`}
-                      size="small"
-                      variant="outlined"
-                    />
-                    {campaign.useIdFlow && (
+        <Grid container spacing={3}>
+          {campaigns
+            .filter(campaign => {
+              if (currentTab === 1) return campaign.type === 'direct';
+              if (currentTab === 2) return campaign.type === 'scheduled';
+              if (currentTab === 3) return campaign.status === 'completed' || campaign.status === 'failed';
+              return true;
+            })
+            .map((campaign) => (
+              <Grid item xs={12} md={6} lg={4} key={campaign.id}>
+                <Card>
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
+                      <Box>
+                        <Typography variant="h6" gutterBottom>
+                          {campaign.name}
+                        </Typography>
+                      </Box>
                       <Chip
-                        icon={<Bolt />}
-                        label="ID FLOW"
+                        icon={getStatusIcon(campaign.status)}
+                        label={campaign.status.toUpperCase()}
+                        color={getStatusColor(campaign.status) as any}
                         size="small"
-                        color="warning"
-                        sx={{ 
-                          bgcolor: isDarkMode ? '#ff9800' : '#fff3e0',
-                          color: isDarkMode ? '#000' : '#e65100' 
-                        }}
                       />
-                    )}
-                    {campaign.useRandomTiming && (
+                    </Box>
+
+                    <Box sx={{ mb: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography variant="body2">
+                          Progreso: {campaign.progress.sent}/{campaign.progress.total}
+                        </Typography>
+                        <Typography variant="body2">
+                          {Math.round((campaign.progress.sent / campaign.progress.total) * 100)}%
+                        </Typography>
+                      </Box>
+                      <LinearProgress
+                        variant="determinate"
+                        value={(campaign.progress.sent / campaign.progress.total) * 100}
+                        sx={{ height: 8, borderRadius: 4 }}
+                      />
+                    </Box>
+
+                    <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
                       <Chip
-                        icon={<AccessTime />}
-                        label="Envío Aleatorio"
+                        icon={campaign.type === 'direct' ? <Bolt /> : <AccessTime />}
+                        label={campaign.type === 'direct' ? 'Directa' : 'Programada'}
                         size="small"
-                        color="secondary"
-                        sx={{ 
-                          bgcolor: isDarkMode ? '#9c27b0' : '#f3e5f5',
-                          color: isDarkMode ? '#fff' : '#4a148c' 
-                        }}
+                        color={campaign.type === 'direct' ? 'primary' : 'secondary'}
                       />
-                    )}
-                  </Box>
-
-                  {/* Mostrar fecha/hora si es programada */}
-                  {campaign.type === 'scheduled' && campaign.scheduledAt && (
-                    <Alert severity="info" sx={{ mb: 2 }}>
-                      <Typography variant="body2">
-                        <strong>📅 Programada para:</strong><br />
-                        {new Date(campaign.scheduledAt).toLocaleDateString('es-ES', {
-                          weekday: 'long',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })}<br />
-                        <strong>⏰ Hora:</strong> {new Date(campaign.scheduledAt).toLocaleTimeString('es-ES', {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </Typography>
-                    </Alert>
-                  )}
-
-                  <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                    <strong>Mensaje:</strong> {campaign.message.text.substring(0, 100)}...
-                  </Typography>
-
-                  <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {/* Botones de acción organizados */}
-                    {campaign.status === 'draft' || campaign.status === 'scheduled' ? (
-                      <>
-                        <Button
-                          variant="contained"
+                      <Chip
+                        icon={<People />}
+                        label={`${campaign.contacts.length} contactos`}
+                        size="small"
+                        variant="outlined"
+                      />
+                      {campaign.useIdFlow && (
+                        <Chip
+                          icon={<Bolt />}
+                          label="ID FLOW"
                           size="small"
-                          startIcon={<PlayArrow />}
-                          onClick={() => startCampaign(campaign.id)}
-                          sx={{ 
-                            bgcolor: '#00a884', 
-                            color: 'white',
-                            '&:hover': { bgcolor: '#008069' },
-                            minWidth: 100
+                          color="warning"
+                          sx={{
+                            bgcolor: isDarkMode ? '#ff9800' : '#fff3e0',
+                            color: isDarkMode ? '#000' : '#e65100'
                           }}
-                        >
-                          Iniciar
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          startIcon={<Edit />}
-                          onClick={() => openEditDialog(campaign)}
-                          sx={{ minWidth: 100 }}
-                        >
-                          Editar
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          startIcon={<Visibility />}
-                          onClick={() => viewCampaignDetails(campaign.id)}
-                          sx={{ minWidth: 100 }}
-                        >
-                          Detalles
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          color="error"
-                          startIcon={<Delete />}
-                          onClick={() => deleteCampaign(campaign.id)}
-                          sx={{ minWidth: 100 }}
-                        >
-                          Eliminar
-                        </Button>
-                      </>
-                    ) : campaign.status === 'sending' ? (
-                      <>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
-                          <CircularProgress size={20} />
-                          <Typography variant="body2">
-                            Enviando... {sendingProgress[campaign.id] || 0}%
-                          </Typography>
-                        </Box>
-                        <Button
-                          variant="contained"
-                          size="small"
-                          color="error"
-                          startIcon={<Stop />}
-                          onClick={() => pauseCampaign(campaign.id)}
-                          sx={{ minWidth: 100 }}
-                        >
-                          Detener
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          startIcon={<Visibility />}
-                          onClick={() => viewCampaignDetails(campaign.id)}
-                          sx={{ minWidth: 100 }}
-                        >
-                          Detalles
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Chip 
-                          label={`Completada el ${new Date(campaign.completedAt!).toLocaleDateString()}`}
-                          color="success"
-                          size="small"
-                          sx={{ flex: '0 1 auto' }}
                         />
-                        <Button
-                          variant="outlined"
+                      )}
+                      {campaign.useRandomTiming && (
+                        <Chip
+                          icon={<AccessTime />}
+                          label="Envío Aleatorio"
                           size="small"
-                          startIcon={<Visibility />}
-                          onClick={() => viewCampaignDetails(campaign.id)}
-                          sx={{ minWidth: 100 }}
-                        >
-                          Detalles
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          color="error"
-                          startIcon={<Delete />}
-                          onClick={() => deleteCampaign(campaign.id)}
-                          sx={{ minWidth: 100 }}
-                        >
-                          Eliminar
-                        </Button>
-                      </>
+                          color="secondary"
+                          sx={{
+                            bgcolor: isDarkMode ? '#9c27b0' : '#f3e5f5',
+                            color: isDarkMode ? '#fff' : '#4a148c'
+                          }}
+                        />
+                      )}
+                    </Box>
+
+                    {/* Mostrar fecha/hora si es programada */}
+                    {campaign.type === 'scheduled' && campaign.scheduledAt && (
+                      <Alert severity="info" sx={{ mb: 2 }}>
+                        <Typography variant="body2">
+                          <strong>📅 Programada para:</strong><br />
+                          {new Date(campaign.scheduledAt).toLocaleDateString('es-ES', {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                          })}<br />
+                          <strong>⏰ Hora:</strong> {new Date(campaign.scheduledAt).toLocaleTimeString('es-ES', {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </Typography>
+                      </Alert>
                     )}
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-      </Grid>
+
+                    <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+                      <strong>Mensaje:</strong> {campaign.message.text.substring(0, 100)}...
+                    </Typography>
+
+                    <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {/* Botones de acción organizados */}
+                      {campaign.status === 'draft' || campaign.status === 'scheduled' ? (
+                        <>
+                          <Button
+                            variant="contained"
+                            size="small"
+                            startIcon={<PlayArrow />}
+                            onClick={() => startCampaign(campaign.id)}
+                            sx={{
+                              bgcolor: '#00a884',
+                              color: 'white',
+                              '&:hover': { bgcolor: '#008069' },
+                              minWidth: 100
+                            }}
+                          >
+                            Iniciar
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<Edit />}
+                            onClick={() => openEditDialog(campaign)}
+                            sx={{ minWidth: 100 }}
+                          >
+                            Editar
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<Visibility />}
+                            onClick={() => viewCampaignDetails(campaign.id)}
+                            sx={{ minWidth: 100 }}
+                          >
+                            Detalles
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            color="error"
+                            startIcon={<Delete />}
+                            onClick={() => deleteCampaign(campaign.id)}
+                            sx={{ minWidth: 100 }}
+                          >
+                            Eliminar
+                          </Button>
+                        </>
+                      ) : campaign.status === 'sending' ? (
+                        <>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+                            <CircularProgress size={20} />
+                            <Typography variant="body2">
+                              Enviando... {sendingProgress[campaign.id] || 0}%
+                            </Typography>
+                          </Box>
+                          <Button
+                            variant="contained"
+                            size="small"
+                            color="error"
+                            startIcon={<Stop />}
+                            onClick={() => pauseCampaign(campaign.id)}
+                            sx={{ minWidth: 100 }}
+                          >
+                            Detener
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<Visibility />}
+                            onClick={() => viewCampaignDetails(campaign.id)}
+                            sx={{ minWidth: 100 }}
+                          >
+                            Detalles
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Chip
+                            label={`Completada el ${new Date(campaign.completedAt!).toLocaleDateString()}`}
+                            color="success"
+                            size="small"
+                            sx={{ flex: '0 1 auto' }}
+                          />
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<Visibility />}
+                            onClick={() => viewCampaignDetails(campaign.id)}
+                            sx={{ minWidth: 100 }}
+                          >
+                            Detalles
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            color="error"
+                            startIcon={<Delete />}
+                            onClick={() => deleteCampaign(campaign.id)}
+                            sx={{ minWidth: 100 }}
+                          >
+                            Eliminar
+                          </Button>
+                        </>
+                      )}
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+        </Grid>
       )}
 
       {currentTab !== 1 && campaigns.length === 0 && (
@@ -1714,10 +1526,10 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       )}
 
       {/* Create Campaign Dialog */}
-      <Dialog 
-        open={showCreateDialog} 
+      <Dialog
+        open={showCreateDialog}
         onClose={() => setShowCreateDialog(false)}
-        maxWidth="md" 
+        maxWidth="md"
         fullWidth
       >
         <DialogTitle>
@@ -1773,19 +1585,19 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                         <Switch
                           checked={newCampaign.useRandomTiming || false}
-                          onChange={(e) => setNewCampaign(prev => ({ 
-                            ...prev, 
-                            useRandomTiming: e.target.checked 
+                          onChange={(e) => setNewCampaign(prev => ({
+                            ...prev,
+                            useRandomTiming: e.target.checked
                           }))}
                         />
                         <Typography>Usar Envíos Aleatorios</Typography>
                       </Box>
-                      
+
                       {newCampaign.useRandomTiming && (
                         <Stack spacing={2}>
                           <Alert severity="info" sx={{ mb: 2 }}>
                             <Typography variant="body2">
-                              <strong>Envíos Aleatorios:</strong> Distribuye TODOS los mensajes de la campaña en diferentes momentos aleatorios dentro del tiempo especificado.<br/>
+                              <strong>Envíos Aleatorios:</strong> Distribuye TODOS los mensajes de la campaña en diferentes momentos aleatorios dentro del tiempo especificado.<br />
                               <strong>Ejemplo:</strong> Si tienes 5 contactos y configuras 5 minutos, los mensajes se enviarán en momentos aleatorios como: 0:43, 1:28, 2:15, 3:47, 4:22
                             </Typography>
                           </Alert>
@@ -1808,8 +1620,8 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
                           <Alert severity="success" sx={{ mt: 1 }}>
                             <Typography variant="body2">
-                              📊 <strong>Configuración actual:</strong><br/>
-                              Enviaré <strong>{newCampaign.flowConfig?.messagesCount || 5} mensajes</strong> distribuidos aleatoriamente <strong>EN {newCampaign.flowConfig?.timeSpanMinutes || 1} minuto(s)</strong>.<br/>
+                              📊 <strong>Configuración actual:</strong><br />
+                              Enviaré <strong>{newCampaign.flowConfig?.messagesCount || 5} mensajes</strong> distribuidos aleatoriamente <strong>EN {newCampaign.flowConfig?.timeSpanMinutes || 1} minuto(s)</strong>.<br />
                               Tiempo promedio entre mensajes: ~{Math.round((newCampaign.flowConfig?.timeSpanMinutes || 1) * 60 / (newCampaign.flowConfig?.messagesCount || 5))} segundos.
                             </Typography>
                           </Alert>
@@ -1827,21 +1639,21 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                         <Switch
                           checked={newCampaign.useIdFlow !== false} // Activado por defecto
-                          onChange={(e) => setNewCampaign(prev => ({ 
-                            ...prev, 
-                            useIdFlow: e.target.checked 
+                          onChange={(e) => setNewCampaign(prev => ({
+                            ...prev,
+                            useIdFlow: e.target.checked
                           }))}
                           color="success"
                         />
                         <Typography fontWeight="medium">Habilitar ID FLOW (Recomendado)</Typography>
                       </Box>
-                      
+
                       <Alert severity="success" sx={{ mb: 2 }}>
                         <Typography variant="body2">
                           <strong>✅ ID FLOW ACTIVADO:</strong> Cada mensaje incluirá un código único de tamaño variable (64, 45, 32, etc. caracteres) para mejor identificación y seguimiento. Esto ayuda a evitar detección como spam.
                         </Typography>
                       </Alert>
-                      
+
                       {newCampaign.useIdFlow && (
                         <Typography variant="body2" color="success.dark" sx={{ p: 1, bgcolor: 'success.50', borderRadius: 1 }}>
                           ✅ IDs automáticos generados con tamaños variables: 64, 45, 32, 28, 56, 40, 35, 48 caracteres
@@ -1853,10 +1665,10 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                   {/* Información de velocidad de envío */}
                   <Alert severity="info" icon={<AccessTime />} sx={{ mt: 2 }}>
                     <Typography variant="body2">
-                      <strong>⏱️ Velocidad de Envío por Defecto (ALEATORIO):</strong><br/>
-                      • Cada mensaje se envía con un <strong>intervalo aleatorio entre 1:00 y 2:00 minutos</strong><br/>
-                      • Ejemplos de intervalos: 1:05, 1:40, 1:25, 1:34, 1:45, 1:52, 1:11 (siempre diferente)<br/>
-                      • Para {newCampaign.contacts?.length || 0} contactos: ~{Math.ceil((newCampaign.contacts?.length || 0) * 1.5)} minutos totales<br/>
+                      <strong>⏱️ Velocidad de Envío por Defecto (ALEATORIO):</strong><br />
+                      • Cada mensaje se envía con un <strong>intervalo aleatorio entre 1:00 y 2:00 minutos</strong><br />
+                      • Ejemplos de intervalos: 1:05, 1:40, 1:25, 1:34, 1:45, 1:52, 1:11 (siempre diferente)<br />
+                      • Para {newCampaign.contacts?.length || 0} contactos: ~{Math.ceil((newCampaign.contacts?.length || 0) * 1.5)} minutos totales<br />
                       • Puedes configurar manualmente activando "Envíos Aleatorios" arriba
                     </Typography>
                   </Alert>
@@ -2192,7 +2004,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                       </AccordionDetails>
                     </Accordion>
                   )}
-                  
+
                   <Box sx={{ display: 'flex', gap: 1 }}>
                     <Button onClick={() => setActiveStep(0)}>
                       Anterior
@@ -2215,8 +2027,8 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                 <Stack spacing={2}>
                   <Alert severity="success">
                     <Typography variant="body2">
-                      <strong>Variables disponibles:</strong><br/>
-                      {'{nombre}'} - Se reemplaza por el nombre del contacto<br/>
+                      <strong>Variables disponibles:</strong><br />
+                      {'{nombre}'} - Se reemplaza por el nombre del contacto<br />
                       <strong>Ejemplo:</strong> "Hola {'{nombre}'}, como estas?"
                     </Typography>
                   </Alert>
@@ -2265,14 +2077,14 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                   {/* Selector de emojis completo */}
                   {showEmojiPicker && (
                     <Box sx={{ mb: 2, position: 'relative' }}>
-                      <IconButton 
-                        size="small" 
+                      <IconButton
+                        size="small"
                         onClick={() => setShowEmojiPicker(false)}
                         sx={{ position: 'absolute', right: 0, top: 0, zIndex: 1 }}
                       >
                         <Close />
                       </IconButton>
-                      <EmojiPicker 
+                      <EmojiPicker
                         onEmojiClick={onEmojiClick}
                         width="100%"
                         height={400}
@@ -2375,7 +2187,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
               📊 Historial Detallado de Campaña
             </Typography>
             <Box>
-              <IconButton 
+              <IconButton
                 onClick={() => selectedCampaignDetails && loadCampaignDetails(selectedCampaignDetails.campaign.id)}
                 title="Refrescar datos"
                 disabled={loadingDetails}
@@ -2463,7 +2275,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
               <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
                 Destinatarios
               </Typography>
-              
+
               {/* Filtros y Búsqueda */}
               <Box sx={{ mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
                 <TextField
@@ -2524,7 +2336,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                   />
                 </Box>
               </Box>
-              
+
               <Paper sx={{ overflow: 'hidden' }}>
                 <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -2573,47 +2385,47 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                             return true;
                           })
                           .map((recipient: any, index: number) => (
-                          <tr key={recipient.id} style={{
-                            borderBottom: '1px solid #eee',
-                            backgroundColor: index % 2 === 0 ? 'transparent' : (isDarkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)')
-                          }}>
-                            <td style={{ padding: '12px' }}>
-                              {index + 1}
-                            </td>
-                            <td style={{ padding: '12px' }}>
-                              {recipient.contact_name || 'Sin nombre'}
-                            </td>
-                            <td style={{ padding: '12px' }}>
-                              {recipient.contact_jid?.split('@')[0] || 'N/A'}
-                            </td>
-                            <td style={{ padding: '12px', textAlign: 'center' }}>
-                              <Chip
-                                label={recipient.status?.toUpperCase() || 'PENDING'}
-                                size="small"
-                                color={
-                                  recipient.status === 'read' ? 'success' :
-                                  recipient.status === 'delivered' ? 'info' :
-                                  recipient.status === 'sent' ? 'primary' :
-                                  recipient.status === 'failed' ? 'error' :
-                                  'default'
-                                }
-                                icon={
-                                  recipient.status === 'read' ? <CheckCircle /> :
-                                  recipient.status === 'delivered' ? <CheckCircle /> :
-                                  recipient.status === 'sent' ? <Send /> :
-                                  recipient.status === 'failed' ? <Error /> :
-                                  <Schedule />
-                                }
-                              />
-                            </td>
-                            <td style={{ padding: '12px', textAlign: 'center' }}>
-                              {recipient.sent_at ? new Date(recipient.sent_at).toLocaleString('es-ES') : '-'}
-                            </td>
-                            <td style={{ padding: '12px', fontSize: '0.85em', color: '#f44336' }}>
-                              {recipient.error_message || '-'}
-                            </td>
-                          </tr>
-                        ))
+                            <tr key={recipient.id} style={{
+                              borderBottom: '1px solid #eee',
+                              backgroundColor: index % 2 === 0 ? 'transparent' : (isDarkMode ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)')
+                            }}>
+                              <td style={{ padding: '12px' }}>
+                                {index + 1}
+                              </td>
+                              <td style={{ padding: '12px' }}>
+                                {recipient.contact_name || 'Sin nombre'}
+                              </td>
+                              <td style={{ padding: '12px' }}>
+                                {recipient.contact_jid?.split('@')[0] || 'N/A'}
+                              </td>
+                              <td style={{ padding: '12px', textAlign: 'center' }}>
+                                <Chip
+                                  label={recipient.status?.toUpperCase() || 'PENDING'}
+                                  size="small"
+                                  color={
+                                    recipient.status === 'read' ? 'success' :
+                                      recipient.status === 'delivered' ? 'info' :
+                                        recipient.status === 'sent' ? 'primary' :
+                                          recipient.status === 'failed' ? 'error' :
+                                            'default'
+                                  }
+                                  icon={
+                                    recipient.status === 'read' ? <CheckCircle /> :
+                                      recipient.status === 'delivered' ? <CheckCircle /> :
+                                        recipient.status === 'sent' ? <Send /> :
+                                          recipient.status === 'failed' ? <Error /> :
+                                            <Schedule />
+                                  }
+                                />
+                              </td>
+                              <td style={{ padding: '12px', textAlign: 'center' }}>
+                                {recipient.sent_at ? new Date(recipient.sent_at).toLocaleString('es-ES') : '-'}
+                              </td>
+                              <td style={{ padding: '12px', fontSize: '0.85em', color: '#f44336' }}>
+                                {recipient.error_message || '-'}
+                              </td>
+                            </tr>
+                          ))
                       ) : (
                         <tr>
                           <td colSpan={6} style={{ padding: '24px', textAlign: 'center' }}>

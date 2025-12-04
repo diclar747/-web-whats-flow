@@ -1692,7 +1692,7 @@ async function saveMessageToDB(sessionId, msg) {
         // Normalizar JIDs para eliminar sufijos de dispositivo/hilo
         const chat_jid = normalizeJid(rawChatJid);
         const sender_jid = normalizeJid(rawSenderJid);
-        
+
         // 🚫 FILTRAR solo reacciones y mensajes completamente vacíos
         // Permitir mensajes con al menos text_content O media_url
         if (!text_content && !media_url) {
@@ -1803,11 +1803,11 @@ async function saveMessageToDB(sessionId, msg) {
             'INSERT INTO messages (id, session_id, user_session_id, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, caption, file_name, file_size, timestamp, status, sender_name, sender_avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = VALUES(agent_id), agent_name = VALUES(agent_name), sender_name = VALUES(sender_name), sender_avatar = VALUES(sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), caption = COALESCE(VALUES(caption), caption), file_name = COALESCE(VALUES(file_name), file_name), file_size = COALESCE(VALUES(file_size), file_size), text_content = COALESCE(VALUES(text_content), text_content), updated_at = CURRENT_TIMESTAMP',
             params
         );
-        
+
         // 🔥 SIMULAR ACTUALIZACIÓN DE ESTADO para mensajes enviados
         if (from_me) {
             console.log(`[${sessionId}] 🕐 Programando auto-actualización de estados para mensaje: ${messageId.substring(0, 20)}`);
-            
+
             // Después de 2 segundos, actualizar a 'sent'
             setTimeout(async () => {
                 try {
@@ -1818,7 +1818,7 @@ async function saveMessageToDB(sessionId, msg) {
                     );
                     conn.release();
                     console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> sent`);
-                    
+
                     // Emitir actualización de estado
                     io.to(`session-${phoneNumber}`).emit('message-status-update', {
                         messageId, id: messageId, chatJid: chat_jid,
@@ -1828,7 +1828,7 @@ async function saveMessageToDB(sessionId, msg) {
                     console.error(`[${sessionId}] Error auto-updating status to sent:`, err);
                 }
             }, 2000);
-            
+
             // Después de 5 segundos, actualizar a 'delivered'
             setTimeout(async () => {
                 try {
@@ -1839,7 +1839,7 @@ async function saveMessageToDB(sessionId, msg) {
                     );
                     conn.release();
                     console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> delivered`);
-                    
+
                     io.to(`session-${phoneNumber}`).emit('message-status-update', {
                         messageId, id: messageId, chatJid: chat_jid,
                         status: 'delivered', sessionId, timestamp: new Date().toISOString()
@@ -1848,7 +1848,7 @@ async function saveMessageToDB(sessionId, msg) {
                     console.error(`[${sessionId}] Error auto-updating status to delivered:`, err);
                 }
             }, 5000);
-            
+
             // Después de 10 segundos, actualizar a 'read'
             setTimeout(async () => {
                 try {
@@ -1859,7 +1859,7 @@ async function saveMessageToDB(sessionId, msg) {
                     );
                     conn.release();
                     console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> read`);
-                    
+
                     io.to(`session-${phoneNumber}`).emit('message-status-update', {
                         messageId, id: messageId, chatJid: chat_jid,
                         status: 'read', sessionId, timestamp: new Date().toISOString()
@@ -1986,18 +1986,26 @@ async function getUserPhoneNumber(sessionId) {
                     [`%${sessionId}%`]
                 );
                 if (msgRows.length > 0 && msgRows[0].session_id) {
+                    const foundSessionId = msgRows[0].session_id;
+
+                    // ⚠️ VALIDACIÓN: Solo devolver si es un número válido, NO un sessionId
+                    if (/^\d{10,15}$/.test(foundSessionId)) {
+                        console.log(`[${sessionId}] ✅ Usuario identificado desde BD (messages): ${foundSessionId}`);
+                        return foundSessionId;
+                    }
+
                     // Intentar buscar el phone_number correspondiente a este session_id
                     const [mappingRows] = await connection.execute(
-                        'SELECT phone_number FROM user_sessions WHERE session_id = ? LIMIT 1',
-                        [msgRows[0].session_id]
+                        'SELECT phone_number FROM user_sessions WHERE session_id = ? AND phone_number REGEXP "^[0-9]{10,15}$" LIMIT 1',
+                        [foundSessionId]
                     );
                     if (mappingRows.length > 0) {
                         const phoneNumber = mappingRows[0].phone_number;
                         console.log(`[${sessionId}] ✅ Usuario identificado desde BD con mapeo: ${phoneNumber}`);
                         return phoneNumber;
                     }
-                    console.log(`[${sessionId}] ✅ Usuario identificado desde BD: ${msgRows[0].session_id}`);
-                    return msgRows[0].session_id;
+
+                    console.log(`[${sessionId}] ⚠️ No se encontró phoneNumber válido para session_id: ${foundSessionId}`);
                 }
             } finally {
                 connection.release();
@@ -2649,12 +2657,12 @@ async function downloadAllAvatars(sessionId, sock) {
 
         const totalToDownload = contacts.length + groups.length;
         console.log(`[${sessionId}] 🖼️ Iniciando descarga de avatares para ${contacts.length} contactos y ${groups.length} grupos (total: ${totalToDownload})...`);
-        
+
         if (totalToDownload === 0) {
             console.log(`[${sessionId}] ✅ No hay avatares pendientes de descargar`);
             return;
         }
-        
+
         let downloadedCount = 0;
         let errorCount = 0;
 
@@ -2662,8 +2670,8 @@ async function downloadAllAvatars(sessionId, sock) {
         const BATCH_SIZE = 10; // Reducido aún más para evitar sobrecarga
         for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
             const batch = contacts.slice(i, i + BATCH_SIZE);
-            console.log(`[${sessionId}] 🖼️ Procesando lote ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(contacts.length/BATCH_SIZE)} de contactos...`);
-            
+            console.log(`[${sessionId}] 🖼️ Procesando lote ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(contacts.length / BATCH_SIZE)} de contactos...`);
+
             for (const contact of batch) {
                 try {
                     const profilePicUrl = await safeGetProfilePicture(sock, contact.jid, 'image');
@@ -2686,7 +2694,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     }
 
                     if (downloadedCount % 50 === 0) {
-                        console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados (${Math.round(downloadedCount/totalToDownload*100)}%)...`);
+                        console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados (${Math.round(downloadedCount / totalToDownload * 100)}%)...`);
                     }
 
                     // Aumentado de 30ms a 200ms para evitar sobrecarga de WhatsApp
@@ -2698,7 +2706,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     }
                 }
             }
-            
+
             // Pausa de 2 segundos entre lotes para no saturar
             await new Promise(resolve => setTimeout(resolve, 2000));
         }
@@ -2706,8 +2714,8 @@ async function downloadAllAvatars(sessionId, sock) {
         // Descargar avatares de grupos en lotes pequeños
         for (let i = 0; i < groups.length; i += BATCH_SIZE) {
             const batch = groups.slice(i, i + BATCH_SIZE);
-            console.log(`[${sessionId}] 🖼️ Procesando lote ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(groups.length/BATCH_SIZE)} de grupos...`);
-            
+            console.log(`[${sessionId}] 🖼️ Procesando lote ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(groups.length / BATCH_SIZE)} de grupos...`);
+
             for (const group of batch) {
                 try {
                     const profilePicUrl = await safeGetProfilePicture(sock, group.jid, 'image');
@@ -2730,7 +2738,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     }
 
                     if (downloadedCount % 50 === 0) {
-                        console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados (${Math.round(downloadedCount/totalToDownload*100)}%)...`);
+                        console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados (${Math.round(downloadedCount / totalToDownload * 100)}%)...`);
                     }
 
                     // Aumentado de 30ms a 200ms para evitar sobrecarga de WhatsApp
@@ -2743,7 +2751,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     }
                 }
             }
-            
+
             // Pausa de 2 segundos entre lotes para no saturar
             await new Promise(resolve => setTimeout(resolve, 2000));
         }
@@ -3233,7 +3241,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
 async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter = 'all') {
     // Obtener el número de teléfono del usuario en lugar de la session_id temporal
     const phoneNumber = await getUserPhoneNumber(sessionId);
-    
+
     console.log(`[CHATLIST] 📅 Cargando chats con filtro: ${dateFilter} (sessionId: ${sessionId}, phoneNumber: ${phoneNumber})`);
 
     // Modo memoria si no hay DB
@@ -3291,7 +3299,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         // Filtrar grupos si includeGroups es false
         const groupFilterSubquery = includeGroups ? '' : " AND chat_jid NOT LIKE '%@g.us'";
         const groupFilterMain = includeGroups ? '' : " AND m.chat_jid NOT LIKE '%@g.us'";
-        
+
         // 📅 Filtro de fecha - Por defecto solo hoy
         let dateFilterSQL = '';
         if (dateFilter === 'today') {
@@ -4028,7 +4036,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                              ORDER BY timestamp DESC LIMIT 10`,
                                             [userPhoneNumber]
                                         );
-                                        
+
                                         for (const chat of recentChats) {
                                             try {
                                                 const messages = await sock.loadMessages(chat.chat_jid, 3);
@@ -4036,7 +4044,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                     if (msg.key.fromMe && msg.messageTimestamp) {
                                                         const msgTime = Number(msg.messageTimestamp) * 1000;
                                                         const ageSeconds = (Date.now() - msgTime) / 1000;
-                                                        
+
                                                         // Solo procesar mensajes de los últimos 30 segundos
                                                         if (ageSeconds < 30) {
                                                             // Verificar si ya existe en BD
@@ -4044,7 +4052,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                                 'SELECT id FROM messages WHERE id = ? AND session_id = ?',
                                                                 [msg.key.id, userPhoneNumber]
                                                             );
-                                                            
+
                                                             if (existing.length === 0) {
                                                                 console.log(`[${sessionId}] 📱 Mensaje propio detectado por polling: ${msg.key.id.substring(0, 20)}`);
                                                                 // Simular evento messages.upsert
@@ -4067,7 +4075,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                     console.error(`[${sessionId}] Error en polling de mensajes propios:`, pollErr.message);
                                 }
                             }, 15000); // Cada 15 segundos
-                            
+
                             console.log(`[${sessionId}] ✅ Polling de mensajes propios activado (cada 15s)`);
                         }
 
@@ -4108,17 +4116,17 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                     if (!existingUser[0].session_id || existingUser[0].session_id !== sessionId) {
                                         const oldSessionId = existingUser[0].session_id;
                                         console.log(`[${sessionId}] ✅ Usuario existente encontrado (session_id va en user_sessions, no en users)`); */
-                                
+
                                 // Buscar sessionId anterior en user_sessions para migrar chat_assignments
                                 const [oldSessions] = await pool.query(
                                     'SELECT session_id FROM user_sessions WHERE phone_number = ? AND session_id != ? ORDER BY connected_at DESC LIMIT 1',
                                     [userPhoneNumber, sessionId]
                                 );
                                 const oldSessionId = oldSessions.length > 0 ? oldSessions[0].session_id : null;
-                                
+
                                 if (oldSessionId) {
                                     console.log(`[${sessionId}] 🔄 SessionId anterior encontrado: ${oldSessionId}`);
-                                    
+
                                     // Actualizar automáticamente todos los chat_assignments
                                     try {
                                         const [updateResult] = await pool.query(
@@ -4183,7 +4191,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                     // Emitir estadísticas iniciales después de conectar
                     emitDashboardStats(userPhoneNumber);
-                    
+
                     // 🔄 Emitir evento de inicio de sincronización
                     console.log(`[${userPhoneNumber}] 🔄 Iniciando sincronización de datos...`);
                     io.emit('sync-start', {
@@ -4191,7 +4199,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         message: 'Iniciando sincronización...',
                         timestamp: new Date().toISOString()
                     });
-                    
+
                     // Simular progreso de sincronización
                     setTimeout(() => {
                         io.emit('sync-progress', {
@@ -4201,7 +4209,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             timestamp: new Date().toISOString()
                         });
                     }, 1000);
-                    
+
                     setTimeout(() => {
                         io.emit('sync-progress', {
                             sessionId: userPhoneNumber,
@@ -4210,7 +4218,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             timestamp: new Date().toISOString()
                         });
                     }, 2000);
-                    
+
                     setTimeout(() => {
                         io.emit('sync-progress', {
                             sessionId: userPhoneNumber,
@@ -4219,7 +4227,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             timestamp: new Date().toISOString()
                         });
                     }, 3000);
-                    
+
                     setTimeout(() => {
                         io.emit('sync-completed', {
                             sessionId: userPhoneNumber,
@@ -4228,7 +4236,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         });
                         console.log(`[${userPhoneNumber}] ✅ Sincronización completada`);
                     }, 4000);
-                    
+
                 } catch (error) {
                     console.error(`[${sessionId}] ❌ Error registrando usuario:`, error);
                 }
@@ -4780,7 +4788,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 const reason = lastDisconnect?.error?.output?.payload?.error || 'unknown';
 
                 console.log(`[${sessionId}] Conexión cerrada - Código: ${statusCode}, Razón: ${reason}`);
-                
+
                 // Limpiar polling de mensajes propios
                 if (sessionInfo.ownMessagePolling) {
                     clearInterval(sessionInfo.ownMessagePolling);
@@ -4925,19 +4933,19 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             console.log('═══════════════════════════════════════════════════════════');
             console.log(`[${sessionId}] 📨 MENSAJE DETECTADO - Tipo: ${m.type}`);
             console.log(`[${sessionId}] 📊 Cantidad: ${m.messages.length} mensaje(s)`);
-            
+
             for (let i = 0; i < m.messages.length; i++) {
                 const msg = m.messages[i];
                 const isFromMe = msg.key?.fromMe;
                 const remoteJid = msg.key?.remoteJid;
                 const participant = msg.key?.participant;
                 const messageType = Object.keys(msg.message || {})[0];
-                const text = msg.message?.conversation || 
-                            msg.message?.extendedTextMessage?.text || 
-                            msg.message?.imageMessage?.caption || 
-                            msg.message?.videoMessage?.caption || 
-                            '(sin texto)';
-                
+                const text = msg.message?.conversation ||
+                    msg.message?.extendedTextMessage?.text ||
+                    msg.message?.imageMessage?.caption ||
+                    msg.message?.videoMessage?.caption ||
+                    '(sin texto)';
+
                 console.log(`[${sessionId}] ${i + 1}. ${isFromMe ? '📤 ENVIADO' : '📥 RECIBIDO'}`);
                 console.log(`   De/Para: ${remoteJid}`);
                 console.log(`   Participant: ${participant || 'N/A'}`);
@@ -4949,7 +4957,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             }
             console.log('═══════════════════════════════════════════════════════════');
             console.log('');
-            
+
             // ═══════════════════════════════════════════════════════════
             // CAPTURA DE LIDs ANTES DEL FILTRADO
             // ═══════════════════════════════════════════════════════════
@@ -5067,7 +5075,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 console.log(`[${sessionId}] 🚫 BLOQUEADO - Ignorando ${m.messages.length} mensajes HISTÓRICOS tipo prepend`);
                 return;
             }
-            
+
             console.log(`[${sessionId}] ✅ Procesando ${m.messages.length} mensajes tipo: ${m.type} (${m.type === 'append' ? 'DESDE TELÉFONO' : m.type === 'notify' ? 'ENTRANTES' : 'OTROS'})`);
 
             // ═══════════════════════════════════════════════════════════
@@ -5138,16 +5146,16 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     isGroup: senderJid.includes('@g.us'),
                     status: msg.key.fromMe ? 'sent' : 'received'
                 };
-                
+
                 // Emitir a ambas salas: sessionId y phoneNumber
                 io.to(`session-${sessionId}`).emit('message', messagePayload);
                 console.log(`[${sessionId}] ✅ EMITIDO a session-${sessionId}`);
-                
+
                 if (phoneNumber && phoneNumber !== sessionId) {
                     io.to(`session-${phoneNumber}`).emit('message', messagePayload);
                     console.log(`[${sessionId}] ✅ EMITIDO a session-${phoneNumber}`);
                 }
-                
+
                 // Emitir evento para actualizar contador de no leídos en header
                 if (!msg.key.fromMe && phoneNumber) {
                     io.to(`session-${phoneNumber}`).emit('unread-count-update', {
@@ -5159,10 +5167,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             console.log(`[${sessionId}] 🏁 EMISIÓN COMPLETADA`);
             // ═══════════════════════════════════════════════════════════
 
-            // Procesar solo mensajes de tipo 'notify' (tiempo real)
-            // Los 'append' y 'prepend' ya fueron bloqueados arriba
-            if (m.type === 'notify') {
-                console.log(`[${sessionId}] 💾 GUARDANDO ${m.messages.length} mensajes de tipo notify`);
+            // Procesar mensajes de tipo 'notify' (recibidos) y 'append' (enviados desde teléfono)
+            // Solo bloquear 'prepend' (históricos antiguos)
+            if (m.type === 'notify' || m.type === 'append') {
+                console.log(`[${sessionId}] 💾 GUARDANDO ${m.messages.length} mensajes de tipo ${m.type}`);
                 for (const msg of m.messages) {
                     const rawSenderJid = msg.key.remoteJid;
                     const senderJid = normalizeJid(rawSenderJid); // Normalizar JID
@@ -5195,7 +5203,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     if (msg.message && messageId) {
                         const messageType = Object.keys(msg.message)[0] || 'unknown';
                         let textContent = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
-                        
+
                         // 🔍 DEBUG: Log message structure when textContent is empty
                         if (!textContent && messageType !== 'imageMessage' && messageType !== 'videoMessage' && messageType !== 'audioMessage') {
                             console.log(`[${sessionId}] 🔍 DEBUG Mensaje sin texto - Tipo: ${messageType}, Keys:`, Object.keys(msg.message));
@@ -5451,7 +5459,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             console.log(`[${sessionId}] De: ${dbMessage.sender_jid}`);
                             console.log(`[${sessionId}] Texto: ${dbMessage.text_content?.substring(0, 50)}`);
                             console.log(`${'='.repeat(80)}\n`);
-                            
+
                             // SIEMPRE emitir a ambas salas
                             io.to(`session-${sessionId}`).emit('message', clientMessage);
                             if (phoneNumber) {
@@ -5477,17 +5485,17 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                         if (assignments.length > 0) {
                                             for (const assignment of assignments) {
                                                 const agentId = assignment.agent_id; // user_id renombrado como agent_id
-                                                
+
                                                 // 🔍 DEBUG: Verificar si hay sockets en la sala
                                                 const room = io.sockets.adapter.rooms.get(`agent-${agentId}`);
                                                 const socketsInRoom = room ? room.size : 0;
-                                                
+
                                                 console.log(`[${sessionId}] 🎯 Emitiendo a agent-${agentId} (${socketsInRoom} sockets conectados)`);
-                                                
+
                                                 // Emitir a la sala del agente
                                                 io.to(`agent-${agentId}`).emit('message', clientMessage);
                                                 io.to(`agent-${agentId}`).emit('message:received', clientMessage);
-                                                
+
                                                 if (socketsInRoom === 0) {
                                                     console.warn(`[${sessionId}] ⚠️ Sala agent-${agentId} VACÍA - Mensaje no se entregará`);
                                                 } else {
@@ -5533,7 +5541,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                             if (response.type === 'text') {
                                                 const sentMsg = await sock.sendMessage(senderJid, { text: response.content });
                                                 console.log(`[CHATBOT] ✅ Respuesta enviada: ${response.content.substring(0, 50)}...`);
-                                                
+
                                                 // ✅ Guardar respuesta del bot en BD
                                                 const botMessage = {
                                                     id: sentMsg.key.id,
@@ -5548,7 +5556,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                     agent_name: 'Bot'
                                                 };
                                                 await saveMessageToDB(sessionId, botMessage);
-                                                
+
                                                 // ✅ Emitir respuesta del bot vía Socket.IO
                                                 const phoneNumber = await getUserPhoneNumber(sessionId);
                                                 if (phoneNumber) {
@@ -5573,7 +5581,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                 });
                                                 const sentMsg = await sock.sendMessage(senderJid, { text: menuText });
                                                 console.log(`[CHATBOT] ✅ Menú enviado con ${response.options.length} opciones`);
-                                                
+
                                                 // ✅ Guardar menú del bot en BD
                                                 const botMessage = {
                                                     id: sentMsg.key.id,
@@ -5588,7 +5596,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                     agent_name: 'Bot'
                                                 };
                                                 await saveMessageToDB(sessionId, botMessage);
-                                                
+
                                                 // ✅ Emitir menú vía Socket.IO
                                                 const phoneNumber = await getUserPhoneNumber(sessionId);
                                                 if (phoneNumber) {
@@ -5670,7 +5678,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 }
 
                 // Emitir estadísticas actualizadas después de procesar mensajes nuevos
-                if (m.type === 'notify') {
+                if (m.type === 'notify' || m.type === 'append') {
                     const phoneNumber = await getUserPhoneNumber(sessionId);
                     if (phoneNumber) {
                         emitDashboardStats(phoneNumber);
@@ -5689,9 +5697,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     const chatJid = update.key.remoteJid;
                     const statusCode = update.update.status;
                     let newStatus;
-                    
+
                     console.log(`[${sessionId}] 🔔 Status update for message ${messageId}: code=${statusCode}`);
-                    
+
                     // Traducir el estado de Baileys a nuestro estado de DB
                     switch (statusCode) {
                         case 0: // ERROR
@@ -5716,7 +5724,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             console.log(`[${sessionId}] ⚠️ Unknown message status update: ${statusCode} for ${messageId}`);
                             continue;
                     }
-                    
+
                     console.log(`[${sessionId}] 🔄 Updating message ${messageId} to status: ${newStatus}`);
 
                     const messageToUpdate = {
@@ -5948,6 +5956,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             });
 
             for (const contact of contactsSet.contacts) {
+                // 💾 ACTUALIZAR STORE EN MEMORIA
+                if (sock.store && sock.store.contacts) {
+                    sock.store.contacts.set(contact.id, contact);
+                }
+
                 processedCount++;
                 try {
                     const contactJid = contact.id;
@@ -6023,6 +6036,38 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             });
         });
 
+        // ⭐ EVENTO: contacts.upsert - Actualizaciones incrementales de contactos
+        sock.ev.on('contacts.upsert', async (contactsUpsert) => {
+            console.log(`[${sessionId}] 🔄 Recibidos ${contactsUpsert.length} contactos en contacts.upsert`);
+            const phoneNumber = await getUserPhoneNumber(sessionId);
+
+            for (const contact of contactsUpsert) {
+                // Actualizar store
+                if (sock.store && sock.store.contacts) {
+                    const existing = sock.store.contacts.get(contact.id) || {};
+                    sock.store.contacts.set(contact.id, { ...existing, ...contact });
+                }
+
+                // Guardar en DB si es un contacto válido
+                if (phoneNumber && contact.id.includes('@s.whatsapp.net')) {
+                    try {
+                        // Solo guardar si tiene nombre o notify
+                        if (contact.name || contact.notify) {
+                            await getOrInsertContact(
+                                contact.id,
+                                contact.name || null,
+                                contact.notify || null,
+                                phoneNumber,
+                                sock
+                            );
+                        }
+                    } catch (err) {
+                        console.error(`[${sessionId}] Error en contacts.upsert:`, err);
+                    }
+                }
+            }
+        });
+
         // ⭐ EVENTO CRÍTICO: messaging-history.set - Historial de mensajes completo
         sock.ev.on('messaging-history.set', async (historySet) => {
             const phoneNumber = await getUserPhoneNumber(sessionId);
@@ -6034,7 +6079,26 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 console.error(`[${sessionId}] ❌ No se pudo obtener phoneNumber para sessionId.`);
                 return;
             }
-            
+
+            // 💾 ACTUALIZAR STORE EN MEMORIA
+            if (sock.store) {
+                if (historySet.contacts) {
+                    historySet.contacts.forEach(contact => {
+                        if (sock.store.contacts) {
+                            sock.store.contacts.set(contact.id, contact);
+                        }
+                    });
+                }
+                if (historySet.chats) {
+                    historySet.chats.forEach(chat => {
+                        if (sock.store.chats) {
+                            const jid = chat.id || chat.jid;
+                            if (jid) sock.store.chats.set(jid, chat);
+                        }
+                    });
+                }
+            }
+
             // Emitir inicio de sincronización general
             const totalItems = (historySet.contacts?.length || 0) + (historySet.chats?.length || 0) + (historySet.messages?.length || 0);
             io.to(`session-${phoneNumber}`).emit('sync-progress', {
@@ -6044,7 +6108,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 percentage: 0,
                 message: 'Iniciando sincronización...'
             });
-            
+
             // Procesar CONTACTOS del historial
             if (historySet.contacts && historySet.contacts.length > 0) {
                 console.log(`[${sessionId}] 👥 Guardando ${historySet.contacts.length} contactos del historial...`);
@@ -6059,14 +6123,14 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     try {
                         const contactJid = contact.id;
                         if (!contactJid || !contactJid.includes('@s.whatsapp.net')) continue;
-                        
+
                         await getOrInsertContact(contactJid, contact.name, contact.notify, phoneNumber, sock);
                     } catch (err) {
                         console.error(`[${sessionId}] Error guardando contacto:`, err.message);
                     }
                 }
                 console.log(`[${sessionId}] ✅ Contactos del historial guardados`);
-                
+
                 io.to(`session-${phoneNumber}`).emit('sync-progress', {
                     status: 'syncing',
                     current: historySet.contacts.length,
@@ -6074,7 +6138,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     percentage: 25,
                     message: 'Contactos sincronizados, procesando chats...'
                 });
-                
+
                 // DESCARGAR AVATARES de los contactos recién guardados
                 setTimeout(async () => {
                     console.log(`[${sessionId}] 🖼️ Iniciando descarga de avatares después del historial...`);
@@ -6082,7 +6146,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     console.log(`[${sessionId}] 🖼️ Descarga de avatares completada`);
                 }, 3000);
             }
-            
+
             // Cargar contactos en tablero "Sin Categoría" después de procesar contactos
             setTimeout(async () => {
                 try {
@@ -6094,7 +6158,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     console.error(`[${sessionId}] Error cargando contactos a tablero:`, err.message);
                 }
             }, 2000);
-            
+
             // ✅ CONTINUAR procesando chats y mensajes del historial
             console.log(`[${sessionId}] 📝 Procesando chats y mensajes del historial...`);
 
@@ -6282,7 +6346,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 console.log(`[${sessionId}] 💾 Guardando ${historySet.messages.length} mensajes del historial...`);
                 const totalMessages = historySet.messages.length;
                 let savedCount = 0;
-                
+
                 // Emitir inicio de sincronización
                 io.to(`session-${phoneNumber}`).emit('sync-progress', {
                     status: 'syncing',
@@ -6371,7 +6435,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     }
                 }
                 console.log(`[${sessionId}] ✅ ${savedCount} mensajes del historial guardados`);
-                
+
                 // Emitir finalización de sincronización
                 io.to(`session-${phoneNumber}`).emit('sync-progress', {
                     status: 'completed',
@@ -7347,7 +7411,7 @@ app.post('/api/send/message', async (req, res) => {
 // Endpoint específico para agentes - obtener mensajes de un chat
 app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
     const { sessionId, chatJid } = req.params;
-    const { limit, dateFilter = 'today' } = req.query; // dateFilter: 'today', 'week', 'all', o fecha específica
+    const { limit = 25, dateFilter = 'today' } = req.query; // LÍMITE: Solo 25 mensajes más recientes por defecto
 
     console.log('[AGENT-MESSAGES] 📥 Obteniendo mensajes:', { sessionId, chatJid, dateFilter, limit });
 
@@ -7390,7 +7454,7 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
                 console.log('[AGENT-MESSAGES] 📅 Cargando TODOS los mensajes');
             }
 
-            // Query con filtro de fecha
+            // Query con filtro de fecha - OPTIMIZADO: Solo últimos N mensajes
             const query = `SELECT
                 m.id, m.session_id, m.chat_jid, m.sender_jid,
                 m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content,
@@ -7400,14 +7464,14 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
             WHERE (m.session_id = ? OR m.phone_number = ?)
               AND m.chat_jid = ?
               ${dateCondition}
-            ORDER BY m.timestamp ASC
-            ${limit ? 'LIMIT ?' : ''}`;
+            ORDER BY m.timestamp DESC
+            LIMIT ?`;
 
-            if (limit) {
-                queryParams.push(parseInt(limit, 10));
-            }
+            queryParams.push(parseInt(limit, 10));
 
-            const [messages] = await connection.execute(query, queryParams);
+            const [messagesDesc] = await connection.execute(query, queryParams);
+            // Invertir para mostrar en orden cronológico (más antiguo primero)
+            const messages = messagesDesc.reverse();
 
             console.log('[AGENT-MESSAGES] ✅ Encontrados:', messages.length, 'mensajes para', dateFilter || 'sin filtro');
 
@@ -7470,13 +7534,13 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
     const { sessionId, chatJid, message, agentId, agentName, phoneNumber } = req.body;
     const file = req.file;
 
-    console.log('[AGENT-SEND] 📤 Recibida solicitud de envío:', { 
-        sessionId, 
-        chatJid, 
-        agentId: agentId || 'NO ENVIADO', 
+    console.log('[AGENT-SEND] 📤 Recibida solicitud de envío:', {
+        sessionId,
+        chatJid,
+        agentId: agentId || 'NO ENVIADO',
         agentName: agentName || 'NO ENVIADO',
         phoneNumber: phoneNumber || 'NO ENVIADO',
-        message: message?.substring(0, 50) 
+        message: message?.substring(0, 50)
     });
 
     if (!sessionId || !chatJid || (!message && !file)) {
@@ -7593,7 +7657,7 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
         // 🔥 MEJORADO: SIEMPRE intentar obtener datos del agente de la BD si no vienen
         let finalAgentId = agentId;
         let finalAgentName = agentName;
-        
+
         // Si NO viene agentId pero tenemos phoneNumber, buscar en chat_assignments
         if (!finalAgentId && phoneNumber && pool) {
             try {
@@ -7611,7 +7675,7 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
                 console.log('[AGENT-SEND] ⚠️ No se pudo obtener agentId:', err.message);
             }
         }
-        
+
         // Si tenemos agentId pero no nombre, buscar en BD
         if (finalAgentId && !finalAgentName && pool) {
             try {
@@ -8482,7 +8546,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // Obtener mensajes
 app.get('/api/messages/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
-    const { number, startDate, endDate, limit = 10000, offset = 0, dateFilter = 'today' } = req.query;
+    const { number, startDate, endDate, limit = 25, offset = 0, dateFilter = 'today' } = req.query; // LÍMITE: Solo 25 mensajes por defecto
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'DB service unavailable' });
@@ -8535,18 +8599,17 @@ app.get('/api/messages/:sessionId', async (req, res) => {
             console.log('[API-MSG] 📅 Cargando mensajes con filtro personalizado:', { startDate, endDate, dateFilter });
         }
 
-        query += ' ORDER BY m.timestamp ASC';
+        query += ' ORDER BY m.timestamp DESC'; // Orden descendente para obtener los más recientes
 
-        // Ejecutar consulta principal con límite muy alto o sin límite
+        // OPTIMIZACIÓN: Siempre aplicar límite para mejorar rendimiento
         const limitValue = parseInt(limit, 10);
-        if (limitValue < 10000) {
-            query += ' LIMIT ? OFFSET ?';
-            queryParams.push(limitValue);
-            queryParams.push(parseInt(offset, 10));
-        }
-        // Si limit >= 10000, no agregar LIMIT (cargar todos)
+        query += ' LIMIT ? OFFSET ?';
+        queryParams.push(limitValue);
+        queryParams.push(parseInt(offset, 10));
 
-        const [messagesFromDB] = await connection.execute(query, queryParams);
+        const [messagesDesc] = await connection.execute(query, queryParams);
+        // Invertir para orden cronológico (más antiguo primero)
+        const messagesFromDB = messagesDesc.reverse();
         const totalMessages = Array.isArray(messagesFromDB) ? messagesFromDB.length : 0;
 
         // MARCAR MENSAJES COMO LEÍDOS cuando se cargan (solo los recibidos, no los enviados)
@@ -8776,8 +8839,8 @@ app.get('/api/chats-list/:sessionId', (req, res) => {
 
 // Obtener mensajes de un chat específico
 app.get('/api/messages', async (req, res) => {
-    const { contactId, dateFilter = 'today' } = req.query;
-    console.log('Solicitud de mensajes para contactId:', contactId, 'dateFilter:', dateFilter);
+    const { contactId, dateFilter = 'today', limit = 25 } = req.query; // LÍMITE: Solo 25 mensajes por defecto
+    console.log('Solicitud de mensajes para contactId:', contactId, 'dateFilter:', dateFilter, 'limit:', limit);
 
     if (!contactId) {
         return res.status(400).json({
@@ -8844,7 +8907,7 @@ app.get('/api/messages', async (req, res) => {
             console.log('[MESSAGES] 📅 Cargando TODOS los mensajes');
         }
 
-        // Construir query SQL con el filtro de fecha
+        // Construir query SQL con el filtro de fecha - OPTIMIZADO: Solo últimos N mensajes
         const sqlQuery = 'SELECT ' +
             'id as messageId, ' +
             'chat_jid as contactId, ' +
@@ -8861,14 +8924,19 @@ app.get('/api/messages', async (req, res) => {
             'FROM messages ' +
             'WHERE chat_jid = ? ' +
             dateCondition + ' ' +
-            'ORDER BY timestamp ASC';
+            'ORDER BY timestamp DESC ' +
+            'LIMIT ?';
 
-        console.log(`[MESSAGES] Ejecutando query para obtener mensajes (filtro: ${dateFilter})`);
+        queryParams.push(parseInt(limit, 10));
 
-        const [messages] = await connection.query(
+        console.log(`[MESSAGES] Ejecutando query para obtener mensajes (filtro: ${dateFilter}, límite: ${limit})`);
+
+        const [messagesDesc] = await connection.query(
             sqlQuery,
             queryParams
         );
+        // Invertir para orden cronológico (más antiguo primero)
+        const messages = messagesDesc.reverse();
 
         console.log(`[MESSAGES] ✅ Encontrados ${messages.length} mensajes para ${contactId} (filtro: ${dateFilter})`);
         res.json({
@@ -8895,7 +8963,7 @@ app.get('/api/messages', async (req, res) => {
 
 // Obtener historial de mensajes (con paginación)
 app.get('/api/history/messages', async (req, res) => {
-    const { limit = 100, offset = 0, sessionId, chatJid, startDate, endDate, direction, status: filterStatus } = req.query;
+    const { limit = 10000, offset = 0, sessionId, chatJid, startDate, endDate, direction, status: filterStatus } = req.query; // LÍMITE: 10,000 por defecto para cargar historial completo
 
     console.log(`[API-HISTORY] Request for sessionId: ${sessionId}`);
 
@@ -8920,8 +8988,7 @@ app.get('/api/history/messages', async (req, res) => {
                      FROM messages m
                      LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id IN (${placeholders})
                      LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id IN (${placeholders})
-                     WHERE (m.session_id IN (${placeholders}) OR m.phone_number IN (${placeholders}))
-                     AND m.chat_jid NOT LIKE '%@g.us'`;
+                     WHERE (m.session_id IN (${placeholders}) OR m.phone_number IN (${placeholders}))`;
         const queryParams = [...sessionIds, ...sessionIds, ...sessionIds, ...sessionIds];
 
         if (chatJid) {
@@ -8950,7 +9017,8 @@ app.get('/api/history/messages', async (req, res) => {
 
         query += ' ORDER BY m.timestamp DESC';
 
-        const countQuery = query.replace(/SELECT .+ FROM/, 'SELECT COUNT(*) as total FROM');
+        // Crear query de conteo reemplazando el SELECT
+        const countQuery = query.replace(/SELECT[\s\S]+?FROM/, 'SELECT COUNT(DISTINCT m.id) as total FROM');
         const [totalRows] = await connection.execute(countQuery, queryParams);
         const totalMessages = totalRows && totalRows[0] ? totalRows[0].total : 0;
 
@@ -10043,6 +10111,74 @@ app.post('/api/segments/:segmentId/contacts', async (req, res) => {
             success: false,
             error: 'Error al agregar contactos al grupo local'
         });
+    }
+});
+
+// DELETE: Eliminar contacto de un grupo local
+app.delete('/api/segments/:segmentId/contacts/:contactJid', async (req, res) => {
+    const { segmentId, contactJid } = req.params;
+    const { sessionId } = req.query;
+
+    try {
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(400).json({ success: false, error: 'Sesión no válida' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            // Eliminar contacto del segmento
+            await connection.execute(`
+                DELETE FROM contact_segments 
+                WHERE segment_id = ? AND contact_jid = ? AND session_id = ?
+            `, [segmentId, contactJid, phoneNumber]);
+
+            // Actualizar contador
+            const [result] = await connection.execute(`
+                SELECT COUNT(*) as count FROM contact_segments WHERE segment_id = ?
+            `, [segmentId]);
+
+            await connection.execute(`
+                UPDATE segments SET count = ?, updated_at = NOW() WHERE id = ?
+            `, [result[0].count, segmentId]);
+
+            res.json({ success: true, count: result[0].count });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[API-SEGMENTS-DELETE-CONTACT] Error:', error);
+        res.status(500).json({ success: false, error: 'Error al eliminar contacto del grupo' });
+    }
+});
+
+// GET: Obtener segmentos de un contacto
+app.get('/api/contacts/:contactJid/segments', async (req, res) => {
+    const { contactJid } = req.params;
+    const { sessionId } = req.query;
+
+    try {
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(400).json({ success: false, error: 'Sesión no válida' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            const [segments] = await connection.execute(`
+                SELECT s.id, s.name
+                FROM segments s
+                INNER JOIN contact_segments cs ON s.id = cs.segment_id
+                WHERE cs.contact_jid = ? AND s.session_id = ?
+            `, [contactJid, phoneNumber]);
+
+            res.json({ success: true, segments });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[API-CONTACT-SEGMENTS] Error:', error);
+        res.status(500).json({ success: false, error: 'Error al obtener segmentos del contacto' });
     }
 });
 
@@ -12429,6 +12565,15 @@ app.post('/api/contacts/sync/:sessionId', async (req, res) => {
 
         console.log(`[${sessionId}] 🔄 Iniciando sincronización de contactos...`);
 
+        if (!sock.store) {
+            console.warn(`[${sessionId}] ⚠️ Store no disponible en el socket`);
+            return res.json({ success: false, error: 'El almacenamiento de contactos no está listo. Intenta recargar la página.' });
+        }
+
+        const contactsCount = Object.keys(sock.store.contacts || {}).length;
+        const chatsCount = Object.keys(sock.store.chats || {}).length;
+        console.log(`[${sessionId}] 📊 Estado del Store: ${contactsCount} contactos, ${chatsCount} chats`);
+
         // Obtener todos los contactos del store de Baileys
         const phoneNumber = await getUserPhoneNumber(sessionId);
         let syncedCount = 0;
@@ -12438,9 +12583,12 @@ app.post('/api/contacts/sync/:sessionId', async (req, res) => {
             const contactsMap = sock.store.contacts;
 
             for (const [jid, contact] of Object.entries(contactsMap)) {
-                if (jid.includes('@s.whatsapp.net')) {
+                // Algunos contactos en el store pueden no tener el sufijo completo o ser de grupos
+                const fullJid = jid.includes('@') ? jid : `${jid}@s.whatsapp.net`;
+
+                if (fullJid.includes('@s.whatsapp.net')) {
                     await getOrInsertContact(
-                        jid,
+                        fullJid,
                         contact.name,
                         contact.notify,
                         phoneNumber
@@ -12860,6 +13008,203 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
     }
 });
 
+
+
+// ============= UTILIDADES DE CAMPAÑAS =============
+
+function generateIdFlow(length = 32) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
+
+async function processCampaign(campaignId, sessionId) {
+    console.log(`[CAMPAIGN-PROCESSOR] 🚀 Iniciando procesamiento de campaña ${campaignId} para sesión ${sessionId}`);
+
+    if (!pool) {
+        console.error('[CAMPAIGN-PROCESSOR] ❌ Pool de base de datos no disponible');
+        return;
+    }
+
+    const session = sessions.get(sessionId);
+    if (!session || !session.isConnected) {
+        console.error(`[CAMPAIGN-PROCESSOR] ❌ Sesión ${sessionId} no conectada. Abortando.`);
+        return;
+    }
+
+    const connection = await pool.getConnection();
+    try {
+        // Obtener datos de la campaña
+        const [campaigns] = await connection.execute(
+            'SELECT * FROM campaigns WHERE id = ?',
+            [campaignId]
+        );
+
+        if (campaigns.length === 0) {
+            console.error(`[CAMPAIGN-PROCESSOR] ❌ Campaña ${campaignId} no encontrada`);
+            return;
+        }
+
+        const campaign = campaigns[0];
+
+        // Obtener destinatarios pendientes
+        const [recipients] = await connection.execute(
+            'SELECT * FROM campaign_recipients WHERE campaign_id = ? AND status = \'pending\'',
+            [campaignId]
+        );
+
+        console.log(`[CAMPAIGN-PROCESSOR] 📋 ${recipients.length} destinatarios pendientes`);
+
+        if (recipients.length === 0) {
+            console.log(`[CAMPAIGN-PROCESSOR] ✅ Campaña ${campaignId} completada (sin pendientes)`);
+            await connection.execute(
+                'UPDATE campaigns SET status = \'completed\', completed_at = NOW() WHERE id = ?',
+                [campaignId]
+            );
+            return;
+        }
+
+        // Actualizar estado a 'sending' si no lo está
+        if (campaign.status !== 'sending') {
+            await connection.execute(
+                'UPDATE campaigns SET status = \'sending\', updated_at = NOW() WHERE id = ?',
+                [campaignId]
+            );
+        }
+
+        // Configurar tiempos de envío aleatorios si es necesario
+        let sendTimes = [];
+        if (campaign.use_random_timing && campaign.random_timing_msg_count > 0) {
+            const totalTimeMs = (campaign.random_timing_time_span_minutes || 1) * 60 * 1000;
+            const msgCount = Math.min(recipients.length, campaign.random_timing_msg_count);
+
+            // Generar tiempos aleatorios
+            for (let i = 0; i < msgCount; i++) {
+                sendTimes.push(Math.random() * totalTimeMs);
+            }
+            sendTimes.sort((a, b) => a - b);
+        }
+
+        // Procesar envíos en background (sin await para no bloquear)
+        (async () => {
+            const startTime = Date.now();
+            let sentCount = 0;
+            let failedCount = 0;
+
+            for (let i = 0; i < recipients.length; i++) {
+                const recipient = recipients[i];
+
+                try {
+                    // Gestión de tiempos de espera
+                    if (campaign.use_random_timing && sendTimes[i] !== undefined) {
+                        const elapsedTime = Date.now() - startTime;
+                        const targetTime = sendTimes[i];
+                        const waitTime = targetTime - elapsedTime;
+
+                        if (waitTime > 0) {
+                            await new Promise(resolve => setTimeout(resolve, waitTime));
+                        }
+                    } else if (!campaign.use_random_timing && i > 0) {
+                        // Delay fijo de 2-5 segundos para evitar bloqueo
+                        const randomDelay = Math.floor(Math.random() * 3000) + 2000;
+                        await new Promise(resolve => setTimeout(resolve, randomDelay));
+                    }
+
+                    // Preparar mensaje
+                    let messageText = campaign.message_template;
+
+                    // Personalización básica (si existiera lógica de variables en DB, aquí se aplicaría)
+                    // Por ahora asumimos que el template es estático o las variables se reemplazan en frontend
+                    // TODO: Implementar reemplazo de variables {nombre} si guardamos esos datos en campaign_recipients
+
+                    // ID FLOW
+                    if (campaign.use_id_flow) {
+                        const idSize = campaign.id_flow_size || 32;
+                        const idFlow = generateIdFlow(idSize);
+                        messageText += `\n\nID: ${idFlow}`;
+                    }
+
+                    // Construir payload
+                    let messagePayload;
+                    if (campaign.message_media_url && campaign.message_media_type) {
+                        let mediaPath = campaign.message_media_url;
+                        // Normalizar ruta
+                        if (!path.isAbsolute(mediaPath)) {
+                            mediaPath = path.join(__dirname, '../../', mediaPath.replace(/^\//, ''));
+                        }
+
+                        if (campaign.message_media_type.startsWith('image')) {
+                            messagePayload = { image: { url: mediaPath }, caption: messageText };
+                        } else if (campaign.message_media_type.startsWith('video')) {
+                            messagePayload = { video: { url: mediaPath }, caption: messageText };
+                        } else if (campaign.message_media_type.startsWith('audio')) {
+                            messagePayload = { audio: { url: mediaPath }, mimetype: campaign.message_media_type };
+                        } else {
+                            messagePayload = {
+                                document: { url: mediaPath },
+                                mimetype: campaign.message_media_type,
+                                fileName: path.basename(mediaPath)
+                            };
+                        }
+                    } else {
+                        messagePayload = { text: messageText };
+                    }
+
+                    // Enviar
+                    const sentMsg = await session.sock.sendMessage(recipient.contact_jid, messagePayload);
+
+                    // Actualizar estado destinatario
+                    await connection.execute(
+                        'UPDATE campaign_recipients SET status = \'sent\', message_id = ?, sent_at = NOW() WHERE id = ?',
+                        [sentMsg.key.id, recipient.id]
+                    );
+                    sentCount++;
+
+                } catch (error) {
+                    console.error(`[CAMPAIGN-PROCESSOR] ❌ Error enviando a ${recipient.contact_jid}:`, error.message);
+                    await connection.execute(
+                        'UPDATE campaign_recipients SET status = \'failed\', error_message = ? WHERE id = ?',
+                        [error.message, recipient.id]
+                    );
+                    failedCount++;
+                }
+
+                // Actualizar progreso de campaña cada 5 mensajes
+                if ((sentCount + failedCount) % 5 === 0) {
+                    io.to(`session-${sessionId}`).emit('campaign-progress', {
+                        campaignId,
+                        sent: sentCount,
+                        failed: failedCount,
+                        total: recipients.length
+                    });
+                }
+            }
+
+            // Finalizar campaña
+            await connection.execute(
+                'UPDATE campaigns SET status = \'completed\', completed_at = NOW() WHERE id = ?',
+                [campaignId]
+            );
+
+            console.log(`[CAMPAIGN-PROCESSOR] 🏁 Campaña ${campaignId} finalizada. Enviados: ${sentCount}, Fallidos: ${failedCount}`);
+
+            io.to(`session-${sessionId}`).emit('campaign-completed', {
+                campaignId,
+                stats: { sent: sentCount, failed: failedCount }
+            });
+
+        })().catch(err => console.error('[CAMPAIGN-PROCESSOR] Error en background process:', err));
+
+    } catch (error) {
+        console.error('[CAMPAIGN-PROCESSOR] Error general:', error);
+    } finally {
+        connection.release();
+    }
+}
+
 // ============= SISTEMA DE LIMPIEZA DE CACHÉ =============
 
 // Limpiar caché de Kanban periódicamente (cada 10 minutos)
@@ -12880,6 +13225,57 @@ setInterval(() => {
         }
     }
 }, 600000); // 10 minutos
+
+// ============= PLANIFICADOR DE CAMPAÑAS (SCHEDULER) =============
+setInterval(async () => {
+    if (!pool) return;
+
+    try {
+        const connection = await pool.getConnection();
+        try {
+            // Buscar campañas programadas que ya deberían ejecutarse
+            const [campaigns] = await connection.execute(
+                `SELECT c.*, u.phone as owner_phone 
+                 FROM campaigns c
+                 JOIN users u ON c.session_id = u.phone
+                 WHERE c.status = 'scheduled' 
+                 AND c.scheduled_at <= NOW()`
+            );
+
+            if (campaigns.length > 0) {
+                console.log(`[SCHEDULER] ⏰ Encontradas ${campaigns.length} campañas programadas para ejecutar`);
+
+                for (const campaign of campaigns) {
+                    // Necesitamos encontrar el sessionId activo para este usuario
+                    // Esto es un poco complejo porque session_id en campaigns es el teléfono, 
+                    // pero necesitamos el sessionId del socket (que es un UUID o string aleatorio)
+
+                    // Buscar sesión activa para este teléfono
+                    let activeSessionId = null;
+                    for (const [sId, session] of sessions.entries()) {
+                        const phone = await getUserPhoneNumber(sId);
+                        if (phone === campaign.session_id && session.isConnected) {
+                            activeSessionId = sId;
+                            break;
+                        }
+                    }
+
+                    if (activeSessionId) {
+                        console.log(`[SCHEDULER] 🚀 Ejecutando campaña ${campaign.id} con sesión ${activeSessionId}`);
+                        processCampaign(campaign.id, activeSessionId);
+                    } else {
+                        console.warn(`[SCHEDULER] ⚠️ No hay sesión activa para ejecutar campaña ${campaign.id} (Usuario: ${campaign.session_id})`);
+                        // Opcional: Marcar como fallida o dejar pendiente para próximo intento
+                    }
+                }
+            }
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[SCHEDULER] Error verificando campañas:', error);
+    }
+}, 60000); // Verificar cada minuto
 
 // ============= ENDPOINTS DE CAMPAÑAS =============
 
@@ -13309,163 +13705,23 @@ app.post('/api/campaigns/send/:sessionId', async (req, res) => {
 
             // Actualizar estado de campaña
             await connection.execute(
-                'UPDATE campaigns SET status = \'active\', updated_at = NOW() WHERE id = ?',
-                [campaignId]
-            );
-
-            // Obtener destinatarios pendientes
-            const [recipients] = await connection.execute(
-                'SELECT * FROM campaign_recipients WHERE campaign_id = ? AND status = \'pending\'',
+                'UPDATE campaigns SET status = \'sending\', updated_at = NOW() WHERE id = ?',
                 [campaignId]
             );
 
             res.json({
                 success: true,
-                message: 'Campaña iniciada',
-                data: {
-                    totalRecipients: recipients.length
-                }
+                message: 'Campaña iniciada en segundo plano',
             });
 
-            // Enviar mensajes en background
-            (async () => {
-                // Si usa envíos aleatorios, calcular los tiempos de envío de todos los mensajes
-                let sendTimes = [];
-                if (campaign.use_random_timing && campaign.random_timing_msg_count > 0) {
-                    const totalTimeMs = campaign.random_timing_time_span_minutes * 60 * 1000;
-                    const msgCount = Math.min(recipients.length, campaign.random_timing_msg_count);
-
-                    console.log(`[CAMPAIGN-${campaignId}] 🎲 Configurando envíos aleatorios:`);
-                    console.log(`[CAMPAIGN-${campaignId}]    - Total de mensajes: ${msgCount}`);
-                    console.log(`[CAMPAIGN-${campaignId}]    - Distribuir en: ${campaign.random_timing_time_span_minutes} minutos`);
-                    console.log(`[CAMPAIGN-${campaignId}]    - Tiempo total: ${totalTimeMs}ms`);
-
-                    // Generar tiempos aleatorios para cada mensaje
-                    for (let i = 0; i < msgCount; i++) {
-                        // Generar un tiempo aleatorio entre 0 y totalTimeMs
-                        sendTimes.push(Math.random() * totalTimeMs);
-                    }
-
-                    // Ordenar los tiempos de menor a mayor
-                    sendTimes.sort((a, b) => a - b);
-
-                    console.log(`[CAMPAIGN-${campaignId}] 🕐 Tiempos de envío programados:`);
-                    sendTimes.forEach((time, index) => {
-                        const seconds = Math.round(time / 1000);
-                        const minutes = Math.floor(seconds / 60);
-                        const remainingSeconds = seconds % 60;
-                        console.log(`[CAMPAIGN-${campaignId}]    - Mensaje ${index + 1}: ${minutes}m ${remainingSeconds}s`);
-                    });
-                }
-
-                const startTime = Date.now();
-
-                for (let i = 0; i < recipients.length; i++) {
-                    const recipient = recipients[i];
-
-                    try {
-                        // Si usa timing aleatorio y tenemos tiempo programado, esperar hasta ese momento
-                        if (campaign.use_random_timing && sendTimes[i] !== undefined) {
-                            const elapsedTime = Date.now() - startTime;
-                            const targetTime = sendTimes[i];
-                            const waitTime = targetTime - elapsedTime;
-
-                            if (waitTime > 0) {
-                                console.log(`[CAMPAIGN-${campaignId}] ⏳ Esperando ${Math.round(waitTime / 1000)}s para mensaje ${i + 1}...`);
-                                await new Promise(resolve => setTimeout(resolve, waitTime));
-                            }
-                        } else if (!campaign.use_random_timing && i > 0) {
-                            // Delay fijo de 2 segundos entre mensajes si no usa timing aleatorio
-                            await new Promise(resolve => setTimeout(resolve, 2000));
-                        }
-
-                        // Personalizar mensaje si tiene variables
-                        let messageText = campaign.message_template;
-
-                        // Preparar payload del mensaje
-                        let messagePayload;
-
-                        if (campaign.message_media_url && campaign.message_media_type) {
-                            // Mensaje con multimedia
-                            console.log(`[CAMPAIGN-${campaignId}] Enviando multimedia tipo: ${campaign.message_media_type}`);
-
-                            // Convertir URL relativa a ruta absoluta del sistema
-                            let mediaPath = campaign.message_media_url;
-                            if (mediaPath.startsWith('/uploads/')) {
-                                mediaPath = path.join(__dirname, '../../uploads', path.basename(mediaPath));
-                            } else if (mediaPath.startsWith('uploads/')) {
-                                mediaPath = path.join(__dirname, '../../uploads', path.basename(mediaPath));
-                            }
-
-                            console.log(`[CAMPAIGN-${campaignId}] Ruta del archivo: ${mediaPath}`);
-
-                            if (campaign.message_media_type.startsWith('image')) {
-                                messagePayload = {
-                                    image: { url: mediaPath },
-                                    caption: messageText || ''
-                                };
-                            } else if (campaign.message_media_type.startsWith('video')) {
-                                messagePayload = {
-                                    video: { url: mediaPath },
-                                    caption: messageText || ''
-                                };
-                            } else if (campaign.message_media_type.startsWith('audio')) {
-                                messagePayload = {
-                                    audio: { url: mediaPath },
-                                    mimetype: campaign.message_media_type
-                                };
-                            } else {
-                                // Documento
-                                messagePayload = {
-                                    document: { url: mediaPath },
-                                    mimetype: campaign.message_media_type,
-                                    fileName: campaign.message_media_url.split('/').pop()
-                                };
-                            }
-                        } else {
-                            // Solo texto
-                            messagePayload = {
-                                text: messageText
-                            };
-                        }
-
-                        // Enviar mensaje
-                        const sentMsg = await session.sock.sendMessage(recipient.contact_jid, messagePayload);
-
-                        // Actualizar estado en DB
-                        await connection.execute(
-                            'UPDATE campaign_recipients SET status = \'sent\', message_id = ?, sent_at = NOW() WHERE id = ?',
-                            [sentMsg.key.id, recipient.id]
-                        );
-
-                        const elapsedMinutes = Math.round((Date.now() - startTime) / 1000 / 60 * 10) / 10;
-                        console.log(`[CAMPAIGN-${campaignId}] ✅ Mensaje ${i + 1}/${recipients.length} enviado a ${recipient.contact_jid} (${elapsedMinutes}min desde inicio)`);
-
-                    } catch (error) {
-                        console.error(`[CAMPAIGN-${campaignId}] ❌ Error enviando a ${recipient.contact_jid}:`, error);
-
-                        // Actualizar estado de error
-                        await connection.execute(
-                            'UPDATE campaign_recipients SET status = \'failed\', error_message = ? WHERE id = ?',
-                            [error.message, recipient.id]
-                        );
-                    }
-                }
-
-                // Actualizar estado final de campaña
-                await connection.execute(
-                    'UPDATE campaigns SET status = \'completed\', updated_at = NOW() WHERE id = ?',
-                    [campaignId]
-                );
-
-                console.log(`[CAMPAIGN-${campaignId}] Campaña completada`);
-            })();
+            // Delegar al procesador
+            processCampaign(campaignId, sessionId);
 
         } finally {
             connection.release();
         }
     } catch (error) {
-        console.error('[CAMPAIGNS] Error enviando campaña:', error);
+        console.error('[CAMPAIGNS] Error iniciando campaña:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -14154,7 +14410,7 @@ app.post('/api/auth/login', async (req, res) => {
             // El agente NO debe usar su propio session_id
             if (user.role === 'agent' || user.role === 'supervisor') {
                 console.log(`[AUTH] 🔍 ${user.role.toUpperCase()} ${email} - buscando sesión de su admin...`);
-                
+
                 const [agentData] = await connection.execute(
                     'SELECT admin_phone FROM users WHERE id = ?',
                     [user.id]
@@ -14192,7 +14448,7 @@ app.post('/api/auth/login', async (req, res) => {
                 } else {
                     console.log(`[AUTH] ❌ ${user.role} ${email} no tiene admin_phone asignado`);
                 }
-            } 
+            }
             // ✅ PRIORIDAD 2: Si es ADMIN, usar su propio session_id
             else if (user.role === 'admin') {
                 const [userSessionData] = await connection.execute(
@@ -14461,10 +14717,10 @@ app.get('/api/users', async (req, res) => {
 
     try {
         const { role, department, status, sessionId } = req.query;
-        
+
         // Obtener adminPhone desde JWT token O desde sessionId (para admin por QR)
         let adminPhone = null;
-        
+
         // Opción 1: Desde JWT token (agentes)
         const authHeader = req.headers['authorization'];
         if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -14477,7 +14733,7 @@ app.get('/api/users', async (req, res) => {
                 console.log('[USERS] Token JWT inválido, intentando con sessionId...');
             }
         }
-        
+
         // Opción 2: Desde sessionId (admin por QR)
         if (!adminPhone && sessionId) {
             console.log('[USERS] Admin por QR detectado, obteniendo número desde sessionId:', sessionId);
@@ -14487,11 +14743,11 @@ app.get('/api/users', async (req, res) => {
             }
             console.log('[USERS] Admin phone desde sessionId:', adminPhone);
         }
-        
+
         if (!adminPhone) {
-            return res.status(401).json({ 
-                success: false, 
-                error: 'Token no proporcionado o sessionId requerido' 
+            return res.status(401).json({
+                success: false,
+                error: 'Token no proporcionado o sessionId requerido'
             });
         }
 
@@ -14514,14 +14770,14 @@ app.get('/api/users', async (req, res) => {
             // - Admin por QR: SOLO existe en user_sessions, NO en users
             // - Admin por QR puede ver sus agentes (que están en users con admin_phone = su número)
             // - Si existe sesión activa en user_sessions, ES ADMIN
-            
+
             const [sessionCheck] = await connection.execute(
                 'SELECT session_id, phone_number FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
                 [adminPhone]
             );
-            
+
             let isAdmin = false;
-            
+
             if (sessionCheck.length > 0) {
                 // Tiene sesión activa de WhatsApp = Admin por QR
                 console.log(`[USERS] ✅ Usuario ${adminPhone} tiene sesión activa de WhatsApp - Admin por QR`);
@@ -14532,7 +14788,7 @@ app.get('/api/users', async (req, res) => {
                     'SELECT is_admin, is_super_admin FROM users WHERE phone = ? LIMIT 1',
                     [adminPhone]
                 );
-                
+
                 if (adminCheck.length > 0 && adminCheck[0].is_admin === 1) {
                     console.log(`[USERS] ✅ Usuario ${adminPhone} es admin en tabla users`);
                     isAdmin = true;
@@ -14839,9 +15095,9 @@ app.post('/api/users', authenticateToken, async (req, res) => {
     } catch (error) {
         if (error.code === 'ER_DUP_ENTRY') {
             console.log('[USERS] ❌ Email duplicado:', email);
-            return res.status(409).json({ 
-                success: false, 
-                error: `El email ${email} ya está registrado. Si eliminaste este usuario recientemente, intenta con otro email o contacta al administrador.` 
+            return res.status(409).json({
+                success: false,
+                error: `El email ${email} ya está registrado. Si eliminaste este usuario recientemente, intenta con otro email o contacta al administrador.`
             });
         }
         console.error('[USERS] Error creating:', error);
@@ -14874,7 +15130,7 @@ app.put('/api/users/:id', async (req, res) => {
             const safePhone = phone || null;
             const safeEmail = email || null; // 📧 Email puede ser null
             const safeStatus = status || 'active';
-            
+
             // Verificar si el número inicia con 595994854167 para asignar admin
             const isAdmin = safePhone && safePhone.startsWith('595994854167');
             const finalRole = isAdmin ? 'admin' : (role || 'agent');
@@ -16052,14 +16308,14 @@ app.put('/api/agents/:id/access', async (req, res) => {
             );
 
             // Emitir evento Socket.IO para actualizar en tiempo real
-            io.emit('agent-access-changed', { 
-                agentId: id, 
+            io.emit('agent-access-changed', {
+                agentId: id,
                 status,
                 message: status === 'active' ? 'Agente desbloqueado' : 'Agente bloqueado'
             });
 
-            res.json({ 
-                success: true, 
+            res.json({
+                success: true,
                 message: status === 'active' ? 'Agente desbloqueado exitosamente' : 'Agente bloqueado exitosamente'
             });
         } finally {
@@ -16107,8 +16363,8 @@ app.put('/api/agents/:id/status', async (req, res) => {
                 busy: 'Ocupado'
             };
 
-            res.json({ 
-                success: true, 
+            res.json({
+                success: true,
                 message: `Estado cambiado a: ${statusLabels[agent_status]}`
             });
         } finally {
@@ -17442,14 +17698,18 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                 sessionIds
             );
 
+            // ⚡ OPTIMIZADO: Buscar por session_id O phone_number
             const [messagesResult] = await connection.execute(
-                `SELECT COUNT(*) as total FROM messages WHERE session_id IN (${placeholders})`,
-                sessionIds
+                `SELECT COUNT(*) as total FROM messages
+                 WHERE session_id IN (${placeholders}) OR phone_number IN (${placeholders})`,
+                [...sessionIds, ...sessionIds]
             );
 
             const [messagesTodayResult] = await connection.execute(
-                `SELECT COUNT(*) as total FROM messages WHERE session_id IN (${placeholders}) AND DATE(timestamp) = CURDATE()`,
-                sessionIds
+                `SELECT COUNT(*) as total FROM messages
+                 WHERE (session_id IN (${placeholders}) OR phone_number IN (${placeholders}))
+                 AND DATE(timestamp) = CURDATE()`,
+                [...sessionIds, ...sessionIds]
             );
 
             // Obtener el teléfono del admin para filtrar correctamente
@@ -17466,8 +17726,10 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
             );
 
             const [unreadMessagesResult] = await connection.execute(
-                `SELECT COUNT(*) as total FROM messages WHERE session_id IN (${placeholders}) AND from_me = 0 AND is_read = 0`,
-                sessionIds
+                `SELECT COUNT(*) as total FROM messages
+                 WHERE (session_id IN (${placeholders}) OR phone_number IN (${placeholders}))
+                 AND from_me = 0 AND is_read = 0`,
+                [...sessionIds, ...sessionIds]
             );
 
             // Chatbots activos de ESTE admin (verificar que estén habilitados y con flujos activos)
@@ -17497,7 +17759,7 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                 sessionIds
             );
 
-            // ✅ Contar mensajes por estado para el dashboard
+            // ✅ Contar mensajes por estado para el dashboard - OPTIMIZADO
             const [messageStatsDetailed] = await connection.execute(
                 `SELECT
                     COUNT(*) as total,
@@ -17508,16 +17770,16 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                     SUM(CASE WHEN from_me = 1 AND status = 'read' THEN 1 ELSE 0 END) as \`read\`,
                     SUM(CASE WHEN from_me = 1 AND status = 'failed' THEN 1 ELSE 0 END) as failed
                 FROM messages
-                WHERE session_id IN (${placeholders})`,
-                sessionIds
+                WHERE session_id IN (${placeholders}) OR phone_number IN (${placeholders})`,
+                [...sessionIds, ...sessionIds]
             );
 
-            // Mensajes esta semana
+            // Mensajes esta semana - OPTIMIZADO
             const [weekMessagesResult] = await connection.execute(
-                `SELECT COUNT(*) as total FROM messages 
-                 WHERE session_id IN (${placeholders}) 
+                `SELECT COUNT(*) as total FROM messages
+                 WHERE (session_id IN (${placeholders}) OR phone_number IN (${placeholders}))
                  AND YEARWEEK(timestamp, 1) = YEARWEEK(CURDATE(), 1)`,
-                sessionIds
+                [...sessionIds, ...sessionIds]
             );
 
             const statsToSend = {
@@ -18109,11 +18371,11 @@ app.get('/api/crm/contacts/:sessionId', async (req, res) => {
 app.post('/api/crm/contacts', async (req, res) => {
     try {
         const { sessionId, name, phone, category } = req.body;
-        
+
         if (!sessionId || !name || !phone) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Campos requeridos: sessionId, name, phone' 
+            return res.status(400).json({
+                success: false,
+                error: 'Campos requeridos: sessionId, name, phone'
             });
         }
 
@@ -18128,10 +18390,10 @@ app.post('/api/crm/contacts', async (req, res) => {
                 'INSERT INTO crm_contacts (session_id, name, phone, category) VALUES (?, ?, ?, ?)',
                 [phoneNumber, name, phone, category || null]
             );
-            
+
             console.log(`[CRM] Contacto creado: ${name} (${phone}) - Categoría: ${category}`);
-            res.json({ 
-                success: true, 
+            res.json({
+                success: true,
                 message: 'Contacto creado correctamente',
                 contactId: result.insertId
             });
@@ -18149,7 +18411,7 @@ app.put('/api/crm/contacts/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { sessionId, name, phone, category } = req.body;
-        
+
         const phoneNumber = await getUserPhoneNumber(sessionId);
         if (!phoneNumber) {
             return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
@@ -18161,7 +18423,7 @@ app.put('/api/crm/contacts/:id', async (req, res) => {
                 'UPDATE crm_contacts SET name = ?, phone = ?, category = ? WHERE id = ? AND session_id = ?',
                 [name, phone, category || null, id, phoneNumber]
             );
-            
+
             if (result.affectedRows > 0) {
                 console.log(`[CRM] Contacto actualizado: ${id} -> ${name}`);
                 res.json({ success: true, message: 'Contacto actualizado correctamente' });
@@ -18182,7 +18444,7 @@ app.delete('/api/crm/contacts/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { sessionId } = req.query;
-        
+
         const phoneNumber = await getUserPhoneNumber(sessionId);
         if (!phoneNumber) {
             return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
@@ -18194,7 +18456,7 @@ app.delete('/api/crm/contacts/:id', async (req, res) => {
                 'DELETE FROM crm_contacts WHERE id = ? AND session_id = ?',
                 [id, phoneNumber]
             );
-            
+
             if (result.affectedRows > 0) {
                 console.log(`[CRM] Contacto eliminado: ${id}`);
                 res.json({ success: true, message: 'Contacto eliminado correctamente' });
@@ -18241,7 +18503,7 @@ app.delete('/api/crm/categories/:category', async (req, res) => {
     try {
         const { category } = req.params;
         const { sessionId } = req.query;
-        
+
         const phoneNumber = await getUserPhoneNumber(sessionId);
         if (!phoneNumber) {
             return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
@@ -18253,10 +18515,10 @@ app.delete('/api/crm/categories/:category', async (req, res) => {
                 'UPDATE crm_contacts SET category = NULL WHERE category = ? AND session_id = ?',
                 [category, phoneNumber]
             );
-            
+
             console.log(`[CRM] Categoría "${category}" eliminada (${result.affectedRows} contactos afectados)`);
-            res.json({ 
-                success: true, 
+            res.json({
+                success: true,
                 message: 'Categoría eliminada correctamente',
                 affectedContacts: result.affectedRows
             });
@@ -19448,15 +19710,27 @@ app.post('/api/sync-settings/:sessionId', async (req, res) => {
         }
 
         const phoneNumber = await getUserPhoneNumber(sessionId);
+
+        // ⚠️ VALIDACIÓN: No insertar si el phoneNumber es inválido o igual al sessionId
+        if (!phoneNumber || phoneNumber === sessionId || !/^\d+$/.test(phoneNumber)) {
+            console.error(`[UPDATE-SETTINGS] ❌ phoneNumber inválido (${phoneNumber}), no se actualizará user_sessions`);
+            return res.status(400).json({
+                success: false,
+                error: 'No se pudo obtener el número de teléfono válido'
+            });
+        }
+
         const connection = await pool.getConnection();
         try {
-            // Actualizar en user_sessions
-            await connection.execute(
-                `INSERT INTO user_sessions (session_id, phone_number, auto_sync) 
-                 VALUES (?, ?, ?) 
-                 ON DUPLICATE KEY UPDATE auto_sync = ?`,
-                [sessionId, phoneNumber, autoSync, autoSync]
+            // Actualizar solo si existe el registro (NO INSERTAR nuevos registros aquí)
+            const [result] = await connection.execute(
+                `UPDATE user_sessions SET auto_sync = ? WHERE phone_number = ?`,
+                [autoSync, phoneNumber]
             );
+
+            if (result.affectedRows === 0) {
+                console.warn(`[UPDATE-SETTINGS] ⚠️ No se encontró sesión para ${phoneNumber}`);
+            }
 
             // Actualizar en users también si existe
             await connection.execute(
@@ -19965,11 +20239,11 @@ server.listen(PORT, '0.0.0.0', async () => {
     setInterval(async () => {
         for (const [sessionKey, sessionInfo] of sessions.entries()) {
             if (!sessionInfo.isConnected || !sessionInfo.sock || !sessionInfo.phoneNumber) continue;
-            
+
             try {
                 const phoneNumber = sessionInfo.phoneNumber;
                 const sock = sessionInfo.sock;
-                
+
                 const connection = await pool.getConnection();
                 try {
                     // Obtener chats con actividad en la última hora
@@ -19983,16 +20257,16 @@ server.listen(PORT, '0.0.0.0', async () => {
                          LIMIT 10`,
                         [phoneNumber]
                     );
-                    
+
                     if (activeChats.length > 0) {
                         console.log(`[${sessionKey}] 🔄 Sincronizando ${activeChats.length} chats activos...`);
                     }
-                    
+
                     for (const chat of activeChats) {
                         try {
                             // Descargar últimos 5 mensajes del chat
                             const messages = await sock.loadMessages(chat.chat_jid, 5);
-                            
+
                             for (const msg of messages) {
                                 if (msg.messageTimestamp) {
                                     // Verificar si ya existe
@@ -20000,7 +20274,7 @@ server.listen(PORT, '0.0.0.0', async () => {
                                         'SELECT id FROM messages WHERE id = ? AND session_id = ?',
                                         [msg.key.id, phoneNumber]
                                     );
-                                    
+
                                     if (existing.length === 0) {
                                         // Mensaje nuevo encontrado - emitir como evento notify
                                         console.log(`[${sessionKey}] 📱 Mensaje sincronizado: ${msg.key.fromMe ? 'ENVIADO' : 'RECIBIDO'} - ${msg.key.id.substring(0, 20)}`);

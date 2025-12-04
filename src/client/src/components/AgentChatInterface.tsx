@@ -99,9 +99,9 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
 
   useEffect(() => {
     loadMessages();
-    // Reducir frecuencia de polling ya que ahora tenemos socket
-    const interval = setInterval(loadMessages, 10000); // Cada 10 segundos como backup
-    return () => clearInterval(interval);
+    // ⚡ OPTIMIZACIÓN: Polling desactivado - Socket.IO maneja actualizaciones en tiempo real
+    // const interval = setInterval(loadMessages, 10000);
+    // return () => clearInterval(interval);
   }, [loadMessages]);
 
   // Scroll automático

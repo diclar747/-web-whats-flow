@@ -328,12 +328,11 @@ const ImprovedChatList: React.FC<ImprovedChatListProps> = ({
       loadAgents();
     }
 
-    // Reload chats every 30 seconds
-    const interval = setInterval(() => {
-      loadChats(1);
-    }, 30000);
-
-    return () => clearInterval(interval);
+    // ⚡ OPTIMIZACIÓN: Polling desactivado - Socket.IO maneja actualizaciones de chats en tiempo real
+    // const interval = setInterval(() => {
+    //   loadChats(1);
+    // }, 30000);
+    // return () => clearInterval(interval);
   }, [sessionId, userRole]);
 
   // Load more chats when page changes
@@ -348,9 +347,9 @@ const ImprovedChatList: React.FC<ImprovedChatListProps> = ({
     if (userRole === 'agent') {
       loadTransferRequests();
 
-      // Check for new requests every 10 seconds
-      const interval = setInterval(loadTransferRequests, 10000);
-      return () => clearInterval(interval);
+      // ⚡ OPTIMIZACIÓN: Polling desactivado - Socket.IO maneja actualizaciones en tiempo real
+      // const interval = setInterval(loadTransferRequests, 10000);
+      // return () => clearInterval(interval);
     }
     return undefined;
   }, [userRole, currentUserId]);

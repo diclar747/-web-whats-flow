@@ -303,22 +303,26 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
   const [sortBy, setSortBy] = useState('lastContact');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
-  
+
   // Estados para crear contacto CRM
   const [newContactName, setNewContactName] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
   const [newContactCategory, setNewContactCategory] = useState('');
+  const [newContactSegments, setNewContactSegments] = useState<string[]>([]);
   const [crmCategories, setCrmCategories] = useState<string[]>([]);
-  
+
   // Estados para importar CSV
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
-  
+  const [importContactSegments, setImportContactSegments] = useState<string[]>([]);
+
   // Estados para editar contacto
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [editContactDialog, setEditContactDialog] = useState(false);
   const [editContactName, setEditContactName] = useState('');
   const [editContactPhone, setEditContactPhone] = useState('');
+  const [editContactCategory, setEditContactCategory] = useState('');
+  const [editContactSegments, setEditContactSegments] = useState<string[]>([]);
   const [contactMenuAnchor, setContactMenuAnchor] = useState<null | HTMLElement>(null);
 
   // Pagination states
@@ -328,7 +332,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
   // WhatsApp synced data
   const [syncedContacts, setSyncedContacts] = useState<any[]>([]);
 
-  const [showOnlyNamed, setShowOnlyNamed] = useState(true); // Filtrar solo contactos con nombre real
+  const [showOnlyNamed, setShowOnlyNamed] = useState(false); // Mostrar todos los contactos por defecto
 
   // Estados para modal de miembros del grupo
 
@@ -345,7 +349,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
     try {
       const response = await fetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
       const data = await response.json();
-      
+
       if (data.success && data.boards) {
         // Guardar los boards como categorías
         setCrmCategories(data.boards);
@@ -359,7 +363,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
     try {
       const response = await fetch(`${getAPIBaseURL()}/api/segments/${sessionId}`);
       const data = await response.json();
-      
+
       if (data.success && data.segments) {
         const mappedSegments: SegmentType[] = data.segments.map((seg: any) => ({
           id: seg.id,
@@ -388,9 +392,9 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
       const response = await fetch(`${getAPIBaseURL()}/api/segments/${segmentId}?sessionId=${sessionId}`, {
         method: 'DELETE'
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         alert('✅ Grupo local eliminado exitosamente');
         loadSegments(); // Recargar la lista
@@ -446,7 +450,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
 
   const handleUpdateSegment = async () => {
     if (!editingSegment) return;
-    
+
     if (!newSegmentName.trim()) {
       alert('⚠️ Por favor ingresa un nombre para el grupo');
       return;
@@ -506,11 +510,27 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
     setContactMenuAnchor(null);
   };
 
-  const handleEditContact = () => {
+  const handleEditContact = async () => {
     if (editingContact) {
       const contactAny = editingContact as any;
       setEditContactName(contactAny.name || contactAny.notify || '');
       setEditContactPhone(contactAny.jid ? contactAny.jid.split('@')[0] : contactAny.phone || '');
+      setEditContactCategory(contactAny.category || contactAny.board_id || '');
+
+      // Fetch current segments
+      try {
+        const response = await fetch(`${getAPIBaseURL()}/api/contacts/${contactAny.jid}/segments?sessionId=${sessionId}`);
+        const data = await response.json();
+        if (data.success) {
+          setEditContactSegments(data.segments.map((s: any) => s.id));
+        } else {
+          setEditContactSegments([]);
+        }
+      } catch (error) {
+        console.error('Error fetching segments:', error);
+        setEditContactSegments([]);
+      }
+
       setEditContactDialog(true);
       handleCloseContactMenu();
     }
@@ -522,14 +542,17 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
       return;
     }
 
+    const contactAny = editingContact as any;
+    const contactJid = contactAny.jid || contactAny.id;
+
     try {
-      const contactAny = editingContact as any;
+      // 1. Update Name
       const response = await fetch(`${getAPIBaseURL()}/api/contacts/update`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId,
-          jid: contactAny.jid || contactAny.id,
+          jid: contactJid,
           name: editContactName.trim(),
           phone: editContactPhone.trim()
         })
@@ -538,14 +561,63 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
       const data = await response.json();
 
       if (data.success) {
+        // 2. Update Category (Kanban Board)
+        if (editContactCategory && editContactCategory !== (contactAny.category || contactAny.board_id)) {
+          await fetch(`${getAPIBaseURL()}/api/kanban/move-contact`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contactJid: contactJid,
+              boardId: editContactCategory,
+              sessionId
+            })
+          });
+        }
+
+        // 3. Update Segments
+        // Get current segments to compare
+        let currentSegments: string[] = [];
+        try {
+          const segResponse = await fetch(`${getAPIBaseURL()}/api/contacts/${contactJid}/segments?sessionId=${sessionId}`);
+          const segData = await segResponse.json();
+          if (segData.success) {
+            currentSegments = segData.segments.map((s: any) => s.id);
+          }
+        } catch (e) { console.error(e); }
+
+        // Add to new segments
+        const segmentsToAdd = editContactSegments.filter(id => !currentSegments.includes(id));
+        for (const segmentId of segmentsToAdd) {
+          await fetch(`${getAPIBaseURL()}/api/segments/${segmentId}/contacts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, contactJids: [contactJid] })
+          });
+        }
+
+        // Remove from old segments
+        const segmentsToRemove = currentSegments.filter(id => !editContactSegments.includes(id));
+        for (const segmentId of segmentsToRemove) {
+          await fetch(`${getAPIBaseURL()}/api/segments/${segmentId}/contacts/${contactJid}?sessionId=${sessionId}`, {
+            method: 'DELETE'
+          });
+        }
+
         // Actualizar contacto en la lista local
-        const contactAny = editingContact as any;
         setContacts(contacts.map(c => {
           const cAny = c as any;
-          return cAny.jid === contactAny.jid 
-            ? { ...c, name: editContactName.trim() }
+          return cAny.jid === contactJid
+            ? { ...c, name: editContactName.trim(), category: editContactCategory } // Update category in local state
             : c;
         }));
+
+        // Update syncedContacts as well
+        setSyncedContacts(syncedContacts.map(c => {
+          return c.jid === contactJid
+            ? { ...c, name: editContactName.trim(), category: editContactCategory, board_id: editContactCategory }
+            : c;
+        }));
+
         setEditContactDialog(false);
         setEditingContact(null);
         alert('✅ Contacto actualizado correctamente');
@@ -605,14 +677,26 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
       const data = await response.json();
 
       if (data.success) {
-        alert('✅ Contacto agregado al tablero Kanban');
+        // Guardar en segmentos seleccionados
+        if (newContactSegments.length > 0) {
+          for (const segmentId of newContactSegments) {
+            await fetch(`${getAPIBaseURL()}/api/segments/${segmentId}/contacts`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId, contactJids: [contactJid] })
+            });
+          }
+        }
+
+        alert('✅ Contacto agregado al tablero Kanban y Grupos');
         setShowContactDialog(false);
         setSelectedContact(null);
         setNewContactName('');
         setNewContactPhone('');
         setNewContactCategory('');
-        // Recargar contactos
-        window.location.reload();
+        setNewContactSegments([]);
+        // ⚡ Recargar contactos sin recargar página
+        loadCRMData();
       } else {
         alert('Error: ' + data.error);
       }
@@ -638,7 +722,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
       try {
         const text = e.target?.result as string;
         const lines = text.split('\n').filter(line => line.trim());
-        
+
         // Formato: nombre,telefono (sin encabezado o con encabezado)
         const startIndex = lines[0].toLowerCase().includes('nombre') ? 1 : 0;
         const contacts = lines.slice(startIndex).map(line => {
@@ -654,7 +738,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
 
           try {
             const contactJid = `${contact.phone}@s.whatsapp.net`;
-            
+
             const response = await fetch(`${getAPIBaseURL()}/api/kanban/contacts`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -673,11 +757,27 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
           }
         }
 
+        // Asignar a segmentos seleccionados
+        if (importContactSegments.length > 0) {
+          // Recopilar todos los JIDs exitosos
+          const successfulJids = contacts.filter(c => c.name && c.phone).map(c => `${c.phone}@s.whatsapp.net`);
+
+          for (const segmentId of importContactSegments) {
+            await fetch(`${getAPIBaseURL()}/api/segments/${segmentId}/contacts`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId, contactJids: successfulJids })
+            });
+          }
+        }
+
         alert(`✅ Importación completada\n${success} contactos agregados al tablero\n${errors} errores`);
         setShowImportDialog(false);
         setImportFile(null);
         setNewContactCategory('');
-        window.location.reload();
+        setImportContactSegments([]);
+        // ⚡ Recargar contactos sin recargar página
+        loadCRMData();
       } catch (error) {
         console.error('Error importando CSV:', error);
         alert('Error al importar CSV');
@@ -690,11 +790,11 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
   const loadWhatsAppData = async () => {
     try {
       console.log('[CRM] Loading WhatsApp data for sessionId:', sessionId);
-      
+
       // Cargar contactos sincronizados de WhatsApp
       const contactsResponse = await fetch(`${getAPIBaseURL()}/api/contacts/${sessionId}`);
       const contactsData = await contactsResponse.json();
-      
+
       console.log('[CRM] Contacts response:', contactsData);
 
       if (contactsData.success && contactsData.contacts) {
@@ -977,16 +1077,16 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
   };
 
   const filteredContacts = contacts.filter(contact => {
-    const matchesSearch = 
+    const matchesSearch =
       contact.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       contact.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       contact.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
       contact.company?.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     const matchesSegment = selectedSegment === 'all' || contact.tags.includes(selectedSegment);
     const matchesStage = selectedStage === 'all' || contact.stage === selectedStage;
     const matchesAgent = selectedAgent === 'all' || contact.assignedAgent === selectedAgent;
-    
+
     return matchesSearch && matchesSegment && matchesStage && matchesAgent;
   });
 
@@ -1028,8 +1128,8 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Box sx={{ p: 3 }}>
         {/* Header */}
-        <Box sx={{ 
-          mb: 4, 
+        <Box sx={{
+          mb: 4,
           background: 'linear-gradient(135deg, #00a884 0%, #008069 100%)',
           borderRadius: 3,
           p: 3,
@@ -1095,6 +1195,31 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
                   }
                 />
                 <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<Autorenew />}
+                  onClick={async () => {
+                    try {
+                      const response = await fetch(`${getAPIBaseURL()}/api/contacts/sync/${sessionId}`, {
+                        method: 'POST'
+                      });
+                      const data = await response.json();
+                      if (data.success) {
+                        alert(`✅ ${data.count || 0} nuevos contactos sincronizados, ${data.updated || 0} actualizados`);
+                        loadWhatsAppData();
+                      } else {
+                        alert('❌ ' + data.error);
+                      }
+                    } catch (error) {
+                      console.error('Error sincronizando:', error);
+                      alert('❌ Error al sincronizar contactos');
+                    }
+                  }}
+                  sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
+                >
+                  Sincronizar Todo
+                </Button>
+                <Button
                   variant="outlined"
                   size="small"
                   startIcon={<Refresh />}
@@ -1112,7 +1237,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
         {analytics && (
           <Grid container spacing={3} sx={{ mb: 4 }}>
             <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={3} sx={{ 
+              <Card elevation={3} sx={{
                 borderRadius: 3,
                 background: 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)',
                 color: 'white'
@@ -1132,7 +1257,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
               </Card>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={3} sx={{ 
+              <Card elevation={3} sx={{
                 borderRadius: 3,
                 background: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)',
                 color: 'white'
@@ -1152,7 +1277,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
               </Card>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={3} sx={{ 
+              <Card elevation={3} sx={{
                 borderRadius: 3,
                 background: 'linear-gradient(135deg, #ff9800 0%, #f57c00 100%)',
                 color: 'white'
@@ -1172,7 +1297,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
               </Card>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={3} sx={{ 
+              <Card elevation={3} sx={{
                 borderRadius: 3,
                 background: 'linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)',
                 color: 'white'
@@ -1288,178 +1413,178 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
 
         {/* Solo WhatsApp Contactos */}
         <Box>
-            {/* Contactos de WhatsApp sincronizados */}
-            <Grid container spacing={3}>
-              {syncedContacts
-                .filter((contact: any) => {
-                  // Filtro de búsqueda
+          {/* Contactos de WhatsApp sincronizados */}
+          <Grid container spacing={3}>
+            {syncedContacts
+              .filter((contact: any) => {
+                // Filtro de búsqueda
+                const matchesSearch =
+                  (contact.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (contact.jid || '').includes(searchTerm.toLowerCase());
+
+                // Filtro "Solo con nombre" - excluir contactos donde el nombre es solo un número
+                const phoneNumber = contact.jid.split('@')[0];
+                const hasRealName = showOnlyNamed ? (contact.name && contact.name !== phoneNumber && !/^\d+$/.test(contact.name)) : true;
+
+                return matchesSearch && hasRealName;
+              })
+              .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+              .map((contact: any) => (
+                <Grid item xs={12} md={6} lg={4} key={contact.jid}>
+                  <Card elevation={3} sx={{
+                    borderRadius: 3,
+                    transition: 'all 0.3s ease',
+                    border: '2px solid #00a88420',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: '0 12px 30px rgba(0,0,0,0.15)',
+                      borderColor: '#00a884'
+                    }
+                  }}>
+                    <CardContent sx={{ p: 3 }}>
+                      {/* Header del contacto de WhatsApp */}
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <Avatar
+                          src={contact.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${contact.jid}`}
+                          sx={{
+                            width: 56,
+                            height: 56,
+                            mr: 2,
+                            bgcolor: '#00a884'
+                          }}
+                        >
+                          {(contact.name || contact.notify || contact.jid.split('@')[0]).charAt(0).toUpperCase()}
+                        </Avatar>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                            {contact.name || contact.notify || 'Sin nombre'}
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#64748b', mb: 0.5 }}>
+                            {contact.jid.split('@')[0]}
+                          </Typography>
+                          <Chip
+                            icon={<WhatsApp />}
+                            label="WhatsApp"
+                            size="small"
+                            sx={{
+                              bgcolor: '#00a88420',
+                              color: '#00a884',
+                              fontWeight: 600,
+                              fontSize: '0.7rem'
+                            }}
+                          />
+                        </Box>
+                        <IconButton
+                          size="small"
+                          sx={{ ml: 1 }}
+                          onClick={(e) => handleOpenContactMenu(e, contact)}
+                        >
+                          <MoreVert />
+                        </IconButton>
+                      </Box>
+
+                      {/* Estado online */}
+                      {contact.isOnline && (
+                        <Box sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          mb: 2,
+                          p: 1,
+                          borderRadius: 2,
+                          bgcolor: '#e8f5e9'
+                        }}>
+                          <CheckCircle sx={{ fontSize: 16, mr: 1, color: '#4caf50' }} />
+                          <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 600 }}>
+                            En línea
+                          </Typography>
+                        </Box>
+                      )}
+
+                      {/* Información del contacto */}
+                      <Box sx={{ mb: 2, p: 2, borderRadius: 2, bgcolor: '#f8fafc' }}>
+                        <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 0.5 }}>
+                          <strong>JID:</strong> {contact.jid}
+                        </Typography>
+                        {contact.notify && (
+                          <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                            <strong>Notify:</strong> {contact.notify}
+                          </Typography>
+                        )}
+                      </Box>
+
+                      {/* Acciones */}
+                      <Box sx={{ display: 'flex', gap: 1, flexDirection: 'column' }}>
+                        <Button
+                          variant="contained"
+                          size="small"
+                          fullWidth
+                          startIcon={<Folder />}
+                          onClick={() => {
+                            setSelectedContact(contact);
+                            setShowContactDialog(true);
+                          }}
+                          sx={{
+                            bgcolor: '#2196f3',
+                            '&:hover': { bgcolor: '#1976d2' }
+                          }}
+                        >
+                          Agregar a Kanban
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          fullWidth
+                          startIcon={<WhatsApp />}
+                          sx={{
+                            borderColor: '#00a884',
+                            color: '#00a884',
+                            '&:hover': {
+                              borderColor: '#008069',
+                              bgcolor: '#00a88410'
+                            }
+                          }}
+                        >
+                          Chatear
+                        </Button>
+                        <IconButton
+                          size="small"
+                          sx={{
+                            border: '1px solid #e0e0e0',
+                            borderRadius: 1
+                          }}
+                        >
+                          <Visibility />
+                        </IconButton>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+          </Grid>
+
+          {/* Paginación */}
+          {syncedContacts.length > 0 && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+              <TablePagination
+                component="div"
+                count={syncedContacts.filter((contact: any) => {
                   const matchesSearch =
                     (contact.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                     (contact.jid || '').includes(searchTerm.toLowerCase());
-
-                  // Filtro "Solo con nombre" - excluir contactos donde el nombre es solo un número
                   const phoneNumber = contact.jid.split('@')[0];
                   const hasRealName = showOnlyNamed ? (contact.name && contact.name !== phoneNumber && !/^\d+$/.test(contact.name)) : true;
-
                   return matchesSearch && hasRealName;
-                })
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((contact: any) => (
-                  <Grid item xs={12} md={6} lg={4} key={contact.jid}>
-                    <Card elevation={3} sx={{
-                      borderRadius: 3,
-                      transition: 'all 0.3s ease',
-                      border: '2px solid #00a88420',
-                      '&:hover': {
-                        transform: 'translateY(-4px)',
-                        boxShadow: '0 12px 30px rgba(0,0,0,0.15)',
-                        borderColor: '#00a884'
-                      }
-                    }}>
-                      <CardContent sx={{ p: 3 }}>
-                        {/* Header del contacto de WhatsApp */}
-                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                          <Avatar
-                            src={contact.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${contact.jid}`}
-                            sx={{
-                              width: 56,
-                              height: 56,
-                              mr: 2,
-                              bgcolor: '#00a884'
-                            }}
-                          >
-                            {(contact.name || contact.notify || contact.jid.split('@')[0]).charAt(0).toUpperCase()}
-                          </Avatar>
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
-                              {contact.name || contact.notify || 'Sin nombre'}
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: '#64748b', mb: 0.5 }}>
-                              {contact.jid.split('@')[0]}
-                            </Typography>
-                            <Chip
-                              icon={<WhatsApp />}
-                              label="WhatsApp"
-                              size="small"
-                              sx={{
-                                bgcolor: '#00a88420',
-                                color: '#00a884',
-                                fontWeight: 600,
-                                fontSize: '0.7rem'
-                              }}
-                            />
-                          </Box>
-                          <IconButton 
-                            size="small" 
-                            sx={{ ml: 1 }}
-                            onClick={(e) => handleOpenContactMenu(e, contact)}
-                          >
-                            <MoreVert />
-                          </IconButton>
-                        </Box>
-
-                        {/* Estado online */}
-                        {contact.isOnline && (
-                          <Box sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            mb: 2,
-                            p: 1,
-                            borderRadius: 2,
-                            bgcolor: '#e8f5e9'
-                          }}>
-                            <CheckCircle sx={{ fontSize: 16, mr: 1, color: '#4caf50' }} />
-                            <Typography variant="caption" sx={{ color: '#4caf50', fontWeight: 600 }}>
-                              En línea
-                            </Typography>
-                          </Box>
-                        )}
-
-                        {/* Información del contacto */}
-                        <Box sx={{ mb: 2, p: 2, borderRadius: 2, bgcolor: '#f8fafc' }}>
-                          <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 0.5 }}>
-                            <strong>JID:</strong> {contact.jid}
-                          </Typography>
-                          {contact.notify && (
-                            <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
-                              <strong>Notify:</strong> {contact.notify}
-                            </Typography>
-                          )}
-                        </Box>
-
-                        {/* Acciones */}
-                        <Box sx={{ display: 'flex', gap: 1, flexDirection: 'column' }}>
-                          <Button
-                            variant="contained"
-                            size="small"
-                            fullWidth
-                            startIcon={<Folder />}
-                            onClick={() => {
-                              setSelectedContact(contact);
-                              setShowContactDialog(true);
-                            }}
-                            sx={{
-                              bgcolor: '#2196f3',
-                              '&:hover': { bgcolor: '#1976d2' }
-                            }}
-                          >
-                            Agregar a Kanban
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            fullWidth
-                            startIcon={<WhatsApp />}
-                            sx={{
-                              borderColor: '#00a884',
-                              color: '#00a884',
-                              '&:hover': { 
-                                borderColor: '#008069',
-                                bgcolor: '#00a88410'
-                              }
-                            }}
-                          >
-                            Chatear
-                          </Button>
-                          <IconButton
-                            size="small"
-                            sx={{
-                              border: '1px solid #e0e0e0',
-                              borderRadius: 1
-                            }}
-                          >
-                            <Visibility />
-                          </IconButton>
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                ))}
-            </Grid>
-
-            {/* Paginación */}
-            {syncedContacts.length > 0 && (
-              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-                <TablePagination
-                  component="div"
-                  count={syncedContacts.filter((contact: any) => {
-                    const matchesSearch =
-                      (contact.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      (contact.jid || '').includes(searchTerm.toLowerCase());
-                    const phoneNumber = contact.jid.split('@')[0];
-                    const hasRealName = showOnlyNamed ? (contact.name && contact.name !== phoneNumber && !/^\d+$/.test(contact.name)) : true;
-                    return matchesSearch && hasRealName;
-                  }).length}
-                  page={page}
-                  onPageChange={handleChangePage}
-                  rowsPerPage={rowsPerPage}
-                  onRowsPerPageChange={handleChangeRowsPerPage}
-                  rowsPerPageOptions={[12, 24, 48, 96]}
-                  labelRowsPerPage="Contactos por página:"
-                  labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
-                />
-              </Box>
-            )}
+                }).length}
+                page={page}
+                onPageChange={handleChangePage}
+                rowsPerPage={rowsPerPage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+                rowsPerPageOptions={[12, 24, 48, 96]}
+                labelRowsPerPage="Contactos por página:"
+                labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+              />
+            </Box>
+          )}
         </Box>
       </Box>
 
@@ -1741,7 +1866,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
 
       {/* Dialogs */}
       <Dialog
-        open={showSegmentDialog} 
+        open={showSegmentDialog}
         onClose={handleCloseSegmentDialog}
         maxWidth="sm"
         fullWidth
@@ -1783,8 +1908,8 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
           <Button onClick={handleCloseSegmentDialog}>
             Cancelar
           </Button>
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             onClick={handleSaveSegment}
             disabled={!newSegmentName.trim()}
           >
@@ -1807,14 +1932,15 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
 
       {/* Diálogo para editar contacto */}
       {/* Dialog para crear nuevo contacto CRM */}
-      <Dialog 
-        open={showContactDialog} 
+      <Dialog
+        open={showContactDialog}
         onClose={() => {
           setShowContactDialog(false);
           setSelectedContact(null);
           setNewContactName('');
           setNewContactPhone('');
           setNewContactCategory('');
+          setNewContactSegments([]);
         }}
         maxWidth="sm"
         fullWidth
@@ -1882,6 +2008,28 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
                 ))}
               </Select>
             </FormControl>
+            <FormControl fullWidth>
+              <InputLabel>Grupos (Segmentos)</InputLabel>
+              <Select
+                multiple
+                value={newContactSegments}
+                label="Grupos (Segmentos)"
+                onChange={(e) => setNewContactSegments(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip key={value} label={segments.find(s => s.id === value)?.name || value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
+                {segments.map((segment) => (
+                  <MenuItem key={segment.id} value={segment.id}>
+                    {segment.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Box>
         </DialogContent>
         <DialogActions>
@@ -1891,6 +2039,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
             setNewContactName('');
             setNewContactPhone('');
             setNewContactCategory('');
+            setNewContactSegments([]);
           }}>Cancelar</Button>
           <Button variant="contained" onClick={handleSaveNewContact}>
             {selectedContact ? 'Agregar' : 'Guardar'}
@@ -1899,12 +2048,13 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
       </Dialog>
 
       {/* Dialog para importar CSV */}
-      <Dialog 
-        open={showImportDialog} 
+      <Dialog
+        open={showImportDialog}
         onClose={() => {
           setShowImportDialog(false);
           setImportFile(null);
           setNewContactCategory('');
+          setImportContactSegments([]);
         }}
         maxWidth="sm"
         fullWidth
@@ -1918,14 +2068,14 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
             <Typography variant="caption" color="text.secondary">
               Ejemplo: Juan Perez,595123456789
             </Typography>
-            
+
             <input
               type="file"
               accept=".csv"
               onChange={(e) => setImportFile(e.target.files?.[0] || null)}
               style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
             />
-            
+
             {importFile && (
               <Typography variant="caption" sx={{ display: 'block', color: 'success.main' }}>
                 ✓ Archivo: {importFile.name}
@@ -1962,6 +2112,29 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
               </Select>
             </FormControl>
 
+            <FormControl fullWidth>
+              <InputLabel>Grupos (Segmentos)</InputLabel>
+              <Select
+                multiple
+                value={importContactSegments}
+                label="Grupos (Segmentos)"
+                onChange={(e) => setImportContactSegments(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip key={value} label={segments.find(s => s.id === value)?.name || value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
+                {segments.map((segment) => (
+                  <MenuItem key={segment.id} value={segment.id}>
+                    {segment.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
             <Typography variant="caption" color="info.main" sx={{ display: 'block', mt: 1 }}>
               💡 Todos los contactos se agregarán al tablero seleccionado
             </Typography>
@@ -1972,10 +2145,11 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
             setShowImportDialog(false);
             setImportFile(null);
             setNewContactCategory('');
+            setImportContactSegments([]);
           }}>Cancelar</Button>
-          <Button 
-            variant="contained" 
-            onClick={handleImportCSV} 
+          <Button
+            variant="contained"
+            onClick={handleImportCSV}
             disabled={!importFile || !newContactCategory}
           >
             Importar
@@ -1983,8 +2157,8 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
         </DialogActions>
       </Dialog>
 
-      <Dialog 
-        open={editContactDialog} 
+      <Dialog
+        open={editContactDialog}
         onClose={handleCloseEditContactDialog}
         maxWidth="sm"
         fullWidth
@@ -2010,14 +2184,110 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
               disabled
               helperText="El número no se puede modificar"
             />
+
+            <FormControl fullWidth sx={{ mt: 2 }}>
+              <InputLabel>Tablero Kanban</InputLabel>
+              <Select
+                value={editContactCategory}
+                label="Tablero Kanban"
+                onChange={(e) => setEditContactCategory(e.target.value)}
+              >
+                {crmCategories.map((board: any) => (
+                  <MenuItem key={board.id} value={board.id}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box
+                        sx={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          bgcolor: board.color || '#999'
+                        }}
+                      />
+                      {board.name}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth sx={{ mt: 2 }}>
+              <InputLabel>Grupos (Segmentos)</InputLabel>
+              <Select
+                multiple
+                value={editContactSegments}
+                label="Grupos (Segmentos)"
+                onChange={(e) => setEditContactSegments(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip key={value} label={segments.find(s => s.id === value)?.name || value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
+                {segments.map((segment) => (
+                  <MenuItem key={segment.id} value={segment.id}>
+                    {segment.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth sx={{ mt: 2 }}>
+              <InputLabel>Tablero Kanban</InputLabel>
+              <Select
+                value={editContactCategory}
+                label="Tablero Kanban"
+                onChange={(e) => setEditContactCategory(e.target.value)}
+              >
+                {crmCategories.map((board: any) => (
+                  <MenuItem key={board.id} value={board.id}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box
+                        sx={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          bgcolor: board.color || '#999'
+                        }}
+                      />
+                      {board.name}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl fullWidth sx={{ mt: 2 }}>
+              <InputLabel>Grupos (Segmentos)</InputLabel>
+              <Select
+                multiple
+                value={editContactSegments}
+                label="Grupos (Segmentos)"
+                onChange={(e) => setEditContactSegments(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                renderValue={(selected) => (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {selected.map((value) => (
+                      <Chip key={value} label={segments.find(s => s.id === value)?.name || value} size="small" />
+                    ))}
+                  </Box>
+                )}
+              >
+                {segments.map((segment) => (
+                  <MenuItem key={segment.id} value={segment.id}>
+                    {segment.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseEditContactDialog}>
             Cancelar
           </Button>
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             onClick={handleSaveContactEdit}
             disabled={!editContactName.trim()}
           >

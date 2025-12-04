@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, ReactNode } from 'react';
-import { io } from 'socket.io-client';
 import { getSocketURL, getAPIBaseURL } from '../utils/socketConfig';
+import { useSocket } from './SocketContext';
 
 declare global {
   interface Window {
@@ -264,6 +264,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   const [replyMessage, setReplyMessage] = useState<WhatsAppMessage | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
 
+  const { socket, isConnected: isSocketConnected } = useSocket();
+
   const API_BASE = getAPIBaseURL();
 
   // Actualizar refs cuando cambian los estados
@@ -460,143 +462,111 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     }
   }, [loadChats, API_BASE]);
 
+  // Efecto para manejar eventos del socket compartido
   useEffect(() => {
-    if (session?.sessionId) {
-      console.log('Conectando socket para sessionId:', session.sessionId);
-      const socketURL = getSocketURL();
-      console.log('URL del socket:', socketURL);
-      const newSocket = io(socketURL, { query: { sessionId: session.sessionId } });
+    if (!socket || !session?.sessionId) return;
 
-      newSocket.on('connect', () => {
-        console.log('Socket conectado en WhatsAppContext:', newSocket.id);
-        // Unirse al room de la sesión
-        newSocket.emit('join-session', session.sessionId);
-        // Registrar momento de conexión para filtrar mensajes antiguos
-        connectedAtRef.current = Date.now();
-        setConnectionStatus('connected');
-      });
+    console.log('🔄 [WhatsAppContext] Configurando listeners en socket compartido for session:', session.sessionId);
 
-      newSocket.on('joined-session', (data: any) => {
-        console.log('✅ Unido exitosamente a la sesión:', data);
-      });
+    // Si el socket ya está conectado, actualizar estado
+    if (isSocketConnected) {
+      setConnectionStatus('connected');
+      // Asegurar que estamos en la sala correcta
+      socket.emit('join-session', { sessionId: session.sessionId });
+    }
 
-      newSocket.on('disconnect', (reason: string) => {
-        console.log('Socket desconectado en WhatsAppContext, razón:', reason);
-        // Solo cambiar el estado a desconectado, no eliminar la sesión
-        setConnectionStatus('disconnected');
-      });
+    const handleConnect = () => {
+      console.log('✅ [WhatsAppContext] Socket conectado');
+      setConnectionStatus('connected');
+      if (session?.sessionId) {
+        socket.emit('join-session', { sessionId: session.sessionId });
+      }
+      connectedAtRef.current = Date.now();
+    };
 
-      newSocket.on('connect_error', (error: Error) => {
-        console.error('Error de conexión del socket:', error);
-        setConnectionStatus('error');
-      });
+    const handleDisconnect = (reason: string) => {
+      console.log('❌ [WhatsAppContext] Socket desconectado:', reason);
+      setConnectionStatus('disconnected');
+    };
 
-      newSocket.on('reconnect', (attemptNumber: number) => {
-        console.log('Reconexión exitosa después de', attemptNumber, 'intentos');
-        setConnectionStatus('connected');
-      });
+    const handleConnectError = (err: any) => {
+      console.error('⚠️ [WhatsAppContext] Error de conexión:', err);
+      setConnectionStatus('error');
+    };
 
-      newSocket.on('reconnect_attempt', (attemptNumber: number) => {
-        console.log('Intentando reconexión #', attemptNumber);
-      });
+    const handleJoinedSession = (data: any) => {
+      console.log('✅ [WhatsAppContext] Unido a sesión:', data);
+    };
 
-      newSocket.on('reconnect_error', (error: Error) => {
-        console.error('Error en intento de reconexión:', error);
-      });
+    const handleIncomingCall = (call: Call) => {
+      setActiveCall(call);
+    };
 
-      newSocket.on('reconnect_failed', () => {
-        console.error('Reconexión fallida, se perdió la conexión con el servidor');
-        setConnectionStatus('error');
-      });
+    const handleMessageStatusUpdate = ({ id, status }: { id: string; status: string }) => {
+      console.log('📊 [WhatsAppContext] Estado mensaje actualizado:', id, status);
+      setMessages(prev =>
+        prev.map(msg => (msg.id === id ? { ...msg, status: status as 'sending' | 'sent' | 'delivered' | 'read' } : msg))
+      );
+    };
 
-      newSocket.on('incoming-call', (call: Call) => {
-        setActiveCall(call);
-      });
+    const handleMessage = (newMessage: WhatsAppMessage) => {
+      // ⚡ OPTIMIZACIÓN: Normalizar chatJid de forma más eficiente
+      const rawChatJid = newMessage.chatJid || (newMessage as any).chat_jid || newMessage.to || newMessage.from;
+      const normalizedChatJid = rawChatJid?.includes('@') ? rawChatJid : `${rawChatJid}@s.whatsapp.net`;
 
-      newSocket.on('message-status-update', ({ id, status }: { id: string; status: string }) => {
-        console.log('Actualización de estado de mensaje:', id, status);
-        setMessages(prev =>
-          prev.map(msg => (msg.id === id ? { ...msg, status: status as 'sending' | 'sent' | 'delivered' | 'read' } : msg))
-        );
-      });
+      // ⚡ OPTIMIZACIÓN: Mapear mensaje con operaciones mínimas
+      const mappedMessage: WhatsAppMessage = {
+        ...newMessage,
+        message: newMessage.message || newMessage.text || '',
+        text: newMessage.message || newMessage.text || '',
+        chatJid: normalizedChatJid,
+        isFromMe: Boolean((newMessage as any).from_me || newMessage.isFromMe),
+        agent_id: (newMessage as any).agent_id,
+        agent_name: (newMessage as any).agent_name
+      };
 
-      // ✅ ELIMINADO: setInterval de polling - Ahora TODO es en tiempo real con Socket.IO
-      // Los chats se actualizan automáticamente cuando llegan mensajes nuevos
-      // Los estados se actualizan con eventos 'message-status-update'
-      // La sincronización inicial se hace con 'sync-complete'
-      console.log('🚀 [OPTIMIZACIÓN] Sistema 100% en tiempo real - Sin polling');
+      // ⚡ OPTIMIZACIÓN: Notificaciones asíncronas con requestIdleCallback
+      if (!mappedMessage.isFromMe) {
+        const scheduleNotification = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 0));
+        scheduleNotification(() => {
+          // Buscar chat de forma más eficiente
+          const chat = chatsRef.current.find(c => c.id === mappedMessage.chatJid);
+          const senderName = chat?.name || mappedMessage.from?.split('@')[0] || 'Contacto';
+          const messagePreview = mappedMessage.message || 'Nuevo mensaje multimedia';
 
-      // LOG DE DEBUG: Capturar TODOS los eventos para debugging
-      newSocket.onAny((eventName: string, ...args: any[]) => {
-        console.log(`🔔 [SOCKET-EVENT] Evento recibido: ${eventName}`, args);
-        if (eventName === 'message') {
-          console.log(`%c📨 EVENTO MESSAGE DETECTADO`, 'background: #ff0000; color: white; font-size: 16px; padding: 5px;', args);
-        }
-      });
-
-      newSocket.on('message', (newMessage: WhatsAppMessage) => {
-        // ⚡ OPTIMIZACIÓN: Reducir logs para mejorar rendimiento
-        const DEBUG = false; // Cambiar a true solo para debugging
-        if (DEBUG) {
-          console.log('📨 Mensaje recibido:', newMessage.id?.substring(0, 20));
-        }
-
-        // Normalizar chatJid - puede venir en diferentes formatos
-        const rawChatJid = newMessage.chatJid || (newMessage as any).chat_jid || newMessage.to || newMessage.from;
-        const normalizedChatJid = rawChatJid?.includes('@') ? rawChatJid : `${rawChatJid}@s.whatsapp.net`;
-
-        // Mapear el mensaje correctamente
-        const mappedMessage: WhatsAppMessage = {
-          ...newMessage,
-          message: newMessage.message || newMessage.text || '',
-          text: newMessage.message || newMessage.text || '',
-          chatJid: normalizedChatJid,
-          isFromMe: Boolean((newMessage as any).from_me || newMessage.isFromMe),
-          agent_id: (newMessage as any).agent_id,  // 🔥 Incluir ID del agente
-          agent_name: (newMessage as any).agent_name  // 🔥 Incluir nombre del agente
-        };
-
-        // ⚡ OPTIMIZACIÓN: Notificaciones en requestIdleCallback para no bloquear UI
-        if (!mappedMessage.isFromMe) {
-          // Usar requestIdleCallback o setTimeout como fallback
-          const scheduleNotification = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 1));
-          scheduleNotification(() => {
-            const chat = chatsRef.current.find(c => c.id === mappedMessage.chatJid);
-            const senderName = chat?.name || mappedMessage.from?.split('@')[0] || 'Contacto';
-            const messagePreview = mappedMessage.message || 'Nuevo mensaje multimedia';
-
-            showBrowserNotification({
-              title: `💬 ${senderName}`,
-              body: messagePreview.length > 50 ? messagePreview.substring(0, 50) + '...' : messagePreview,
-              icon: chat?.avatar || '/favicon.ico',
-              tag: `chat-${mappedMessage.chatJid}`,
-              requireInteraction: false,
-              silent: false
-            });
-
-            // Actualizar contador en el título
-            const currentTitle = document.title;
-            if (!currentTitle.startsWith('(')) {
-              const unreadCount = chatsRef.current.reduce((total, c) => total + (c.unreadCount || 0), 0) + 1;
-              document.title = `(${unreadCount}) ${currentTitle}`;
-            }
+          showBrowserNotification({
+            title: `💬 ${senderName}`,
+            body: messagePreview.length > 50 ? messagePreview.substring(0, 50) + '...' : messagePreview,
+            icon: chat?.avatar || '/favicon.ico',
+            tag: `chat-${mappedMessage.chatJid}`,
+            requireInteraction: false,
+            silent: false
           });
-        }
 
-        // Actualizar mensajes solo si es del chat activo
-        const isActiveChat = activeChatRef.current && mappedMessage.chatJid && (
-          mappedMessage.chatJid === activeChatRef.current.id ||
-          mappedMessage.chatJid.split('@')[0] === activeChatRef.current.id.split('@')[0]
-        );
+          // ⚡ Actualizar título solo si es necesario
+          const currentTitle = document.title;
+          if (!currentTitle.startsWith('(')) {
+            const unreadCount = chatsRef.current.reduce((total, c) => total + (c.unreadCount || 0), 0) + 1;
+            document.title = `(${unreadCount}) ${currentTitle}`;
+          }
+        }, { timeout: 2000 }); // Timeout de 2 segundos para idle callback
+      }
 
-        if (isActiveChat) {
+      // ⚡ OPTIMIZACIÓN: Actualizar mensajes del chat activo de forma más eficiente
+      const isActiveChat = activeChatRef.current && mappedMessage.chatJid && (
+        mappedMessage.chatJid === activeChatRef.current.id ||
+        mappedMessage.chatJid.split('@')[0] === activeChatRef.current.id.split('@')[0]
+      );
+
+      if (isActiveChat) {
+        // ⚡ Usar requestAnimationFrame para actualizaciones del DOM
+        requestAnimationFrame(() => {
           setMessages(prev => {
-            // ⚡ OPTIMIZACIÓN: Búsqueda directa sin crear Set (más rápido para pocos mensajes)
-            const isDuplicate = prev.some(msg => msg.id === mappedMessage.id);
-            if (isDuplicate) return prev;
+            // ⚡ Verificación de duplicados más eficiente
+            if (prev.some(msg => msg.id === mappedMessage.id)) return prev;
 
-            // Para mensajes propios, buscar y reemplazar temporales
             if (mappedMessage.isFromMe) {
+              // ⚡ Buscar mensaje temporal de forma más eficiente
               const tempMessageIndex = prev.findIndex(msg =>
                 msg.id.startsWith('temp-') &&
                 msg.message === mappedMessage.message &&
@@ -611,138 +581,108 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
               }
             }
 
-            // ⚡ OPTIMIZACIÓN: Agregar al final sin ordenar si el timestamp es reciente
-            // Solo ordenar si el mensaje no está al final (caso raro)
+            // ⚡ Optimización: agregar al final si es el más reciente (caso más común)
             const lastTimestamp = prev.length > 0 ? new Date(prev[prev.length - 1].timestamp).getTime() : 0;
             const newTimestamp = new Date(mappedMessage.timestamp).getTime();
 
             if (newTimestamp >= lastTimestamp) {
-              // Caso normal: mensaje nuevo va al final
               return [...prev, mappedMessage];
             } else {
-              // Caso raro: mensaje antiguo, necesita ordenar
+              // Solo ordenar si el mensaje es más antiguo
               return [...prev, mappedMessage].sort((a, b) =>
                 new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
               );
             }
           });
 
-          // ⚡ OPTIMIZACIÓN: Scroll en requestIdleCallback
-          const scheduleScroll = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 1));
+          // ⚡ Scroll programado de forma eficiente
+          const scheduleScroll = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 0));
           scheduleScroll(() => {
             const messagesContainer = document.querySelector('[data-messages-container]');
             if (messagesContainer) {
               messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
-          });
-        }
-
-        // Actualizar lista de chats
-        setChats(prev => {
-          let chatExists = false;
-          let chatIndex = -1;
-
-          // ⚡ OPTIMIZACIÓN: Búsqueda única y actualización en un solo paso
-          for (let i = 0; i < prev.length; i++) {
-            if (prev[i].id === mappedMessage.chatJid) {
-              chatExists = true;
-              chatIndex = i;
-              break;
-            }
-          }
-
-          if (chatExists && chatIndex !== -1) {
-            // Chat existe, actualizar sin reordenar todos
-            const chat = prev[chatIndex];
-            const isChatCurrentlyActive = activeChatRef.current?.id === chat.id;
-            const msgTime = new Date(mappedMessage.timestamp || Date.now()).getTime();
-            const isRecent = msgTime >= (connectedAtRef.current - 5000);
-            const shouldIncrementUnread = !mappedMessage.isFromMe && !isChatCurrentlyActive && isRecent;
-
-            const updatedChat = {
-              ...chat,
-              lastMessage: mappedMessage.message,
-              timestamp: mappedMessage.timestamp,
-              unreadCount: shouldIncrementUnread ? (chat.unreadCount || 0) + 1 : (chat.unreadCount || 0)
-            };
-
-            // ⚡ OPTIMIZACIÓN: Mover al inicio sin reordenar todo el array
-            return [updatedChat, ...prev.slice(0, chatIndex), ...prev.slice(chatIndex + 1)];
-          } else if (mappedMessage.chatJid) {
-            // Chat nuevo, verificar si es el propio número
-            const currentPhoneNumber = session?.sessionId?.split(':')[0];
-            const chatNumber = mappedMessage.chatJid.split('@')[0].split(':')[0];
-
-            if (currentPhoneNumber && chatNumber === currentPhoneNumber) {
-              return prev;
-            }
-
-            const msgTime = new Date(mappedMessage.timestamp || Date.now()).getTime();
-            const isRecent = msgTime >= (connectedAtRef.current - 5000);
-            const newChat: WhatsAppChat = {
-              id: mappedMessage.chatJid,
-              name: mappedMessage.from?.split('@')[0] || (mappedMessage.chatJid?.split('@')[0] || 'Desconocido'),
-              isGroup: mappedMessage.chatJid.includes('@g.us'),
-              lastMessage: mappedMessage.message,
-              timestamp: mappedMessage.timestamp,
-              isOnline: !mappedMessage.chatJid.includes('@g.us'),
-              unreadCount: mappedMessage.isFromMe ? 0 : (isRecent ? 1 : 0),
-              avatar: undefined
-            };
-
-            // Agregar al inicio sin reordenar
-            return [newChat, ...prev];
-          }
-
-          return prev;
+          }, { timeout: 1000 });
         });
-      });
+      }
 
-      // Listener para actualizaciones de estado de mensaje (✓ ✓✓)
-      newSocket.on('message-status-update', (update: any) => {
-        // ✅ CORRECCIÓN: TODOS los usuarios deben procesar actualizaciones de estado
-        console.log('📬 Actualización de estado recibida:', update);
-        const { messageId, id, status, chatJid } = update;
-        const msgId = messageId || id;
+      // ⚡ OPTIMIZACIÓN: Actualizar lista de chats de forma más eficiente
+      setChats(prev => {
+        // ⚡ Buscar chat de forma más eficiente con findIndex
+        const chatIndex = prev.findIndex(c => c.id === mappedMessage.chatJid);
 
-        if (msgId && status) {
-          // Actualizar estado del mensaje en la lista de mensajes actual
-          setMessages(prevMessages =>
-            prevMessages.map(msg =>
-              msg.id === msgId ? { ...msg, status } : msg
-            )
-          );
+        if (chatIndex !== -1) {
+          const chat = prev[chatIndex];
+          const isChatCurrentlyActive = activeChatRef.current?.id === chat.id;
+          const msgTime = new Date(mappedMessage.timestamp || Date.now()).getTime();
+          const isRecent = msgTime >= (connectedAtRef.current - 5000);
+          const shouldIncrementUnread = !mappedMessage.isFromMe && !isChatCurrentlyActive && isRecent;
 
-          console.log(`✅ Estado de mensaje ${msgId} actualizado a: ${status}`);
+          const updatedChat = {
+            ...chat,
+            lastMessage: mappedMessage.message,
+            timestamp: mappedMessage.timestamp,
+            unreadCount: shouldIncrementUnread ? (chat.unreadCount || 0) + 1 : (chat.unreadCount || 0)
+          };
+
+          // ⚡ Usar splice en lugar de slice para mejor rendimiento
+          const newChats = [...prev];
+          newChats.splice(chatIndex, 1);
+          return [updatedChat, ...newChats];
+        } else if (mappedMessage.chatJid) {
+          const currentPhoneNumber = session?.sessionId?.split(':')[0];
+          const chatNumber = mappedMessage.chatJid.split('@')[0].split(':')[0];
+
+          if (currentPhoneNumber && chatNumber === currentPhoneNumber) {
+            return prev;
+          }
+
+          const msgTime = new Date(mappedMessage.timestamp || Date.now()).getTime();
+          const isRecent = msgTime >= (connectedAtRef.current - 5000);
+          const newChat: WhatsAppChat = {
+            id: mappedMessage.chatJid,
+            name: mappedMessage.from?.split('@')[0] || (mappedMessage.chatJid?.split('@')[0] || 'Desconocido'),
+            isGroup: mappedMessage.chatJid.includes('@g.us'),
+            lastMessage: mappedMessage.message,
+            timestamp: mappedMessage.timestamp,
+            isOnline: !mappedMessage.chatJid.includes('@g.us'),
+            unreadCount: mappedMessage.isFromMe ? 0 : (isRecent ? 1 : 0),
+            avatar: undefined
+          };
+
+          return [newChat, ...prev];
         }
+        return prev;
       });
-
-      // Nuevo evento: sync-complete - se emite cuando se completa la sincronización
-      newSocket.on('sync-complete', (data: any) => {
-        // ✅ CORRECCIÓN: TODOS los usuarios deben procesar eventos de sincronización
-        console.log('🔄 Sincronización completa recibida:', data);
-        if (data?.success) {
-          console.log(`✅ Sincronización exitosa: ${data.chatCount} chats`);
-          // NO recargar chats automáticamente - los mensajes ya llegan via socket
-          console.log('📡 Chats se actualizan en tiempo real via socket');
-        } else if (data?.error) {
-          console.error('❌ Error en la sincronización:', data.error);
-        } else {
-          console.warn('⚠️ sync-complete recibido sin success ni error definido');
-        }
-      });
-
-      return () => {
-        console.log('Desconectando socket en WhatsAppContext');
-        // ✅ ELIMINADO: clearInterval(syncInterval) - Ya no hay polling
-        newSocket.disconnect();
-      };
-    }
-
-    return () => {
-      // Cleanup por defecto si no hay sessionId
     };
-  }, [session?.sessionId, loadChats]); // Solo reconectar cuando cambia la sesión, NO cuando cambia el chat activo
+
+    const handleSyncComplete = (data: any) => {
+      console.log('🔄 [WhatsAppContext] Sincronización completa:', data);
+    };
+
+    // Registrar listeners
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+    socket.on('joined-session', handleJoinedSession);
+    socket.on('incoming-call', handleIncomingCall);
+    socket.on('message-status-update', handleMessageStatusUpdate);
+    socket.on('message', handleMessage);
+    socket.on('sync-complete', handleSyncComplete);
+
+    // Cleanup
+    return () => {
+      console.log('🧹 [WhatsAppContext] Limpiando listeners de socket');
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+      socket.off('joined-session', handleJoinedSession);
+      socket.off('incoming-call', handleIncomingCall);
+      socket.off('message-status-update', handleMessageStatusUpdate);
+      socket.off('message', handleMessage);
+      socket.off('sync-complete', handleSyncComplete);
+    };
+  }, [socket, session?.sessionId, isSocketConnected]); // Solo reconectar cuando cambia la sesión, NO cuando cambia el chat activo
 
   const rejectCall = async (callId: string) => {
     if (!session?.sessionId) return;
@@ -793,12 +733,12 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       lastActivity: new Date().toISOString()
     };
     setSession(newSession);
-    
+
     // 🔒 SEGURIDAD: NO guardar automáticamente el sessionId aquí
     // Solo debe guardarse cuando el usuario EXPLÍCITAMENTE inicia sesión
     // Esta función puede ser llamada desde eventos de Socket.IO sin autenticación
     // sessionStorage.setItem('whatsflow_session', sessionId);
-    
+
     loadChats(sessionId);
   };
 
@@ -826,11 +766,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       setMessages([]);
       setIsLoading(true);
 
-      console.log(`🔄 [OPTIMIZADO] Cargando mensajes del día (${dateFilter}) para chat: ${chatId}`);
+      console.log(`🔄 [OPTIMIZADO] Cargando últimos 25 mensajes (${dateFilter}) para chat: ${chatId}`);
 
-      // ⚡ OPTIMIZACIÓN: Solo cargar mensajes del día actual por defecto
-      // Para ver mensajes antiguos, usar filtros manuales
-      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=10000`);
+      // ⚡ OPTIMIZACIÓN: Solo cargar últimos 25 mensajes por defecto para mejorar rendimiento
+      // Mensajes nuevos se agregan automáticamente en tiempo real vía Socket.IO
+      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=25`);
       const data = await response.json();
 
       if (data.success && data.messages) {

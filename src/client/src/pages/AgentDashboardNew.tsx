@@ -182,10 +182,10 @@ const AgentDashboardNew: React.FC = () => {
     if (selectedChat && sessionId) {
       setLoading(true);
       loadMessages().then(() => setLoading(false));
-      
-      // Configurar intervalo de recarga cada 5 segundos
-      messageLoadIntervalRef.current = setInterval(loadMessages, 5000);
-      
+
+      // ⚡ OPTIMIZACIÓN: Polling desactivado - Socket.IO maneja actualizaciones en tiempo real
+      // messageLoadIntervalRef.current = setInterval(loadMessages, 5000);
+
       return () => {
         if (messageLoadIntervalRef.current) {
           clearInterval(messageLoadIntervalRef.current);
