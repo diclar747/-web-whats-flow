@@ -169,7 +169,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   const { toggleTheme, isDarkMode } = useTheme();
   const { hasModuleAccess, userRole: permUserRole } = usePermissions();
   const [drawerOpen, setDrawerOpen] = useState(true);
-  const [drawerMinimized, setDrawerMinimized] = useState(true);
+  const [drawerMinimized, setDrawerMinimized] = useState(false); // false = maximizado por defecto
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   // Calcular notificaciones dinámicamente desde chats con mensajes no leídos
   const notifications = useMemo(() => {
@@ -177,6 +177,18 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   }, [chats]);
   const [whatsappStatus, setWhatsappStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [lastConnectionCheck, setLastConnectionCheck] = useState(new Date());
+  
+  // Estado de sincronización
+  const [syncProgress, setSyncProgress] = useState<{
+    status: 'idle' | 'syncing' | 'completed';
+    percentage: number;
+    message: string;
+  }>({
+    status: 'idle',
+    percentage: 0,
+    message: ''
+  });
+  
   const [userProfilePic, setUserProfilePic] = useState<string | null>(null);
   const [userPhoneNumber, setUserPhoneNumber] = useState<string | null>(null);
   const [sessionValid, setSessionValid] = useState<boolean | null>(null);
@@ -694,6 +706,23 @@ useEffect(() => {
   socket.on(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
   socket.on('auth_token', handleAuthToken);
   socket.on('agent-force-logout', handleAgentForceLogout);
+  
+  // Listener para progreso de sincronización
+  socket.on('sync-progress', (data: any) => {
+    console.log('📊 Progreso de sincronización:', data);
+    setSyncProgress({
+      status: data.status,
+      percentage: data.percentage,
+      message: data.message
+    });
+    
+    // Auto-ocultar después de completar
+    if (data.status === 'completed') {
+      setTimeout(() => {
+        setSyncProgress({ status: 'idle', percentage: 0, message: '' });
+      }, 3000);
+    }
+  });
 
   console.log(`[SOCKET] ✅ Escuchando actualizaciones en tiempo real para sesión: ${sessionId}`);
 
@@ -706,6 +735,7 @@ useEffect(() => {
     socket.off(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
     socket.off('auth_token', handleAuthToken);
     socket.off('agent-force-logout', handleAgentForceLogout);
+    socket.off('sync-progress');
     // NO desconectar el socket, es compartido globalmente
   };
 }, [socket, isConnected, sessionId, handleStatsUpdate, handleConnectionUpdate, handleSessionLoggedOut, handleAuthToken, handleAgentForceLogout]);
@@ -966,6 +996,27 @@ return (
               />
             </Tooltip>
 
+            {/* Indicador de sincronización */}
+            {syncProgress.status !== 'idle' && (
+              <Tooltip title={syncProgress.message}>
+                <Chip
+                  icon={<CircularProgress size={16} color="inherit" />}
+                  label={`Sincronizando ${syncProgress.percentage}%`}
+                  size="small"
+                  color="primary"
+                  sx={{
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    height: 28,
+                    animation: syncProgress.status === 'syncing' ? 'pulse 1.5s ease-in-out infinite' : 'none',
+                    '@keyframes pulse': {
+                      '0%, 100%': { opacity: 1 },
+                      '50%': { opacity: 0.7 }
+                    }
+                  }}
+                />
+              </Tooltip>
+            )}
 
             {/* Contactos */}
             <Tooltip title={`Total de contactos: ${dashboardStats.contacts || 0}`}>

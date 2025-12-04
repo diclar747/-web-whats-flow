@@ -711,6 +711,14 @@ router.get('/analytics/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
     const connection = await mysql.createConnection(dbConfig);
     
+    // Obtener configuración del chatbot
+    const [settings] = await connection.query(
+      'SELECT enabled FROM chatbot_settings WHERE session_id = ?',
+      [sessionId]
+    );
+    
+    const chatbotEnabled = settings.length > 0 ? Boolean(settings[0].enabled) : false;
+    
     // Obtener todos los flujos del usuario
     const [flows] = await connection.query(
       'SELECT * FROM chatbot_flows WHERE session_id = ? ORDER BY created_at DESC',
@@ -721,25 +729,30 @@ router.get('/analytics/:sessionId', async (req, res) => {
     
     // Formatear analíticas para el dashboard
     const analytics = flows.map(flow => {
-      const triggers = JSON.parse(flow.triggers || '[]');
+      const flowData = flow.flow_data ? JSON.parse(flow.flow_data) : {};
+      const triggers = flowData.triggers || [];
+      const flowIsActive = flow.is_active === 1 || flow.is_active === true;
+      const isActive = chatbotEnabled && flowIsActive;
+      
+      console.log(`[CHATBOT-ANALYTICS] Flow ${flow.id}: chatbotEnabled=${chatbotEnabled}, flow.is_active=${flow.is_active}, flowIsActive=${flowIsActive}, final=${isActive}`);
       
       return {
         id: flow.id,
-        name: flow.name,
-        status: flow.active ? 'active' : 'inactive',
-        totalInteractions: flow.stats_total_triggers || 0,
-        successfulResponses: flow.stats_total_triggers || 0,
+        name: flowData.name || flow.flow_name,
+        status: isActive ? 'active' : 'inactive',
+        totalInteractions: flowData.stats?.totalTriggers || 0,
+        successfulResponses: flowData.stats?.totalTriggers || 0,
         failedResponses: 0,
         avgResponseTime: '< 1s',
         deliveryRate: 100,
-        responseRate: flow.stats_success_rate || 100,
-        lastActivity: flow.stats_last_triggered || flow.created_at,
+        responseRate: flowData.stats?.successRate || 100,
+        lastActivity: flowData.stats?.lastTriggered || flow.created_at,
         keywords: triggers,
-        color: flow.active ? '#00a884' : '#94a3b8'
+        color: isActive ? '#00a884' : '#94a3b8'
       };
     });
     
-    console.log(`[CHATBOT-ANALYTICS] Enviando ${analytics.length} chatbots para ${sessionId}`);
+    console.log(`[CHATBOT-ANALYTICS] Enviando ${analytics.length} chatbots para ${sessionId} (enabled: ${chatbotEnabled})`);
     
     res.json({
       success: true,

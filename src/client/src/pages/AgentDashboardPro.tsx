@@ -133,6 +133,7 @@ const AgentDashboardPro: React.FC = () => {
   const [chats, setChats] = useState<AgentChat[]>([]);
   const [selectedChat, setSelectedChat] = useState<AgentChat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [totalMessagesCount, setTotalMessagesCount] = useState<number>(0); // Total de todos los mensajes
   const [messageText, setMessageText] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -162,6 +163,17 @@ const AgentDashboardPro: React.FC = () => {
   const [chatFilter, setChatFilter] = useState<'all' | 'unread' | 'active' | 'pending' | 'closed'>('all');
   const [messageDateFilter, setMessageDateFilter] = useState<string>('today'); // 'today', 'week', 'month', 'all'
   const [chatListDateFilter, setChatListDateFilter] = useState<string>('today'); // Filtro para lista de chats
+  
+  // Estado de sincronización
+  const [syncProgress, setSyncProgress] = useState<{
+    status: 'idle' | 'syncing' | 'completed';
+    percentage: number;
+    message: string;
+  }>({
+    status: 'idle',
+    percentage: 0,
+    message: ''
+  });
 
   // Estado para dialog de filtros avanzados
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
@@ -528,6 +540,9 @@ const AgentDashboardPro: React.FC = () => {
         setMessages(data.messages || []);
         console.log(`[AGENT-PRO] ✅ Mensajes cargados (${dateFilter}):`, data.messages?.length || 0);
 
+        // El backend ahora retorna el total_count
+        setTotalMessagesCount(data.total_count || data.messages?.length || 0);
+
         // Mostrar notificación según el filtro
         const filterNames: { [key: string]: string } = {
           today: 'de hoy',
@@ -601,6 +616,23 @@ const AgentDashboardPro: React.FC = () => {
       // Verificar confirmación de unión
       socket.on('joined-agent-room', (data: any) => {
         console.log('✅ [AGENT-PRO] Confirmación de unión a sala:', data);
+      });
+      
+      // Listener para progreso de sincronización
+      socket.on('sync-progress', (data: any) => {
+        console.log('📊 Progreso de sincronización:', data);
+        setSyncProgress({
+          status: data.status,
+          percentage: data.percentage,
+          message: data.message
+        });
+        
+        // Auto-ocultar después de completar
+        if (data.status === 'completed') {
+          setTimeout(() => {
+            setSyncProgress({ status: 'idle', percentage: 0, message: '' });
+          }, 3000);
+        }
       });
     } else {
       console.warn('⚠️ [AGENT-PRO] No se puede unir a sala: socket=' + !!socket + ', agentId=' + agentId);
@@ -2619,7 +2651,10 @@ const AgentDashboardPro: React.FC = () => {
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                         <ChatIcon fontSize="small" color="action" />
                         <Typography variant="body2">
-                          {messages.length} mensajes en total
+                          {messageDateFilter === 'all' 
+                            ? `${messages.length} mensajes en total`
+                            : `${messages.length} mensajes ${messageDateFilter === 'today' ? 'de hoy' : messageDateFilter === 'week' ? 'de la semana' : 'del mes'} / ${totalMessagesCount} total`
+                          }
                         </Typography>
                       </Box>
                     </Box>
@@ -2696,6 +2731,23 @@ const AgentDashboardPro: React.FC = () => {
                     size="medium"
                     icon={isConnected ? <CheckIcon /> : <CloseIcon />}
                   />
+                  
+                  {/* Indicador de sincronización */}
+                  {syncProgress.status !== 'idle' && (
+                    <Chip
+                      label={`Sincronizando ${syncProgress.percentage}%`}
+                      color="primary"
+                      size="medium"
+                      icon={<CircularProgress size={16} color="inherit" />}
+                      sx={{
+                        animation: syncProgress.status === 'syncing' ? 'pulse 1.5s ease-in-out infinite' : 'none',
+                        '@keyframes pulse': {
+                          '0%, 100%': { opacity: 1 },
+                          '50%': { opacity: 0.7 }
+                        }
+                      }}
+                    />
+                  )}
                 </Box>
               </Box>
             </Fade>

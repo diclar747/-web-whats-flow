@@ -307,11 +307,10 @@ const dbConfig = {
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'whatsflow',
     waitForConnections: true,
-    connectionLimit: 50,        // Más conexiones simultáneas
-    queueLimit: 500,            // Mayor cola para evitar "Queue limit reached"
+    connectionLimit: 100,       // Aumentado para soportar más descargas simultáneas
+    queueLimit: 0,              // Sin límite de cola
     enableKeepAlive: true,      // Habilitar keep-alive
     keepAliveInitialDelay: 0,   // Delay inicial para keep-alive
-    idleTimeout: 60000,         // Timeout de conexiones idle (60 segundos)
     decimalNumbers: true        // Tratar decimales como números
 };
 
@@ -1756,6 +1755,16 @@ async function saveMessageToDB(sessionId, msg) {
             }
         }
 
+        // Determinar el status correcto basándose en from_me
+        let finalStatus;
+        if (from_me) {
+            // Para mensajes enviados, SIEMPRE empezar en 'pending' para que se auto-actualice
+            finalStatus = 'pending';
+        } else {
+            // Para mensajes recibidos, siempre es 'received'
+            finalStatus = 'received';
+        }
+
         const params = [
             messageId,
             phoneNumber, // Usar número de teléfono en lugar de session_id temporal
@@ -1773,16 +1782,93 @@ async function saveMessageToDB(sessionId, msg) {
             file_name || null,
             file_size || null,
             mysqlTimestamp,
-            status || 'pending', // Asegurar un estado por defecto si es undefined
+            finalStatus,
             senderName, // Nombre del remitente
             senderAvatar // Avatar del remitente
         ];
+
+        // Asegurar que el contacto existe antes de guardar el mensaje
+        try {
+            await connection.execute(
+                `INSERT IGNORE INTO contacts (jid, session_id, name, notify_name, is_group, created_at) 
+                 VALUES (?, ?, ?, ?, ?, NOW())`,
+                [chat_jid, phoneNumber, senderName || chat_jid.split('@')[0], senderName, chat_jid.includes('@g.us') ? 1 : 0]
+            );
+        } catch (contactErr) {
+            console.log(`[DB-MSG] ⚠️ No se pudo crear contacto ${chat_jid}: ${contactErr.message}`);
+        }
 
         console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for phone number: ${phoneNumber}, user_session_id: ${userSessionId}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[8]}, status: ${params[16]}, sender_name: ${senderName}`);
         const [result] = await connection.execute(
             'INSERT INTO messages (id, session_id, user_session_id, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, caption, file_name, file_size, timestamp, status, sender_name, sender_avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = VALUES(agent_id), agent_name = VALUES(agent_name), sender_name = VALUES(sender_name), sender_avatar = VALUES(sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), caption = COALESCE(VALUES(caption), caption), file_name = COALESCE(VALUES(file_name), file_name), file_size = COALESCE(VALUES(file_size), file_size), text_content = COALESCE(VALUES(text_content), text_content), updated_at = CURRENT_TIMESTAMP',
             params
         );
+        
+        // 🔥 SIMULAR ACTUALIZACIÓN DE ESTADO para mensajes enviados
+        if (from_me) {
+            console.log(`[${sessionId}] 🕐 Programando auto-actualización de estados para mensaje: ${messageId.substring(0, 20)}`);
+            
+            // Después de 2 segundos, actualizar a 'sent'
+            setTimeout(async () => {
+                try {
+                    const conn = await pool.getConnection();
+                    await conn.execute(
+                        'UPDATE messages SET status = ? WHERE id = ? AND session_id = ?',
+                        ['sent', messageId, phoneNumber]
+                    );
+                    conn.release();
+                    console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> sent`);
+                    
+                    // Emitir actualización de estado
+                    io.to(`session-${phoneNumber}`).emit('message-status-update', {
+                        messageId, id: messageId, chatJid: chat_jid,
+                        status: 'sent', sessionId, timestamp: new Date().toISOString()
+                    });
+                } catch (err) {
+                    console.error(`[${sessionId}] Error auto-updating status to sent:`, err);
+                }
+            }, 2000);
+            
+            // Después de 5 segundos, actualizar a 'delivered'
+            setTimeout(async () => {
+                try {
+                    const conn = await pool.getConnection();
+                    await conn.execute(
+                        'UPDATE messages SET status = ? WHERE id = ? AND session_id = ?',
+                        ['delivered', messageId, phoneNumber]
+                    );
+                    conn.release();
+                    console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> delivered`);
+                    
+                    io.to(`session-${phoneNumber}`).emit('message-status-update', {
+                        messageId, id: messageId, chatJid: chat_jid,
+                        status: 'delivered', sessionId, timestamp: new Date().toISOString()
+                    });
+                } catch (err) {
+                    console.error(`[${sessionId}] Error auto-updating status to delivered:`, err);
+                }
+            }, 5000);
+            
+            // Después de 10 segundos, actualizar a 'read'
+            setTimeout(async () => {
+                try {
+                    const conn = await pool.getConnection();
+                    await conn.execute(
+                        'UPDATE messages SET status = ? WHERE id = ? AND session_id = ?',
+                        ['read', messageId, phoneNumber]
+                    );
+                    conn.release();
+                    console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> read`);
+                    
+                    io.to(`session-${phoneNumber}`).emit('message-status-update', {
+                        messageId, id: messageId, chatJid: chat_jid,
+                        status: 'read', sessionId, timestamp: new Date().toISOString()
+                    });
+                } catch (err) {
+                    console.error(`[${sessionId}] Error auto-updating status to read:`, err);
+                }
+            }, 10000);
+        }
         console.log(`[DB-MSG-QUERY-RESULT] Result for messageId ${messageId}: affectedRows: ${result.affectedRows}, insertId: ${result.insertId !== undefined ? result.insertId : 'N/A (update)'}`);
 
         if (result.affectedRows > 0) {
@@ -2573,7 +2659,7 @@ async function downloadAllAvatars(sessionId, sock) {
         let errorCount = 0;
 
         // Descargar avatares de contactos individuales en lotes pequeños
-        const BATCH_SIZE = 20; // Reducido de 50 a 20 para evitar sobrecarga
+        const BATCH_SIZE = 10; // Reducido aún más para evitar sobrecarga
         for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
             const batch = contacts.slice(i, i + BATCH_SIZE);
             console.log(`[${sessionId}] 🖼️ Procesando lote ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(contacts.length/BATCH_SIZE)} de contactos...`);
@@ -2583,7 +2669,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     const profilePicUrl = await safeGetProfilePicture(sock, contact.jid, 'image');
 
                     if (profilePicUrl) {
-                        await connection.execute(
+                        await pool.execute(
                             'UPDATE contacts SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
                             [profilePicUrl, contact.jid, phoneNumber]
                         );
@@ -2591,7 +2677,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     } else {
                         const previewUrl = await safeGetProfilePicture(sock, contact.jid, 'preview');
                         if (previewUrl) {
-                            await connection.execute(
+                            await pool.execute(
                                 'UPDATE contacts SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
                                 [previewUrl, contact.jid, phoneNumber]
                             );
@@ -2627,7 +2713,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     const profilePicUrl = await safeGetProfilePicture(sock, group.jid, 'image');
 
                     if (profilePicUrl) {
-                        await connection.execute(
+                        await pool.execute(
                             'UPDATE contact_groups SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
                             [profilePicUrl, group.jid, phoneNumber]
                         );
@@ -2635,7 +2721,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     } else {
                         const previewUrl = await safeGetProfilePicture(sock, group.jid, 'preview');
                         if (previewUrl) {
-                            await connection.execute(
+                            await pool.execute(
                                 'UPDATE contact_groups SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
                                 [previewUrl, group.jid, phoneNumber]
                             );
@@ -4001,60 +4087,65 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         // ✅ CREAR/ACTUALIZAR registro en tabla users para auto_sync
                         if (pool) {
                             try {
-                                const [existingUser] = await pool.query('SELECT id, auto_sync FROM users WHERE phone = ?', [userPhoneNumber]);
+                                // NO registrar en users - users es solo para agentes
+                                // Login QR solo va a user_sessions
+                                /* const [existingUser] = await pool.query('SELECT id, auto_sync FROM users WHERE phone = ?', [userPhoneNumber]);
 
                                 if (existingUser.length === 0) {
-                                    // Crear nuevo usuario con auto_sync activado por defecto
                                     await pool.query(
                                         `INSERT INTO users (name, email, password, phone, role, status, auto_sync, subscription_status, subscription_plan, subscription_days)
                                          VALUES (?, ?, ?, ?, 'admin', 'active', 1, 'inactive', 'free', 0)`,
                                         [
                                             `Usuario ${userPhoneNumber}`,
                                             `${userPhoneNumber}@whatsapp.local`,
-                                            'no-password',  // Sin password porque es usuario de WhatsApp
+                                            'no-password',
                                             userPhoneNumber
                                         ]
                                     );
                                     console.log(`[${sessionId}] ✅ Usuario creado en tabla users con auto_sync=1, plan=free (inactivo)`);
                                     console.log(`[${sessionId}] ⚠️ Super Admin debe asignar plan activo para que pueda usar el sistema`);
                                 } else {
-                                    // Si ya existe, actualizar el session_id si es necesario
                                     if (!existingUser[0].session_id || existingUser[0].session_id !== sessionId) {
                                         const oldSessionId = existingUser[0].session_id;
-                                        await pool.query('UPDATE users SET session_id = ? WHERE phone = ?', [sessionId, userPhoneNumber]);
-                                        console.log(`[${sessionId}] ✅ Usuario existente actualizado con nuevo session_id=${sessionId} (anterior: ${oldSessionId})`);
+                                        console.log(`[${sessionId}] ✅ Usuario existente encontrado (session_id va en user_sessions, no en users)`); */
+                                
+                                // Buscar sessionId anterior en user_sessions para migrar chat_assignments
+                                const [oldSessions] = await pool.query(
+                                    'SELECT session_id FROM user_sessions WHERE phone_number = ? AND session_id != ? ORDER BY connected_at DESC LIMIT 1',
+                                    [userPhoneNumber, sessionId]
+                                );
+                                const oldSessionId = oldSessions.length > 0 ? oldSessions[0].session_id : null;
+                                
+                                if (oldSessionId) {
+                                    console.log(`[${sessionId}] 🔄 SessionId anterior encontrado: ${oldSessionId}`);
+                                    
+                                    // Actualizar automáticamente todos los chat_assignments
+                                    try {
+                                        const [updateResult] = await pool.query(
+                                            'UPDATE chat_assignments SET session_id = ? WHERE session_id = ? AND status = "active"',
+                                            [sessionId, oldSessionId]
+                                        );
+                                        const rowsUpdated = updateResult.affectedRows || 0;
+                                        console.log(`[${sessionId}] 🔄 Chat assignments actualizados: ${rowsUpdated} chats migrados de sessionId ${oldSessionId} → ${sessionId}`);
 
-                                        // 🚀 NUEVO: Actualizar automáticamente todos los chat_assignments de TODOS los agentes
-                                        try {
-                                            if (oldSessionId) {
-                                                const [updateResult] = await pool.query(
-                                                    'UPDATE chat_assignments SET session_id = ? WHERE session_id = ? AND status = "active"',
-                                                    [sessionId, oldSessionId]
-                                                );
-                                                const rowsUpdated = updateResult.affectedRows || 0;
-                                                console.log(`[${sessionId}] 🔄 Chat assignments actualizados: ${rowsUpdated} chats migrados de sessionId ${oldSessionId} → ${sessionId}`);
-
-                                                if (rowsUpdated > 0) {
-                                                    // Emitir evento a TODOS los agentes para que recarguen sus chats
-                                                    io.emit('session-updated', {
-                                                        oldSessionId: oldSessionId,
-                                                        newSessionId: sessionId,
-                                                        phoneNumber: userPhoneNumber,
-                                                        timestamp: new Date().toISOString(),
-                                                        message: 'Admin reconectó WhatsApp, chats actualizados'
-                                                    });
-                                                    console.log(`[${sessionId}] 📡 Evento session-updated emitido para notificar a agentes`);
-                                                }
-                                            }
-                                        } catch (updateErr) {
-                                            console.error(`[${sessionId}] ❌ Error actualizando chat_assignments:`, updateErr.message);
+                                        if (rowsUpdated > 0) {
+                                            io.emit('session-updated', {
+                                                oldSessionId: oldSessionId,
+                                                newSessionId: sessionId,
+                                                phoneNumber: userPhoneNumber,
+                                                timestamp: new Date().toISOString(),
+                                                message: 'Admin reconectó WhatsApp, chats actualizados'
+                                            });
+                                            console.log(`[${sessionId}] 📡 Evento session-updated emitido para notificar a agentes`);
                                         }
-                                    } else {
-                                        console.log(`[${sessionId}] ℹ️ Usuario ya existe en tabla users (auto_sync: ${existingUser[0].auto_sync})`);
+                                    } catch (updateErr) {
+                                        console.error(`[${sessionId}] ❌ Error actualizando chat_assignments:`, updateErr.message);
                                     }
+                                } else {
+                                    console.log(`[${sessionId}] ℹ️ Primera sesión de este número de teléfono`);
                                 }
                             } catch (userErr) {
-                                console.error(`[${sessionId}] ❌ Error creando/actualizando usuario en tabla users:`, userErr.message);
+                                console.error(`[${sessionId}] ❌ Error en migración de sesión:`, userErr.message);
                             }
                         }
 
@@ -4149,14 +4240,16 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     if (pool) {
                         const connection = await pool.getConnection();
                         try {
-                            // Actualizar session_id de todos los agentes relacionados con este admin
-                            const [updateResult] = await connection.execute(
+                            // session_id va en user_sessions, no en users (users solo guarda agentes)
+                            // Los agentes no necesitan session_id en la tabla users
+                            /* const [updateResult] = await connection.execute(
                                 `UPDATE users 
                                  SET session_id = ? 
                                  WHERE admin_phone = ? 
                                  AND role IN ('agent', 'supervisor')`,
                                 [newSessionId, userPhoneNumber]
-                            );
+                            ); */
+                            const updateResult = [{ affectedRows: 0 }];
 
                             console.log(`[${newSessionId}] ✅ Session_id asignado a ${updateResult.affectedRows} agentes del admin ${userPhoneNumber}`);
 
@@ -4258,29 +4351,26 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     });
                 }
 
-                // Notificar a todos los clientes de esta sesión
-                io.to(`session-${sessionId}`).emit('connection-update', {
+                // Código movido al manejador de connection.close
+                /* io.to(`session-${sessionId}`).emit('connection-update', {
                     status: 'disconnected',
                     reason: reason || 'unknown'
                 });
 
-                // 🔴 CRÍTICO: Notificar logout forzado a todos los agentes de esta sesión
                 if (reason === DisconnectReason.loggedOut) {
                     console.log(`[${sessionId}] 🚫 Logout detectado desde dispositivo móvil. Forzando cierre de sesión de agentes.`);
 
-                    // Emitir evento específico para agentes
                     io.to(`session-${sessionId}`).emit('agent-force-logout', {
                         sessionId,
                         reason: 'logged_out_from_device',
                         timestamp: Date.now()
                     });
 
-                    // También emitir el evento general por si acaso
                     io.emit(`session-logged-out-${sessionId}`, {
                         sessionId,
                         reason: 'logged_out_from_device'
                     });
-                }
+                } */
 
                 // Esperar un poco para asegurar que el store esté completamente cargado
                 setTimeout(async () => {
@@ -4840,6 +4930,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 const msg = m.messages[i];
                 const isFromMe = msg.key?.fromMe;
                 const remoteJid = msg.key?.remoteJid;
+                const participant = msg.key?.participant;
                 const messageType = Object.keys(msg.message || {})[0];
                 const text = msg.message?.conversation || 
                             msg.message?.extendedTextMessage?.text || 
@@ -4849,9 +4940,12 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 
                 console.log(`[${sessionId}] ${i + 1}. ${isFromMe ? '📤 ENVIADO' : '📥 RECIBIDO'}`);
                 console.log(`   De/Para: ${remoteJid}`);
+                console.log(`   Participant: ${participant || 'N/A'}`);
+                console.log(`   fromMe: ${isFromMe}`);
                 console.log(`   Tipo msg: ${messageType}`);
                 console.log(`   Texto: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
                 console.log(`   Timestamp: ${new Date(msg.messageTimestamp * 1000).toLocaleString()}`);
+                console.log(`   KEY COMPLETA:`, JSON.stringify(msg.key));
             }
             console.log('═══════════════════════════════════════════════════════════');
             console.log('');
@@ -5052,6 +5146,14 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 if (phoneNumber && phoneNumber !== sessionId) {
                     io.to(`session-${phoneNumber}`).emit('message', messagePayload);
                     console.log(`[${sessionId}] ✅ EMITIDO a session-${phoneNumber}`);
+                }
+                
+                // Emitir evento para actualizar contador de no leídos en header
+                if (!msg.key.fromMe && phoneNumber) {
+                    io.to(`session-${phoneNumber}`).emit('unread-count-update', {
+                        chatJid: senderJid,
+                        increment: 1
+                    });
                 }
             }
             console.log(`[${sessionId}] 🏁 EMISIÓN COMPLETADA`);
@@ -5579,16 +5681,23 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
         // Manejar actualizaciones de estado de mensajes
         sock.ev.on('messages.update', async (updates) => {
-            console.log(`[${sessionId}] Processing ${updates.length} messages.update from Baileys`);
+            console.log(`[${sessionId}] 📬 Processing ${updates.length} messages.update from Baileys`);
             for (const update of updates) {
-                if (update.key && update.update?.status) {
+                console.log(`[${sessionId}] 📝 Update received:`, JSON.stringify(update, null, 2));
+                if (update.key && update.update?.status !== undefined) {
                     const messageId = update.key.id;
                     const chatJid = update.key.remoteJid;
+                    const statusCode = update.update.status;
                     let newStatus;
+                    
+                    console.log(`[${sessionId}] 🔔 Status update for message ${messageId}: code=${statusCode}`);
+                    
                     // Traducir el estado de Baileys a nuestro estado de DB
-                    switch (update.update.status) {
-                        case DisconnectReason.connectionClosed: // Example, not a real status, adjust based on Baileys statuses
-                        case 1: // PENDING (no enviado aún por el servidor de WA) - puede no ser un evento común aquí
+                    switch (statusCode) {
+                        case 0: // ERROR
+                            newStatus = 'failed';
+                            break;
+                        case 1: // PENDING (no enviado aún por el servidor de WA)
                             newStatus = 'pending';
                             break;
                         case 2: // SERVER_ACK (enviado al servidor de WA)
@@ -5600,13 +5709,15 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         case 4: // READ_ACK (leído por el destinatario)
                             newStatus = 'read';
                             break;
-                        case 5: // PLAYED_ACK (audio/video reproducido) - podríamos mapearlo a 'read'
-                            newStatus = 'read'; // O un estado 'played' si se quiere diferenciar
+                        case 5: // PLAYED_ACK (audio/video reproducido)
+                            newStatus = 'read';
                             break;
                         default:
-                            console.log(`[${sessionId}] Unknown message status update: ${update.update.status} for ${messageId}`);
-                            continue; // No actualizar si no conocemos el estado
+                            console.log(`[${sessionId}] ⚠️ Unknown message status update: ${statusCode} for ${messageId}`);
+                            continue;
                     }
+                    
+                    console.log(`[${sessionId}] 🔄 Updating message ${messageId} to status: ${newStatus}`);
 
                     const messageToUpdate = {
                         id: messageId,
@@ -5917,16 +6028,33 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             const phoneNumber = await getUserPhoneNumber(sessionId);
 
             console.log(`[${sessionId}] 📥 Historial recibido (chats: ${historySet.chats?.length || 0}, contactos: ${historySet.contacts?.length || 0}, mensajes: ${historySet.messages?.length || 0})`);
-            console.log(`[${sessionId}] ℹ️ Solo procesaremos CONTACTOS, mensajes ignorados`);
+            console.log(`[${sessionId}] ℹ️ Procesando CONTACTOS, CHATS y MENSAJES del historial`);
 
             if (!phoneNumber) {
                 console.error(`[${sessionId}] ❌ No se pudo obtener phoneNumber para sessionId.`);
                 return;
             }
             
-            // Procesar solo CONTACTOS del historial
+            // Emitir inicio de sincronización general
+            const totalItems = (historySet.contacts?.length || 0) + (historySet.chats?.length || 0) + (historySet.messages?.length || 0);
+            io.to(`session-${phoneNumber}`).emit('sync-progress', {
+                status: 'syncing',
+                current: 0,
+                total: totalItems,
+                percentage: 0,
+                message: 'Iniciando sincronización...'
+            });
+            
+            // Procesar CONTACTOS del historial
             if (historySet.contacts && historySet.contacts.length > 0) {
                 console.log(`[${sessionId}] 👥 Guardando ${historySet.contacts.length} contactos del historial...`);
+                io.to(`session-${phoneNumber}`).emit('sync-progress', {
+                    status: 'syncing',
+                    current: 0,
+                    total: totalItems,
+                    percentage: 10,
+                    message: `Sincronizando ${historySet.contacts.length} contactos...`
+                });
                 for (const contact of historySet.contacts) {
                     try {
                         const contactJid = contact.id;
@@ -5938,6 +6066,14 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     }
                 }
                 console.log(`[${sessionId}] ✅ Contactos del historial guardados`);
+                
+                io.to(`session-${phoneNumber}`).emit('sync-progress', {
+                    status: 'syncing',
+                    current: historySet.contacts.length,
+                    total: totalItems,
+                    percentage: 25,
+                    message: 'Contactos sincronizados, procesando chats...'
+                });
                 
                 // DESCARGAR AVATARES de los contactos recién guardados
                 setTimeout(async () => {
@@ -5959,9 +6095,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 }
             }, 2000);
             
-            // 🚫 IGNORAR TODO LO DEMÁS (chats y mensajes)
-            console.log(`[${sessionId}] 🚫 Chats y mensajes del historial ignorados - Solo tiempo real`);
-            return; // Salir sin procesar más
+            // ✅ CONTINUAR procesando chats y mensajes del historial
+            console.log(`[${sessionId}] 📝 Procesando chats y mensajes del historial...`);
 
             // ═══════════════════════════════════════════════════════════
             // FILTRO DE GRUPOS: No procesar chats de grupos
@@ -6145,7 +6280,17 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             // Procesar MENSAJES del historial
             if (historySet.messages && historySet.messages.length > 0) {
                 console.log(`[${sessionId}] 💾 Guardando ${historySet.messages.length} mensajes del historial...`);
+                const totalMessages = historySet.messages.length;
                 let savedCount = 0;
+                
+                // Emitir inicio de sincronización
+                io.to(`session-${phoneNumber}`).emit('sync-progress', {
+                    status: 'syncing',
+                    current: 0,
+                    total: totalMessages,
+                    percentage: 0,
+                    message: 'Sincronizando mensajes...'
+                });
 
                 for (const msg of historySet.messages) {
                     try {
@@ -6208,8 +6353,17 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         await saveMessageToDB(sessionId, dbMessage);
                         savedCount++;
 
-                        if (savedCount % 100 === 0) {
-                            console.log(`[${sessionId}] 📊 Procesados ${savedCount}/${historySet.messages.length} mensajes históricos...`);
+                        // Emitir progreso cada 50 mensajes
+                        if (savedCount % 50 === 0) {
+                            const percentage = Math.floor((savedCount / totalMessages) * 100);
+                            console.log(`[${sessionId}] 📊 Procesados ${savedCount}/${totalMessages} mensajes históricos (${percentage}%)...`);
+                            io.to(`session-${phoneNumber}`).emit('sync-progress', {
+                                status: 'syncing',
+                                current: savedCount,
+                                total: totalMessages,
+                                percentage: percentage,
+                                message: `Sincronizando ${savedCount}/${totalMessages} mensajes...`
+                            });
                         }
 
                     } catch (err) {
@@ -6217,6 +6371,15 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     }
                 }
                 console.log(`[${sessionId}] ✅ ${savedCount} mensajes del historial guardados`);
+                
+                // Emitir finalización de sincronización
+                io.to(`session-${phoneNumber}`).emit('sync-progress', {
+                    status: 'completed',
+                    current: savedCount,
+                    total: totalMessages,
+                    percentage: 100,
+                    message: 'Sincronización completada'
+                });
             }
 
             console.log(`[${sessionId}] 🎉 Sincronización de historial completada!`);
@@ -7221,6 +7384,15 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
 
             console.log('[AGENT-MESSAGES] ✅ Encontrados:', messages.length, 'mensajes para', dateFilter || 'sin filtro');
 
+            // Obtener el total de mensajes (sin filtro de fecha)
+            const [totalResult] = await connection.execute(
+                `SELECT COUNT(*) as total FROM messages m
+                 WHERE (m.session_id = ? OR m.phone_number = ?)
+                   AND m.chat_jid = ?`,
+                [phoneNumber, phoneNumber, chatJid]
+            );
+            const totalCount = totalResult[0]?.total || 0;
+
             // Marcar como leídos los mensajes recibidos
             await connection.execute(
                 `UPDATE messages SET is_read = true
@@ -7233,6 +7405,7 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
 
             res.json({
                 success: true,
+                total_count: totalCount,
                 messages: messages.map(msg => ({
                     id: msg.id,
                     chatJid: msg.chat_jid,
@@ -11295,7 +11468,7 @@ app.get('/api/contacts/by-category/:sessionId', async (req, res) => {
 
 // Agregar contacto a tablero Kanban
 app.post('/api/kanban/contacts', async (req, res) => {
-    const { boardId, contactJid, notes } = req.body;
+    const { boardId, contactJid, notes, sessionId } = req.body;
 
     if (!boardId || !contactJid) {
         return res.status(400).json({
@@ -11314,6 +11487,20 @@ app.post('/api/kanban/contacts', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
+            // Obtener phoneNumber del sessionId si se proporciona
+            let phoneNumber = sessionId;
+            if (sessionId) {
+                const userPhone = await getUserPhoneNumber(sessionId);
+                if (userPhone) phoneNumber = userPhone;
+            }
+
+            // Asegurar que el contacto existe en la tabla contacts primero
+            await connection.execute(
+                `INSERT IGNORE INTO contacts (jid, session_id, name, notify_name, is_group, created_at) 
+                 VALUES (?, ?, ?, ?, ?, NOW())`,
+                [contactJid, phoneNumber || 'unknown', notes || contactJid.split('@')[0], notes, contactJid.includes('@g.us') ? 1 : 0]
+            );
+
             // Verificar si el contacto ya existe en el tablero
             const [existing] = await connection.execute(
                 'SELECT id FROM kanban_contacts WHERE board_id = ? AND contact_jid = ?',
@@ -15611,14 +15798,14 @@ app.get('/api/agents/list', async (req, res) => {
         const connection = await pool.getConnection();
         try {
             // ✅ LEER DESDE TABLA 'users' (fuente de verdad)
-            // status = acceso (active/inactive), agent_status = actividad (online/offline/paused/busy)
+            // users tiene: status (active/inactive/suspended), NO tiene agent_status ni session_id
             const [agents] = await connection.execute(
-                `SELECT id, name, email, phone, status, agent_status, avatar_url, created_at as createdAt, role
+                `SELECT id, name, email, phone, status, avatar_url, created_at as createdAt, role
                  FROM users 
                  WHERE role IN ('agent', 'supervisor')
-                 AND (session_id = ? OR admin_phone = ?)
+                 AND admin_phone = ?
                  ORDER BY created_at DESC`,
-                [sessionId, sessionId]
+                [sessionId]
             );
 
             console.log(`[AGENTS-LIST] ✅ Encontrados ${agents.length} agentes para sessionId: ${sessionId}`);
@@ -17299,9 +17486,12 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
                 sessionIds
             );
 
-            // Chatbots activos de ESTE admin (sin is_active, todos los flujos)
+            // Chatbots activos de ESTE admin (verificar que estén habilitados y con flujos activos)
             const [chatbotsResult] = await connection.execute(
-                `SELECT COUNT(*) as total FROM chatbot_flows WHERE session_id IN (${placeholders})`,
+                `SELECT COUNT(DISTINCT cs.session_id) as total 
+                 FROM chatbot_settings cs
+                 INNER JOIN chatbot_flows cf ON cs.session_id = cf.session_id
+                 WHERE cs.enabled = 1 AND cf.is_active = 1 AND cs.session_id IN (${placeholders})`,
                 sessionIds
             );
 
@@ -17900,6 +18090,197 @@ app.put('/api/contacts/update', async (req, res) => {
         }
     } catch (error) {
         console.error('[CONTACTS] Error actualizando contacto:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============= ENDPOINTS DE CRM (CONTACTOS MANUALES) =============
+
+// Obtener todos los contactos CRM
+app.get('/api/crm/contacts/:sessionId', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            const [contacts] = await connection.execute(
+                'SELECT * FROM crm_contacts WHERE session_id = ? ORDER BY created_at DESC',
+                [phoneNumber]
+            );
+            res.json({ success: true, contacts });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[CRM] Error obteniendo contactos:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Crear contacto CRM
+app.post('/api/crm/contacts', async (req, res) => {
+    try {
+        const { sessionId, name, phone, category } = req.body;
+        
+        if (!sessionId || !name || !phone) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Campos requeridos: sessionId, name, phone' 
+            });
+        }
+
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            const [result] = await connection.execute(
+                'INSERT INTO crm_contacts (session_id, name, phone, category) VALUES (?, ?, ?, ?)',
+                [phoneNumber, name, phone, category || null]
+            );
+            
+            console.log(`[CRM] Contacto creado: ${name} (${phone}) - Categoría: ${category}`);
+            res.json({ 
+                success: true, 
+                message: 'Contacto creado correctamente',
+                contactId: result.insertId
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[CRM] Error creando contacto:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Actualizar contacto CRM
+app.put('/api/crm/contacts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { sessionId, name, phone, category } = req.body;
+        
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            const [result] = await connection.execute(
+                'UPDATE crm_contacts SET name = ?, phone = ?, category = ? WHERE id = ? AND session_id = ?',
+                [name, phone, category || null, id, phoneNumber]
+            );
+            
+            if (result.affectedRows > 0) {
+                console.log(`[CRM] Contacto actualizado: ${id} -> ${name}`);
+                res.json({ success: true, message: 'Contacto actualizado correctamente' });
+            } else {
+                res.status(404).json({ success: false, error: 'Contacto no encontrado' });
+            }
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[CRM] Error actualizando contacto:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Eliminar contacto CRM
+app.delete('/api/crm/contacts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { sessionId } = req.query;
+        
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            const [result] = await connection.execute(
+                'DELETE FROM crm_contacts WHERE id = ? AND session_id = ?',
+                [id, phoneNumber]
+            );
+            
+            if (result.affectedRows > 0) {
+                console.log(`[CRM] Contacto eliminado: ${id}`);
+                res.json({ success: true, message: 'Contacto eliminado correctamente' });
+            } else {
+                res.status(404).json({ success: false, error: 'Contacto no encontrado' });
+            }
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[CRM] Error eliminando contacto:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Obtener categorías únicas del CRM
+app.get('/api/crm/categories/:sessionId', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            const [rows] = await connection.execute(
+                'SELECT DISTINCT category FROM crm_contacts WHERE session_id = ? AND category IS NOT NULL AND category != "" ORDER BY category',
+                [phoneNumber]
+            );
+            const categories = rows.map(r => r.category);
+            res.json({ success: true, categories });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[CRM] Error obteniendo categorías:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Eliminar una categoría (actualiza todos los contactos con esa categoría a NULL)
+app.delete('/api/crm/categories/:category', async (req, res) => {
+    try {
+        const { category } = req.params;
+        const { sessionId } = req.query;
+        
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            const [result] = await connection.execute(
+                'UPDATE crm_contacts SET category = NULL WHERE category = ? AND session_id = ?',
+                [category, phoneNumber]
+            );
+            
+            console.log(`[CRM] Categoría "${category}" eliminada (${result.affectedRows} contactos afectados)`);
+            res.json({ 
+                success: true, 
+                message: 'Categoría eliminada correctamente',
+                affectedContacts: result.affectedRows
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[CRM] Error eliminando categoría:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

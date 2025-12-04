@@ -47,6 +47,7 @@ import {
   Close,
   Send,
   EmojiEmotions,
+  Upload,
 } from '@mui/icons-material';
 
 interface KanbanContactsModuleProps {
@@ -101,6 +102,11 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
   const [selectedBoard, setSelectedBoard] = useState<KanbanBoard | null>(null);
   const [boardName, setBoardName] = useState('');
   const [boardColor, setBoardColor] = useState('#607d8b');
+
+  // Estados para importar masivo
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importText, setImportText] = useState<string>('');
+  const [importBoardId, setImportBoardId] = useState<string>('');
 
   // Estados para chat rápido
   const [quickChatOpen, setQuickChatOpen] = useState(false);
@@ -394,6 +400,66 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
   };
 
   // Búsqueda global en toda la BD
+  const handleImportCSV = async () => {
+    if (!importText.trim()) {
+      setError('Pega la lista de contactos');
+      return;
+    }
+
+    if (!importBoardId) {
+      setError('Selecciona un tablero Kanban');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const lines = importText.split('\n').filter(line => line.trim());
+      
+      const contactsList = lines.map(line => {
+        const [name, phone] = line.split(',').map(s => s.trim());
+        return { name, phone };
+      });
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const contact of contactsList) {
+        if (!contact.name || !contact.phone) continue;
+
+        try {
+          const contactJid = `${contact.phone}@s.whatsapp.net`;
+          
+          const response = await fetch(`${getAPIBaseURL()}/api/kanban/contacts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              boardId: importBoardId,
+              contactJid: contactJid,
+              notes: `Nombre: ${contact.name}`
+            })
+          });
+
+          const data = await response.json();
+          if (data.success) successCount++;
+          else errorCount++;
+        } catch (err) {
+          errorCount++;
+        }
+      }
+
+      setSuccess(`✅ Importación completada: ${successCount} contactos agregados, ${errorCount} errores`);
+      setShowImportDialog(false);
+      setImportText('');
+      setImportBoardId('');
+      loadContacts();
+    } catch (error) {
+      console.error('Error importando contactos:', error);
+      setError('Error al importar contactos');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleGlobalSearch = async (query: string) => {
     setGlobalSearchQuery(query);
 
@@ -796,6 +862,14 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
             sx={{ bgcolor: '#9c27b0', '&:hover': { bgcolor: '#7b1fa2' } }}
           >
             Nuevo Tablero
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<Upload />}
+            onClick={() => setShowImportDialog(true)}
+            sx={{ bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' } }}
+          >
+            Importar CSV
           </Button>
         </Stack>
       </Box>
@@ -1502,6 +1576,100 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
             }}
           >
             {sendingMessage ? 'Enviando...' : 'Enviar Mensaje'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog para importar masivo */}
+      <Dialog 
+        open={showImportDialog} 
+        onClose={() => {
+          setShowImportDialog(false);
+          setImportText('');
+          setImportBoardId('');
+        }}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Importar Contactos Masivos</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Alert severity="info">
+              <Typography variant="body2">
+                Pega tu lista aquí. <strong>Formato: Nombre,Teléfono</strong> (uno por línea)
+              </Typography>
+              <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
+                Ejemplo:<br/>
+                Juan Perez,595123456789<br/>
+                Maria Lopez,595987654321
+              </Typography>
+            </Alert>
+            
+            <TextField
+              multiline
+              rows={10}
+              fullWidth
+              placeholder="Pega aquí tu lista...&#10;Juan Perez,595123456789&#10;Maria Lopez,595987654321"
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              sx={{
+                '& .MuiInputBase-root': {
+                  fontFamily: 'monospace',
+                  fontSize: '0.9rem'
+                }
+              }}
+            />
+            
+            {importText && (
+              <Typography variant="caption" color="success.main">
+                ✓ {importText.split('\n').filter(l => l.trim()).length} contactos detectados
+              </Typography>
+            )}
+
+            <FormControl fullWidth required>
+              <InputLabel>Tablero Kanban *</InputLabel>
+              <Select
+                value={importBoardId}
+                label="Tablero Kanban *"
+                onChange={(e) => setImportBoardId(e.target.value)}
+              >
+                {boards.map((board) => (
+                  <MenuItem key={board.id} value={board.id}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box
+                        sx={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          bgcolor: board.color
+                        }}
+                      />
+                      {board.name}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <Typography variant="caption" color="info.main">
+              💡 Todos los contactos se agregarán al tablero seleccionado
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setShowImportDialog(false);
+            setImportText('');
+            setImportBoardId('');
+          }}>
+            Cancelar
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={handleImportCSV} 
+            disabled={!importText.trim() || !importBoardId || loading}
+          >
+            {loading ? 'Importando...' : 'Importar'}
           </Button>
         </DialogActions>
       </Dialog>

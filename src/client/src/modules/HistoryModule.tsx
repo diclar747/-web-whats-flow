@@ -455,6 +455,22 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
               ? `${getAPIBaseURL()}/api/avatar/${sessionId}/${senderJid}`
               : (msg.contactAvatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chatJid}`);
 
+            // Determinar el estado del mensaje
+            let messageStatus = 'pending';
+            if (msg.status) {
+              messageStatus = msg.status;
+            } else if (msg.ack !== undefined) {
+              // Mapear ack de Baileys a nuestros estados
+              if (msg.ack === 0 || msg.ack === 1) messageStatus = 'pending';
+              else if (msg.ack === 2) messageStatus = 'sent';
+              else if (msg.ack === 3) messageStatus = 'delivered';
+              else if (msg.ack === 4 || msg.ack === 5) messageStatus = 'read';
+            } else if (isFromMe) {
+              messageStatus = 'sent'; // Default para mensajes enviados
+            } else {
+              messageStatus = 'received'; // Para mensajes recibidos
+            }
+
             return {
               id: msg.id || `msg_${Date.now()}`,
               conversationId: chatJid,
@@ -468,7 +484,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
               fileName: msg.fileName || msg.file_name || null,
               timestamp: msg.timestamp || new Date().toISOString(),
               isFromMe: isFromMe,
-              status: msg.status || 'sent',
+              status: messageStatus,
               agentId: msg.agentId || msg.agent_id,
               agentName: msg.agentName || msg.agent_name || (isFromMe ? (msg.agentId || msg.agent_id ? 'Agente' : 'Sistema') : '-'),
               labels: [],
@@ -1272,9 +1288,14 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           'Contacto': msg.contactName || msg.pushName || msg.from?.split('@')[0] || 'Desconocido',
           'Número': msg.from?.split('@')[0] || msg.phoneNumber || '',
           'Mensaje': msg.body || msg.text || msg.message || '(Sin texto)',
-          'Dirección': msg.fromMe ? 'Enviado' : 'Recibido',
-          'Tipo': msg.type || msg.messageType || 'chat',
-          'Estado': msg.ack ? (msg.ack === 3 ? 'Leído' : msg.ack === 2 ? 'Entregado' : 'Enviado') : 'Recibido'
+          'Tipo': msg.fromMe || msg.isFromMe ? 'Enviado' : 'Recibido',
+          'Estado': msg.fromMe || msg.isFromMe ? 
+            (msg.status === 'read' ? 'Visto' : 
+             msg.status === 'delivered' ? 'Entregado' : 
+             msg.status === 'sent' ? 'Enviado' : 
+             msg.ack === 3 ? 'Visto' : 
+             msg.ack === 2 ? 'Entregado' : 
+             msg.ack === 1 ? 'Enviado' : 'Pendiente') : '-'
         }));
       } else {
         worksheetData = data.map((conv: any) => ({
@@ -1334,8 +1355,8 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                 <th>Fecha/Hora</th>
                 <th>Contacto</th>
                 <th>Mensaje</th>
-                <th>Dirección</th>
                 <th>Tipo</th>
+                <th>Estado</th>
               </tr>
             </thead>
             <tbody>
@@ -1344,8 +1365,11 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                   <td>${msg.timestamp ? new Date(msg.timestamp).toLocaleString('es-ES') : '-'}</td>
                   <td>${msg.contactName || msg.pushName || msg.from?.split('@')[0] || 'Desconocido'}</td>
                   <td>${((msg.body || msg.text || msg.message || '(Sin texto)').substring(0, 80))}</td>
-                  <td>${msg.fromMe ? 'Enviado' : 'Recibido'}</td>
-                  <td>${msg.type || msg.messageType || 'chat'}</td>
+                  <td>${msg.fromMe || msg.isFromMe ? 'Enviado' : 'Recibido'}</td>
+                  <td>${msg.fromMe || msg.isFromMe ? 
+                    (msg.status === 'read' ? 'Visto' : 
+                     msg.status === 'delivered' ? 'Entregado' : 
+                     msg.status === 'sent' ? 'Enviado' : 'Pendiente') : '-'}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -2084,20 +2108,71 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                                 </Box>
                               </TableCell>
                               <TableCell>
-                                <Chip
-                                  icon={getMessageTypeIcon(message.messageType)}
-                                  label={getMessageTypeLabel(message.messageType, message.fileName)}
-                                  size="small"
-                                  variant="outlined"
-                                  sx={{ maxWidth: '150px' }}
-                                />
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  {message.isFromMe ? (
+                                    <Tooltip title="Enviado">
+                                      <Send sx={{ fontSize: 20, color: '#1976d2' }} />
+                                    </Tooltip>
+                                  ) : (
+                                    <Tooltip title="Recibido">
+                                      <CallReceived sx={{ fontSize: 20, color: '#7b1fa2' }} />
+                                    </Tooltip>
+                                  )}
+                                  <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                    {message.isFromMe ? 'Enviado' : 'Recibido'}
+                                  </Typography>
+                                </Box>
                               </TableCell>
                               <TableCell>
-                                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                                  {getStatusIcon(message.status)}
-                                  <Typography variant="caption" sx={{ ml: 0.5 }}>
-                                    {getStatusLabel(message.status)}
-                                  </Typography>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  {message.isFromMe ? (
+                                    <>
+                                      {message.status === 'read' && (
+                                        <>
+                                          <DoneAll sx={{ fontSize: 18, color: '#0088cc' }} />
+                                          <Typography variant="body2" sx={{ color: '#0088cc' }}>
+                                            Visto
+                                          </Typography>
+                                        </>
+                                      )}
+                                      {message.status === 'delivered' && (
+                                        <>
+                                          <DoneAll sx={{ fontSize: 18, color: '#64748b' }} />
+                                          <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                            Entregado
+                                          </Typography>
+                                        </>
+                                      )}
+                                      {message.status === 'sent' && (
+                                        <>
+                                          <Check sx={{ fontSize: 18, color: '#64748b' }} />
+                                          <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                            Enviado
+                                          </Typography>
+                                        </>
+                                      )}
+                                      {message.status === 'failed' && (
+                                        <>
+                                          <ErrorIcon sx={{ fontSize: 18, color: '#ef4444' }} />
+                                          <Typography variant="body2" sx={{ color: '#ef4444' }}>
+                                            Fallido
+                                          </Typography>
+                                        </>
+                                      )}
+                                      {!message.status && (
+                                        <>
+                                          <Schedule sx={{ fontSize: 18, color: '#f59e0b' }} />
+                                          <Typography variant="body2" sx={{ color: '#f59e0b' }}>
+                                            Pendiente
+                                          </Typography>
+                                        </>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                      -
+                                    </Typography>
+                                  )}
                                 </Box>
                               </TableCell>
                               <TableCell>

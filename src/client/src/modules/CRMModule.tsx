@@ -304,6 +304,16 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   
+  // Estados para crear contacto CRM
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
+  const [newContactCategory, setNewContactCategory] = useState('');
+  const [crmCategories, setCrmCategories] = useState<string[]>([]);
+  
+  // Estados para importar CSV
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  
   // Estados para editar contacto
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [editContactDialog, setEditContactDialog] = useState(false);
@@ -327,7 +337,23 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
     loadCRMData();
     loadWhatsAppData();
     loadSegments();
+    loadKanbanBoards();
   }, [sessionId]);
+
+  // Cargar tableros Kanban para el selector
+  const loadKanbanBoards = async () => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
+      const data = await response.json();
+      
+      if (data.success && data.boards) {
+        // Guardar los boards como categorías
+        setCrmCategories(data.boards);
+      }
+    } catch (error) {
+      console.error('[CRM] Error cargando tableros Kanban:', error);
+    }
+  };
 
   const loadSegments = async () => {
     try {
@@ -537,6 +563,128 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
     setEditingContact(null);
     setEditContactName('');
     setEditContactPhone('');
+  };
+
+  // Funciones para CRM manual - Guardar en Kanban
+  const handleSaveNewContact = async () => {
+    if (!newContactCategory) {
+      alert('Selecciona un tablero Kanban');
+      return;
+    }
+
+    let contactJid: string;
+    let contactName: string;
+
+    if (selectedContact) {
+      // Agregar contacto existente de WhatsApp
+      const contact: any = selectedContact;
+      contactJid = contact.jid;
+      contactName = contact.name || contact.notify || contact.jid.split('@')[0];
+    } else {
+      // Crear nuevo contacto manual
+      if (!newContactName.trim() || !newContactPhone.trim()) {
+        alert('Nombre y teléfono son requeridos');
+        return;
+      }
+      contactJid = `${newContactPhone.trim()}@s.whatsapp.net`;
+      contactName = newContactName.trim();
+    }
+
+    try {
+      // Agregar al tablero Kanban
+      const response = await fetch(`${getAPIBaseURL()}/api/kanban/contacts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          boardId: newContactCategory,
+          contactJid: contactJid,
+          notes: `Nombre: ${contactName}`
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('✅ Contacto agregado al tablero Kanban');
+        setShowContactDialog(false);
+        setSelectedContact(null);
+        setNewContactName('');
+        setNewContactPhone('');
+        setNewContactCategory('');
+        // Recargar contactos
+        window.location.reload();
+      } else {
+        alert('Error: ' + data.error);
+      }
+    } catch (error) {
+      console.error('Error creando contacto:', error);
+      alert('Error al crear contacto');
+    }
+  };
+
+  const handleImportCSV = async () => {
+    if (!importFile) {
+      alert('Selecciona un archivo CSV');
+      return;
+    }
+
+    if (!newContactCategory) {
+      alert('Selecciona un tablero Kanban');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const text = e.target?.result as string;
+        const lines = text.split('\n').filter(line => line.trim());
+        
+        // Formato: nombre,telefono (sin encabezado o con encabezado)
+        const startIndex = lines[0].toLowerCase().includes('nombre') ? 1 : 0;
+        const contacts = lines.slice(startIndex).map(line => {
+          const [name, phone] = line.split(',').map(s => s.trim());
+          return { name, phone };
+        });
+
+        let success = 0;
+        let errors = 0;
+
+        for (const contact of contacts) {
+          if (!contact.name || !contact.phone) continue;
+
+          try {
+            const contactJid = `${contact.phone}@s.whatsapp.net`;
+            
+            const response = await fetch(`${getAPIBaseURL()}/api/kanban/contacts`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                boardId: newContactCategory,
+                contactJid: contactJid,
+                notes: `Nombre: ${contact.name}`
+              })
+            });
+
+            const data = await response.json();
+            if (data.success) success++;
+            else errors++;
+          } catch (err) {
+            errors++;
+          }
+        }
+
+        alert(`✅ Importación completada\n${success} contactos agregados al tablero\n${errors} errores`);
+        setShowImportDialog(false);
+        setImportFile(null);
+        setNewContactCategory('');
+        window.location.reload();
+      } catch (error) {
+        console.error('Error importando CSV:', error);
+        alert('Error al importar CSV');
+      }
+    };
+
+    reader.readAsText(importFile);
   };
 
   const loadWhatsAppData = async () => {
@@ -882,46 +1030,14 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
         {/* Header */}
         <Box sx={{ 
           mb: 4, 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          background: 'linear-gradient(135deg, #e91e63 0%, #ad1457 100%)',
+          background: 'linear-gradient(135deg, #00a884 0%, #008069 100%)',
           borderRadius: 3,
           p: 3,
           color: 'white'
         }}>
-          <Box>
-            <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>
-              🎯 CRM Empresarial
-            </Typography>
-            <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>
-              Gestión Inteligente • Lead Scoring • Pipeline • Automatización • Analytics 360°
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <Button
-              variant="contained"
-              startIcon={<PersonAdd />}
-              onClick={() => setShowContactDialog(true)}
-              sx={{
-                bgcolor: 'rgba(255,255,255,0.2)',
-                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }
-              }}
-            >
-              Nuevo Contacto
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<Add />}
-              onClick={() => setShowDealDialog(true)}
-              sx={{
-                bgcolor: 'rgba(255,255,255,0.2)',
-                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }
-              }}
-            >
-              Nueva Oportunidad
-            </Button>
-          </Box>
+          <Typography variant="h4" sx={{ fontWeight: 700 }}>
+            📱 Contactos de WhatsApp
+          </Typography>
         </Box>
 
         {/* Contador de contactos y grupos sincronizados */}
@@ -1170,39 +1286,8 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
           </CardContent>
         </Card>
 
-        {/* Tabs principales */}
-        <Paper sx={{ mb: 3 }}>
-          <Tabs 
-            value={selectedTab} 
-            onChange={(_, newValue) => {
-              setSelectedTab(newValue);
-              setPage(0); // Reset pagination when changing tabs
-            }}
-            variant="scrollable"
-            scrollButtons="auto"
-          >
-            <Tab 
-              label={`WhatsApp Contactos (${syncedContacts.length})`} 
-              icon={<WhatsApp />}
-              iconPosition="start"
-              sx={{ fontWeight: 600 }}
-            />
-            <Tab 
-              label="Contactos" 
-              icon={<Person />}
-              iconPosition="start"
-            />
-            <Tab 
-              label="Grupos" 
-              icon={<Group />}
-              iconPosition="start"
-            />
-          </Tabs>
-        </Paper>
-
-        {/* Pestaña 1: WhatsApp Contactos */}
-        {selectedTab === 0 && (
-          <Box>
+        {/* Solo WhatsApp Contactos */}
+        <Box>
             {/* Contactos de WhatsApp sincronizados */}
             <Grid container spacing={3}>
               {syncedContacts
@@ -1303,15 +1388,35 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
                         </Box>
 
                         {/* Acciones */}
-                        <Box sx={{ display: 'flex', gap: 1 }}>
+                        <Box sx={{ display: 'flex', gap: 1, flexDirection: 'column' }}>
                           <Button
                             variant="contained"
                             size="small"
+                            fullWidth
+                            startIcon={<Folder />}
+                            onClick={() => {
+                              setSelectedContact(contact);
+                              setShowContactDialog(true);
+                            }}
+                            sx={{
+                              bgcolor: '#2196f3',
+                              '&:hover': { bgcolor: '#1976d2' }
+                            }}
+                          >
+                            Agregar a Kanban
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            fullWidth
                             startIcon={<WhatsApp />}
                             sx={{
-                              flex: 1,
-                              bgcolor: '#00a884',
-                              '&:hover': { bgcolor: '#008069' }
+                              borderColor: '#00a884',
+                              color: '#00a884',
+                              '&:hover': { 
+                                borderColor: '#008069',
+                                bgcolor: '#00a88410'
+                              }
                             }}
                           >
                             Chatear
@@ -1355,13 +1460,12 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
                 />
               </Box>
             )}
-          </Box>
-        )}
+        </Box>
+      </Box>
 
-        {/* Pestaña 2: Contactos */}
-        {selectedTab === 1 && (
+      {/* Ocultar otras pestañas */}
+      {/* {selectedTab === 1 && (
           <Grid container spacing={3}>
-            {/* Contactos Locales */}
             <Grid item xs={12}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h5" sx={{ fontWeight: 600 }}>
@@ -1377,7 +1481,6 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
               </Box>
             </Grid>
 
-            {/* Lista de Contactos Locales */}
             <Grid item xs={12}>
               {contacts.length === 0 ? (
                 <Card>
@@ -1437,10 +1540,8 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
           </Grid>
         )}
 
-        {/* Pestaña 4: Grupos */}
-        {selectedTab === 2 && (
+        {/* {selectedTab === 2 && (
           <Grid container spacing={3}>
-            {/* Header de Grupos Locales */}
             <Grid item xs={12}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h5" sx={{ fontWeight: 600 }}>
@@ -1456,7 +1557,6 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
               </Box>
             </Grid>
 
-            {/* Lista de Segmentos */}
             {loading ? (
               <Grid item xs={12}>
                 <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
@@ -1569,7 +1669,6 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
               ))
             )}
 
-            {/* Información adicional */}
             <Grid item xs={12}>
               <Card sx={{ bgcolor: '#f5f5f5' }}>
                 <CardContent>
@@ -1583,9 +1682,8 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
           </Grid>
         )}
 
-        {selectedTab === 3 && analytics && (
+        {/* {selectedTab === 3 && analytics && (
           <Grid container spacing={3}>
-            {/* Gráficos de analytics detallados */}
             <Grid item xs={12} md={6}>
               <Card>
                 <CardContent>
@@ -1639,11 +1737,10 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
               </Card>
             </Grid>
           </Grid>
-        )}
-      </Box>
+        )} */}
 
-      {/* Diálogo para crear/editar grupo local */}
-      <Dialog 
+      {/* Dialogs */}
+      <Dialog
         open={showSegmentDialog} 
         onClose={handleCloseSegmentDialog}
         maxWidth="sm"
@@ -1709,6 +1806,183 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
       </Menu>
 
       {/* Diálogo para editar contacto */}
+      {/* Dialog para crear nuevo contacto CRM */}
+      <Dialog 
+        open={showContactDialog} 
+        onClose={() => {
+          setShowContactDialog(false);
+          setSelectedContact(null);
+          setNewContactName('');
+          setNewContactPhone('');
+          setNewContactCategory('');
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {selectedContact ? 'Agregar a Kanban' : 'Nuevo Contacto'}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {selectedContact ? (
+              // Mostrar info del contacto seleccionado
+              <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderRadius: 2 }}>
+                <Typography variant="body1" sx={{ fontWeight: 600, mb: 1 }}>
+                  {(selectedContact as any).name || 'Sin nombre'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {(selectedContact as any).jid}
+                </Typography>
+              </Box>
+            ) : (
+              // Formulario para nuevo contacto
+              <>
+                <TextField
+                  label="Nombre *"
+                  fullWidth
+                  value={newContactName}
+                  onChange={(e) => setNewContactName(e.target.value)}
+                  autoFocus
+                />
+                <TextField
+                  label="Teléfono *"
+                  fullWidth
+                  value={newContactPhone}
+                  onChange={(e) => setNewContactPhone(e.target.value)}
+                  placeholder="Ej: 595123456789"
+                />
+              </>
+            )}
+            <FormControl fullWidth>
+              <InputLabel>Tablero Kanban *</InputLabel>
+              <Select
+                value={newContactCategory}
+                label="Tablero Kanban *"
+                onChange={(e) => setNewContactCategory(e.target.value)}
+              >
+                {crmCategories.length === 0 && (
+                  <MenuItem value="">
+                    <em>No hay tableros disponibles</em>
+                  </MenuItem>
+                )}
+                {crmCategories.map((board: any) => (
+                  <MenuItem key={board.id} value={board.id}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box
+                        sx={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          bgcolor: board.color || '#999'
+                        }}
+                      />
+                      {board.name}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setShowContactDialog(false);
+            setSelectedContact(null);
+            setNewContactName('');
+            setNewContactPhone('');
+            setNewContactCategory('');
+          }}>Cancelar</Button>
+          <Button variant="contained" onClick={handleSaveNewContact}>
+            {selectedContact ? 'Agregar' : 'Guardar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog para importar CSV */}
+      <Dialog 
+        open={showImportDialog} 
+        onClose={() => {
+          setShowImportDialog(false);
+          setImportFile(null);
+          setNewContactCategory('');
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Importar Contactos Masivos</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Typography variant="body2" color="text.secondary">
+              El archivo CSV debe tener el formato: nombre,telefono
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Ejemplo: Juan Perez,595123456789
+            </Typography>
+            
+            <input
+              type="file"
+              accept=".csv"
+              onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+              style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '4px' }}
+            />
+            
+            {importFile && (
+              <Typography variant="caption" sx={{ display: 'block', color: 'success.main' }}>
+                ✓ Archivo: {importFile.name}
+              </Typography>
+            )}
+
+            <FormControl fullWidth required>
+              <InputLabel>Tablero Kanban *</InputLabel>
+              <Select
+                value={newContactCategory}
+                label="Tablero Kanban *"
+                onChange={(e) => setNewContactCategory(e.target.value)}
+              >
+                {crmCategories.length === 0 && (
+                  <MenuItem value="">
+                    <em>No hay tableros disponibles</em>
+                  </MenuItem>
+                )}
+                {crmCategories.map((board: any) => (
+                  <MenuItem key={board.id} value={board.id}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box
+                        sx={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          bgcolor: board.color || '#999'
+                        }}
+                      />
+                      {board.name}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <Typography variant="caption" color="info.main" sx={{ display: 'block', mt: 1 }}>
+              💡 Todos los contactos se agregarán al tablero seleccionado
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setShowImportDialog(false);
+            setImportFile(null);
+            setNewContactCategory('');
+          }}>Cancelar</Button>
+          <Button 
+            variant="contained" 
+            onClick={handleImportCSV} 
+            disabled={!importFile || !newContactCategory}
+          >
+            Importar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog 
         open={editContactDialog} 
         onClose={handleCloseEditContactDialog}
