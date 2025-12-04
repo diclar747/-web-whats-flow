@@ -233,9 +233,12 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
           // Obtener categoría si existe
           const category = categories.find(c => c.id === apt.category_id);
 
+          // ⚡ FIX: Manejar patient_name NULL o vacío
+          const displayName = apt.patient_name || apt.patient_phone || 'Sin nombre';
+
           return {
             id: apt.id,
-            title: `${category ? category.icon + ' ' : ''}${apt.patient_name}`,
+            title: `${category ? category.icon + ' ' : ''}${displayName}`,
             start: startDateTime,
             end: endDateTime,
             resource: apt,
@@ -255,15 +258,17 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     }
   }, [sessionId, categories]);
 
+  // ⚡ OPTIMIZACIÓN: Cargar categorías solo al montar
   useEffect(() => {
     loadCategories();
   }, [loadCategories]);
 
+  // ⚡ OPTIMIZACIÓN: Cargar appointments solo cuando cambia sessionId o se cargan categorías por primera vez
   useEffect(() => {
-    if (categories.length > 0) {
+    if (sessionId && categories.length > 0) {
       loadAppointments();
     }
-  }, [loadAppointments, categories]);
+  }, [sessionId, categories.length]); // Cambiar de 'categories' a 'categories.length' para evitar recargas
 
   // Buscar contacto por teléfono
   const searchContactByPhone = async (phone: string) => {

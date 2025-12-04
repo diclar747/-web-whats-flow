@@ -13857,51 +13857,8 @@ app.get('/api/campaigns/:sessionId/:campaignId', async (req, res) => {
 
 // ============= ENDPOINTS DE CALENDARIO Y CITAS =============
 
-// GET - Obtener citas de una sesión
-app.get('/api/appointments/:sessionId', async (req, res) => {
-    const { sessionId } = req.params;
-
-    if (!pool) {
-        return res.status(503).json({
-            success: false,
-            error: 'Database not available'
-        });
-    }
-
-    try {
-        const phoneNumber = await getUserPhoneNumber(sessionId);
-        if (!phoneNumber) {
-            return res.status(400).json({
-                success: false,
-                error: 'Session not found'
-            });
-        }
-
-        const connection = await pool.getConnection();
-        try {
-            const [appointments] = await connection.execute(
-                'SELECT *, DATE_FORMAT(appointment_date, "%Y-%m-%d") as appointment_date_formatted FROM appointments WHERE session_id = ? ORDER BY appointment_date, appointment_time',
-                [phoneNumber]
-            );
-
-            // Formatear fechas para evitar conversiones de zona horaria
-            const formattedAppointments = appointments.map(apt => ({
-                ...apt,
-                appointment_date: apt.appointment_date_formatted || apt.appointment_date
-            }));
-
-            res.json({
-                success: true,
-                appointments: formattedAppointments
-            });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[APPOINTMENTS] Error loading:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+// ⚡ NOTA: Endpoint GET /api/appointments/:sessionId movido más abajo con filtros opcionales (línea ~17625)
+// para evitar duplicación. Este endpoint fue eliminado.
 
 // POST - Crear nueva cita (acepta tanto snake_case como camelCase)
 app.post('/api/appointments', async (req, res) => {
