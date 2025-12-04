@@ -74,7 +74,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     });
 
     setSocket(newSocket);
-    
+
     // Exponer socket globalmente para otros componentes
     (window as any).globalSocket = newSocket;
     console.log('🌍 Socket expuesto globalmente en window.globalSocket');
@@ -151,7 +151,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         // 🔒 SEGURIDAD: NO guardar en localStorage - usar SOLO sessionStorage
         // localStorage se comparte entre TODOS los navegadores/pestañas
         // sessionStorage.setItem('whatsflow_session', incomingSessionId);
-        
+
         try {
           if (oldSessionId) {
             newSocket.emit('leave-session', { sessionId: oldSessionId });
@@ -224,12 +224,12 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     // Evento de invalidación de sesión
     newSocket.on('session-invalidated', (data: any) => {
       console.log('🚫 Sesión invalidada:', data.message);
-      
+
       // Usar evento personalizado para que App.tsx lo maneje con el Dialog
-      window.dispatchEvent(new CustomEvent('session-invalidated', { 
-        detail: { 
-          reason: data.message || 'Tu sesión se cerró porque iniciaste sesión desde otro dispositivo' 
-        } 
+      window.dispatchEvent(new CustomEvent('session-invalidated', {
+        detail: {
+          reason: data.message || 'Tu sesión se cerró porque iniciaste sesión desde otro dispositivo'
+        }
       }));
     });
 

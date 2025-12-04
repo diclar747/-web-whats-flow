@@ -228,7 +228,7 @@ const App: React.FC = () => {
   const [userType, setUserType] = useState<'admin' | 'agent' | null>(null);
   const [admin, setAdmin] = useState<any>(null);
   const [adminToken, setAdminToken] = useState<string | null>(null);
-  const [sessionClosedDialog, setSessionClosedDialog] = useState<{open: boolean; reason: string}>({open: false, reason: ''});
+  const [sessionClosedDialog, setSessionClosedDialog] = useState<{ open: boolean; reason: string }>({ open: false, reason: '' });
 
   // 🔐 Inicializar interceptor de fetch al cargar la app
   useEffect(() => {
@@ -249,6 +249,25 @@ const App: React.FC = () => {
         const v = c === 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
       });
+    };
+
+    // Helper para retry con backoff exponencial
+    const fetchWithRetry = async (url: string, options: any, retries = 3, delay = 1000): Promise<Response> => {
+      for (let i = 0; i < retries; i++) {
+        try {
+          const response = await fetch(url, options);
+          // Si es error de servidor (5xx), lanzar error para reintentar
+          if (response.status >= 500 && response.status < 600) {
+            throw new Error(`Server error: ${response.status}`);
+          }
+          return response;
+        } catch (err) {
+          console.log(`⚠️ Fetch attempt ${i + 1} failed:`, err);
+          if (i === retries - 1) throw err;
+          await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i))); // Exponential backoff
+        }
+      }
+      throw new Error('Max retries reached');
     };
 
     const initializeSession = async () => {
@@ -290,7 +309,7 @@ const App: React.FC = () => {
       console.log('Current Device ID:', deviceId?.substring(0, 20) + '...');
       console.log('Saved Device ID:', savedDeviceId?.substring(0, 20) + '...');
       console.log('SessionToken:', savedSessionToken ? 'Existe' : 'No');
-      
+
       // 🔒 SEGURIDAD CRÍTICA: Si NO hay token ni sessionId, NO permitir acceso
       if (!savedToken && !savedSessionId) {
         console.log('🚫 [APP-INIT] NO hay credenciales guardadas - Esta pestaña NO está autenticada');
@@ -304,7 +323,7 @@ const App: React.FC = () => {
           // 🔒 SEGURIDAD: Verificar que no sea un navegador/dispositivo diferente
           // sessionStorage es único por pestaña/navegador, así que si hay deviceId diferente
           // o falta deviceId, es sospechoso
-          
+
           if (!savedDeviceId) {
             console.log('🚫 Sesión sin deviceId - posible navegador diferente. Limpiando...');
             sessionStorage.clear();
@@ -342,7 +361,8 @@ const App: React.FC = () => {
             }
 
             // Enviar también sessionToken si existe para validación completa
-            const response = await fetch(`/api/session/${savedSessionId}/status`, {
+            // Usar fetchWithRetry para manejar reinicios del servidor
+            const response = await fetchWithRetry(`/api/session/${savedSessionId}/status`, {
               headers: {
                 'x-device-id': deviceId,
                 'x-session-token': savedSessionToken || ''
@@ -403,7 +423,7 @@ const App: React.FC = () => {
               // 🔒 SEGURIDAD: Verificar que tenga token de autenticación válido
               // ADMIN (QR): Necesita sessionToken de la sesión QR
               // AGENTE: Necesita token de usuario (login)
-              
+
               if (savedUserType === 'admin') {
                 // Admin debe tener sessionToken (prueba de que escaneó QR)
                 if (savedSessionToken) {
@@ -464,6 +484,7 @@ const App: React.FC = () => {
             console.log('⚠️ Error de red, manteniendo sesión para retry');
             setSessionId(savedSessionId);
             setUserType(savedUserType || 'admin');
+            setLoading(false); // IMPORTANTE: Dejar de cargar para mostrar UI (aunque sea desconectada)
           }
         } else {
           console.log('⚠️ No hay sessionId guardado');
@@ -856,7 +877,7 @@ const App: React.FC = () => {
               {/* Dialog de sesión cerrada - Diseño mejorado */}
               <Dialog
                 open={sessionClosedDialog.open}
-                onClose={() => {}}
+                onClose={() => { }}
                 maxWidth="sm"
                 fullWidth
                 PaperProps={{
@@ -866,8 +887,8 @@ const App: React.FC = () => {
                   }
                 }}
               >
-                <DialogTitle 
-                  sx={{ 
+                <DialogTitle
+                  sx={{
                     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                     color: 'white',
                     fontSize: '1.5rem',
@@ -881,8 +902,8 @@ const App: React.FC = () => {
                   <DialogContentText sx={{ fontSize: '1.1rem', color: 'text.primary', mb: 2 }}>
                     Tu sesión ha sido cerrada porque iniciaste sesión en otro dispositivo o navegador.
                   </DialogContentText>
-                  <DialogContentText sx={{ 
-                    fontSize: '0.95rem', 
+                  <DialogContentText sx={{
+                    fontSize: '0.95rem',
                     color: 'text.secondary',
                     bgcolor: 'grey.100',
                     p: 2,
