@@ -13029,6 +13029,9 @@ function generateIdFlow(length = 32) {
     return result;
 }
 
+// Map para controlar campañas en ejecución
+const runningCampaigns = new Map();
+
 async function processCampaign(campaignId, sessionId) {
     console.log(`[CAMPAIGN-PROCESSOR] 🚀 Iniciando procesamiento de campaña ${campaignId} para sesión ${sessionId}`);
 
@@ -13102,7 +13105,21 @@ async function processCampaign(campaignId, sessionId) {
             let sentCount = 0;
             let failedCount = 0;
 
+            // Marcar campaña como en ejecución
+            runningCampaigns.set(campaignId, { shouldStop: false });
+
             for (let i = 0; i < recipients.length; i++) {
+                // Verificar si la campaña debe detenerse
+                const campaignControl = runningCampaigns.get(campaignId);
+                if (campaignControl && campaignControl.shouldStop) {
+                    console.log(`[CAMPAIGN-PROCESSOR] ⏸️ Campaña ${campaignId} detenida por solicitud`);
+                    await connection.execute(
+                        'UPDATE campaigns SET status = \'paused\' WHERE id = ?',
+                        [campaignId]
+                    );
+                    break;
+                }
+
                 const recipient = recipients[i];
 
                 try {
@@ -13192,17 +13209,23 @@ async function processCampaign(campaignId, sessionId) {
             }
 
             // Finalizar campaña
-            await connection.execute(
-                'UPDATE campaigns SET status = \'completed\', completed_at = NOW() WHERE id = ?',
-                [campaignId]
-            );
+            const campaignControl = runningCampaigns.get(campaignId);
+            if (!campaignControl || !campaignControl.shouldStop) {
+                await connection.execute(
+                    'UPDATE campaigns SET status = \'completed\', completed_at = NOW() WHERE id = ?',
+                    [campaignId]
+                );
 
-            console.log(`[CAMPAIGN-PROCESSOR] 🏁 Campaña ${campaignId} finalizada. Enviados: ${sentCount}, Fallidos: ${failedCount}`);
+                console.log(`[CAMPAIGN-PROCESSOR] 🏁 Campaña ${campaignId} finalizada. Enviados: ${sentCount}, Fallidos: ${failedCount}`);
 
-            io.to(`session-${sessionId}`).emit('campaign-completed', {
-                campaignId,
-                stats: { sent: sentCount, failed: failedCount }
-            });
+                io.to(`session-${sessionId}`).emit('campaign-completed', {
+                    campaignId,
+                    stats: { sent: sentCount, failed: failedCount }
+                });
+            }
+
+            // Limpiar del Map
+            runningCampaigns.delete(campaignId);
 
         })().catch(err => console.error('[CAMPAIGN-PROCESSOR] Error en background process:', err));
 
@@ -13974,11 +13997,17 @@ app.post('/api/campaigns/pause/:sessionId', async (req, res) => {
             });
         }
 
+        // Detener la campaña en ejecución
+        const campaignControl = runningCampaigns.get(campaignId);
+        if (campaignControl) {
+            campaignControl.shouldStop = true;
+        }
+
         const connection = await pool.getConnection();
         try {
             await connection.execute(
-                'UPDATE campaigns SET status = \'paused\', updated_at = NOW() WHERE id = ? AND session_id = ?',
-                [campaignId, phoneNumber]
+                'UPDATE campaigns SET status = \'paused\', updated_at = NOW() WHERE id = ? AND (phone_number = ? OR session_id = ?)',
+                [campaignId, phoneNumber, phoneNumber]
             );
 
             res.json({
@@ -13990,6 +14019,59 @@ app.post('/api/campaigns/pause/:sessionId', async (req, res) => {
         }
     } catch (error) {
         console.error('[CAMPAIGNS] Error pausando campaña:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Reanudar campaña
+app.post('/api/campaigns/resume/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+    const { campaignId } = req.body;
+
+    if (!pool) {
+        return res.status(503).json({
+            success: false,
+            error: 'Servicio de base de datos no disponible'
+        });
+    }
+
+    try {
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(400).json({
+                success: false,
+                error: 'No se pudo obtener el número de teléfono para esta sesión'
+            });
+        }
+
+        const session = sessions.get(sessionId);
+        if (!session || !session.isConnected) {
+            return res.status(400).json({
+                success: false,
+                error: 'Sesión de WhatsApp no conectada'
+            });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            await connection.execute(
+                'UPDATE campaigns SET status = \'sending\', updated_at = NOW() WHERE id = ? AND (phone_number = ? OR session_id = ?)',
+                [campaignId, phoneNumber, phoneNumber]
+            );
+
+            res.json({
+                success: true,
+                message: 'Campaña reanudada'
+            });
+
+            // Reanudar procesamiento
+            processCampaign(campaignId, sessionId);
+
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[CAMPAIGNS] Error reanudando campaña:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

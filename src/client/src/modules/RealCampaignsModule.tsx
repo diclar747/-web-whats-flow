@@ -1183,6 +1183,37 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     }
   };
 
+  // Reanudar campaña
+  const resumeCampaign = async (campaignId: string) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${getAPIBaseURL()}/api/campaigns/resume/${sessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Actualizar el estado local
+        const updatedCampaigns = campaigns.map(c =>
+          c.id === campaignId ? { ...c, status: 'sending' as any } : c
+        );
+        setCampaigns(updatedCampaigns);
+        saveCampaigns(updatedCampaigns);
+        setSuccess('Campaña reanudada exitosamente');
+      } else {
+        setError(data.error || 'Error al reanudar campaña');
+      }
+    } catch (error) {
+      console.error('Error resuming campaign:', error);
+      setError('Error de conexión al reanudar campaña');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Abrir diálogo de edición
   const openEditDialog = (campaign: CampaignData) => {
     setEditingCampaign(campaign);
@@ -1422,10 +1453,6 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                       </Alert>
                     )}
 
-                    <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                      <strong>Mensaje:</strong> {campaign.message.text.substring(0, 100)}...
-                    </Typography>
-
                     <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
                       {/* Botones de acción organizados */}
                       {campaign.status === 'draft' || campaign.status === 'scheduled' ? (
@@ -1499,6 +1526,48 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                             sx={{ minWidth: 100 }}
                           >
                             Detalles
+                          </Button>
+                        </>
+                      ) : campaign.status === 'paused' ? (
+                        <>
+                          <Chip
+                            icon={<Pause />}
+                            label="Campaña Pausada"
+                            color="warning"
+                            size="small"
+                          />
+                          <Button
+                            variant="contained"
+                            size="small"
+                            startIcon={<PlayArrow />}
+                            onClick={() => resumeCampaign(campaign.id)}
+                            sx={{
+                              bgcolor: '#00a884',
+                              color: 'white',
+                              '&:hover': { bgcolor: '#008069' },
+                              minWidth: 100
+                            }}
+                          >
+                            Reanudar
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<Visibility />}
+                            onClick={() => viewCampaignDetails(campaign.id)}
+                            sx={{ minWidth: 100 }}
+                          >
+                            Detalles
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            color="error"
+                            startIcon={<Delete />}
+                            onClick={() => deleteCampaign(campaign.id)}
+                            sx={{ minWidth: 100 }}
+                          >
+                            Eliminar
                           </Button>
                         </>
                       ) : (
