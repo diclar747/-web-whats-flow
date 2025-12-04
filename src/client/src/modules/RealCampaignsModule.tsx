@@ -224,6 +224,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const [showTemplatesDialog, setShowTemplatesDialog] = useState(false);
   const [showCreateTemplateDialog, setShowCreateTemplateDialog] = useState(false);
   const [newTemplate, setNewTemplate] = useState({ name: '', message: '', category: 'general' });
+  const [showTemplateEmojiPicker, setShowTemplateEmojiPicker] = useState(false);
   const [contactSearchTerm, setContactSearchTerm] = useState('');
 
   const [newCampaign, setNewCampaign] = useState<Partial<CampaignData>>({
@@ -392,6 +393,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       if (data.success) {
         setSuccess('Plantilla creada exitosamente');
         setShowCreateTemplateDialog(false);
+        setShowTemplateEmojiPicker(false);
         setNewTemplate({ name: '', message: '', category: 'general' });
         loadTemplates();
       } else {
@@ -2947,7 +2949,11 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       {/* Dialog Crear Plantilla */}
       <Dialog
         open={showCreateTemplateDialog}
-        onClose={() => setShowCreateTemplateDialog(false)}
+        onClose={() => {
+          setShowCreateTemplateDialog(false);
+          setShowTemplateEmojiPicker(false);
+          setNewTemplate({ name: '', message: '', category: 'general' });
+        }}
         maxWidth="sm"
         fullWidth
       >
@@ -2989,6 +2995,61 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
               </Select>
             </FormControl>
 
+            {/* Botón de emoji para plantilla */}
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              <IconButton
+                size="small"
+                onClick={() => setShowTemplateEmojiPicker(!showTemplateEmojiPicker)}
+                color={showTemplateEmojiPicker ? "primary" : "default"}
+                title="Agregar emoji"
+              >
+                <EmojiEmotions />
+              </IconButton>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => setNewTemplate(prev => ({
+                  ...prev,
+                  message: prev.message + '{nombre}'
+                }))}
+              >
+                {'{nombre}'}
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => setNewTemplate(prev => ({
+                  ...prev,
+                  message: prev.message + '{telefono}'
+                }))}
+              >
+                {'{telefono}'}
+              </Button>
+            </Box>
+
+            {/* Selector de emojis para plantilla */}
+            {showTemplateEmojiPicker && (
+              <Box sx={{ 
+                position: 'relative',
+                zIndex: 9999,
+                '& .epr-main': {
+                  width: '100%'
+                }
+              }}>
+                <EmojiPicker
+                  onEmojiClick={(emojiData: EmojiClickData) => {
+                    setNewTemplate(prev => ({
+                      ...prev,
+                      message: prev.message + emojiData.emoji
+                    }));
+                  }}
+                  searchPlaceHolder="Buscar emoji..."
+                  width="100%"
+                  height={350}
+                />
+              </Box>
+            )}
+
             <TextField
               fullWidth
               label="Mensaje"
@@ -3005,6 +3066,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                 variant="outlined"
                 onClick={() => {
                   setShowCreateTemplateDialog(false);
+                  setShowTemplateEmojiPicker(false);
                   setNewTemplate({ name: '', message: '', category: 'general' });
                 }}
               >
