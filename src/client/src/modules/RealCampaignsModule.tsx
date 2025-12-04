@@ -976,6 +976,15 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
       // 🔥 GUARDAR EN BASE DE DATOS
       console.log('💾 Guardando campaña en base de datos...');
+      // Normalizar JIDs de contactos (asegurar que tengan @s.whatsapp.net)
+      const normalizeJid = (phone: string) => {
+        if (!phone) return '';
+        // Si ya tiene @, retornarlo tal cual
+        if (phone.includes('@')) return phone;
+        // Si es solo número, agregar @s.whatsapp.net
+        return `${phone}@s.whatsapp.net`;
+      };
+
       const campaignPayload = {
         sessionId,
         campaign: {
@@ -983,7 +992,10 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           messageTemplate: newCampaign.message?.text || '',
           mediaUrl,
           mediaType,
-          recipients: newCampaign.contacts.map(c => ({ jid: c.phone, name: c.name })),
+          recipients: newCampaign.contacts.map(c => ({ 
+            jid: normalizeJid(c.phone), 
+            name: c.name 
+          })),
           useRandomTiming: newCampaign.useRandomTiming || false,
           randomTimingMsgCount: newCampaign.flowConfig?.messagesCount || null,
           randomTimingTimeSpanMinutes: newCampaign.flowConfig?.timeSpanMinutes || null,
