@@ -54,7 +54,7 @@ import {
   Delete,
   Edit,
   Visibility,
-  Error,
+  Error as ErrorIcon,
   CheckCircle,
   Smartphone,
   Bolt,
@@ -974,8 +974,41 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         }
       }
 
+      // 🔥 GUARDAR EN BASE DE DATOS
+      console.log('💾 Guardando campaña en base de datos...');
+      const campaignPayload = {
+        sessionId,
+        campaign: {
+          name: newCampaign.name,
+          messageTemplate: newCampaign.message?.text || '',
+          mediaUrl,
+          mediaType,
+          recipients: newCampaign.contacts.map(c => ({ jid: c.phone, name: c.name })),
+          useRandomTiming: newCampaign.useRandomTiming || false,
+          randomTimingMsgCount: newCampaign.flowConfig?.messagesCount || null,
+          randomTimingTimeSpanMinutes: newCampaign.flowConfig?.timeSpanMinutes || null,
+          useIdFlow: newCampaign.useIdFlow || false,
+          idFlowSize: 32
+        }
+      };
+
+      const createResponse = await fetch(`${getAPIBaseURL()}/api/campaigns/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(campaignPayload)
+      });
+
+      const createResult = await createResponse.json();
+
+      if (!createResult.success) {
+        throw new Error(createResult.error || 'Error al guardar campaña en servidor');
+      }
+
+      const campaignId = createResult.data.campaignId;
+      console.log('✅ Campaña guardada en BD con ID:', campaignId);
+
       const campaign: CampaignData = {
-        id: Date.now().toString(),
+        id: campaignId.toString(), // Usar ID de la base de datos
         name: newCampaign.name,
         type: newCampaign.type || 'direct',
         status: 'draft',
@@ -1207,7 +1240,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     switch (status) {
       case 'completed': return <CheckCircle />;
       case 'sending': return <Send />;
-      case 'failed': return <Error />;
+      case 'failed': return <ErrorIcon />;
       case 'paused': return <Pause />;
       case 'scheduled': return <Schedule />;
       default: return <CampaignOutlined />;
@@ -2332,7 +2365,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                     onClick={() => setHistoryStatusFilter('failed')}
                     color={historyStatusFilter === 'failed' ? 'error' : 'default'}
                     variant={historyStatusFilter === 'failed' ? 'filled' : 'outlined'}
-                    icon={<Error />}
+                    icon={<ErrorIcon />}
                   />
                 </Box>
               </Box>
@@ -2413,7 +2446,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                                     recipient.status === 'read' ? <CheckCircle /> :
                                       recipient.status === 'delivered' ? <CheckCircle /> :
                                         recipient.status === 'sent' ? <Send /> :
-                                          recipient.status === 'failed' ? <Error /> :
+                                          recipient.status === 'failed' ? <ErrorIcon /> :
                                             <Schedule />
                                   }
                                 />

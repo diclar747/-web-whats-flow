@@ -985,6 +985,11 @@ async function migrateTables() {
         // Migración: Agregar columna is_read a messages si no existe
         await addColumnIfNotExists('messages', 'is_read', 'BOOLEAN DEFAULT FALSE');
 
+        // Migración: Agregar columnas faltantes a campaigns
+        await addColumnIfNotExists('campaigns', 'phone_number', 'VARCHAR(255)');
+        await addColumnIfNotExists('campaigns', 'message_media_url', 'VARCHAR(1024)');
+        await addColumnIfNotExists('campaigns', 'message_media_type', 'VARCHAR(50)');
+
         // Migración 2: Agregar índice único si no existe
         console.log('[DB-MIGRATION] Checking contact_groups indexes...');
         try {
@@ -12848,17 +12853,20 @@ app.get('/api/kanban/boards/:sessionId', async (req, res) => {
             // Consulta optimizada con timeout
             const queryPromise = connection.execute(
                 `SELECT
-                    id,
-                    session_id,
-                    name,
-                    color,
-                    board_order,
-                    is_default,
-                    created_at,
-                    updated_at
-                FROM kanban_boards
-                WHERE session_id = ?
-                ORDER BY board_order ASC, created_at ASC
+                    kb.id,
+                    kb.session_id,
+                    kb.name,
+                    kb.color,
+                    kb.board_order,
+                    kb.is_default,
+                    kb.created_at,
+                    kb.updated_at,
+                    COUNT(kc.id) as user_count
+                FROM kanban_boards kb
+                LEFT JOIN kanban_contacts kc ON kb.id = kc.board_id
+                WHERE kb.session_id = ?
+                GROUP BY kb.id
+                ORDER BY kb.board_order ASC, kb.created_at ASC
                 LIMIT 20`,  // Reducir límite para evitar sobrecarga de recursos
                 [phoneNumber]
             );
@@ -13420,15 +13428,16 @@ app.post('/api/campaigns/create', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            // Insertar campaña
+            // Insertar campaña - session_id almacena el phone_number para persistencia
             const [result] = await connection.execute(
                 `INSERT INTO campaigns (
-                    session_id, name, message_template, message_media_url, message_media_type,
+                    session_id, phone_number, name, message_template, message_media_url, message_media_type,
                     use_random_timing, random_timing_msg_count, random_timing_time_span_minutes,
                     use_id_flow, id_flow_size, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
                 [
-                    phoneNumber,
+                    phoneNumber,  // session_id guarda phone_number para persistencia
+                    phoneNumber,  // phone_number también
                     campaign.name,
                     campaign.message?.text || campaign.messageTemplate || '',
                     campaign.mediaUrl || null,
@@ -13441,10 +13450,26 @@ app.post('/api/campaigns/create', async (req, res) => {
                 ]
             );
 
+            console.log(`[CAMPAIGNS] ✅ Campaña creada con ID ${result.insertId} para phone_number: ${phoneNumber}`);
+
             const campaignId = result.insertId;
 
             // Insertar destinatarios
             if (campaign.recipients && campaign.recipients.length > 0) {
+                // Primero, asegurar que todos los contactos existen en la tabla contacts
+                for (const recipient of campaign.recipients) {
+                    const contactJid = recipient.jid || recipient.id;
+                    const contactName = recipient.name || '';
+                    
+                    // INSERT IGNORE para crear el contacto solo si no existe
+                    await connection.execute(
+                        `INSERT IGNORE INTO contacts (jid, name, session_id, is_group, created_at)
+                         VALUES (?, ?, ?, 0, NOW())`,
+                        [contactJid, contactName, phoneNumber]
+                    );
+                }
+
+                // Ahora insertar los destinatarios
                 const recipientValues = campaign.recipients.map(r => [
                     campaignId,
                     r.jid || r.id,
@@ -13688,20 +13713,43 @@ app.post('/api/campaigns/send/:sessionId', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            // Obtener campaña y destinatarios
+            console.log(`[CAMPAIGNS] 🔍 Buscando campaña ID: ${campaignId} para phone: ${phoneNumber}`);
+
+            // Obtener campaña y destinatarios - Buscar por phone_number O session_id (compatibilidad)
             const [campaigns] = await connection.execute(
-                'SELECT * FROM campaigns WHERE id = ? AND session_id = ?',
-                [campaignId, phoneNumber]
+                'SELECT * FROM campaigns WHERE id = ? AND (phone_number = ? OR session_id = ?)',
+                [campaignId, phoneNumber, phoneNumber]
             );
 
+            console.log(`[CAMPAIGNS] 📊 Campañas encontradas: ${campaigns.length}`);
+
             if (campaigns.length === 0) {
+                // Intentar buscar solo por ID para debug
+                const [allCampaigns] = await connection.execute(
+                    'SELECT id, session_id, name, status FROM campaigns WHERE id = ?',
+                    [campaignId]
+                );
+
+                console.log(`[CAMPAIGNS] ⚠️ Campaña con ID ${campaignId}:`, allCampaigns.length > 0 ? allCampaigns[0] : 'No existe');
+
                 return res.status(404).json({
                     success: false,
-                    error: 'Campaña no encontrada'
+                    error: 'Campaña no encontrada',
+                    debug: {
+                        campaignId,
+                        phoneNumber,
+                        campaignExists: allCampaigns.length > 0,
+                        campaignData: allCampaigns.length > 0 ? {
+                            id: allCampaigns[0].id,
+                            session_id: allCampaigns[0].session_id,
+                            name: allCampaigns[0].name
+                        } : null
+                    }
                 });
             }
 
             const campaign = campaigns[0];
+            console.log(`[CAMPAIGNS] ✅ Campaña encontrada: ${campaign.name} (Status: ${campaign.status})`);
 
             // Actualizar estado de campaña
             await connection.execute(

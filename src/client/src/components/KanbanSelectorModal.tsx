@@ -30,6 +30,7 @@ interface KanbanBoard {
   color: string;
   order: number;
   is_default?: boolean;
+  user_count?: number;
 }
 
 interface Contact {
@@ -286,13 +287,24 @@ const KanbanSelectorModal: React.FC<KanbanSelectorModalProps> = ({
                     </ListItemIcon>
                     <ListItemText
                       primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography sx={{ fontWeight: selectedBoard === board.id ? 600 : 400 }}>
-                            {board.name}
-                          </Typography>
-                          {board.is_default && (
-                            <Chip label="Por defecto" size="small" sx={{ height: 20 }} />
-                          )}
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography sx={{ fontWeight: selectedBoard === board.id ? 600 : 400 }}>
+                              {board.name}
+                            </Typography>
+                            {board.is_default && (
+                              <Chip label="Por defecto" size="small" sx={{ height: 20 }} />
+                            )}
+                          </Box>
+                          <Chip
+                            label={board.user_count || 0}
+                            size="small"
+                            sx={{
+                              height: 20,
+                              bgcolor: selectedBoard === board.id ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)',
+                              fontWeight: 'bold'
+                            }}
+                          />
                         </Box>
                       }
                     />
