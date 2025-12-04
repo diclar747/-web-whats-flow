@@ -13141,9 +13141,23 @@ async function processCampaign(campaignId, sessionId) {
                     // Preparar mensaje
                     let messageText = campaign.message_template;
 
-                    // Personalización básica (si existiera lógica de variables en DB, aquí se aplicaría)
-                    // Por ahora asumimos que el template es estático o las variables se reemplazan en frontend
-                    // TODO: Implementar reemplazo de variables {nombre} si guardamos esos datos en campaign_recipients
+                    // Obtener nombre del contacto para reemplazo de variables
+                    const [contactData] = await connection.execute(
+                        'SELECT name FROM contacts WHERE jid = ?',
+                        [recipient.contact_jid]
+                    );
+                    const contactName = contactData.length > 0 ? contactData[0].name : '';
+
+                    // Reemplazar variables en el mensaje
+                    if (contactName) {
+                        messageText = messageText.replace(/\{nombre\}/gi, contactName);
+                        messageText = messageText.replace(/\{name\}/gi, contactName);
+                    }
+                    
+                    // Reemplazar número de teléfono
+                    const phoneNumber = recipient.contact_jid.split('@')[0];
+                    messageText = messageText.replace(/\{telefono\}/gi, phoneNumber);
+                    messageText = messageText.replace(/\{phone\}/gi, phoneNumber)
 
                     // ID FLOW
                     if (campaign.use_id_flow) {
@@ -13197,15 +13211,13 @@ async function processCampaign(campaignId, sessionId) {
                     failedCount++;
                 }
 
-                // Actualizar progreso de campaña cada 5 mensajes
-                if ((sentCount + failedCount) % 5 === 0) {
-                    io.to(`session-${sessionId}`).emit('campaign-progress', {
-                        campaignId,
-                        sent: sentCount,
-                        failed: failedCount,
-                        total: recipients.length
-                    });
-                }
+                // Actualizar progreso de campaña en cada mensaje
+                io.to(`session-${sessionId}`).emit('campaign-progress', {
+                    campaignId,
+                    sent: sentCount,
+                    failed: failedCount,
+                    total: recipients.length
+                });
             }
 
             // Finalizar campaña
@@ -14072,6 +14084,102 @@ app.post('/api/campaigns/resume/:sessionId', async (req, res) => {
         }
     } catch (error) {
         console.error('[CAMPAIGNS] Error reanudando campaña:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============= PLANTILLAS DE CAMPAÑAS =============
+
+// Obtener plantillas
+app.get('/api/campaign-templates/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+
+    if (!pool) {
+        return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
+    }
+
+    try {
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(400).json({ success: false, error: 'Sesión no encontrada' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            const [templates] = await connection.execute(
+                'SELECT * FROM campaign_templates WHERE phone_number = ? OR phone_number = ? ORDER BY created_at DESC',
+                [phoneNumber, 'ALL']
+            );
+
+            res.json({ success: true, data: templates });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[TEMPLATES] Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Crear plantilla
+app.post('/api/campaign-templates/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+    const { name, message_template, description, category } = req.body;
+
+    if (!pool) {
+        return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
+    }
+
+    try {
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(400).json({ success: false, error: 'Sesión no encontrada' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            const [result] = await connection.execute(
+                'INSERT INTO campaign_templates (phone_number, name, message_template, description, category) VALUES (?, ?, ?, ?, ?)',
+                [phoneNumber, name, message_template, description || null, category || 'general']
+            );
+
+            res.json({ success: true, data: { id: result.insertId } });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[TEMPLATES] Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Eliminar plantilla
+app.delete('/api/campaign-templates/:sessionId/:templateId', async (req, res) => {
+    const { sessionId, templateId } = req.params;
+
+    if (!pool) {
+        return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
+    }
+
+    try {
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(400).json({ success: false, error: 'Sesión no encontrada' });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            await connection.execute(
+                'DELETE FROM campaign_templates WHERE id = ? AND phone_number = ?',
+                [templateId, phoneNumber]
+            );
+
+            res.json({ success: true });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[TEMPLATES] Error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

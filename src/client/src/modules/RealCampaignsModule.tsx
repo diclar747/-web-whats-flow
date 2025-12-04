@@ -74,6 +74,9 @@ import {
   Close,
   Refresh,
   Search,
+  Settings,
+  Description,
+  ContentCopy,
 } from '@mui/icons-material';
 import { useTheme } from '../contexts/ThemeContext';
 import { io, Socket } from 'socket.io-client';
@@ -215,6 +218,12 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const [contactsHasMore, setContactsHasMore] = useState(true);
   const [contactsLoading, setContactsLoading] = useState(false);
   const [totalContacts, setTotalContacts] = useState(0);
+
+  // Estados para plantillas
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [showTemplatesDialog, setShowTemplatesDialog] = useState(false);
+  const [showCreateTemplateDialog, setShowCreateTemplateDialog] = useState(false);
+  const [newTemplate, setNewTemplate] = useState({ name: '', message: '', category: 'general' });
   const [contactSearchTerm, setContactSearchTerm] = useState('');
 
   const [newCampaign, setNewCampaign] = useState<Partial<CampaignData>>({
