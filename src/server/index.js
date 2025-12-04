@@ -7059,7 +7059,8 @@ app.post('/api/session/check-by-device', async (req, res) => {
 
 // Crear nueva sesión de WhatsApp
 app.post('/api/create-session', async (req, res) => {
-    const syncHistory = req.body.syncHistory !== undefined ? req.body.syncHistory : true; // Por defecto TRUE - SIEMPRE sincronizar
+    // ⚡ OPTIMIZACIÓN: Por defecto FALSE - Solo sincronizar si es la primera vez
+    let syncHistory = req.body.syncHistory !== undefined ? req.body.syncHistory : false;
     const deviceId = req.body.deviceId; // ID único del dispositivo/navegador
 
     console.log(`[SESSION] 🔄 Solicitud de sesión con deviceId: ${deviceId?.substring(0, 20)}...`);
@@ -7109,6 +7110,32 @@ app.post('/api/create-session', async (req, res) => {
     // Si no existe sesión activa, crear una nueva
     const sessionId = req.body.sessionId || crypto.randomBytes(8).toString('hex');
     console.log(`[SESSION] 🆕 Creando nueva sesión: ${sessionId}`);
+
+    // ⚡ SMART SYNC: Auto-detectar si es primera vez (BD vacía) y activar sync automáticamente
+    if (!syncHistory && pool) {
+        try {
+            const connection = await pool.getConnection();
+            try {
+                const [messageCount] = await connection.execute(
+                    'SELECT COUNT(*) as count FROM messages WHERE session_id = ? LIMIT 1',
+                    [sessionId]
+                );
+                const hasMessages = messageCount[0]?.count > 0;
+
+                if (!hasMessages) {
+                    syncHistory = true;
+                    console.log(`[SESSION] 🔄 Primera conexión detectada - Activando syncHistory automáticamente`);
+                } else {
+                    console.log(`[SESSION] ⚡ BD tiene datos - Modo RÁPIDO (sin resync)`);
+                }
+            } finally {
+                connection.release();
+            }
+        } catch (err) {
+            console.log(`[SESSION] ⚠️ Error verificando BD, usando syncHistory por defecto`);
+        }
+    }
+
     console.log(`[SESSION] 📊 Sincronización de historial: ${syncHistory ? 'ACTIVA ✅' : 'DESACTIVADA ❌'}`);
 
     // Guardar preferencia de sincronización para esta sesión
@@ -8660,9 +8687,17 @@ app.get('/api/chats/:sessionId', async (req, res) => {
         let chats = [];
         let source = 'database';
 
-        // 🚀 PRIORIDAD 1: Si hay sesión activa de WhatsApp, obtener chats de la sesión
-        if (session && session.sock && session.sock.store && session.sock.store.chats) {
-            console.log(`[API][${sessionId}] 🔥 Sesión activa detectada - obteniendo chats de WhatsApp en memoria`);
+        // ⚡ PRIORIDAD 1: SIEMPRE cargar desde DB primero (es mucho más rápido)
+        console.log(`[API][${sessionId}] 🚀 Cargando chats desde BD (OPTIMIZADO)...`);
+        const startTime = Date.now();
+        chats = await loadChatListFromDB(sessionId, includeGroups, dateFilter);
+        const dbLoadTime = Date.now() - startTime;
+        console.log(`[API][${sessionId}] ✅ ${chats.length} chats cargados desde BD en ${dbLoadTime}ms`);
+        source = 'database';
+
+        // 🔄 FALLBACK: Solo si la DB está vacía, intentar desde memoria
+        if (chats.length === 0 && session && session.sock && session.sock.store && session.sock.store.chats) {
+            console.log(`[API][${sessionId}] 📦 BD vacía, cargando desde memoria de WhatsApp...`);
 
             try {
                 let memoryChats = [];
@@ -8706,19 +8741,11 @@ app.get('/api/chats/:sessionId', async (req, res) => {
                     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
                 source = 'memory';
-                console.log(`[API][${sessionId}] ✅ Devolviendo ${chats.length} chats desde MEMORIA (WhatsApp activo)`);
+                console.log(`[API][${sessionId}] ✅ Devolviendo ${chats.length} chats desde MEMORIA`);
             } catch (memoryError) {
                 console.error(`[API][${sessionId}] ❌ Error obteniendo chats de memoria:`, memoryError);
                 chats = [];
             }
-        }
-
-        // 🗄️ FALLBACK: Si no hay chats en memoria, intentar cargar desde DB
-        if (chats.length === 0) {
-            console.log(`[API][${sessionId}] 📦 No hay chats en memoria, intentando desde BD...`);
-            chats = await loadChatListFromDB(sessionId, includeGroups, dateFilter);
-            source = 'database';
-            console.log(`[API][${sessionId}] ✅ Devolviendo ${chats.length} chats desde BD`);
         }
 
         res.json({
