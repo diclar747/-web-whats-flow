@@ -2551,69 +2551,168 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
             </Box>
           ) : selectedCampaignDetails ? (
             <Box>
-              {/* Información de la Campaña */}
-              <Paper sx={{ p: 3, mb: 3 }}>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} md={6}>
-                    <Typography variant="subtitle2" color="textSecondary">
-                      Nombre de la Campaña
-                    </Typography>
-                    <Typography variant="body1" gutterBottom>
-                      {selectedCampaignDetails.campaign.name}
-                    </Typography>
+              {/* Botones de Exportar */}
+              <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+                <Button
+                  variant="contained"
+                  startIcon={<Description />}
+                  onClick={() => {
+                    // TODO: Implementar exportar a Excel
+                    alert('Exportar a Excel - En desarrollo');
+                  }}
+                  sx={{
+                    bgcolor: '#217346',
+                    '&:hover': { bgcolor: '#1a5c37' }
+                  }}
+                >
+                  Exportar a Excel
+                </Button>
+                <Button
+                  variant="contained"
+                  color="error"
+                  startIcon={<Description />}
+                  onClick={() => {
+                    // TODO: Implementar exportar a PDF
+                    alert('Exportar a PDF - En desarrollo');
+                  }}
+                >
+                  Exportar a PDF
+                </Button>
+              </Box>
+
+              {/* Información de la Campaña - Card Principal */}
+              <Card sx={{ mb: 3, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+                <CardContent>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} md={8}>
+                      <Typography variant="h5" sx={{ color: 'white', mb: 1, fontWeight: 600 }}>
+                        {selectedCampaignDetails.campaign.name}
+                      </Typography>
+                      <Chip
+                        label={selectedCampaignDetails.campaign.status.toUpperCase()}
+                        sx={{
+                          bgcolor: 'rgba(255,255,255,0.2)',
+                          color: 'white',
+                          fontWeight: 600
+                        }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={4} sx={{ textAlign: { md: 'right' } }}>
+                      <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)' }}>
+                        {new Date(selectedCampaignDetails.campaign.created_at).toLocaleDateString('es-ES', {
+                          day: '2-digit',
+                          month: 'long',
+                          year: 'numeric'
+                        })}
+                      </Typography>
+                    </Grid>
                   </Grid>
-                  <Grid item xs={12} md={6}>
-                    <Typography variant="subtitle2" color="textSecondary">
-                      Estado
+                  
+                  <Box sx={{ mt: 2, p: 2, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: 2 }}>
+                    <Typography variant="subtitle2" sx={{ color: 'rgba(255,255,255,0.8)', mb: 1 }}>
+                      📝 Mensaje
                     </Typography>
-                    <Chip
-                      label={selectedCampaignDetails.campaign.status.toUpperCase()}
-                      color={getStatusColor(selectedCampaignDetails.campaign.status) as any}
-                      size="small"
-                    />
-                  </Grid>
-                  <Grid item xs={12}>
-                    <Typography variant="subtitle2" color="textSecondary">
-                      Mensaje
-                    </Typography>
-                    <Typography variant="body2">
+                    <Typography variant="body1" sx={{ color: 'white' }}>
                       {selectedCampaignDetails.campaign.message_template}
                     </Typography>
-                  </Grid>
-                  <Grid item xs={12} md={3}>
-                    <Typography variant="subtitle2" color="textSecondary">
-                      Total Destinatarios
-                    </Typography>
-                    <Typography variant="h6">
-                      {selectedCampaignDetails.recipients?.length || 0}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={12} md={3}>
-                    <Typography variant="subtitle2" color="textSecondary">
-                      Enviados
-                    </Typography>
-                    <Typography variant="h6" color="info.main">
-                      {selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'sent' || r.status === 'delivered' || r.status === 'read').length || 0}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={12} md={3}>
-                    <Typography variant="subtitle2" color="textSecondary">
-                      Entregados
-                    </Typography>
-                    <Typography variant="h6" color="success.main">
-                      {selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'delivered' || r.status === 'read').length || 0}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={12} md={3}>
-                    <Typography variant="subtitle2" color="textSecondary">
-                      Fallidos
-                    </Typography>
-                    <Typography variant="h6" color="error.main">
-                      {selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'failed').length || 0}
-                    </Typography>
-                  </Grid>
+                  </Box>
+                </CardContent>
+              </Card>
+
+              {/* Tarjetas de Estadísticas */}
+              <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid item xs={12} sm={6} md={3}>
+                  <Card sx={{ 
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    transition: 'transform 0.2s',
+                    '&:hover': { transform: 'translateY(-4px)' }
+                  }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                        <People sx={{ color: 'white', mr: 1, fontSize: 30 }} />
+                        <Typography variant="h6" sx={{ color: 'white' }}>
+                          Total
+                        </Typography>
+                      </Box>
+                      <Typography variant="h3" sx={{ color: 'white', fontWeight: 700 }}>
+                        {selectedCampaignDetails.recipients?.length || 0}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                        Destinatarios
+                      </Typography>
+                    </CardContent>
+                  </Card>
                 </Grid>
-              </Paper>
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <Card sx={{ 
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    transition: 'transform 0.2s',
+                    '&:hover': { transform: 'translateY(-4px)' }
+                  }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                        <Send sx={{ color: 'white', mr: 1, fontSize: 30 }} />
+                        <Typography variant="h6" sx={{ color: 'white' }}>
+                          Enviados
+                        </Typography>
+                      </Box>
+                      <Typography variant="h3" sx={{ color: 'white', fontWeight: 700 }}>
+                        {selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'sent' || r.status === 'delivered' || r.status === 'read').length || 0}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                        Mensajes enviados
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <Card sx={{ 
+                    background: 'linear-gradient(135deg, #00c853 0%, #00e676 100%)',
+                    transition: 'transform 0.2s',
+                    '&:hover': { transform: 'translateY(-4px)' }
+                  }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                        <CheckCircle sx={{ color: 'white', mr: 1, fontSize: 30 }} />
+                        <Typography variant="h6" sx={{ color: 'white' }}>
+                          Entregados
+                        </Typography>
+                      </Box>
+                      <Typography variant="h3" sx={{ color: 'white', fontWeight: 700 }}>
+                        {selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'delivered' || r.status === 'read').length || 0}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                        Confirmados
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid item xs={12} sm={6} md={3}>
+                  <Card sx={{ 
+                    background: 'linear-gradient(135deg, #f44336 0%, #e91e63 100%)',
+                    transition: 'transform 0.2s',
+                    '&:hover': { transform: 'translateY(-4px)' }
+                  }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                        <ErrorIcon sx={{ color: 'white', mr: 1, fontSize: 30 }} />
+                        <Typography variant="h6" sx={{ color: 'white' }}>
+                          Fallidos
+                        </Typography>
+                      </Box>
+                      <Typography variant="h3" sx={{ color: 'white', fontWeight: 700 }}>
+                        {selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'failed').length || 0}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                        Con error
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
 
               {/* Tabla de Destinatarios */}
               <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
