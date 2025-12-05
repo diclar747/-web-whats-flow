@@ -2881,50 +2881,140 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                 </Box>
               </Paper>
 
-              {/* Resumen de Estados */}
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="subtitle2" gutterBottom>
-                  Resumen de Estados
+              {/* Resumen de Estados - Mini Tarjetas */}
+              <Box sx={{ mt: 4 }}>
+                <Typography variant="h6" gutterBottom sx={{ mb: 2, fontWeight: 600 }}>
+                  📊 Resumen de Estados
                 </Typography>
                 <Grid container spacing={2}>
-                  <Grid item xs={6} sm={4} md={2}>
-                    <Chip
-                      label={`Pendiente: ${selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'pending').length || 0}`}
-                      variant="outlined"
-                      size="small"
-                    />
+                  {/* Pendiente */}
+                  <Grid item xs={6} sm={4} md={2.4}>
+                    <Card sx={{ 
+                      background: 'linear-gradient(135deg, #9e9e9e 0%, #757575 100%)',
+                      transition: 'all 0.3s',
+                      '&:hover': { 
+                        transform: 'translateY(-4px)',
+                        boxShadow: 4
+                      }
+                    }}>
+                      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Box>
+                            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', display: 'block' }}>
+                              Pendiente
+                            </Typography>
+                            <Typography variant="h4" sx={{ color: 'white', fontWeight: 700 }}>
+                              {selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'pending').length || 0}
+                            </Typography>
+                          </Box>
+                          <Schedule sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 35 }} />
+                        </Box>
+                      </CardContent>
+                    </Card>
                   </Grid>
-                  <Grid item xs={6} sm={4} md={2}>
-                    <Chip
-                      label={`Enviado: ${selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'sent').length || 0}`}
-                      color="primary"
-                      variant="outlined"
-                      size="small"
-                    />
+
+                  {/* Enviado */}
+                  <Grid item xs={6} sm={4} md={2.4}>
+                    <Card sx={{ 
+                      background: 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)',
+                      transition: 'all 0.3s',
+                      '&:hover': { 
+                        transform: 'translateY(-4px)',
+                        boxShadow: 4
+                      }
+                    }}>
+                      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Box>
+                            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', display: 'block' }}>
+                              Enviado
+                            </Typography>
+                            <Typography variant="h4" sx={{ color: 'white', fontWeight: 700 }}>
+                              {selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'sent').length || 0}
+                            </Typography>
+                          </Box>
+                          <Send sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 35 }} />
+                        </Box>
+                      </CardContent>
+                    </Card>
                   </Grid>
-                  <Grid item xs={6} sm={4} md={2}>
-                    <Chip
-                      label={`Entregado: ${selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'delivered').length || 0}`}
-                      color="info"
-                      variant="outlined"
-                      size="small"
-                    />
+
+                  {/* Entregado */}
+                  <Grid item xs={6} sm={4} md={2.4}>
+                    <Card sx={{ 
+                      background: 'linear-gradient(135deg, #00bcd4 0%, #0097a7 100%)',
+                      transition: 'all 0.3s',
+                      '&:hover': { 
+                        transform: 'translateY(-4px)',
+                        boxShadow: 4
+                      }
+                    }}>
+                      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Box>
+                            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', display: 'block' }}>
+                              Entregado
+                            </Typography>
+                            <Typography variant="h4" sx={{ color: 'white', fontWeight: 700 }}>
+                              {selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'delivered').length || 0}
+                            </Typography>
+                          </Box>
+                          <CheckCircle sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 35 }} />
+                        </Box>
+                      </CardContent>
+                    </Card>
                   </Grid>
-                  <Grid item xs={6} sm={4} md={2}>
-                    <Chip
-                      label={`Visto: ${selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'read').length || 0}`}
-                      color="success"
-                      variant="outlined"
-                      size="small"
-                    />
+
+                  {/* Visto */}
+                  <Grid item xs={6} sm={4} md={2.4}>
+                    <Card sx={{ 
+                      background: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)',
+                      transition: 'all 0.3s',
+                      '&:hover': { 
+                        transform: 'translateY(-4px)',
+                        boxShadow: 4
+                      }
+                    }}>
+                      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Box>
+                            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', display: 'block' }}>
+                              Visto
+                            </Typography>
+                            <Typography variant="h4" sx={{ color: 'white', fontWeight: 700 }}>
+                              {selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'read').length || 0}
+                            </Typography>
+                          </Box>
+                          <Visibility sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 35 }} />
+                        </Box>
+                      </CardContent>
+                    </Card>
                   </Grid>
-                  <Grid item xs={6} sm={4} md={2}>
-                    <Chip
-                      label={`Fallido: ${selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'failed').length || 0}`}
-                      color="error"
-                      variant="outlined"
-                      size="small"
-                    />
+
+                  {/* Fallido */}
+                  <Grid item xs={6} sm={4} md={2.4}>
+                    <Card sx={{ 
+                      background: 'linear-gradient(135deg, #f44336 0%, #d32f2f 100%)',
+                      transition: 'all 0.3s',
+                      '&:hover': { 
+                        transform: 'translateY(-4px)',
+                        boxShadow: 4
+                      }
+                    }}>
+                      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Box>
+                            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', display: 'block' }}>
+                              Fallido
+                            </Typography>
+                            <Typography variant="h4" sx={{ color: 'white', fontWeight: 700 }}>
+                              {selectedCampaignDetails.recipients?.filter((r: any) => r.status === 'failed').length || 0}
+                            </Typography>
+                          </Box>
+                          <ErrorIcon sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 35 }} />
+                        </Box>
+                      </CardContent>
+                    </Card>
                   </Grid>
                 </Grid>
               </Box>
