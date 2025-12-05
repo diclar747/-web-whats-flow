@@ -227,6 +227,8 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const [showTemplateEmojiPicker, setShowTemplateEmojiPicker] = useState(false);
   const [showDeleteTemplateConfirm, setShowDeleteTemplateConfirm] = useState(false);
   const [templateToDelete, setTemplateToDelete] = useState<any>(null);
+  const [showDeleteCampaignConfirm, setShowDeleteCampaignConfirm] = useState(false);
+  const [campaignToDelete, setCampaignToDelete] = useState<CampaignData | null>(null);
   const [contactSearchTerm, setContactSearchTerm] = useState('');
 
   const [newCampaign, setNewCampaign] = useState<Partial<CampaignData>>({
@@ -1309,11 +1311,42 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
   // executeCampaign eliminado - La ejecución ahora es manejada por el backend
 
-  const deleteCampaign = (campaignId: string) => {
-    const updatedCampaigns = campaigns.filter(c => c.id !== campaignId);
-    setCampaigns(updatedCampaigns);
-    saveCampaigns(updatedCampaigns);
-    setSuccess('Campaña eliminada');
+  // Mostrar confirmación para eliminar campaña
+  const confirmDeleteCampaign = (campaign: CampaignData) => {
+    setCampaignToDelete(campaign);
+    setShowDeleteCampaignConfirm(true);
+  };
+
+  const deleteCampaign = async () => {
+    if (!campaignToDelete) return;
+
+    try {
+      // Eliminar del servidor si tiene ID numérico
+      if (campaignToDelete.id && !isNaN(Number(campaignToDelete.id))) {
+        const response = await fetch(`${getAPIBaseURL()}/api/campaigns/${sessionId}/${campaignToDelete.id}`, {
+          method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+          console.warn('No se pudo eliminar del servidor, solo local');
+        }
+      }
+
+      // Eliminar localmente
+      const updatedCampaigns = campaigns.filter(c => c.id !== campaignToDelete.id);
+      setCampaigns(updatedCampaigns);
+      saveCampaigns(updatedCampaigns);
+      
+      setSuccess('Campaña eliminada exitosamente');
+      setShowDeleteCampaignConfirm(false);
+      setCampaignToDelete(null);
+      
+      // Recargar desde servidor
+      setTimeout(() => loadCampaigns(), 1000);
+    } catch (error) {
+      console.error('Error eliminando campaña:', error);
+      setError('Error al eliminar campaña');
+    }
   };
 
   // Ver detalles de campaña
@@ -1681,7 +1714,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                             size="small"
                             color="error"
                             startIcon={<Delete />}
-                            onClick={() => deleteCampaign(campaign.id)}
+                            onClick={() => confirmDeleteCampaign(campaign)}
                             sx={{ minWidth: 100 }}
                           >
                             Eliminar
@@ -1751,7 +1784,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                             size="small"
                             color="error"
                             startIcon={<Delete />}
-                            onClick={() => deleteCampaign(campaign.id)}
+                            onClick={() => confirmDeleteCampaign(campaign)}
                             sx={{ minWidth: 100 }}
                           >
                             Eliminar
@@ -1779,7 +1812,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                             size="small"
                             color="error"
                             startIcon={<Delete />}
-                            onClick={() => deleteCampaign(campaign.id)}
+                            onClick={() => confirmDeleteCampaign(campaign)}
                             sx={{ minWidth: 100 }}
                           >
                             Eliminar
@@ -3164,6 +3197,110 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
               onClick={deleteTemplate}
             >
               Eliminar
+            </Button>
+          </Box>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Confirmar Eliminar Campaña */}
+      <Dialog
+        open={showDeleteCampaignConfirm}
+        onClose={() => {
+          setShowDeleteCampaignConfirm(false);
+          setCampaignToDelete(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 1,
+          bgcolor: '#ffebee',
+          color: '#c62828'
+        }}>
+          <ErrorIcon />
+          Confirmar Eliminación de Campaña
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Esta acción eliminará la campaña permanentemente
+          </Alert>
+          
+          <Typography variant="body1" gutterBottom>
+            ¿Estás seguro de que deseas eliminar esta campaña?
+          </Typography>
+          
+          {campaignToDelete && (
+            <Card sx={{ mt: 2, bgcolor: '#f5f5f5' }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="h6" sx={{ fontSize: '1rem' }}>
+                    {campaignToDelete.name}
+                  </Typography>
+                  <Chip
+                    label={campaignToDelete.status}
+                    size="small"
+                    color={
+                      campaignToDelete.status === 'completed' ? 'success' :
+                      campaignToDelete.status === 'sending' ? 'primary' :
+                      campaignToDelete.status === 'failed' ? 'error' :
+                      campaignToDelete.status === 'paused' ? 'warning' :
+                      'default'
+                    }
+                  />
+                </Box>
+                
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 1 }}>
+                  <Chip
+                    icon={<People />}
+                    label={`${campaignToDelete.contacts?.length || 0} contactos`}
+                    size="small"
+                    variant="outlined"
+                  />
+                  {campaignToDelete.type === 'scheduled' && (
+                    <Chip
+                      icon={<Schedule />}
+                      label="Programada"
+                      size="small"
+                      variant="outlined"
+                    />
+                  )}
+                </Box>
+
+                {campaignToDelete.progress && (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Progreso: {campaignToDelete.progress.sent}/{campaignToDelete.progress.total} enviados
+                    </Typography>
+                    {campaignToDelete.progress.failed > 0 && (
+                      <Typography variant="body2" color="error">
+                        {campaignToDelete.progress.failed} fallidos
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mt: 3 }}>
+            <Button
+              variant="outlined"
+              onClick={() => {
+                setShowDeleteCampaignConfirm(false);
+                setCampaignToDelete(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<Delete />}
+              onClick={deleteCampaign}
+            >
+              Eliminar Campaña
             </Button>
           </Box>
         </DialogContent>
