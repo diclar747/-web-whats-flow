@@ -13133,8 +13133,13 @@ async function processCampaign(campaignId, sessionId) {
                             await new Promise(resolve => setTimeout(resolve, waitTime));
                         }
                     } else if (!campaign.use_random_timing && i > 0) {
-                        // Delay fijo de 2-5 segundos para evitar bloqueo
-                        const randomDelay = Math.floor(Math.random() * 3000) + 2000;
+                        // Delay ALEATORIO de 1-2 minutos (60-120 segundos) por defecto
+                        const minDelay = 60 * 1000; // 1 minuto
+                        const maxDelay = 120 * 1000; // 2 minutos
+                        const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+                        const delayMinutes = (randomDelay / 1000 / 60).toFixed(2);
+                        
+                        console.log(`[CAMPAIGN-PROCESSOR] ⏱️  Esperando ${delayMinutes} minutos antes del siguiente mensaje...`);
                         await new Promise(resolve => setTimeout(resolve, randomDelay));
                     }
 
@@ -13230,9 +13235,18 @@ async function processCampaign(campaignId, sessionId) {
 
                 console.log(`[CAMPAIGN-PROCESSOR] 🏁 Campaña ${campaignId} finalizada. Enviados: ${sentCount}, Fallidos: ${failedCount}`);
 
+                // Emitir progreso final al 100%
+                io.to(`session-${sessionId}`).emit('campaign-progress', {
+                    campaignId,
+                    sent: sentCount,
+                    failed: failedCount,
+                    total: recipients.length
+                });
+
+                // Emitir evento de completado
                 io.to(`session-${sessionId}`).emit('campaign-completed', {
                     campaignId,
-                    stats: { sent: sentCount, failed: failedCount }
+                    stats: { sent: sentCount, failed: failedCount, total: recipients.length }
                 });
             }
 
