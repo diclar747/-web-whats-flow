@@ -248,15 +248,15 @@ const AgentDashboard: React.FC = () => {
 
     on('chat:assigned', handleNewChat);
 
-    // Escuchar eventos de transferencia
-    on(`agent:${agentId}:transfer`, (data: any) => {
+    const handleTransferEvent = (data: any) => {
+      const targetAgentId = data?.toAgentId || data?.agentId;
+      if (String(targetAgentId) !== String(agentId)) return;
+
       console.log('🔄 Chat transferido a este agente:', data);
 
-      // Reproducir sonido de notificación
       const audio = new Audio('/notification.mp3');
       audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
 
-      // Mostrar notificación del navegador
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('Chat transferido', {
           body: `Se te ha transferido el chat: ${data.chatName || data.chatJid}`,
@@ -265,16 +265,10 @@ const AgentDashboard: React.FC = () => {
         });
       }
 
-      // Recargar lista de chats
       loadAgentChats();
-    });
+    };
 
-    on('agent:chat:transfer', (data: any) => {
-      if (data.agentId === agentId) {
-        console.log('🔄 Transferencia global recibida:', data);
-        loadAgentChats();
-      }
-    });
+    on('chat:transferred', handleTransferEvent);
 
     on('message:received', (data: any) => {
       console.log('📨 Mensaje recibido:', data);
@@ -338,8 +332,7 @@ const AgentDashboard: React.FC = () => {
 
     return () => {
       off(`agent-${agentId}-new-chat`);
-      off(`agent:${agentId}:transfer`);
-      off('agent:chat:transfer');
+      off('chat:transferred');
       off('chat-assignment-changed');
       off('chat:assigned');
       off('message:received');

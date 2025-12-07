@@ -287,20 +287,44 @@ const AgentPermissionsManager: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const headers = getAuthHeaders();
-      const headersObj = headers as Record<string, string>;
+      // Obtener sessionId del usuario actual como fallback
+      let sessionId = sessionStorage.getItem('whatsflow_session') || 
+                       sessionStorage.getItem('sessionId') ||
+                       localStorage.getItem('whatsflow_session');
+      
+      console.log('📱 SessionId del usuario:', sessionId);
+
+      // Si no hay token, intentar regenerarlo
+      let headers = getAuthHeaders();
+      let headersObj = headers as Record<string, string>;
+      
+      if (!headersObj['Authorization'] && sessionId) {
+        console.log('⚠️ No hay token, intentando regenerar...');
+        try {
+          const tokenResponse = await fetch(`${getAPIBaseURL()}/api/auth/generate-token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId })
+          });
+          const tokenData = await tokenResponse.json();
+          if (tokenData.success && tokenData.token) {
+            sessionStorage.setItem('token', tokenData.token);
+            localStorage.setItem('token', tokenData.token);
+            console.log('✅ Token regenerado exitosamente');
+            // Actualizar headers
+            headers = getAuthHeaders();
+            headersObj = headers as Record<string, string>;
+          }
+        } catch (tokenErr) {
+          console.warn('⚠️ Error regenerando token:', tokenErr);
+        }
+      }
+
       console.log('📤 Enviando petición para crear agente:', {
         url: `${getAPIBaseURL()}/api/agents/create`,
         hasAuth: !!headersObj['Authorization'],
         body: { ...formData, password: '***' }
       });
-
-      // Obtener sessionId del usuario actual como fallback
-      const sessionId = sessionStorage.getItem('whatsflow_session') || 
-                       sessionStorage.getItem('sessionId') ||
-                       localStorage.getItem('whatsflow_session');
-      
-      console.log('📱 SessionId del usuario:', sessionId);
 
       // Usar el endpoint correcto que crea la relación admin-agente
       const response = await fetch(`${getAPIBaseURL()}/api/agents/create`, {

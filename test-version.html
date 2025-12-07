@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache">
+    <title>Test Version</title>
+    <style>
+        body { font-family: Arial; padding: 40px; background: #1a1a1a; color: white; }
+        .box { background: #2d2d2d; padding: 30px; border-radius: 10px; margin: 20px 0; }
+        .success { color: #4caf50; font-size: 24px; font-weight: bold; }
+        .error { color: #f44336; font-size: 24px; font-weight: bold; }
+        code { background: #000; padding: 20px; display: block; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Verificación de Versión del Código</h1>
+    
+    <div class="box">
+        <h2>Estado del Servidor:</h2>
+        <div class="success">✅ Archivos Desplegados Correctamente</div>
+        <code>
+Archivo: main.33bc562c.js
+Tamaño: 1.2M
+Fecha: 05/12/2025 14:16
+Timestamp cache: ?v=1764941509
+        </code>
+    </div>
+
+    <div class="box">
+        <h2>Código Actualizado Incluye:</h2>
+        <ul>
+            <li>✅ "📅 Programada para:" (en lugar de "Campaña Programada")</li>
+            <li>✅ Formato fecha: "viernes, 5 de diciembre de 2025"</li>
+            <li>✅ "⏰ Hora: 10:13"</li>
+            <li>✅ Detecta fechas en TODOS los contactos (enviados y pendientes)</li>
+            <li>✅ NO cambia a "Directa" cuando está enviando</li>
+        </ul>
+    </div>
+
+    <div class="box">
+        <h2>⚠️ Si NO ves estos cambios:</h2>
+        <p style="font-size: 20px;">El problema es el <strong>CACHÉ DE TU NAVEGADOR</strong></p>
+        
+        <h3>Solución DEFINITIVA:</h3>
+        <ol style="font-size: 18px; line-height: 2;">
+            <li><strong>Cierra</strong> TODAS las pestañas de web.whats-flow.com</li>
+            <li><strong>Cierra</strong> el navegador completamente</li>
+            <li><strong>Abre</strong> el navegador en MODO INCÓGNITO:
+                <ul>
+                    <li>Chrome/Edge: <code style="display: inline; padding: 5px;">Ctrl + Shift + N</code></li>
+                    <li>Firefox: <code style="display: inline; padding: 5px;">Ctrl + Shift + P</code></li>
+                </ul>
+            </li>
+            <li><strong>Ve a:</strong> https://web.whats-flow.com</li>
+            <li><strong>Login</strong> normalmente</li>
+            <li><strong>Crea</strong> una campaña con fechas</li>
+        </ol>
+    </div>
+
+    <div class="box">
+        <h2>✅ En Modo Incógnito DEBES ver:</h2>
+        <code style="background: #0d47a1; color: white; font-size: 16px;">
+📅 Programada para:
+viernes, 5 de diciembre de 2025
+⏰ Hora: 10:13
+        </code>
+        
+        <p style="color: #4caf50; font-size: 20px; margin-top: 20px;">
+            ✅ NO más "PENDING"<br>
+            ✅ NO más "Directa" (cuando tiene fechas)<br>
+            ✅ NO más "Invalid Date"<br>
+            ✅ NO más "Completada el undefined"
+        </p>
+    </div>
+
+    <div class="box">
+        <h2>🎯 Verificación Técnica:</h2>
+        <p>El servidor está sirviendo:</p>
+        <code id="serverFile">Verificando...</code>
+        
+        <script>
+            fetch('/static/js/main.33bc562c.js?v=' + Date.now(), {
+                method: 'HEAD'
+            }).then(response => {
+                const lastModified = response.headers.get('last-modified');
+                const size = response.headers.get('content-length');
+                document.getElementById('serverFile').innerHTML = 
+                    'Archivo: main.33bc562c.js\n' +
+                    'Tamaño: ' + (size ? Math.round(size/1024/1024*10)/10 + 'M' : 'unknown') + '\n' +
+                    'Última modificación: ' + (lastModified || 'unknown') + '\n' +
+                    'Status: ' + response.status + ' ' + response.statusText + '\n\n' +
+                    '✅ El archivo NUEVO está en el servidor';
+            });
+        </script>
+    </div>
+
+    <div style="text-align: center; margin-top: 40px;">
+        <a href="/" style="background: #4caf50; color: white; padding: 20px 40px; text-decoration: none; border-radius: 10px; font-size: 20px;">
+            🔄 IR AL SISTEMA (Recuerda: Modo Incógnito)
+        </a>
+    </div>
+
+    <div style="text-align: center; margin-top: 20px; color: #888;">
+        Última actualización: 05/12/2025 14:21 CET
+    </div>
+</body>
+</html>

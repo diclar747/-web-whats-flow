@@ -97,7 +97,9 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     setActiveChat,
     replyMessage,
     setReplyMessage,
-    markChatAsRead
+    markChatAsRead,
+    hasMoreChats,
+    isLoadingMoreChats
   } = useWhatsApp();
 
   // Estados
@@ -286,54 +288,10 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   // WhatsAppContext maneja automáticamente los mensajes en tiempo real vía Socket.IO
 
   // Socket.IO: Usar el socket global del contexto en lugar de crear uno nuevo
-  useEffect(() => {
-    if (!sessionId || !whatsappConnected) return;
+  // ✅ RECARGA AUTOMÁTICA DESACTIVADA - El sistema ya usa Socket.IO para tiempo real
+  // WhatsAppContext maneja automáticamente los mensajes en tiempo real vía Socket.IO
+  // Se eliminan los listeners redundantes que causaban recarga completa de la interfaz ('loadMessages')
 
-    console.log('🔌 Configurando listeners de Socket.IO para mensajes en tiempo real');
-    
-    // Obtener socket del contexto global (ya conectado)
-    const globalSocket = (window as any).globalSocket;
-    if (!globalSocket) {
-      console.warn('⚠️ No hay socket global disponible');
-      return;
-    }
-    
-    const socket = globalSocket;
-    socketRef.current = socket;
-    
-    // Asegurarse de estar en la sala correcta
-    if (socket.connected) {
-      socket.emit('join-session', sessionId);
-      console.log(`✅ Unido a sala: session-${sessionId}`);
-    }
-    
-    // Escuchar actualizaciones de estado de mensajes
-    socket.on('message-status-update', (data: any) => {
-      console.log('📨 Estado de mensaje actualizado:', data);
-      if (activeChat) {
-        loadMessages(activeChat.id);
-      }
-    });
-    
-    // Escuchar nuevos mensajes (el servidor emite 'message')
-    socket.on('message', (data: any) => {
-      console.log('%c📩 NUEVO MENSAJE RECIBIDO', 'background: green; color: white; font-weight: bold; padding: 10px;');
-      console.log('Mensaje:', data);
-      // Recargar mensajes si es del chat actual
-      if (activeChat && data.chatJid === activeChat.id) {
-        console.log('🔄 Recargando mensajes del chat actual');
-        loadMessages(activeChat.id);
-      }
-    });
-    
-    // Cleanup al desmontar - solo remover listeners, NO desconectar socket global
-    return () => {
-      console.log('🧹 Limpiando listeners de Socket.IO');
-      socket.off('message-status-update');
-      socket.off('message');
-      socketRef.current = null;
-    };
-  }, [sessionId, whatsappConnected, activeChat, loadMessages]);
 
   // Sincronización automática DESHABILITADA - Solo manual desde configuración
   // useEffect(() => {
@@ -382,9 +340,15 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       return;
     }
 
+    // ⚡ OPTIMIZACIÓN: Solo cargar si no hay chats previos para evitar "parpadeo" o doble carga
+    // WhatsAppContext ya se encarga de la carga inicial al conectar.
     if (whatsappConnected && loadChats) {
-      console.log('[WhatsAppWebChat] 🔄 Llamando a loadChats para sessionId:', sessionId, 'con filter: all');
-      loadChats(sessionId, 'all'); // Cambiar de 'today' (default) a 'all'
+      if (chats.length === 0) {
+        console.log('[WhatsAppWebChat] 🔄 Llamando a loadChats (lista vacía) para sessionId:', sessionId);
+        loadChats(sessionId, 'all', 0, false);
+      } else {
+        console.log('[WhatsAppWebChat] ℹ️ Chats ya cargados en Contexto, omitiendo recarga automática.');
+      }
     } else {
       console.warn('[WhatsAppWebChat] ⚠️ No se puede cargar chats:', {
         whatsappConnected,
@@ -871,7 +835,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     // Caché simple para evitar cálculos repetidos con mismos datos
     const cacheKey = `${chats.length}-${filterTab}-${searchTerm}`;
     const cachedResult = sessionStorage.getItem(`chatFilter-${cacheKey}`);
-    
+
     if (cachedResult) {
       try {
         const parsed = JSON.parse(cachedResult);
@@ -1127,7 +1091,23 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
         )}
 
         {/* Lista de chats - Mostrar solo avatares si está colapsado */}
-        <List sx={{ flex: 1, overflow: 'auto', p: 0 }}>
+        <List
+          sx={{ flex: 1, overflow: 'auto', p: 0 }}
+          onScroll={(e) => {
+            const target = e.currentTarget;
+            if (
+              !isLoadingMoreChats &&
+              hasMoreChats &&
+              target.scrollHeight - target.scrollTop <= target.clientHeight + 50 // Umbral de 50px
+            ) {
+              console.log('📜 [SCROLL] Llegó al fondo, cargando más chats...');
+              if (loadChats) {
+                // Usar chats.length como offset
+                loadChats(sessionId, 'all', chats.length, true);
+              }
+            }
+          }}
+        >
           {filteredChats.map((chat: any) => (
             <ListItemButton
               key={chat.id}
@@ -1226,6 +1206,23 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               )}
             </ListItemButton>
           ))}
+
+          {/* Spinner de "Cargando más" al final de la lista */}
+          {isLoadingMoreChats && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+              <CircularProgress size={24} sx={{ color: colors.primary }} />
+            </Box>
+          )}
+
+          {/* Indicador de fin de lista (opcional, solo visible al final real) */}
+          {!hasMoreChats && chats.length > 0 && !chatListCollapsed && (
+            <Box sx={{ p: 2, textAlign: 'center', opacity: 0.5 }}>
+              <Typography variant="caption" color="textSecondary">
+                — Fin de los chats —
+              </Typography>
+            </Box>
+          )}
+
         </List>
       </Box>
 

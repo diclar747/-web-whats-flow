@@ -52,7 +52,8 @@ router.get('/:sessionId', async (req, res) => {
 
     const [campaigns] = await pool.execute(
       `SELECT id, session_id as sessionId, name as nombre, message_text as mensaje,
-              message_media_url as archivo, contacts, status as estado, created_at as createdAt,
+              message_media_url as archivo, contacts, status, created_at as createdAt,
+              scheduled_at as scheduledAt,
               progress_total as totalContactos, progress_sent as enviados,
               (progress_total - progress_sent - progress_failed) as pendientes,
               progress_failed as errores
@@ -65,16 +66,26 @@ router.get('/:sessionId', async (req, res) => {
     // Parsear el JSON de contactos con manejo de errores
     const parsedCampaigns = campaigns.map(c => {
       try {
+        // Convertir status del backend a español para el frontend
+        let estadoTexto = 'activa';
+        if (c.status === 'scheduled') estadoTexto = 'programada';
+        else if (c.status === 'completed') estadoTexto = 'completada';
+        else if (c.status === 'paused') estadoTexto = 'pausada';
+        else if (c.status === 'active') estadoTexto = 'activa';
+        
         return {
           ...c,
+          estado: estadoTexto,
           contactos: c.contacts ? JSON.parse(c.contacts) : [],
           archivo: c.archivo || null,
-          archivoNombre: c.archivo ? path.basename(c.archivo) : null
+          archivoNombre: c.archivo ? path.basename(c.archivo) : null,
+          scheduledAt: c.scheduledAt
         };
       } catch (parseError) {
         console.error(`Error parseando contactos para campaña ${c.id}:`, parseError);
         return {
           ...c,
+          estado: 'activa',
           contactos: [],
           archivo: c.archivo || null,
           archivoNombre: c.archivo ? path.basename(c.archivo) : null
@@ -110,16 +121,24 @@ router.post('/create', upload.single('archivo'), async (req, res) => {
     const parsedContacts = JSON.parse(contactos);
     const campaignId = uuidv4();
 
+    // Determinar el estado inicial (scheduled si tiene fechas futuras, active si es inmediato)
+    const hasFutureDates = parsedContacts.some(c => {
+      const contactDate = new Date(c.fecha);
+      return contactDate > new Date();
+    });
+    const initialStatus = hasFutureDates ? 'scheduled' : 'active';
+    
     // Insertar en la base de datos
     await pool.execute(
       `INSERT INTO campaigns (
         id, session_id, name, type, status, message_text, 
-        message_media_url, contacts, progress_total
-      ) VALUES (?, ?, ?, 'personalized', 'active', ?, ?, ?, ?)`,
+        message_media_url, contacts, progress_total, progress_sent, progress_failed
+      ) VALUES (?, ?, ?, 'personalized', ?, ?, ?, ?, ?, 0, 0)`,
       [
         campaignId,
         sessionId,
         nombre,
+        initialStatus,
         mensaje,
         req.file ? req.file.path : null,
         JSON.stringify(parsedContacts),
@@ -136,7 +155,7 @@ router.post('/create', upload.single('archivo'), async (req, res) => {
       archivoNombre: req.file ? req.file.originalname : null,
       contactos: parsedContacts,
       createdAt: new Date().toISOString(),
-      estado: 'activa',
+      estado: initialStatus === 'scheduled' ? 'programada' : 'activa',
       totalContactos: parsedContacts.length,
       enviados: 0,
       pendientes: parsedContacts.filter(c => c.estado === 'pendiente').length,
@@ -204,11 +223,11 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
 
     let sentCount = 0;
 
-    // Obtener campañas activas de la sesión desde la base de datos
+    // Obtener campañas activas y programadas de la sesión desde la base de datos
     const [campaignsFromDB] = await pool.execute(
       `SELECT id, name, message_text, message_media_url, contacts 
        FROM campaigns 
-       WHERE session_id = ? AND status = 'active' AND type = 'personalized'`,
+       WHERE session_id = ? AND status IN ('active', 'scheduled') AND type = 'personalized'`,
       [sessionId]
     );
 
@@ -245,9 +264,9 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
           console.log(`📅 Enviando mensaje programado: ${contact.nombre} - Fecha vencimiento: ${contact.fecha} - Envío: ${sendDateStr} ${contactHour}`);
 
           try {
-            // Reemplazar variables en el mensaje
+            // Reemplazar variables en el mensaje - usar contact.nombre, no contact.numero
             let personalizedMessage = campaign.mensaje
-              .replace(/{nombre}/g, contact.nombre || '')
+              .replace(/{nombre}/g, contact.nombre || contact.numero || '')
               .replace(/{dato1}/g, contact.dato1 || '')
               .replace(/{dato2}/g, contact.dato2 || '')
               .replace(/{dato3}/g, contact.dato3 || '')
@@ -330,6 +349,16 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
         const errores = campaign.contactos.filter(c => c.estado === 'error').length;
         const pendientes = campaign.contactos.filter(c => c.estado === 'pendiente').length;
 
+        // Determinar el estado correcto
+        let newStatus = 'active';
+        if (pendientes === 0 && enviados > 0) {
+          newStatus = 'completed';
+        } else if (pendientes > 0 && enviados === 0) {
+          newStatus = 'scheduled';
+        } else if (pendientes > 0 && enviados > 0) {
+          newStatus = 'active'; // Enviando
+        }
+
         // Actualizar en base de datos
         await pool.execute(
           `UPDATE campaigns 
@@ -343,7 +372,7 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
             JSON.stringify(campaign.contactos),
             enviados,
             errores,
-            pendientes === 0 ? 'completed' : 'active',
+            newStatus,
             campaign.id
           ]
         );
@@ -367,33 +396,55 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
 router.post('/reprogram/:campaignId', async (req, res) => {
   try {
     const { campaignId } = req.params;
-    const campaign = campaigns.get(campaignId);
+    
+    // Obtener campaña de la base de datos
+    const [campaigns] = await pool.execute(
+      'SELECT * FROM campaigns WHERE id = ?',
+      [campaignId]
+    );
 
-    if (!campaign) {
+    if (campaigns.length === 0) {
       return res.status(404).json({
         success: false,
         error: 'Campaña no encontrada'
       });
     }
 
+    const campaign = campaigns[0];
+    const contactos = JSON.parse(campaign.contacts || '[]');
+
     // Cambiar todos los contactos enviados a pendiente
-    campaign.contactos.forEach(contact => {
-      if (contact.estado === 'enviado') {
+    contactos.forEach(contact => {
+      if (contact.estado === 'enviado' || contact.estado === 'error') {
         contact.estado = 'pendiente';
+        delete contact.enviadoEn;
+        delete contact.errorMessage;
       }
     });
 
-    // Actualizar estadísticas
-    campaign.estado = 'activa';
-    campaign.enviados = 0;
-    campaign.pendientes = campaign.contactos.filter(c => c.estado === 'pendiente').length;
-    campaign.errores = campaign.contactos.filter(c => c.estado === 'error').length;
+    // Actualizar en base de datos
+    await pool.execute(
+      `UPDATE campaigns 
+       SET contacts = ?, 
+           status = 'scheduled',
+           progress_sent = 0, 
+           progress_failed = 0,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [JSON.stringify(contactos), campaignId]
+    );
 
-    console.log(`🔄 Campaña ${campaign.nombre} reprogramada`);
+    console.log(`🔄 Campaña ${campaign.name} reprogramada con ${contactos.length} contactos`);
 
     res.json({
       success: true,
-      campaign
+      campaign: {
+        id: campaignId,
+        estado: 'programada',
+        enviados: 0,
+        pendientes: contactos.filter(c => c.estado === 'pendiente').length,
+        errores: 0
+      }
     });
 
   } catch (error) {
@@ -606,6 +657,204 @@ router.put('/:campaignId/contact', async (req, res) => {
 
   } catch (error) {
     console.error('Error actualizando contacto:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST - Enviar campaña inmediatamente (todas las personas)
+router.post('/send-now/:campaignId', async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const { sessionId } = req.body;
+
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        error: 'sessionId es requerido'
+      });
+    }
+
+    // Obtener campaña de la base de datos
+    const [campaigns] = await pool.execute(
+      'SELECT * FROM campaigns WHERE id = ? AND session_id = ?',
+      [campaignId, sessionId]
+    );
+
+    if (campaigns.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Campaña no encontrada'
+      });
+    }
+
+    const campaign = campaigns[0];
+    const contactos = JSON.parse(campaign.contacts || '[]');
+
+    // Obtener cliente de WhatsApp
+    const sessions = req.app.get('whatsappSessions');
+    const sessionData = sessions?.get(sessionId);
+
+    if (!sessionData || !sessionData.sock) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cliente de WhatsApp no conectado'
+      });
+    }
+
+    const whatsappClient = sessionData.sock;
+    let enviados = 0;
+    let errores = 0;
+
+    console.log(`🚀 Iniciando envío inmediato de campaña: ${campaign.name} con ${contactos.length} contactos`);
+
+    // Cambiar estado a 'active' - enviando
+    await pool.execute(
+      'UPDATE campaigns SET status = ? WHERE id = ?',
+      ['active', campaignId]
+    );
+
+    // Enviar mensajes a todos los contactos pendientes
+    for (const contact of contactos) {
+      if (contact.estado !== 'pendiente') continue;
+
+      try {
+        // Reemplazar variables en el mensaje - CORREGIDO: usar contact.nombre no contact.numero
+        let personalizedMessage = campaign.message_text
+          .replace(/{nombre}/g, contact.nombre || contact.numero || '')
+          .replace(/{dato1}/g, contact.dato1 || '')
+          .replace(/{dato2}/g, contact.dato2 || '')
+          .replace(/{dato3}/g, contact.dato3 || '')
+          .replace(/{fecha}/g, contact.fecha || '');
+
+        // Formatear número
+        let phoneNumber = contact.numero.replace(/\D/g, '');
+        if (!phoneNumber.endsWith('@s.whatsapp.net')) {
+          phoneNumber = `${phoneNumber}@s.whatsapp.net`;
+        }
+
+        // Enviar mensaje
+        if (campaign.message_media_url) {
+          const mediaBuffer = await fs.readFile(campaign.message_media_url);
+          await whatsappClient.sendMessage(phoneNumber, {
+            caption: personalizedMessage,
+            image: mediaBuffer
+          });
+        } else {
+          await whatsappClient.sendMessage(phoneNumber, {
+            text: personalizedMessage
+          });
+        }
+
+        contact.estado = 'enviado';
+        contact.enviadoEn = new Date().toISOString();
+        enviados++;
+
+        console.log(`✅ Mensaje enviado a ${contact.nombre} (${contact.numero})`);
+
+        // Guardar mensaje en la base de datos
+        try {
+          const messageId = uuidv4();
+          await pool.execute(
+            `INSERT INTO messages (
+              id, session_id, chat_jid, sender_jid, from_me, 
+              message_type, text_content, media_url, status, timestamp, is_read
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+            [
+              messageId,
+              sessionId,
+              phoneNumber,
+              whatsappClient.user?.id?.split(':')[0] || sessionId,
+              true,
+              campaign.message_media_url ? 'image' : 'text',
+              personalizedMessage,
+              campaign.message_media_url || null,
+              'sent',
+              true
+            ]
+          );
+        } catch (dbError) {
+          console.error('[CAMPAIGN-MSG] Error guardando mensaje:', dbError);
+        }
+
+        // Esperar entre 2-5 segundos entre mensajes
+        const delay = Math.floor(Math.random() * 3000) + 2000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+      } catch (error) {
+        console.error(`❌ Error enviando a ${contact.numero}:`, error);
+        contact.estado = 'error';
+        contact.errorMessage = error.message;
+        errores++;
+      }
+    }
+
+    const pendientes = contactos.filter(c => c.estado === 'pendiente').length;
+    const newStatus = pendientes === 0 ? 'completed' : 'active';
+
+    // Actualizar campaña en base de datos
+    await pool.execute(
+      `UPDATE campaigns 
+       SET contacts = ?, 
+           progress_sent = ?, 
+           progress_failed = ?,
+           status = ?,
+           updated_at = NOW()
+       WHERE id = ?`,
+      [
+        JSON.stringify(contactos),
+        enviados,
+        errores,
+        newStatus,
+        campaignId
+      ]
+    );
+
+    console.log(`✅ Campaña finalizada: ${enviados} enviados, ${errores} errores, ${pendientes} pendientes`);
+
+    res.json({
+      success: true,
+      enviados,
+      errores,
+      pendientes,
+      estado: newStatus === 'completed' ? 'completada' : 'enviando'
+    });
+
+  } catch (error) {
+    console.error('Error enviando campaña:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST - Pausar campaña
+router.post('/pause/:campaignId', async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    
+    await pool.execute(
+      'UPDATE campaigns SET status = ? WHERE id = ?',
+      ['paused', campaignId]
+    );
+
+    res.json({ success: true, estado: 'pausada' });
+  } catch (error) {
+    console.error('Error pausando campaña:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST - Reanudar campaña
+router.post('/resume/:campaignId', async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    
+    await pool.execute(
+      'UPDATE campaigns SET status = ? WHERE id = ?',
+      ['active', campaignId]
+    );
+
+    res.json({ success: true, estado: 'activa' });
+  } catch (error) {
+    console.error('Error reanudando campaña:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });

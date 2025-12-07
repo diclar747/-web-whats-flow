@@ -80,18 +80,26 @@ const AdminAgentManagement: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
   const [sessionId] = useState('default');
-  
+
   // Dialogs
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedChat, setSelectedChat] = useState<UnassignedChat | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<number | ''>('');
   const [assignNotes, setAssignNotes] = useState('');
-  
+
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [transferFromAgentId, setTransferFromAgentId] = useState<number | ''>('');
   const [transferToAgentId, setTransferToAgentId] = useState<number | ''>('');
   const [transferReason, setTransferReason] = useState('');
   const [transferChatJid, setTransferChatJid] = useState('');
+
+  // Create Agent Dialog
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [newAgentName, setNewAgentName] = useState('');
+  const [newAgentEmail, setNewAgentEmail] = useState('');
+  const [newAgentPassword, setNewAgentPassword] = useState('');
+  const [newAgentPhone, setNewAgentPhone] = useState('');
+  const [creatingAgent, setCreatingAgent] = useState(false);
 
   const apiUrl = getAPIBaseURL();
   const token = sessionStorage.getItem('token') || '';
@@ -125,9 +133,9 @@ const AdminAgentManagement: React.FC = () => {
           'Authorization': `Bearer ${token}`
         }
       });
-      
+
       if (!response.ok) throw new Error('Error cargando agentes');
-      
+
       const data = await response.json();
       if (data.success && data.stats.agents) {
         setAgents(data.stats.agents);
@@ -147,9 +155,9 @@ const AdminAgentManagement: React.FC = () => {
           }
         }
       );
-      
+
       if (!response.ok) throw new Error('Error cargando chats sin asignar');
-      
+
       const data = await response.json();
       if (data.success) {
         setUnassignedChats(data.chats || []);
@@ -181,7 +189,7 @@ const AdminAgentManagement: React.FC = () => {
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         alert('Chat asignado correctamente');
         setAssignDialogOpen(false);
@@ -221,7 +229,7 @@ const AdminAgentManagement: React.FC = () => {
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         alert('Chat transferido correctamente');
         setTransferDialogOpen(false);
@@ -236,6 +244,53 @@ const AdminAgentManagement: React.FC = () => {
     } catch (err) {
       console.error('Error transferring chat:', err);
       alert('Error transfiriendo chat');
+    }
+  };
+
+  const handleCreateAgent = async () => {
+    if (!newAgentName || !newAgentEmail || !newAgentPassword) {
+      alert('Nombre, Email y Contraseña son requeridos');
+      return;
+    }
+
+    setCreatingAgent(true);
+    try {
+      // Intentar obtener sessionId del storage si no está en estado
+      const adminSessionId = sessionStorage.getItem('whatsflow_session') || sessionId;
+
+      const response = await fetch(`${apiUrl}/api/agents/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: newAgentName,
+          email: newAgentEmail,
+          password: newAgentPassword,
+          phone: newAgentPhone,
+          sessionId: adminSessionId
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('Agente creado exitosamente');
+        setCreateDialogOpen(false);
+        setNewAgentName('');
+        setNewAgentEmail('');
+        setNewAgentPassword('');
+        setNewAgentPhone('');
+        loadData();
+      } else {
+        alert(`Error creando agente: ${data.error}`);
+      }
+    } catch (err) {
+      console.error('Error creating agent:', err);
+      alert('Error de conexión al crear agente');
+    } finally {
+      setCreatingAgent(false);
     }
   };
 
@@ -281,7 +336,7 @@ const AdminAgentManagement: React.FC = () => {
           <Button
             variant="contained"
             startIcon={<PersonAddIcon />}
-            onClick={() => {/* TODO: Abrir diálogo crear agente */}}
+            onClick={() => setCreateDialogOpen(true)}
           >
             Nuevo Agente
           </Button>
@@ -308,7 +363,7 @@ const AdminAgentManagement: React.FC = () => {
             </CardContent>
           </Card>
         </Grid>
-        
+
         <Grid item xs={12} sm={6} md={3}>
           <Card>
             <CardContent>
@@ -321,7 +376,7 @@ const AdminAgentManagement: React.FC = () => {
             </CardContent>
           </Card>
         </Grid>
-        
+
         <Grid item xs={12} sm={6} md={3}>
           <Card>
             <CardContent>
@@ -334,7 +389,7 @@ const AdminAgentManagement: React.FC = () => {
             </CardContent>
           </Card>
         </Grid>
-        
+
         <Grid item xs={12} sm={6} md={3}>
           <Card>
             <CardContent>
@@ -387,11 +442,11 @@ const AdminAgentManagement: React.FC = () => {
                       </Box>
                     </Box>
                   </TableCell>
-                  
+
                   <TableCell>
                     {agent.department || '-'}
                   </TableCell>
-                  
+
                   <TableCell align="center">
                     <Chip
                       label={agent.status}
@@ -400,7 +455,7 @@ const AdminAgentManagement: React.FC = () => {
                       icon={agent.status === 'active' ? <ActiveIcon /> : <InactiveIcon />}
                     />
                   </TableCell>
-                  
+
                   <TableCell align="center">
                     <Badge badgeContent={agent.active_chats > 0 ? agent.active_chats : null} color="primary">
                       <AssignmentIcon />
@@ -412,7 +467,7 @@ const AdminAgentManagement: React.FC = () => {
                       <Typography variant="body2">📨</Typography>
                     </Badge>
                   </TableCell>
-                  
+
                   <TableCell align="center">
                     <Chip
                       label={agent.completed_today || 0}
@@ -420,7 +475,7 @@ const AdminAgentManagement: React.FC = () => {
                       variant="outlined"
                     />
                   </TableCell>
-                  
+
                   <TableCell align="center">
                     <Box
                       sx={{
@@ -441,7 +496,7 @@ const AdminAgentManagement: React.FC = () => {
                       />
                     </Box>
                   </TableCell>
-                  
+
                   <TableCell align="center">
                     <Tooltip title="Ver estadísticas">
                       <IconButton size="small">
@@ -504,17 +559,17 @@ const AdminAgentManagement: React.FC = () => {
                         </Box>
                       </Box>
                     </TableCell>
-                    
+
                     <TableCell>
                       <Typography variant="body2" noWrap sx={{ maxWidth: 300 }}>
                         {chat.last_message || 'Sin mensajes'}
                       </Typography>
                     </TableCell>
-                    
+
                     <TableCell align="center">
                       <Chip label={chat.total_messages} size="small" />
                     </TableCell>
-                    
+
                     <TableCell align="center">
                       <Typography variant="caption">
                         {chat.last_message_time
@@ -522,7 +577,7 @@ const AdminAgentManagement: React.FC = () => {
                           : '-'}
                       </Typography>
                     </TableCell>
-                    
+
                     <TableCell align="center">
                       <Button
                         variant="contained"
@@ -555,7 +610,7 @@ const AdminAgentManagement: React.FC = () => {
               </Typography>
             </Box>
           )}
-          
+
           <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>Seleccionar Agente</InputLabel>
             <Select
@@ -570,7 +625,7 @@ const AdminAgentManagement: React.FC = () => {
               ))}
             </Select>
           </FormControl>
-          
+
           <TextField
             fullWidth
             multiline
@@ -607,7 +662,7 @@ const AdminAgentManagement: React.FC = () => {
               ))}
             </Select>
           </FormControl>
-          
+
           <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>A (Agente Destino)</InputLabel>
             <Select
@@ -636,7 +691,7 @@ const AdminAgentManagement: React.FC = () => {
               ))}
             </Select>
           </FormControl>
-          
+
           <TextField
             fullWidth
             label="JID del Chat"
@@ -645,7 +700,7 @@ const AdminAgentManagement: React.FC = () => {
             sx={{ mb: 2 }}
             placeholder="573001234567@s.whatsapp.net"
           />
-          
+
           <TextField
             fullWidth
             multiline
@@ -663,7 +718,56 @@ const AdminAgentManagement: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+
+      {/* Create Agent Dialog */}
+      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Crear Nuevo Agente</DialogTitle>
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2} mt={1}>
+            <TextField
+              label="Nombre Completo"
+              fullWidth
+              value={newAgentName}
+              onChange={(e) => setNewAgentName(e.target.value)}
+              required
+            />
+            <TextField
+              label="Correo Electrónico"
+              fullWidth
+              type="email"
+              value={newAgentEmail}
+              onChange={(e) => setNewAgentEmail(e.target.value)}
+              required
+            />
+            <TextField
+              label="Teléfono (Opcional)"
+              fullWidth
+              value={newAgentPhone}
+              onChange={(e) => setNewAgentPhone(e.target.value)}
+              placeholder="Ej: 5959..."
+            />
+            <TextField
+              label="Contraseña"
+              fullWidth
+              type="password"
+              value={newAgentPassword}
+              onChange={(e) => setNewAgentPassword(e.target.value)}
+              required
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateDialogOpen(false)}>Cancelar</Button>
+          <Button
+            onClick={handleCreateAgent}
+            variant="contained"
+            disabled={creatingAgent || !newAgentName || !newAgentEmail || !newAgentPassword}
+          >
+            {creatingAgent ? <CircularProgress size={24} /> : 'Crear Agente'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box >
   );
 };
 

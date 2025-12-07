@@ -283,6 +283,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           mediaType: null,
           contacts: Array(c.total_recipients).fill({}), // Placeholder para conteo
           scheduledAt: c.scheduled_at,
+          completedAt: c.completed_at,
           progress: {
             total: c.total_recipients,
             sent: c.sent_count,
@@ -313,31 +314,10 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
   // Restaurar campañas programadas después de cargar
   const restoreScheduledCampaigns = useCallback(() => {
-    campaigns.forEach((campaign) => {
-      if (campaign.status === 'scheduled' && campaign.scheduledAt) {
-        const scheduledTime = new Date(campaign.scheduledAt).getTime();
-        const currentTime = new Date().getTime();
-
-        // Si la fecha programada aún es futura, reprogramar
-        if (scheduledTime > currentTime) {
-          const delay = scheduledTime - currentTime;
-          console.log(`⏰ Restaurando campaña programada: ${campaign.name} (en ${Math.round(delay / 1000 / 60)} minutos)`);
-
-          setTimeout(() => {
-            console.log(`🚀 Ejecutando campaña programada restaurada: ${campaign.name}`);
-            startCampaign(campaign.id);
-          }, delay);
-        } else {
-          // Si la fecha ya pasó, marcar como fallida
-          console.warn(`❌ Campaña programada expiró: ${campaign.name}`);
-          const updatedCampaigns = campaigns.map((c) =>
-            c.id === campaign.id ? { ...c, status: 'failed' as const } : c
-          );
-          setCampaigns(updatedCampaigns);
-          saveCampaigns(updatedCampaigns);
-        }
-      }
-    });
+    // Client-side scheduling removed in favor of server-side scheduler
+    // The server checks every minute for scheduled campaigns that are due
+    // This prevents double execution and ensures reliability even if browser is closed
+    console.log('📅 Client-side scheduler check skipped (Server-side scheduler active)');
   }, [campaigns]);
 
   const loadContacts = useCallback(() => {
@@ -670,9 +650,9 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     socket.on('campaign-progress', (data: any) => {
       console.log('📊 Progreso de campaña:', data);
       const { campaignId, sent, failed, total } = data;
-      
+
       const percentage = Math.round(((sent + failed) / total) * 100);
-      
+
       setSendingProgress(prev => ({
         ...prev,
         [campaignId]: percentage
@@ -699,7 +679,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     socket.on('campaign-completed', (data: any) => {
       console.log('✅ Campaña completada:', data);
       const { campaignId } = data;
-      
+
       setSendingProgress(prev => ({
         ...prev,
         [campaignId]: 100
@@ -718,7 +698,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       }));
 
       setSuccess('Campaña completada exitosamente');
-      
+
       // Recargar campañas desde el servidor
       setTimeout(() => loadCampaigns(), 2000);
     });
@@ -1169,15 +1149,16 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           messageTemplate: newCampaign.message?.text || '',
           mediaUrl,
           mediaType,
-          recipients: newCampaign.contacts.map(c => ({ 
-            jid: normalizeJid(c.phone), 
-            name: c.name 
+          recipients: newCampaign.contacts.map(c => ({
+            jid: normalizeJid(c.phone),
+            name: c.name
           })),
           useRandomTiming: newCampaign.useRandomTiming || false,
           randomTimingMsgCount: newCampaign.flowConfig?.messagesCount || null,
           randomTimingTimeSpanMinutes: newCampaign.flowConfig?.timeSpanMinutes || null,
           useIdFlow: newCampaign.useIdFlow || false,
-          idFlowSize: 32
+          idFlowSize: 32,
+          scheduledAt: newCampaign.scheduledAt ? new Date(newCampaign.scheduledAt).toISOString() : null
         }
       };
 
@@ -1196,11 +1177,16 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       const campaignId = createResult.data.campaignId;
       console.log('✅ Campaña guardada en BD con ID:', campaignId);
 
+      // Determinar tipo y estado basado en si hay fecha programada
+      const isScheduled = !!newCampaign.scheduledAt;
+      const campaignType = isScheduled ? 'scheduled' : 'direct';
+      const campaignStatus = isScheduled ? 'scheduled' : 'draft';
+
       const campaign: CampaignData = {
         id: campaignId.toString(), // Usar ID de la base de datos
         name: newCampaign.name,
-        type: newCampaign.type || 'direct',
-        status: 'draft',
+        type: campaignType,
+        status: campaignStatus,
         message: newCampaign.message,
         mediaUrl,
         mediaType,
@@ -1266,40 +1252,83 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     const campaign = campaigns.find(c => c.id === campaignId);
     if (!campaign) return;
 
-    // Verificar si la campaña es programada
-    if (campaign.type === 'scheduled' && campaign.scheduledAt) {
-      const scheduledTime = new Date(campaign.scheduledAt).getTime();
-      const currentTime = new Date().getTime();
-
-      // Si la fecha programada es futura, solo actualizamos UI
-      // El backend (Scheduler) se encargará de ejecutarla
-      if (scheduledTime > currentTime) {
-        setSuccess(`Campaña programada para ${new Date(campaign.scheduledAt).toLocaleString('es-ES')}. El servidor la ejecutará automáticamente.`);
-        loadCampaigns(); // Recargar para ver estado actualizado
-        return;
-      }
-    }
-
-    // Si es directa o ya pasó la fecha, forzar inicio en backend
     try {
       setLoading(true);
-      const response = await fetch(`${getAPIBaseURL()}/api/campaigns/send/${encodeURIComponent(sessionId)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignId })
-      });
 
-      const data = await response.json();
+      // Si es campaña PROGRAMADA, solo mostrar mensaje de confirmación
+      // Ya está en estado 'scheduled' y el scheduler la ejecutará automáticamente
+      if (campaign.type === 'scheduled' || campaign.scheduledAt) {
+        const scheduledDate = new Date(campaign.scheduledAt!);
+        const now = new Date();
 
-      if (data.success) {
-        setSuccess('Campaña iniciada en el servidor');
-        // Actualizar estado local inmediatamente
-        const updatedCampaigns = campaigns.map(c =>
-          c.id === campaignId ? { ...c, status: 'sending' as const } : c
-        );
-        setCampaigns(updatedCampaigns);
-      } else {
-        setError(data.error || 'Error al iniciar campaña');
+        if (scheduledDate <= now) {
+          // Si la fecha ya pasó, ejecutar inmediatamente
+          const response = await fetch(`${getAPIBaseURL()}/api/campaigns/send/${encodeURIComponent(sessionId)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ campaignId })
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            setSuccess('Campaña ejecutándose ahora (la fecha programada ya pasó)');
+            const updatedCampaigns = campaigns.map(c =>
+              c.id === campaignId ? { ...c, status: 'sending' as const } : c
+            );
+            setCampaigns(updatedCampaigns);
+            saveCampaigns(updatedCampaigns);
+            setTimeout(() => loadCampaigns(), 2000);
+          } else {
+            setError(data.error || 'Error al iniciar campaña');
+          }
+        } else {
+          // Fecha futura: ACTIVAR la campaña (Draft -> Scheduled)
+          try {
+            const response = await fetch(`${getAPIBaseURL()}/api/campaigns/${campaignId}/activate`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sessionId })
+            });
+
+            if (!response.ok) throw new Error(`Error HTTP: ${response.status}`);
+
+            // Actualizar estado local
+            const updatedCampaigns = campaigns.map(c =>
+              c.id === campaignId ? { ...c, status: 'scheduled' as const } : c
+            );
+            setCampaigns(updatedCampaigns);
+          } catch (e: any) {
+            console.error("Error activando campaña:", e);
+            alert("Error activando campaña: " + e.message); // ALERT VISIBLE
+          }
+        }
+
+        setSuccess(`✅ Campaña "${campaign.name}" activada. Se enviará correctamente.`);
+        // Forzar recarga completa
+        setTimeout(() => loadCampaigns(), 1500);
+      }
+      else {
+        // Campaña DIRECTA: Ejecutar inmediatamente
+        const response = await fetch(`${getAPIBaseURL()}/api/campaigns/send/${encodeURIComponent(sessionId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ campaignId })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          setSuccess('Campaña iniciada en el servidor');
+          const updatedCampaigns = campaigns.map(c =>
+            c.id === campaignId ? { ...c, status: 'sending' as const } : c
+          );
+          setCampaigns(updatedCampaigns);
+          saveCampaigns(updatedCampaigns);
+          setTimeout(() => loadCampaigns(), 2000);
+        } else {
+          setError(data.error || 'Error al iniciar campaña');
+        }
       }
     } catch (error) {
       console.error('Error iniciando campaña:', error);
@@ -1326,7 +1355,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         const response = await fetch(`${getAPIBaseURL()}/api/campaigns/${sessionId}/${campaignToDelete.id}`, {
           method: 'DELETE'
         });
-        
+
         if (!response.ok) {
           console.warn('No se pudo eliminar del servidor, solo local');
         }
@@ -1336,11 +1365,11 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       const updatedCampaigns = campaigns.filter(c => c.id !== campaignToDelete.id);
       setCampaigns(updatedCampaigns);
       saveCampaigns(updatedCampaigns);
-      
+
       setSuccess('Campaña eliminada exitosamente');
       setShowDeleteCampaignConfirm(false);
       setCampaignToDelete(null);
-      
+
       // Recargar desde servidor
       setTimeout(() => loadCampaigns(), 1000);
     } catch (error) {
@@ -1451,7 +1480,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         body: JSON.stringify({
           name: editingCampaign.name,
           message_template: editingCampaign.message.text,
-          scheduled_at: editingCampaign.scheduledAt
+          scheduled_at: editingCampaign.scheduledAt ? new Date(editingCampaign.scheduledAt).toISOString() : null
         })
       });
 
@@ -1576,9 +1605,9 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         <Grid container spacing={3}>
           {campaigns
             .filter(campaign => {
-              if (currentTab === 1) return campaign.type === 'direct';
-              if (currentTab === 2) return campaign.type === 'scheduled';
-              if (currentTab === 3) return campaign.status === 'completed' || campaign.status === 'failed';
+              if (currentTab === 2) return campaign.type === 'direct';
+              if (currentTab === 3) return campaign.type === 'scheduled';
+              if (currentTab === 4) return campaign.status === 'completed' || campaign.status === 'failed';
               return true;
             })
             .map((campaign) => (
@@ -1654,122 +1683,142 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                       )}
                     </Box>
 
-                    {/* Mostrar fecha/hora si es programada */}
-                    {campaign.type === 'scheduled' && campaign.scheduledAt && (
-                      <Alert severity="info" sx={{ mb: 2 }}>
-                        <Typography variant="body2">
-                          <strong>📅 Programada para:</strong><br />
-                          {new Date(campaign.scheduledAt).toLocaleDateString('es-ES', {
-                            weekday: 'long',
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric'
-                          })}<br />
-                          <strong>⏰ Hora:</strong> {new Date(campaign.scheduledAt).toLocaleTimeString('es-ES', {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </Typography>
-                      </Alert>
-                    )}
+                    {/* Mostrar fecha/hora SIEMPRE si tiene scheduledAt (incluso cuando está enviando) */}
+                    {campaign.scheduledAt && (() => {
+                      const scheduledDate = new Date(campaign.scheduledAt);
+                      if (isNaN(scheduledDate.getTime())) return null; // Fecha inválida
+
+                      return (
+                        <Alert severity="info" sx={{ mb: 2 }}>
+                          <Typography variant="body2">
+                            <strong>📅 Programada para:</strong><br />
+                            {scheduledDate.toLocaleDateString('es-ES', {
+                              weekday: 'long',
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric'
+                            })}<br />
+                            <strong>⏰ Hora:</strong> {scheduledDate.toLocaleTimeString('es-ES', {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                            {campaign.status === 'sending' && campaign.progress.sent > 0 && (
+                              <><br /><strong style={{ color: '#4caf50' }}>✓ Enviando: {campaign.progress.sent}/{campaign.progress.total}</strong></>
+                            )}
+                          </Typography>
+                        </Alert>
+                      );
+                    })()}
 
                     <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
                       {/* Botones de acción organizados */}
-                      {campaign.status === 'draft' || campaign.status === 'scheduled' ? (
+                      {campaign.status !== 'completed' ? (
                         <>
-                          <Button
-                            variant="contained"
-                            size="small"
-                            startIcon={<PlayArrow />}
-                            onClick={() => startCampaign(campaign.id)}
-                            sx={{
-                              bgcolor: '#00a884',
-                              color: 'white',
-                              '&:hover': { bgcolor: '#008069' },
-                              minWidth: 100
-                            }}
-                          >
-                            Iniciar
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            startIcon={<Edit />}
-                            onClick={() => openEditDialog(campaign)}
-                            sx={{ minWidth: 100 }}
-                          >
-                            Editar
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            startIcon={<Visibility />}
-                            onClick={() => viewCampaignDetails(campaign.id)}
-                            sx={{ minWidth: 100 }}
-                          >
-                            Detalles
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            color="error"
-                            startIcon={<Delete />}
-                            onClick={() => confirmDeleteCampaign(campaign)}
-                            sx={{ minWidth: 100 }}
-                          >
-                            Eliminar
-                          </Button>
-                        </>
-                      ) : campaign.status === 'sending' ? (
-                        <>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
-                            <CircularProgress size={20} />
-                            <Typography variant="body2">
-                              Enviando... {sendingProgress[campaign.id] || 0}%
-                            </Typography>
-                          </Box>
-                          <Button
-                            variant="contained"
-                            size="small"
-                            color="error"
-                            startIcon={<Stop />}
-                            onClick={() => pauseCampaign(campaign.id)}
-                            sx={{ minWidth: 100 }}
-                          >
-                            Detener
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            startIcon={<Visibility />}
-                            onClick={() => viewCampaignDetails(campaign.id)}
-                            sx={{ minWidth: 100 }}
-                          >
-                            Detalles
-                          </Button>
-                        </>
-                      ) : campaign.status === 'paused' ? (
-                        <>
-                          <Chip
-                            icon={<Pause />}
-                            label="Campaña Pausada"
-                            color="warning"
-                            size="small"
-                          />
-                          <Button
-                            variant="contained"
-                            size="small"
-                            startIcon={<PlayArrow />}
-                            onClick={() => resumeCampaign(campaign.id)}
-                            sx={{
-                              bgcolor: '#00a884',
-                              color: 'white',
-                              '&:hover': { bgcolor: '#008069' },
-                              minWidth: 100
-                            }}
-                          >
-                            Reanudar
-                          </Button>
+                          {campaign.status === 'draft' || campaign.status === 'scheduled' ? (
+                            <>
+                              {/* CASO 1: Campaña PROGRAMADA (scheduled) - O si tiene fecha programada */}
+                              {campaign.type === 'scheduled' || campaign.scheduledAt ? (
+                                <Button
+                                  variant="contained"
+                                  size="small"
+                                  startIcon={<PlayArrow />}
+                                  onClick={() => {
+                                    console.log("Click en ACTIVAR AHORA");
+                                    startCampaign(campaign.id);
+                                  }}
+                                  disabled={campaign.status === 'scheduled'}
+                                  sx={{
+                                    bgcolor: '#00a884',
+                                    color: 'white',
+                                    '&:hover': { bgcolor: '#008069' },
+                                    minWidth: 100,
+                                    display: campaign.status === 'scheduled' ? 'none' : 'inline-flex'
+                                  }}
+                                >
+                                  ACTIVAR AHORA
+                                </Button>
+                              ) : (
+                                /* CASO 2: Campaña DIRECTA (direct) */
+                                <Button
+                                  variant="contained"
+                                  size="small"
+                                  startIcon={<PlayArrow />}
+                                  onClick={() => startCampaign(campaign.id)}
+                                  sx={{
+                                    bgcolor: '#00a884',
+                                    color: 'white',
+                                    '&:hover': { bgcolor: '#008069' },
+                                    minWidth: 100
+                                  }}
+                                >
+                                  Iniciar
+                                </Button>
+                              )}
+
+                              {/* Botón EDITAR (Común para draft/scheduled) */}
+                              <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<Edit />}
+                                onClick={() => openEditDialog(campaign)}
+                                sx={{ minWidth: 100 }}
+                              >
+                                Editar
+                              </Button>
+                            </>
+                          ) : campaign.status === 'sending' ? (
+                            /* ... Botones para estado SENDING ... */
+                            <>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+                                <CircularProgress size={20} />
+                                <Typography variant="body2">
+                                  Enviando... {sendingProgress[campaign.id] || 0}%
+                                </Typography>
+                              </Box>
+                              <Button
+                                variant="contained"
+                                size="small"
+                                color="warning"
+                                startIcon={<Pause />}
+                                onClick={() => pauseCampaign(campaign.id)}
+                              >
+                                Pausar
+                              </Button>
+                              <Button
+                                variant="contained"
+                                size="small"
+                                color="error" // Detener = Eliminar proceso de envio
+                                startIcon={<Stop />}
+                                onClick={() => confirmDeleteCampaign(campaign)}
+                              >
+                                Detener
+                              </Button>
+                            </>
+                          ) : campaign.status === 'paused' ? (
+                            <>
+                              <Chip
+                                icon={<Pause />}
+                                label="Campaña Pausada"
+                                color="warning"
+                                size="small"
+                              />
+                              <Button
+                                variant="contained"
+                                size="small"
+                                color="success"
+                                startIcon={<PlayArrow />}
+                                onClick={() => resumeCampaign(campaign.id)}
+                                sx={{
+                                  bgcolor: '#00a884',
+                                  color: 'white',
+                                  '&:hover': { bgcolor: '#008069' },
+                                  minWidth: 100
+                                }}
+                              >
+                                Reanudar
+                              </Button>
+                            </>
+                          ) : null}
                           <Button
                             variant="outlined"
                             size="small"
@@ -1793,7 +1842,9 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                       ) : (
                         <>
                           <Chip
-                            label={`Completada el ${new Date(campaign.completedAt!).toLocaleDateString()}`}
+                            label={campaign.completedAt && !isNaN(new Date(campaign.completedAt).getTime())
+                              ? `Completada el ${new Date(campaign.completedAt).toLocaleDateString('es-ES')}`
+                              : 'Completada'}
                             color="success"
                             size="small"
                             sx={{ flex: '0 1 auto' }}
@@ -1825,27 +1876,30 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
               </Grid>
             ))}
         </Grid>
-      )}
+      )
+      }
 
-      {currentTab !== 1 && campaigns.length === 0 && (
-        <Paper sx={{ p: 6, textAlign: 'center' }}>
-          <CampaignOutlined sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>
-            No hay campañas creadas
-          </Typography>
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-            Crea tu primera campaña para enviar mensajes personalizados masivos
-          </Typography>
-          <Button
-            variant="contained"
-            startIcon={<Add />}
-            onClick={() => setShowCreateDialog(true)}
-            sx={{ bgcolor: '#00a884', '&:hover': { bgcolor: '#008069' } }}
-          >
-            Crear Primera Campaña
-          </Button>
-        </Paper>
-      )}
+      {
+        currentTab !== 1 && campaigns.length === 0 && (
+          <Paper sx={{ p: 6, textAlign: 'center' }}>
+            <CampaignOutlined sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" gutterBottom>
+              No hay campañas creadas
+            </Typography>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+              Crea tu primera campaña para enviar mensajes personalizados masivos
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<Add />}
+              onClick={() => setShowCreateDialog(true)}
+              sx={{ bgcolor: '#00a884', '&:hover': { bgcolor: '#008069' } }}
+            >
+              Crear Primera Campaña
+            </Button>
+          </Paper>
+        )
+      }
 
       {/* Create Campaign Dialog */}
       <Dialog
@@ -2033,10 +2087,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                         label="Tableros Kanban"
                         icon={<ViewColumn />}
                       />
-                      <Tab
-                        label="Grupos Locales"
-                        icon={<Folder />}
-                      />
+
                     </Tabs>
                   </Paper>
 
@@ -2232,69 +2283,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                   )}
 
                   {/* Tab 4: Grupos Locales */}
-                  {contactSelectionTab === 4 && (
-                    <Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                        <Typography variant="subtitle1">
-                          Grupos Locales ({localGroups.length})
-                        </Typography>
-                        <Button
-                          size="small"
-                          startIcon={selectedLocalGroups.length === localGroups.length ? <CheckBox /> : <CheckBoxOutlineBlank />}
-                          onClick={handleSelectAllLocalGroups}
-                        >
-                          {selectedLocalGroups.length === localGroups.length ? 'Deseleccionar Todos' : 'Seleccionar Todos'}
-                        </Button>
-                      </Box>
-                      <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
-                        <Grid container spacing={1}>
-                          {localGroups.map((group) => (
-                            <Grid item xs={12} sm={6} key={group.id}>
-                              <Paper
-                                sx={{
-                                  p: 1.5,
-                                  cursor: 'pointer',
-                                  bgcolor: selectedLocalGroups.includes(group.id) ? 'action.selected' : 'background.paper',
-                                  '&:hover': { bgcolor: 'action.hover' },
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: 1
-                                }}
-                                onClick={() => handleLocalGroupSelection(group.id)}
-                              >
-                                <Checkbox checked={selectedLocalGroups.includes(group.id)} />
-                                <Folder sx={{ color: 'primary.main', fontSize: 20 }} />
-                                <Box sx={{ flex: 1, minWidth: 0 }}>
-                                  <Typography variant="body2" noWrap fontWeight="medium">
-                                    {group.name}
-                                  </Typography>
-                                  <Typography variant="caption" color="text.secondary">
-                                    {group.contact_count || group.count || 0} contactos
-                                  </Typography>
-                                  {group.description && (
-                                    <Typography variant="caption" display="block" color="text.secondary" noWrap>
-                                      {group.description}
-                                    </Typography>
-                                  )}
-                                </Box>
-                              </Paper>
-                            </Grid>
-                          ))}
-                        </Grid>
-                        {localGroups.length === 0 && (
-                          <Paper sx={{ p: 4, textAlign: 'center' }}>
-                            <Folder sx={{ fontSize: 48, color: 'text.secondary', mb: 2 }} />
-                            <Typography variant="body2" color="text.secondary">
-                              No hay grupos locales creados
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              Crea grupos locales desde el módulo de Contactos
-                            </Typography>
-                          </Paper>
-                        )}
-                      </Box>
-                    </Box>
-                  )}
+
 
                   {/* Vista previa de contactos */}
                   {newCampaign.contacts && newCampaign.contacts.length > 0 && (
@@ -2362,7 +2351,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                       variant="contained"
                       startIcon={<Description />}
                       onClick={() => setShowTemplatesDialog(true)}
-                      sx={{ 
+                      sx={{
                         bgcolor: '#00a884',
                         '&:hover': { bgcolor: '#008069' }
                       }}
@@ -2607,7 +2596,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                       </Typography>
                     </Grid>
                   </Grid>
-                  
+
                   <Box sx={{ mt: 2, p: 2, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: 2 }}>
                     <Typography variant="subtitle2" sx={{ color: 'rgba(255,255,255,0.8)', mb: 1 }}>
                       📝 Mensaje
@@ -2622,7 +2611,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
               {/* Tarjetas de Estadísticas - 6 tarjetas en 2 filas */}
               <Grid container spacing={2} sx={{ mb: 3 }}>
                 <Grid item xs={12} sm={6} md={4}>
-                  <Card sx={{ 
+                  <Card sx={{
                     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                     transition: 'transform 0.2s',
                     '&:hover': { transform: 'translateY(-4px)' }
@@ -2645,7 +2634,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={4}>
-                  <Card sx={{ 
+                  <Card sx={{
                     background: 'linear-gradient(135deg, #9e9e9e 0%, #757575 100%)',
                     transition: 'transform 0.2s',
                     '&:hover': { transform: 'translateY(-4px)' }
@@ -2668,7 +2657,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={4}>
-                  <Card sx={{ 
+                  <Card sx={{
                     background: 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)',
                     transition: 'transform 0.2s',
                     '&:hover': { transform: 'translateY(-4px)' }
@@ -2691,7 +2680,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={4}>
-                  <Card sx={{ 
+                  <Card sx={{
                     background: 'linear-gradient(135deg, #00c853 0%, #00e676 100%)',
                     transition: 'transform 0.2s',
                     '&:hover': { transform: 'translateY(-4px)' }
@@ -2714,7 +2703,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={4}>
-                  <Card sx={{ 
+                  <Card sx={{
                     background: 'linear-gradient(135deg, #4caf50 0%, #388e3c 100%)',
                     transition: 'transform 0.2s',
                     '&:hover': { transform: 'translateY(-4px)' }
@@ -2737,7 +2726,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                 </Grid>
 
                 <Grid item xs={12} sm={6} md={4}>
-                  <Card sx={{ 
+                  <Card sx={{
                     background: 'linear-gradient(135deg, #f44336 0%, #e91e63 100%)',
                     transition: 'transform 0.2s',
                     '&:hover': { transform: 'translateY(-4px)' }
@@ -3173,7 +3162,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
             {/* Selector de emojis para plantilla */}
             {showTemplateEmojiPicker && (
-              <Box sx={{ 
+              <Box sx={{
                 position: 'relative',
                 zIndex: 9999,
                 '& .epr-main': {
@@ -3241,9 +3230,9 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+        <DialogTitle sx={{
+          display: 'flex',
+          alignItems: 'center',
           gap: 1,
           bgcolor: '#ffebee',
           color: '#c62828'
@@ -3255,11 +3244,11 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           <Alert severity="warning" sx={{ mb: 2 }}>
             Esta acción no se puede deshacer
           </Alert>
-          
+
           <Typography variant="body1" gutterBottom>
             ¿Estás seguro de que deseas eliminar la plantilla?
           </Typography>
-          
+
           {templateToDelete && (
             <Card sx={{ mt: 2, bgcolor: '#f5f5f5' }}>
               <CardContent>
@@ -3311,9 +3300,9 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+        <DialogTitle sx={{
+          display: 'flex',
+          alignItems: 'center',
           gap: 1,
           bgcolor: '#ffebee',
           color: '#c62828'
@@ -3325,11 +3314,11 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           <Alert severity="warning" sx={{ mb: 2 }}>
             Esta acción eliminará la campaña permanentemente
           </Alert>
-          
+
           <Typography variant="body1" gutterBottom>
             ¿Estás seguro de que deseas eliminar esta campaña?
           </Typography>
-          
+
           {campaignToDelete && (
             <Card sx={{ mt: 2, bgcolor: '#f5f5f5' }}>
               <CardContent>
@@ -3342,14 +3331,14 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                     size="small"
                     color={
                       campaignToDelete.status === 'completed' ? 'success' :
-                      campaignToDelete.status === 'sending' ? 'primary' :
-                      campaignToDelete.status === 'failed' ? 'error' :
-                      campaignToDelete.status === 'paused' ? 'warning' :
-                      'default'
+                        campaignToDelete.status === 'sending' ? 'primary' :
+                          campaignToDelete.status === 'failed' ? 'error' :
+                            campaignToDelete.status === 'paused' ? 'warning' :
+                              'default'
                     }
                   />
                 </Box>
-                
+
                 <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 1 }}>
                   <Chip
                     icon={<People />}
@@ -3405,7 +3394,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         </DialogContent>
       </Dialog>
 
-    </Box>
+    </Box >
   );
 };
 

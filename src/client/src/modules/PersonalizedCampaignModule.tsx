@@ -79,11 +79,12 @@ interface PersonalizedCampaign {
   archivoNombre?: string;
   contactos: PersonalizedContact[];
   createdAt: string;
-  estado: 'activa' | 'completada' | 'pausada';
+  estado: 'activa' | 'completada' | 'pausada' | 'programada';
   totalContactos: number;
   enviados: number;
   pendientes: number;
   errores: number;
+  scheduledAt?: string;
 }
 
 interface MessageTemplate {
@@ -577,6 +578,78 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
     );
   };
 
+  const sendNowCampaign = async (campaignId: string) => {
+    showConfirm(
+      'Iniciar envío ahora',
+      'Se enviarán todos los mensajes pendientes de inmediato. Esta acción puede tardar varios minutos. ¿Continuar?',
+      async () => {
+        try {
+          setLoading(true);
+          const response = await fetch(`${getAPIBaseURL()}/api/personalized-campaigns/send-now/${campaignId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId })
+          });
+
+          const data = await response.json();
+          if (data.success) {
+            showSuccess(`Campaña finalizada: ${data.enviados} enviados, ${data.errores} errores`, 'Envío completado');
+            loadCampaigns();
+          } else {
+            showError(data.error || 'No se pudo iniciar el envío.', 'Error');
+          }
+        } catch (error) {
+          console.error('Error iniciando envío:', error);
+          showError('Ocurrió un error al iniciar el envío.', 'Error de conexión');
+        } finally {
+          setLoading(false);
+        }
+      },
+      'Enviar Ahora',
+      'Cancelar'
+    );
+  };
+
+  const pauseCampaign = async (campaignId: string) => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/personalized-campaigns/pause/${campaignId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        showSuccess('La campaña ha sido pausada correctamente.', 'Campaña pausada');
+        loadCampaigns();
+      } else {
+        showError('No se pudo pausar la campaña.', 'Error');
+      }
+    } catch (error) {
+      console.error('Error pausando campaña:', error);
+      showError('Ocurrió un error al pausar la campaña.', 'Error');
+    }
+  };
+
+  const resumeCampaign = async (campaignId: string) => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/personalized-campaigns/resume/${campaignId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        showSuccess('La campaña ha sido reanudada correctamente.', 'Campaña reanudada');
+        loadCampaigns();
+      } else {
+        showError('No se pudo reanudar la campaña.', 'Error');
+      }
+    } catch (error) {
+      console.error('Error reanudando campaña:', error);
+      showError('Ocurrió un error al reanudar la campaña.', 'Error');
+    }
+  };
+
   const deleteCampaign = async (campaignId: string) => {
     showConfirm(
       'Eliminar campaña',
@@ -749,18 +822,107 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                     </Typography>
                   </Box>
                   <Chip
-                    label={campaign.estado}
-                    color={campaign.estado === 'activa' ? 'success' : 'default'}
+                    label={campaign.estado.toUpperCase()}
+                    color={
+                      campaign.estado === 'activa' ? 'success' :
+                      campaign.estado === 'programada' ? 'warning' :
+                      campaign.estado === 'completada' ? 'info' : 'default'
+                    }
                     size="small"
+                    icon={
+                      campaign.estado === 'programada' ? <Schedule /> :
+                      campaign.estado === 'activa' ? <Send /> :
+                      campaign.estado === 'completada' ? <CheckCircle /> : undefined
+                    }
                   />
                 </Box>
 
+                {/* Mostrar información de fechas programadas - SIEMPRE si existen fechas */}
+                {campaign.contactos.length > 0 && (() => {
+                  // IMPORTANTE: Buscar fechas en TODOS los contactos (enviados, pendientes, error)
+                  // Si CUALQUIER contacto tiene fecha = ES CAMPAÑA PROGRAMADA
+                  const contactosConFecha = campaign.contactos
+                    .filter(c => {
+                      // Verificación robusta de fecha
+                      if (!c.fecha) return false;
+                      const fechaStr = String(c.fecha).trim();
+                      if (fechaStr === '' || fechaStr === 'null' || fechaStr === 'undefined') return false;
+                      // Verificar que sea una fecha válida
+                      const fechaTest = new Date(fechaStr);
+                      return !isNaN(fechaTest.getTime());
+                    })
+                    .map(c => ({
+                      fecha: c.fecha,
+                      hora: c.hora || '07:00'
+                    }))
+                    .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+                  
+                  // Si ALGÚN contacto tiene fecha válida = ES PROGRAMADA (no importa si ya se enviaron)
+                  const hasFechas = contactosConFecha.length > 0;
+                  
+                  // DEBUG: Ver qué está pasando
+                  if (campaign.nombre === 'programado' || campaign.nombre === 'campa') {
+                    console.log('🔍 DEBUG Campaña:', {
+                      nombre: campaign.nombre,
+                      totalContactos: campaign.contactos.length,
+                      contactosConFecha: contactosConFecha.length,
+                      hasFechas: hasFechas,
+                      primerosContactos: campaign.contactos.slice(0, 2)
+                    });
+                  }
+                  
+                  if (!hasFechas) {
+                    // Campaña Directa (sin fechas)
+                    return (
+                      <Alert severity="success" sx={{ mb: 2 }}>
+                        <Typography variant="body2">
+                          <strong>⚡ Campaña Directa</strong><br />
+                          Envío inmediato a {campaign.totalContactos} contacto(s)
+                          {campaign.estado === 'activa' && campaign.enviados > 0 && (
+                            <><br /><strong style={{ color: '#4caf50' }}>✓ Enviando: {campaign.enviados}/{campaign.totalContactos}</strong></>
+                          )}
+                        </Typography>
+                      </Alert>
+                    );
+                  }
+                  
+                  // Campaña Programada (con fechas) - Formato específico solicitado
+                  const primeraFecha = new Date(contactosConFecha[0].fecha);
+                  const primeraHora = contactosConFecha[0].hora;
+                  
+                  // Formato: "viernes, 5 de diciembre de 2025"
+                  const fechaFormateada = primeraFecha.toLocaleDateString('es-ES', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  });
+                  
+                  return (
+                    <Alert severity="info" sx={{ mb: 2 }}>
+                      <Typography variant="body2">
+                        <strong>📅 Programada para:</strong><br />
+                        {fechaFormateada}<br />
+                        <strong>⏰ Hora:</strong> {primeraHora}
+                        {campaign.estado === 'activa' && campaign.enviados > 0 && (
+                          <><br /><strong style={{ color: '#4caf50' }}>✓ Enviando: {campaign.enviados}/{campaign.totalContactos}</strong></>
+                        )}
+                        {campaign.estado === 'pausada' && (
+                          <><br /><strong style={{ color: '#ff9800' }}>⏸ Pausada en: {campaign.enviados}/{campaign.totalContactos}</strong></>
+                        )}
+                      </Typography>
+                    </Alert>
+                  );
+                })()}
+
                 {/* Mensaje oculto en la tarjeta, visible solo en detalles */}
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                    (Ver detalles para leer el mensaje)
-                  </Typography>
-                </Box>
+                {campaign.estado !== 'programada' && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                      (Ver detalles para leer el mensaje)
+                    </Typography>
+                  </Box>
+                )}
 
                 <Grid container spacing={1} sx={{ mb: 2 }}>
                   <Grid item xs={3}>
@@ -825,13 +987,36 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                   </Grid>
                 </Grid>
 
-                <LinearProgress
-                  variant="determinate"
-                  value={(campaign.enviados / campaign.totalContactos) * 100}
-                  sx={{ mb: 2 }}
-                />
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Progreso de envío
+                    </Typography>
+                    <Typography variant="caption" fontWeight="bold">
+                      {campaign.totalContactos > 0 
+                        ? Math.round((campaign.enviados / campaign.totalContactos) * 100)
+                        : 0}%
+                    </Typography>
+                  </Box>
+                  <LinearProgress
+                    variant="determinate"
+                    value={campaign.totalContactos > 0 
+                      ? (campaign.enviados / campaign.totalContactos) * 100 
+                      : 0}
+                    sx={{
+                      height: 8,
+                      borderRadius: 1,
+                      backgroundColor: 'rgba(0,0,0,0.1)',
+                      '& .MuiLinearProgress-bar': {
+                        backgroundColor: campaign.enviados === campaign.totalContactos && campaign.totalContactos > 0
+                          ? '#4caf50'
+                          : '#2196f3'
+                      }
+                    }}
+                  />
+                </Box>
 
-                <Stack direction="row" spacing={1}>
+                <Stack direction="row" spacing={1} flexWrap="wrap">
                   <Button
                     size="small"
                     variant="outlined"
@@ -840,16 +1025,61 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                       setShowCampaignDetail(true);
                     }}
                   >
-                    Ver Detalles / Mensaje
+                    Ver Detalles
                   </Button>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<Replay />}
-                    onClick={() => reprogramCampaign(campaign.id)}
-                  >
-                    Reprogramar
-                  </Button>
+                  
+                  {/* Botón Iniciar para campañas programadas o pausadas con pendientes */}
+                  {(campaign.estado === 'programada' || campaign.estado === 'pausada') && campaign.pendientes > 0 && (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="success"
+                      startIcon={<Send />}
+                      onClick={() => sendNowCampaign(campaign.id)}
+                      disabled={loading}
+                    >
+                      Iniciar
+                    </Button>
+                  )}
+
+                  {/* Botón Pausar para campañas activas */}
+                  {campaign.estado === 'activa' && campaign.pendientes > 0 && (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="warning"
+                      startIcon={<Pending />}
+                      onClick={() => pauseCampaign(campaign.id)}
+                    >
+                      Pausar
+                    </Button>
+                  )}
+
+                  {/* Botón Reanudar para campañas pausadas */}
+                  {campaign.estado === 'pausada' && campaign.pendientes > 0 && (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="info"
+                      startIcon={<Send />}
+                      onClick={() => resumeCampaign(campaign.id)}
+                    >
+                      Reanudar
+                    </Button>
+                  )}
+
+                  {/* Botón Reprogramar para campañas completadas o con errores */}
+                  {(campaign.estado === 'completada' || campaign.errores > 0) && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<Replay />}
+                      onClick={() => reprogramCampaign(campaign.id)}
+                    >
+                      Reprogramar
+                    </Button>
+                  )}
+                  
                   <IconButton
                     size="small"
                     color="error"
@@ -1188,8 +1418,17 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
               {selectedCampaign?.nombre}
             </Typography>
             <Chip
-              label={selectedCampaign?.estado}
-              color={selectedCampaign?.estado === 'activa' ? 'success' : 'default'}
+              label={selectedCampaign?.estado.toUpperCase()}
+              color={
+                selectedCampaign?.estado === 'activa' ? 'success' :
+                selectedCampaign?.estado === 'programada' ? 'warning' :
+                selectedCampaign?.estado === 'completada' ? 'info' : 'default'
+              }
+              icon={
+                selectedCampaign?.estado === 'programada' ? <Schedule /> :
+                selectedCampaign?.estado === 'activa' ? <Send /> :
+                selectedCampaign?.estado === 'completada' ? <CheckCircle /> : undefined
+              }
             />
           </Box>
         </DialogTitle>
@@ -1276,6 +1515,40 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                   <strong>Mensaje:</strong> {selectedCampaign.mensaje}
                 </Typography>
               </Alert>
+
+              {/* Barra de Progreso */}
+              <Box sx={{ mb: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2" fontWeight="bold">
+                    Progreso General
+                  </Typography>
+                  <Typography variant="body2" fontWeight="bold" color="primary">
+                    {selectedCampaign.totalContactos > 0
+                      ? Math.round((selectedCampaign.enviados / selectedCampaign.totalContactos) * 100)
+                      : 0}%
+                  </Typography>
+                </Box>
+                <LinearProgress
+                  variant="determinate"
+                  value={selectedCampaign.totalContactos > 0
+                    ? (selectedCampaign.enviados / selectedCampaign.totalContactos) * 100
+                    : 0}
+                  sx={{
+                    height: 12,
+                    borderRadius: 2,
+                    backgroundColor: 'rgba(0,0,0,0.1)',
+                    '& .MuiLinearProgress-bar': {
+                      borderRadius: 2,
+                      backgroundColor: selectedCampaign.enviados === selectedCampaign.totalContactos && selectedCampaign.totalContactos > 0
+                        ? '#4caf50'
+                        : '#2196f3'
+                    }
+                  }}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  {selectedCampaign.enviados} de {selectedCampaign.totalContactos} mensajes enviados
+                </Typography>
+              </Box>
 
               {/* Buscador y Filtros */}
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>

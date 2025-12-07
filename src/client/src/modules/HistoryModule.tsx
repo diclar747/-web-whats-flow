@@ -439,18 +439,14 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
             const senderJid = msg.senderJid || msg.sender_jid || chatJid;
             const isFromMe = msg.fromMe || msg.from_me || false;
 
-            // ✅ CORRECCIÓN: Usar sender info si es mensaje enviado (from_me=true)
-            const displayName = isFromMe
-              ? (msg.senderName || msg.sender_name || senderJid.split('@')[0] || 'Yo')
-              : (msg.chatName || msg.chat_name || chatJid.split('@')[0] || 'Desconocido');
+            // ✅ CORRECCIÓN: Siempre usar la información del CHAT (la contraparte) para el nombre y avatar principal
+            // Esto asegura que en mensajes enviados se vea el DESTINATARIO, y en recibidos el REMITENTE (si es 1:1)
+            const displayName = msg.chatName || msg.chat_name || chatJid.split('@')[0] || 'Desconocido';
 
-            const displayPhone = isFromMe
-              ? (senderJid.split('@')[0] || 'unknown')
-              : (chatJid.split('@')[0] || 'unknown');
+            const displayPhone = chatJid.split('@')[0] || 'unknown';
 
-            const displayAvatar = isFromMe
-              ? `${getAPIBaseURL()}/api/avatar/${sessionId}/${senderJid}`
-              : (msg.contactAvatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chatJid}`);
+            // Siempre mostrar el avatar del contacto/chat con el que se habla
+            const displayAvatar = msg.contactAvatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chatJid}`;
 
             // Determinar el estado del mensaje
             let messageStatus = 'pending';

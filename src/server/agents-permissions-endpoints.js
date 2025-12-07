@@ -1,50 +1,50 @@
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 
-module.exports = function(app, pool) {
+module.exports = function (app, pool) {
 
-// Importar middleware de autenticación
-const { authenticateToken } = require('./middleware/auth');
+    // Importar middleware de autenticación
+    const { authenticateToken } = require('./middleware/auth');
 
-// ==================== GESTIÓN DE AGENTES CON PRIVILEGIOS ====================
+    // ==================== GESTIÓN DE AGENTES CON PRIVILEGIOS ====================
 
-/**
- * Obtener todos los agentes creados por el usuario actual
- * GET /api/agents/list
- */
-app.get('/api/agents/list', authenticateToken, async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const connection = await pool.getConnection();
-
+    /**
+     * Obtener todos los agentes creados por el usuario actual
+     * GET /api/agents/list
+     */
+    app.get('/api/agents/list', authenticateToken, async (req, res) => {
         try {
-            // El middleware authenticateToken ya verificó la autenticación
-            // El usuario autenticado está disponible en req.user
-            const user = req.user;
-            
-            console.log('[AGENTS-LIST] 🔍 Usuario autenticado:', {
-                id: user.id,
-                phone: user.phone,
-                role: user.role
-            });
-
-            // Obtener teléfono del admin autenticado
-            const adminPhone = user.phone;
-            
-            if (!adminPhone) {
-                connection.release();
-                console.log('[AGENTS-LIST] ❌ Error: No se pudo obtener phone del usuario autenticado');
-                return res.status(401).json({
-                    success: false,
-                    error: 'Usuario no válido'
-                });
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            // Obtener agentes del admin actual
-            const query = `
+            const connection = await pool.getConnection();
+
+            try {
+                // El middleware authenticateToken ya verificó la autenticación
+                // El usuario autenticado está disponible en req.user
+                const user = req.user;
+
+                console.log('[AGENTS-LIST] 🔍 Usuario autenticado:', {
+                    id: user.id,
+                    phone: user.phone,
+                    role: user.role
+                });
+
+                // Obtener teléfono del admin autenticado
+                const adminPhone = user.phone;
+
+                if (!adminPhone) {
+                    connection.release();
+                    console.log('[AGENTS-LIST] ❌ Error: No se pudo obtener phone del usuario autenticado');
+                    return res.status(401).json({
+                        success: false,
+                        error: 'Usuario no válido'
+                    });
+                }
+
+                // Obtener agentes del admin actual
+                const query = `
                 SELECT
                     id,
                     name,
@@ -62,151 +62,226 @@ app.get('/api/agents/list', authenticateToken, async (req, res) => {
                 ORDER BY created_at DESC
             `;
 
-            console.log('[AGENTS-LIST] 🔍 Ejecutando query para admin:', adminPhone);
-            const [agents] = await connection.execute(query, [adminPhone]);
-            console.log('✅ [AGENTS-LIST] Agentes obtenidos para admin', adminPhone + ':', agents.length);
-            res.json({ success: true, agents });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('Error obteniendo agentes:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo agentes' });
-    }
-});
-
-/**
- * Crear nuevo agente con privilegios
- * POST /api/agents/create
- */
-app.post('/api/agents/create', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { name, email, password, phone, permissions, sessionId: userSessionId } = req.body;
-
-        if (!name || !email) {
-            return res.status(400).json({ success: false, error: 'Nombre y email son requeridos' });
-        }
-
-        const connection = await pool.getConnection();
-        await connection.beginTransaction();
-
-        try {
-            let adminPhone = null;
-            
-            // Intentar autenticación por JWT token
-            const authHeader = req.headers.authorization;
-            if (authHeader && authHeader.startsWith('Bearer ')) {
-                try {
-                    const token = authHeader.split(' ')[1];
-                    const jwt = require('jsonwebtoken');
-                    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-                    
-                    // Obtener teléfono del admin usando el JWT
-                    const [users] = await connection.execute(
-                        'SELECT phone FROM users WHERE id = ?',
-                        [decoded.id]
-                    );
-                    
-                    if (users.length > 0) {
-                        adminPhone = users[0].phone;
-                        console.log('✅ Autenticación por JWT exitosa. Admin:', adminPhone);
-                    }
-                } catch (jwtError) {
-                    console.log('⚠️ JWT inválido, intentando con sessionId...');
-                }
-            }
-            
-            // Si no hay JWT válido, intentar con sessionId
-            if (!adminPhone && userSessionId) {
-                const [users] = await connection.execute(
-                    'SELECT phone FROM users WHERE phone = ?',
-                    [userSessionId]
-                );
-                
-                if (users.length > 0) {
-                    adminPhone = users[0].phone;
-                    console.log('✅ Autenticación por sessionId exitosa. Admin:', adminPhone);
-                }
-            }
-            
-            // Si no se pudo autenticar de ninguna manera
-            if (!adminPhone) {
-                await connection.rollback();
+                console.log('[AGENTS-LIST] 🔍 Ejecutando query para admin:', adminPhone);
+                const [agents] = await connection.execute(query, [adminPhone]);
+                console.log('✅ [AGENTS-LIST] Agentes obtenidos para admin', adminPhone + ':', agents.length);
+                res.json({ success: true, agents });
+            } finally {
                 connection.release();
-                return res.status(401).json({ 
-                    success: false, 
-                    error: 'No autorizado. Debe iniciar sesión primero.' 
+            }
+        } catch (error) {
+            console.error('Error obteniendo agentes:', error);
+            res.status(500).json({ success: false, error: 'Error obteniendo agentes' });
+        }
+    });
+
+    /**
+     * Crear nuevo agente con privilegios
+     * POST /api/agents/create
+     */
+    app.post('/api/agents/create', async (req, res) => {
+        try {
+            console.log('🔍 [AGENT-CREATE] ===== INICIO DE PETICIÓN =====');
+            console.log('🔍 [AGENT-CREATE] Headers:', {
+                authorization: req.headers.authorization ? 'Present' : 'Missing',
+                contentType: req.headers['content-type']
+            });
+            console.log('🔍 [AGENT-CREATE] Body recibido:', JSON.stringify(req.body, null, 2));
+
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { name, email, password, phone, permissions, sessionId: userSessionId } = req.body;
+
+            console.log('🔍 [AGENT-CREATE] Campos extraídos:', {
+                name: name || 'MISSING',
+                email: email || 'MISSING',
+                password: password ? 'PROVIDED' : 'NOT PROVIDED',
+                phone: phone || 'NOT PROVIDED',
+                sessionId: userSessionId || 'NOT PROVIDED'
+            });
+
+            if (!name || !email) {
+                console.log('❌ [AGENT-CREATE] Validación fallida: name o email faltantes');
+                return res.status(400).json({
+                    success: false,
+                    error: 'Nombre y email son requeridos',
+                    received: { name: !!name, email: !!email }
                 });
             }
 
-            // Verificar si el email ya existe
-            const [existingUsers] = await connection.execute(
-                'SELECT id FROM users WHERE email = ?',
-                [email]
-            );
+            const connection = await pool.getConnection();
+            await connection.beginTransaction();
 
-            if (existingUsers.length > 0) {
-                return res.status(400).json({ success: false, error: 'El email ya está registrado' });
-            }
+            try {
+                let adminPhone = null;
 
-            // Hashear contraseña
-            const hashedPassword = await bcrypt.hash(password, 12);
+                // Intentar autenticación por JWT token
+                const authHeader = req.headers.authorization;
+                if (authHeader && authHeader.startsWith('Bearer ')) {
+                    try {
+                        const token = authHeader.split(' ')[1];
+                        const jwt = require('jsonwebtoken');
+                        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
 
-            // Crear agente en tabla users
-            const [result] = await connection.execute(`
+                        console.log('🔍 [AGENT-CREATE] JWT decodificado:', {
+                            phone: decoded.phone,
+                            role: decoded.role,
+                            sessionId: decoded.sessionId
+                        });
+
+                        // ✅ El JWT contiene directamente el phone
+                        if (decoded.phone) {
+                            adminPhone = decoded.phone;
+                            console.log('✅ [AGENT-CREATE] Autenticación por JWT exitosa. Admin:', adminPhone);
+                        } else if (decoded.id) {
+                            // Fallback: Si tiene ID, buscar el phone
+                            const [users] = await connection.execute(
+                                'SELECT phone FROM users WHERE id = ?',
+                                [decoded.id]
+                            );
+
+                            if (users.length > 0) {
+                                adminPhone = users[0].phone;
+                                console.log('✅ [AGENT-CREATE] Autenticación por JWT (ID) exitosa. Admin:', adminPhone);
+                            }
+                        }
+                    } catch (jwtError) {
+                        console.log('⚠️ [AGENT-CREATE] JWT inválido:', jwtError.message);
+                    }
+                }
+
+                // Fallback 1: Verificar si hay un header X-Admin-Phone directo
+                if (!adminPhone && req.headers['x-admin-phone']) {
+                    const headerPhone = req.headers['x-admin-phone'];
+                    const [users] = await connection.execute(
+                        'SELECT phone FROM users WHERE phone = ? AND role IN ("admin", "supervisor")',
+                        [headerPhone]
+                    );
+                    if (users.length > 0) {
+                        adminPhone = users[0].phone;
+                        console.log('✅ [AGENT-CREATE] Autenticación por header X-Admin-Phone exitosa. Admin:', adminPhone);
+                    }
+                }
+
+                // Si no hay JWT válido, intentar con sessionId
+                if (!adminPhone && userSessionId) {
+                    console.log('🔍 [AGENT-CREATE] Buscando admin por sessionId:', userSessionId);
+
+                    // Primero, intentar buscar por phone (sessionId puede ser el phone del admin)
+                    let [users] = await connection.execute(
+                        'SELECT phone FROM users WHERE (phone = ? OR id = ?) AND role IN ("admin", "supervisor")',
+                        [userSessionId, parseInt(userSessionId) || 0]
+                    );
+
+                    if (users.length > 0) {
+                        adminPhone = users[0].phone;
+                        console.log('✅ Autenticación por sessionId (phone/id) exitosa. Admin:', adminPhone);
+                    } else {
+                        // Intentar buscar en user_sessions por session_id UUID
+                        const [sessionRows] = await connection.execute(
+                            'SELECT phone_number FROM user_sessions WHERE session_id = ? OR phone_number = ?',
+                            [userSessionId, userSessionId]
+                        );
+
+                        if (sessionRows.length > 0) {
+                            adminPhone = sessionRows[0].phone_number;
+                            console.log('✅ Autenticación por user_sessions exitosa. Admin:', adminPhone);
+                        } else {
+                            // Si aún no encuentra, buscar cualquier admin activo (como fallback)
+                            [users] = await connection.execute(
+                                'SELECT phone FROM users WHERE role = "admin" AND status = "active" LIMIT 1'
+                            );
+                            if (users.length > 0) {
+                                adminPhone = users[0].phone;
+                                console.log('⚠️ [AGENT-CREATE] Usando primer admin disponible:', adminPhone);
+                            }
+                        }
+                    }
+                }
+
+                // Si no se pudo autenticar de ninguna manera
+                if (!adminPhone) {
+                    await connection.rollback();
+                    connection.release();
+                    console.log('❌ No se pudo autenticar. JWT:', !!authHeader, 'SessionId:', !!userSessionId);
+                    return res.status(401).json({
+                        success: false,
+                        error: 'No autorizado. Debe iniciar sesión primero.'
+                    });
+                }
+
+                // Verificar si el email ya existe
+                const [existingUsers] = await connection.execute(
+                    'SELECT id FROM users WHERE email = ?',
+                    [email]
+                );
+
+                if (existingUsers.length > 0) {
+                    await connection.rollback();
+                    connection.release();
+                    return res.status(400).json({ success: false, error: 'El email ya está registrado' });
+                }
+
+                // Generar contraseña si no se proporciona
+                const finalPassword = password || `Agent${Math.random().toString(36).slice(-8)}`;
+
+                // Hashear contraseña
+                const hashedPassword = await bcrypt.hash(finalPassword, 12);
+
+                // Crear agente en tabla users
+                const [result] = await connection.execute(`
                 INSERT INTO users (
                     name, email, phone, password, role,
-                    status, agent_status, max_concurrent_chats
-                ) VALUES (?, ?, ?, ?, 'agent', 'active', 'offline', ?)
+                    status, agent_status, max_concurrent_chats, admin_phone
+                ) VALUES (?, ?, ?, ?, 'agent', 'active', 'offline', ?, ?)
             `, [
-                name,
-                email,
-                phone || null,
-                hashedPassword,
-                req.body.max_concurrent_chats || 5
-            ]);
+                    name,
+                    email,
+                    phone || null,
+                    hashedPassword,
+                    req.body.max_concurrent_chats || 5,
+                    adminPhone
+                ]);
 
-            const agentId = result.insertId;
+                const agentId = result.insertId;
 
-            await connection.commit();
+                await connection.commit();
 
-            console.log(`✅ Agente creado: ${email}`);
-            res.json({
-                success: true,
-                agentId,
-                message: 'Agente creado exitosamente'
-            });
+                console.log(`✅ Agente creado: ${email}`);
+                res.json({
+                    success: true,
+                    agentId,
+                    message: 'Agente creado exitosamente'
+                });
+            } catch (error) {
+                await connection.rollback();
+                throw error;
+            } finally {
+                connection.release();
+            }
         } catch (error) {
-            await connection.rollback();
-            throw error;
-        } finally {
-            connection.release();
+            console.error('Error creando agente:', error);
+            res.status(500).json({ success: false, error: error.message || 'Error creando agente' });
         }
-    } catch (error) {
-        console.error('Error creando agente:', error);
-        res.status(500).json({ success: false, error: error.message || 'Error creando agente' });
-    }
-});
+    });
 
-/**
- * Obtener permisos de un agente específico
- * GET /api/agents/:agentId/permissions
- */
-app.get('/api/agents/:agentId/permissions', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { agentId } = req.params;
-        const connection = await pool.getConnection();
-
+    /**
+     * Obtener permisos de un agente específico
+     * GET /api/agents/:agentId/permissions
+     */
+    app.get('/api/agents/:agentId/permissions', async (req, res) => {
         try {
-            const [permissions] = await connection.execute(`
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { agentId } = req.params;
+            const connection = await pool.getConnection();
+
+            try {
+                const [permissions] = await connection.execute(`
                 SELECT 
                     p.id as permission_id,
                     p.name as permission_name,
@@ -221,210 +296,265 @@ app.get('/api/agents/:agentId/permissions', async (req, res) => {
                 ORDER BY p.module, p.name
             `, [agentId]);
 
-            // Agrupar por módulo
-            const permissionsByModule = {};
-            permissions.forEach(perm => {
-                if (!permissionsByModule[perm.module]) {
-                    permissionsByModule[perm.module] = [];
-                }
-                permissionsByModule[perm.module].push(perm);
-            });
+                // Agrupar por módulo
+                const permissionsByModule = {};
+                permissions.forEach(perm => {
+                    if (!permissionsByModule[perm.module]) {
+                        permissionsByModule[perm.module] = [];
+                    }
+                    permissionsByModule[perm.module].push(perm);
+                });
 
-            res.json({ 
-                success: true, 
-                permissions,
-                permissionsByModule 
-            });
-        } finally {
-            connection.release();
+                res.json({
+                    success: true,
+                    permissions,
+                    permissionsByModule
+                });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error obteniendo permisos:', error);
+            res.status(500).json({ success: false, error: 'Error obteniendo permisos' });
         }
-    } catch (error) {
-        console.error('Error obteniendo permisos:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo permisos' });
-    }
-});
+    });
 
-/**
- * Actualizar permisos de un agente
- * PUT /api/agents/:agentId/permissions
- */
-app.put('/api/agents/:agentId/permissions', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { agentId } = req.params;
-        const { permissions } = req.body;
-
-        if (!permissions || !Array.isArray(permissions)) {
-            return res.status(400).json({ success: false, error: 'Permisos inválidos' });
-        }
-
-        const connection = await pool.getConnection();
-        await connection.beginTransaction();
-
+    /**
+     * Actualizar permisos de un agente
+     * PUT /api/agents/:agentId/permissions
+     */
+    app.put('/api/agents/:agentId/permissions', async (req, res) => {
         try {
-            // Eliminar permisos existentes
-            await connection.execute(
-                'DELETE FROM agent_permissions WHERE agent_id = ?',
-                [agentId]
-            );
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
 
-            // Insertar nuevos permisos
-            for (const perm of permissions) {
-                if (perm.can_view || perm.can_create || perm.can_edit || perm.can_delete) {
-                    await connection.execute(`
+            const { agentId } = req.params;
+            const { permissions } = req.body;
+
+            if (!permissions || !Array.isArray(permissions)) {
+                return res.status(400).json({ success: false, error: 'Permisos inválidos' });
+            }
+
+            const connection = await pool.getConnection();
+            await connection.beginTransaction();
+
+            try {
+                // Eliminar permisos existentes
+                await connection.execute(
+                    'DELETE FROM agent_permissions WHERE agent_id = ?',
+                    [agentId]
+                );
+
+                // Insertar nuevos permisos
+                for (const perm of permissions) {
+                    if (perm.can_view || perm.can_create || perm.can_edit || perm.can_delete) {
+                        await connection.execute(`
                         INSERT INTO agent_permissions (
                             agent_id, permission_id, can_view, can_create, can_edit, can_delete
                         ) VALUES (?, ?, ?, ?, ?, ?)
                     `, [
-                        agentId,
-                        perm.permission_id,
-                        perm.can_view ? 1 : 0,
-                        perm.can_create ? 1 : 0,
-                        perm.can_edit ? 1 : 0,
-                        perm.can_delete ? 1 : 0
-                    ]);
+                            agentId,
+                            perm.permission_id,
+                            perm.can_view ? 1 : 0,
+                            perm.can_create ? 1 : 0,
+                            perm.can_edit ? 1 : 0,
+                            perm.can_delete ? 1 : 0
+                        ]);
+                    }
                 }
+
+                await connection.commit();
+
+                console.log(`✅ Permisos actualizados para agente: ${agentId}`);
+                res.json({
+                    success: true,
+                    message: 'Permisos actualizados exitosamente'
+                });
+            } catch (error) {
+                await connection.rollback();
+                throw error;
+            } finally {
+                connection.release();
             }
-
-            await connection.commit();
-
-            console.log(`✅ Permisos actualizados para agente: ${agentId}`);
-            res.json({ 
-                success: true, 
-                message: 'Permisos actualizados exitosamente' 
-            });
         } catch (error) {
-            await connection.rollback();
-            throw error;
-        } finally {
-            connection.release();
+            console.error('Error actualizando permisos:', error);
+            res.status(500).json({ success: false, error: 'Error actualizando permisos' });
         }
-    } catch (error) {
-        console.error('Error actualizando permisos:', error);
-        res.status(500).json({ success: false, error: 'Error actualizando permisos' });
-    }
-});
+    });
 
-/**
- * Actualizar información de un agente
- * PUT /api/agents/:agentId
- */
-app.put('/api/agents/:agentId', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { agentId } = req.params;
-        const { name, email, phone, password, is_active, max_concurrent_chats } = req.body;
-
-        const connection = await pool.getConnection();
-
+    /**
+     * Actualizar información de un agente
+     * PUT /api/agents/:agentId
+     */
+    app.put('/api/agents/:agentId', async (req, res) => {
         try {
-            const updates = [];
-            const params = [];
-
-            if (name) {
-                updates.push('name = ?');
-                params.push(name);
-            }
-            if (email) {
-                updates.push('email = ?');
-                params.push(email);
-            }
-            if (phone !== undefined) {
-                updates.push('phone = ?');
-                params.push(phone);
-            }
-            if (password) {
-                const hashedPassword = await bcrypt.hash(password, 12);
-                updates.push('password = ?');
-                params.push(hashedPassword);
-            }
-            if (is_active !== undefined) {
-                updates.push('status = ?');
-                params.push(is_active ? 'active' : 'inactive');
-            }
-            if (max_concurrent_chats !== undefined) {
-                updates.push('max_concurrent_chats = ?');
-                params.push(max_concurrent_chats);
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            if (updates.length === 0) {
-                return res.status(400).json({ success: false, error: 'No hay datos para actualizar' });
+            const { agentId } = req.params;
+            const { name, email, phone, password, is_active, max_concurrent_chats } = req.body;
+
+            const connection = await pool.getConnection();
+
+            try {
+                const updates = [];
+                const params = [];
+
+                if (name) {
+                    updates.push('name = ?');
+                    params.push(name);
+                }
+                if (email) {
+                    updates.push('email = ?');
+                    params.push(email);
+                }
+                if (phone !== undefined) {
+                    updates.push('phone = ?');
+                    params.push(phone);
+                }
+                if (password) {
+                    const hashedPassword = await bcrypt.hash(password, 12);
+                    updates.push('password = ?');
+                    params.push(hashedPassword);
+                }
+                if (is_active !== undefined) {
+                    updates.push('status = ?');
+                    params.push(is_active ? 'active' : 'inactive');
+                }
+                if (max_concurrent_chats !== undefined) {
+                    updates.push('max_concurrent_chats = ?');
+                    params.push(max_concurrent_chats);
+                }
+
+                if (updates.length === 0) {
+                    return res.status(400).json({ success: false, error: 'No hay datos para actualizar' });
+                }
+
+                params.push(agentId);
+
+                await connection.execute(
+                    `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND role = 'agent'`,
+                    params
+                );
+
+                console.log(`✅ Agente actualizado: ${agentId}`);
+                res.json({
+                    success: true,
+                    message: 'Agente actualizado exitosamente'
+                });
+            } finally {
+                connection.release();
             }
-
-            params.push(agentId);
-
-            await connection.execute(
-                `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ? AND role = 'agent'`,
-                params
-            );
-
-            console.log(`✅ Agente actualizado: ${agentId}`);
-            res.json({
-                success: true,
-                message: 'Agente actualizado exitosamente'
-            });
-        } finally {
-            connection.release();
+        } catch (error) {
+            console.error('Error actualizando agente:', error);
+            res.status(500).json({ success: false, error: 'Error actualizando agente' });
         }
-    } catch (error) {
-        console.error('Error actualizando agente:', error);
-        res.status(500).json({ success: false, error: 'Error actualizando agente' });
-    }
-});
+    });
 
-/**
- * Eliminar un agente
- * DELETE /api/agents/:agentId
- */
-app.delete('/api/agents/:agentId', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { agentId } = req.params;
-        const connection = await pool.getConnection();
-
+    /**
+     * Eliminar un agente
+     * DELETE /api/agents/:agentId
+     */
+    app.delete('/api/agents/:agentId', async (req, res) => {
         try {
-            await connection.execute(
-                'DELETE FROM users WHERE id = ? AND role = \'agent\'',
-                [agentId]
-            );
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
 
-            console.log(`✅ Agente eliminado: ${agentId}`);
-            res.json({
-                success: true,
-                message: 'Agente eliminado exitosamente'
-            });
-        } finally {
-            connection.release();
+            const { agentId } = req.params;
+            const connection = await pool.getConnection();
+
+            try {
+                await connection.execute(
+                    'DELETE FROM users WHERE id = ? AND role = \'agent\'',
+                    [agentId]
+                );
+
+                console.log(`✅ Agente eliminado: ${agentId}`);
+                res.json({
+                    success: true,
+                    message: 'Agente eliminado exitosamente'
+                });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error eliminando agente:', error);
+            res.status(500).json({ success: false, error: 'Error eliminando agente' });
         }
-    } catch (error) {
-        console.error('Error eliminando agente:', error);
-        res.status(500).json({ success: false, error: 'Error eliminando agente' });
-    }
-});
+    });
 
-/**
- * Obtener todos los módulos y permisos disponibles
- * GET /api/permissions/modules
- */
-app.get('/api/permissions/modules', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const connection = await pool.getConnection();
-
+    /**
+     * Cambiar acceso de un agente (bloquear/desbloquear)
+     * PUT /api/agents/:agentId/access
+     */
+    app.put('/api/agents/:agentId/access', async (req, res) => {
         try {
-            const [permissions] = await connection.execute(`
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { agentId } = req.params;
+            const { status } = req.body;
+
+            // Validar el estado
+            const validStatuses = ['active', 'inactive'];
+            if (!validStatuses.includes(status)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Estado inválido. Debe ser uno de: ${validStatuses.join(', ')}`
+                });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                // Actualizar estado de acceso del agente en tabla users
+                await connection.execute(
+                    'UPDATE users SET status = ?, updated_at = NOW() WHERE id = ? AND role = \'agent\'',
+                    [status, agentId]
+                );
+
+                console.log(`✅ Acceso de agente actualizado: ${agentId} -> ${status}`);
+
+                // Emitir evento por Socket.IO si está disponible
+                if (global.io) {
+                    global.io.emit('agent-access-changed', {
+                        agentId,
+                        status
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Acceso actualizado exitosamente',
+                    status
+                });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error actualizando acceso de agente:', error);
+            res.status(500).json({ success: false, error: 'Error actualizando acceso' });
+        }
+    });
+
+    /**
+     * Obtener todos los módulos y permisos disponibles
+     * GET /api/permissions/modules
+     */
+    app.get('/api/permissions/modules', async (req, res) => {
+        try {
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                const [permissions] = await connection.execute(`
                 SELECT 
                     id as permission_id,
                     name,
@@ -434,94 +564,103 @@ app.get('/api/permissions/modules', async (req, res) => {
                 ORDER BY module, name
             `);
 
-            // Agrupar por módulo
-            const modules = {};
-            permissions.forEach(perm => {
-                if (!modules[perm.module]) {
-                    modules[perm.module] = {
-                        name: perm.module,
-                        permissions: []
-                    };
-                }
-                modules[perm.module].permissions.push(perm);
-            });
+                // Agrupar por módulo
+                const modules = {};
+                permissions.forEach(perm => {
+                    if (!modules[perm.module]) {
+                        modules[perm.module] = {
+                            name: perm.module,
+                            permissions: []
+                        };
+                    }
+                    modules[perm.module].permissions.push(perm);
+                });
 
-            res.json({ 
-                success: true, 
-                modules: Object.values(modules),
-                permissions 
-            });
-        } finally {
-            connection.release();
+                res.json({
+                    success: true,
+                    modules: Object.values(modules),
+                    permissions
+                });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error obteniendo módulos:', error);
+            res.status(500).json({ success: false, error: 'Error obteniendo módulos' });
         }
-    } catch (error) {
-        console.error('Error obteniendo módulos:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo módulos' });
-    }
-});
+    });
 
-/**
- * Login de agente (con email y contraseña)
- * POST /api/agents/login
- */
-app.post('/api/agents/login', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { email, password } = req.body;
-
-        if (!email || !password) {
-            return res.status(400).json({ success: false, error: 'Email y contraseña son requeridos' });
-        }
-
-        const connection = await pool.getConnection();
-
+    /**
+     * Login de agente (con email y contraseña)
+     * POST /api/agents/login
+     */
+    app.post('/api/agents/login', async (req, res) => {
         try {
-            // Buscar agente por email
-            const [agents] = await connection.execute(
-                'SELECT * FROM users WHERE email = ? AND role = "agent" AND status = "active"',
-                [email]
-            );
-
-            if (agents.length === 0) {
-                return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            const agent = agents[0];
+            const { email, password } = req.body;
 
-            // Verificar contraseña
-            if (!agent.password) {
-                return res.status(401).json({ success: false, error: 'Este agente no tiene contraseña configurada' });
+            if (!email || !password) {
+                return res.status(400).json({ success: false, error: 'Email y contraseña son requeridos' });
             }
 
-            const isValidPassword = await bcrypt.compare(password, agent.password);
-            if (!isValidPassword) {
-                return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
-            }
+            const connection = await pool.getConnection();
 
-            // Generar token JWT
-            const jwt = require('jsonwebtoken');
-            const token = jwt.sign(
-                { 
-                    id: agent.id, 
-                    email: agent.email, 
-                    type: 'agent',
-                    name: agent.name
-                },
-                process.env.JWT_SECRET || 'whatsflow_jwt_secret',
-                { expiresIn: '24h' }
-            );
+            try {
+                // Buscar agente por email
+                const [agents] = await connection.execute(
+                    'SELECT * FROM users WHERE email = ? AND role = "agent" AND status = "active"',
+                    [email]
+                );
 
-            // Actualizar última actividad
-            await connection.execute(
-                'UPDATE agents SET last_activity = NOW(), status = "online" WHERE id = ?',
-                [agent.id]
-            );
+                if (agents.length === 0) {
+                    return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
+                }
 
-            // Obtener permisos del agente
-            const [permissions] = await connection.execute(`
+                const agent = agents[0];
+
+                // Verificar contraseña
+                if (!agent.password) {
+                    return res.status(401).json({ success: false, error: 'Este agente no tiene contraseña configurada' });
+                }
+
+                const isValidPassword = await bcrypt.compare(password, agent.password);
+                if (!isValidPassword) {
+                    return res.status(401).json({ success: false, error: 'Credenciales inválidas' });
+                }
+
+                // Generar token JWT
+                const jwt = require('jsonwebtoken');
+                const token = jwt.sign(
+                    {
+                        id: agent.id,
+                        email: agent.email,
+                        type: 'agent',
+                        name: agent.name
+                    },
+                    process.env.JWT_SECRET || 'whatsflow_jwt_secret',
+                    { expiresIn: '24h' }
+                );
+
+                // Actualizar última actividad
+                await connection.execute(
+                    'UPDATE users SET agent_status = "online", last_activity = NOW() WHERE id = ?',
+                    [agent.id]
+                );
+
+                // Emitir evento de cambio de estado
+                if (global.io) {
+                    global.io.emit('agent-status-changed', {
+                        agentId: agent.id,
+                        status: 'online',
+                        agentName: agent.name
+                    });
+                }
+
+                // Obtener permisos del agente
+                const [permissions] = await connection.execute(`
                 SELECT 
                     p.module,
                     p.name as permission_name,
@@ -534,47 +673,47 @@ app.post('/api/agents/login', async (req, res) => {
                 WHERE ap.agent_id = ?
             `, [agent.id]);
 
-            const { password: _, ...agentWithoutPassword } = agent;
+                const { password: _, ...agentWithoutPassword } = agent;
 
-            console.log(`✅ Agent Login: ${email}`);
-            res.json({ 
-                success: true, 
-                token,
-                agent: agentWithoutPassword,
-                permissions,
-                message: 'Login exitoso'
-            });
-        } finally {
-            connection.release();
+                console.log(`✅ Agent Login: ${email}`);
+                res.json({
+                    success: true,
+                    token,
+                    agent: agentWithoutPassword,
+                    permissions,
+                    message: 'Login exitoso'
+                });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error en login de agente:', error);
+            res.status(500).json({ success: false, error: 'Error en el proceso de login' });
         }
-    } catch (error) {
-        console.error('Error en login de agente:', error);
-        res.status(500).json({ success: false, error: 'Error en el proceso de login' });
-    }
-});
+    });
 
-/**
- * Verificar permisos de un agente para una acción específica
- * POST /api/agents/check-permission
- */
-app.post('/api/agents/check-permission', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { agentId, module, action } = req.body; // action: 'view', 'create', 'edit', 'delete'
-
-        if (!agentId || !module || !action) {
-            return res.status(400).json({ success: false, error: 'Datos incompletos' });
-        }
-
-        const connection = await pool.getConnection();
-
+    /**
+     * Verificar permisos de un agente para una acción específica
+     * POST /api/agents/check-permission
+     */
+    app.post('/api/agents/check-permission', async (req, res) => {
         try {
-            const columnName = `can_${action}`;
-            
-            const [result] = await connection.execute(`
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { agentId, module, action } = req.body; // action: 'view', 'create', 'edit', 'delete'
+
+            if (!agentId || !module || !action) {
+                return res.status(400).json({ success: false, error: 'Datos incompletos' });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                const columnName = `can_${action}`;
+
+                const [result] = await connection.execute(`
                 SELECT COUNT(*) as has_permission
                 FROM agent_permissions ap
                 INNER JOIN permissions p ON ap.permission_id = p.id
@@ -583,122 +722,171 @@ app.post('/api/agents/check-permission', async (req, res) => {
                 AND ap.${columnName} = 1
             `, [agentId, module]);
 
-            const hasPermission = result[0].has_permission > 0;
+                const hasPermission = result[0].has_permission > 0;
 
-            res.json({ 
-                success: true, 
-                hasPermission,
-                module,
-                action
-            });
-        } finally {
-            connection.release();
+                res.json({
+                    success: true,
+                    hasPermission,
+                    module,
+                    action
+                });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error verificando permisos:', error);
+            res.status(500).json({ success: false, error: 'Error verificando permisos' });
         }
-    } catch (error) {
-        console.error('Error verificando permisos:', error);
-        res.status(500).json({ success: false, error: 'Error verificando permisos' });
-    }
-});
+    });
 
-/**
- * Obtener agentes en línea
- * GET /api/agents/online
- */
-app.get('/api/agents/online', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const connection = await pool.getConnection();
-
+    /**
+     * Obtener agentes en línea
+     * GET /api/agents/online
+     */
+    app.get('/api/agents/online', async (req, res) => {
         try {
-            // Obtener agentes que han estado activos en los últimos 5 minutos
-            const [agents] = await connection.execute(`
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                // Obtener todos los agentes para mostrar su estado real
+                const [agents] = await connection.execute(`
                 SELECT
-                    id,
-                    name,
+                    id as userId,
+                    name as userName,
                     email,
                     phone,
                     role,
-                    status,
-                    last_activity as lastActivity,
-                    created_at as createdAt
-                FROM agents
-                WHERE status = 'online'
-                AND last_activity >= DATE_SUB(NOW(), INTERVAL 5 MINUTE)
-                ORDER BY last_activity DESC
+                    agent_status as status,
+                    last_activity as lastActivity
+                FROM users
+                WHERE role IN ('agent', 'supervisor', 'admin')
+                ORDER BY 
+                    CASE 
+                        WHEN agent_status = 'online' THEN 1
+                        WHEN agent_status = 'available' THEN 2
+                        WHEN agent_status = 'busy' THEN 3
+                        ELSE 4 
+                    END,
+                    name ASC
             `);
 
-            res.json({
-                success: true,
-                agents,
-                total: agents.length
-            });
-        } finally {
-            connection.release();
+                res.json({
+                    success: true,
+                    agents,
+                    total: agents.length
+                });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error obteniendo agentes:', error);
+            res.status(500).json({ success: false, error: 'Error obteniendo lista de agentes' });
         }
-    } catch (error) {
-        console.error('Error obteniendo agentes en línea:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo agentes en línea' });
-    }
-});
+    });
 
-/**
- * Cambiar estado de un agente
- * PUT /api/agents/:agentId/status
- */
-app.put('/api/agents/:agentId/status', async (req, res) => {
-    try {
-        if (!pool) {
-            return res.status(503).json({ success: false, error: 'DB service unavailable' });
-        }
-
-        const { agentId } = req.params;
-        const { status } = req.body;
-
-        // Validar el estado
-        const validStatuses = ['online', 'offline', 'paused', 'busy'];
-        if (!validStatuses.includes(status)) {
-            return res.status(400).json({
-                success: false,
-                error: `Estado inválido. Debe ser uno de: ${validStatuses.join(', ')}`
-            });
-        }
-
-        const connection = await pool.getConnection();
-
+    /**
+     * Cambiar estado de un agente
+     * PUT /api/agents/:agentId/status
+     */
+    app.put('/api/agents/:agentId/status', async (req, res) => {
         try {
-            // Actualizar estado del agente en tabla users
-            await connection.execute(
-                'UPDATE users SET agent_status = ?, last_activity = NOW() WHERE id = ? AND role = \'agent\'',
-                [status, agentId]
-            );
+            console.log('[AGENT-STATUS] 📥 Request recibido:', {
+                agentId: req.params.agentId,
+                body: req.body
+            });
 
-            console.log(`✅ Estado de agente actualizado: ${agentId} -> ${status}`);
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
 
-            // Emitir evento por Socket.IO si está disponible
-            if (global.io) {
-                global.io.emit('agent-status-changed', {
-                    agentId,
-                    status
+            const { agentId } = req.params;
+            const { status } = req.body;
+
+            console.log('[AGENT-STATUS] 🔍 Validando status:', status);
+
+            // Validar el estado
+            const validStatuses = ['online', 'offline', 'paused', 'busy', 'available'];
+            if (!status) {
+                console.log('[AGENT-STATUS] ❌ Status no proporcionado');
+                return res.status(400).json({
+                    success: false,
+                    error: 'El campo "status" es requerido'
                 });
             }
 
-            res.json({
-                success: true,
-                message: 'Estado actualizado exitosamente',
-                status
-            });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('Error actualizando estado de agente:', error);
-        res.status(500).json({ success: false, error: 'Error actualizando estado' });
-    }
-});
+            if (!validStatuses.includes(status)) {
+                console.log('[AGENT-STATUS] ❌ Status inválido:', status);
+                return res.status(400).json({
+                    success: false,
+                    error: `Estado inválido. Debe ser uno de: ${validStatuses.join(', ')}`,
+                    received: status
+                });
+            }
 
-console.log('✅ Endpoints de gestión de agentes con privilegios cargados');
+            const connection = await pool.getConnection();
+
+            try {
+                // Verificar que el agente existe
+                const [agents] = await connection.execute(
+                    'SELECT id, name, email, role FROM users WHERE id = ?',
+                    [agentId]
+                );
+
+                if (agents.length === 0) {
+                    console.log('[AGENT-STATUS] ❌ Agente no encontrado:', agentId);
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Agente no encontrado'
+                    });
+                }
+
+                console.log('[AGENT-STATUS] ✅ Agente encontrado:', agents[0]);
+
+                // Actualizar estado del agente en tabla users
+                const [result] = await connection.execute(
+                    'UPDATE users SET agent_status = ?, last_activity = NOW() WHERE id = ?',
+                    [status, agentId]
+                );
+
+                console.log('[AGENT-STATUS] ✅ Estado actualizado:', {
+                    agentId,
+                    status,
+                    affectedRows: result.affectedRows
+                });
+
+                // Emitir evento por Socket.IO si está disponible
+                if (global.io) {
+                    global.io.emit('agent-status-changed', {
+                        agentId,
+                        status,
+                        agentName: agents[0].name
+                    });
+                    console.log('[AGENT-STATUS] 📡 Evento Socket.IO emitido');
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Estado actualizado exitosamente',
+                    status,
+                    agent: agents[0]
+                });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('[AGENT-STATUS] ❌ Error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error actualizando estado',
+                details: error.message
+            });
+        }
+    });
+
+    console.log('✅ Endpoints de gestión de agentes con privilegios cargados');
 
 };

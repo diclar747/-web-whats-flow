@@ -52,6 +52,9 @@ import {
   CheckCircle,
   Chat,
   WhatsApp,
+  Send,
+  EmojiEmotions,
+  Close,
 } from '@mui/icons-material';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -105,15 +108,15 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
   const [success, setSuccess] = useState<string | null>(null);
   const [syncStats, setSyncStats] = useState<any>(null);
   const [groupsSyncStats, setGroupsSyncStats] = useState<any>(null);
-  
+
   // Kanban state
   const [boards, setBoards] = useState<any[]>([]);
-  
+
   // Dialogs
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showKanbanDialog, setShowKanbanDialog] = useState(false);
   const [selectedContactForKanban, setSelectedContactForKanban] = useState<SyncedContact | null>(null);
-  
+
   // Estados para editar nombre
   const [showEditNameDialog, setShowEditNameDialog] = useState(false);
   const [editingContactName, setEditingContactName] = useState('');
@@ -124,6 +127,13 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
   const [groupMembers, setGroupMembers] = useState<any[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
+
+  // Estados para chat rápido
+  const [showQuickChatDialog, setShowQuickChatDialog] = useState(false);
+  const [quickChatContact, setQuickChatContact] = useState<SyncedContact | null>(null);
+  const [quickChatMessage, setQuickChatMessage] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   // Funciones de sincronización
   const handleSyncContacts = async () => {
@@ -215,6 +225,50 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
       setSyncLoading(false);
     }
   };
+
+  // Función para enviar mensaje rápido
+  const handleSendQuickMessage = async () => {
+    if (!quickChatMessage.trim() || !quickChatContact) return;
+
+    try {
+      setSendingMessage(true);
+      setError(null);
+
+      const response = await fetch(`${getAPIBaseURL()}/api/send-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          to: quickChatContact.jid,
+          message: quickChatMessage
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess(`✅ Mensaje enviado a ${quickChatContact.name || quickChatContact.jid}`);
+        setQuickChatMessage('');
+        setShowQuickChatDialog(false);
+        setShowEmojiPicker(false);
+      } else {
+        setError(`❌ Error: ${data.error || 'No se pudo enviar el mensaje'}`);
+      }
+    } catch (error) {
+      console.error('Error enviando mensaje:', error);
+      setError('❌ Error al enviar el mensaje');
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
+  // Emojis comunes para selector rápido
+  const commonEmojis = [
+    '😊', '😂', '❤️', '👍', '🙏', '😍', '🎉', '✨',
+    '🔥', '💪', '👏', '🤝', '💯', '⭐', '🎯', '✅',
+    '📱', '💼', '🏆', '🎁', '☕', '🌟', '💡', '🚀'
+  ];
+
 
   const handleSyncGroups = async () => {
     try {
@@ -352,16 +406,16 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
       console.error(err);
     }
   };
-  
+
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [showGroupDialog, setShowGroupDialog] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
-  
+
   // Import states
   const [importText, setImportText] = useState('');
   const [importProgress, setImportProgress] = useState(0);
   const [selectedGroupIdForImport, setSelectedGroupIdForImport] = useState<string>('');
-  
+
   // Form states
   const [contactForm, setContactForm] = useState({
     name: '',
@@ -369,7 +423,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
     category: 'cliente',
     tags: [] as string[]
   });
-  
+
   const [groupForm, setGroupForm] = useState({
     name: '',
     description: '',
@@ -390,9 +444,9 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
       if (savedContacts) {
         const parsed = JSON.parse(savedContacts);
         // Filtrar solo contactos válidos (que tengan nombre y teléfono)
-        const validContacts = parsed.filter((c: Contact) => 
-          c.phone && 
-          c.name && 
+        const validContacts = parsed.filter((c: Contact) =>
+          c.phone &&
+          c.name &&
           c.name !== 'Sin categoría' &&
           c.addedAt &&
           c.addedAt !== 'Invalid Date'
@@ -421,13 +475,13 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
       console.log('[Kanban] Cargando tableros...');
       const response = await fetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
       const data = await response.json();
-      
+
       console.log('[Kanban] Respuesta del servidor:', data);
-      
+
       if (data.success && data.boards) {
         console.log(`[Kanban] ✅ ${data.boards.length} tableros cargados`);
         setBoards(data.boards);
-        
+
         // Cargar contactos de Kanban
         await loadKanbanContacts();
       } else {
@@ -439,16 +493,16 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
       setBoards([]);
     }
   };
-  
+
   // Function to load Kanban contacts
   const loadKanbanContacts = async () => {
     try {
       console.log('[Kanban] Cargando contactos...');
       const response = await fetch(`${getAPIBaseURL()}/api/kanban/contacts/${sessionId}`);
       const data = await response.json();
-      
+
       console.log('[Kanban] Contactos recibidos:', data);
-      
+
       if (data.success && data.contactsByBoard) {
         console.log(`[Kanban] ✅ ${data.totalContacts} contactos cargados`);
         // Aquí procesarías los contactos por board
@@ -457,7 +511,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
       console.error('[Kanban] Error loading contacts:', error);
     }
   };
-  
+
   // Load data on mount
   useEffect(() => {
     loadContacts();
@@ -505,12 +559,12 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
 
     setLoading(true);
     setImportProgress(0);
-    
+
     try {
       const lines = importText.trim().split('\n');
       const newContacts: Contact[] = [];
       const newContactIdsForGroup: string[] = [];
-      
+
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         if (line.trim()) {
@@ -520,10 +574,10 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
             const name = parts[1];
             const category = parts[2] || 'cliente';
             const tags = parts[3] ? parts[3].split(';').map(t => t.trim()) : [];
-            
+
             if (phone.match(/^\+?[1-9]\d{1,14}$/)) {
               const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
-              
+
               const exists = contacts.find(c => c.phone === formattedPhone);
               if (!exists) {
                 newContacts.push({
@@ -542,15 +596,15 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
             }
           }
         }
-        
+
         setImportProgress(Math.round((i + 1) / lines.length * 100));
         await new Promise(resolve => setTimeout(resolve, 10));
       }
-      
+
       const updatedContacts = [...contacts, ...newContacts];
       setContacts(updatedContacts);
       saveContacts(updatedContacts);
-      
+
       if (selectedGroupIdForImport && newContactIdsForGroup.length > 0) {
         const updatedGroups = groups.map(group => {
           if (group.id === selectedGroupIdForImport) {
@@ -567,11 +621,11 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
       } else {
         setSuccess(`Importados ${newContacts.length} contactos exitosamente.`);
       }
-      
+
       setImportText('');
       setSelectedGroupIdForImport('');
       setShowImportDialog(false);
-      
+
     } catch (error) {
       setError('Error durante la importación');
       console.error('Import error:', error);
@@ -689,10 +743,10 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
   };
 
   const exportContacts = () => {
-    const csvContent = contacts.map(contact => 
+    const csvContent = contacts.map(contact =>
       `${contact.phone},${contact.name},${contact.category},${contact.tags.join(';')}`
     ).join('\n');
-    
+
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -700,7 +754,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
     a.download = `contactos_${sessionId}_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
-    
+
     setSuccess('Contactos exportados exitosamente');
   };
 
@@ -715,7 +769,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
+      {/* Header Simplificado */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box>
@@ -723,77 +777,56 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
               📱 Gestión de Contactos
             </Typography>
             <Typography variant="body1" color="textSecondary">
-              Administra tus contactos y grupos para campañas WhatsApp
+              Administra tus contactos de WhatsApp
             </Typography>
           </Box>
           <Stack direction="row" spacing={1}>
             <Button
-              variant="outlined"
+              variant="contained"
               startIcon={syncLoading ? <CircularProgress size={20} /> : <Refresh />}
               onClick={handleSyncContacts}
               disabled={syncLoading}
+              sx={{ bgcolor: '#00a884', '&:hover': { bgcolor: '#008069' } }}
             >
               {syncLoading ? 'Sincronizando...' : 'Sincronizar Contactos'}
             </Button>
             <Button
               variant="outlined"
-              startIcon={<Upload />}
-              onClick={() => setShowImportDialog(true)}
+              startIcon={<Person />}
+              onClick={async () => {
+                try {
+                  setSyncLoading(true);
+                  setError(null);
+                  console.log('Actualizando avatares...');
+
+                  const response = await fetch(`${getAPIBaseURL()}/api/update-contacts-avatars/${sessionId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                  });
+
+                  const data = await response.json();
+
+                  if (data.success) {
+                    console.log('Avatares actualizados:', data.stats);
+                    setSuccess(`✅ Avatares actualizados: ${data.stats.updatedAvatars} de ${data.stats.totalContacts} contactos`);
+                    await loadSyncedContacts();
+                  } else {
+                    console.error('Error actualizando avatares:', data.error);
+                    setError(`❌ Error: ${data.error}`);
+                  }
+                } catch (error) {
+                  console.error('Error actualizando avatares:', error);
+                  setError('❌ Error al actualizar avatares');
+                } finally {
+                  setSyncLoading(false);
+                }
+              }}
+              disabled={syncLoading}
+              sx={{ borderColor: '#ff9800', color: '#ff9800', '&:hover': { borderColor: '#f57c00', bgcolor: '#fff3e0' } }}
             >
-              Importar
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<Download />}
-              onClick={exportContacts}
-              disabled={contacts.length === 0}
-            >
-              Exportar
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<PersonAdd />}
-              onClick={() => setShowContactDialog(true)}
-              sx={{ bgcolor: '#00a884', '&:hover': { bgcolor: '#008069' } }}
-            >
-              Nuevo Contacto
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<GroupAdd />}
-              onClick={() => setShowGroupDialog(true)}
-              sx={{ bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' } }}
-            >
-              Nuevo Grupo
+              {syncLoading ? 'Actualizando...' : 'Actualizar Avatares'}
             </Button>
           </Stack>
-        </Box>
-
-        <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <Chip
-            icon={<Person />}
-            label={`${syncedContacts.length} contactos`}
-            color="primary"
-            variant="outlined"
-          />
-          <Chip
-            icon={<Group />}
-            label={`${syncedGroups.length} grupos`}
-            color="warning"
-            variant="outlined"
-          />
-          <Chip
-            icon={<Refresh />}
-            label={`${syncedContacts.length + syncedGroups.length} sincronizados`}
-            color="success"
-            variant="outlined"
-          />
-          {selectedContacts.length > 0 && (
-            <Chip
-              label={`${selectedContacts.length} seleccionados`}
-              color="info"
-            />
-          )}
         </Box>
       </Paper>
 
@@ -809,12 +842,12 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
         </Alert>
       )}
 
-      {/* Search and Tabs */}
+      {/* Search */}
       <Paper sx={{ mb: 3 }}>
         <Box sx={{ p: 2 }}>
           <TextField
             fullWidth
-            placeholder="Buscar contactos o grupos..."
+            placeholder="Buscar contactos..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             InputProps={{
@@ -822,199 +855,12 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
             }}
           />
         </Box>
-        <Tabs value={currentTab} onChange={(e, newValue) => {
-          setCurrentTab(newValue);
-          setPage(0); // Reset pagination when changing tabs
-        }}>
-           <Tab label="Contactos" />
-           <Tab label="Grupos" />
-           <Tab label={`WhatsApp Contactos (${syncedContacts.length})`} />
-         </Tabs>
       </Paper>
 
-      {/* Content */}
-      {currentTab === 0 && (
-        // Contacts Tab
+      {/* Content: Synced Contacts Only */}
+      <Box>
         <Grid container spacing={3}>
-          {filteredContacts.length === 0 ? (
-            <Grid item xs={12}>
-              <Paper sx={{ p: 6, textAlign: 'center' }}>
-                <Person sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                <Typography variant="h6" gutterBottom>
-                  No hay contactos
-                </Typography>
-                <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-                  {contacts.length === 0
-                    ? 'Comienza importando contactos o agregando uno manualmente'
-                    : 'No se encontraron contactos con ese criterio de búsqueda'
-                  }
-                </Typography>
-                <Stack direction="row" spacing={2} justifyContent="center">
-                  <Button
-                    variant="contained"
-                    startIcon={<PersonAdd />}
-                    onClick={() => setShowContactDialog(true)}
-                  >
-                    Agregar Contacto
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    startIcon={<Upload />}
-                    onClick={() => setShowImportDialog(true)}
-                  >
-                    Importar Contactos
-                  </Button>
-                </Stack>
-              </Paper>
-            </Grid>
-          ) : (
-            filteredContacts.map((contact) => (
-              <Grid item xs={12} sm={6} md={4} key={contact.id}>
-                <Card>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Checkbox
-                          checked={selectedContacts.includes(contact.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedContacts(prev => [...prev, contact.id]);
-                            } else {
-                              setSelectedContacts(prev => prev.filter(id => id !== contact.id));
-                            }
-                          }}
-                        />
-                        <Person sx={{ color: '#00a884' }} />
-                      </Box>
-                      <IconButton
-                        onClick={(e) => {
-                          setAnchorEl(e.currentTarget);
-                          setSelectedContactMenu(contact);
-                        }}
-                      >
-                        <MoreVert />
-                      </IconButton>
-                    </Box>
-
-                    <Typography variant="h6" gutterBottom>
-                      {contact.name}
-                    </Typography>
-
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                      <Phone sx={{ fontSize: 16, color: 'text.secondary' }} />
-                      <Typography variant="body2" color="textSecondary">
-                        {contact.phone}
-                      </Typography>
-                    </Box>
-
-                    <Chip
-                      label={contact.category || 'Sin categoría'}
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                      sx={{ mb: 1 }}
-                    />
-
-                    {contact.tags && contact.tags.length > 0 && (
-                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 1 }}>
-                        {contact.tags.slice(0, 3).map((tag, index) => (
-                          <Chip
-                            key={index}
-                            label={tag}
-                            size="small"
-                            sx={{ fontSize: '0.7rem', height: 20 }}
-                          />
-                        ))}
-                        {contact.tags.length > 3 && (
-                          <Chip
-                            label={`+${contact.tags.length - 3}`}
-                            size="small"
-                            sx={{ fontSize: '0.7rem', height: 20 }}
-                          />
-                        )}
-                      </Box>
-                    )}
-
-                    <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
-                      Agregado: {new Date(contact.addedAt).toLocaleDateString()}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))
-          )}
-        </Grid>
-      )}
-
-      {currentTab === 1 && (
-        // Groups Tab
-        <Grid container spacing={3}>
-          {filteredGroups.length === 0 ? (
-            <Grid item xs={12}>
-              <Paper sx={{ p: 6, textAlign: 'center' }}>
-                <Group sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                <Typography variant="h6" gutterBottom>
-                  No hay grupos
-                </Typography>
-                <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-                  Crea grupos para organizar tus contactos y enviar campañas masivas
-                </Typography>
-                <Button
-                  variant="contained"
-                  startIcon={<GroupAdd />}
-                  onClick={() => setShowGroupDialog(true)}
-                  sx={{ bgcolor: '#ff9800', '&:hover': { bgcolor: '#f57c00' } }}
-                >
-                  Crear Primer Grupo
-                </Button>
-              </Paper>
-            </Grid>
-          ) : (
-            filteredGroups.map((group) => (
-              <Grid item xs={12} sm={6} md={4} key={group.id}>
-                <Card>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Folder sx={{ color: group.color }} />
-                        <Box>
-                          <Typography variant="h6">
-                            {group.name}
-                          </Typography>
-                          {group.description && (
-                            <Typography variant="body2" color="textSecondary">
-                              {group.description}
-                            </Typography>
-                          )}
-                        </Box>
-                      </Box>
-                    </Box>
-
-                    <Chip
-                      icon={<Person />}
-                      label={`${group.contactIds.length} contactos`}
-                      size="small"
-                      color="secondary"
-                      variant="outlined"
-                      sx={{ mb: 1 }}
-                    />
-
-                    <Typography variant="caption" color="textSecondary" sx={{ display: 'block' }}>
-                      Creado: {new Date(group.createdAt).toLocaleDateString()}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))
-          )}
-        </Grid>
-      )}
-
-      {currentTab === 2 && (
-        // Synced Contacts Tab
-        <Box>
-          <Grid container spacing={3}>
-            {syncedContacts.length === 0 ? (
+          {syncedContacts.length === 0 ? (
             <Grid item xs={12}>
               <Paper sx={{ p: 6, textAlign: 'center' }}>
                 <Person sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
@@ -1024,92 +870,6 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
                 <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
                   Sincroniza tus contactos desde WhatsApp para verlos aquí
                 </Typography>
-                <Button
-                  variant="contained"
-                  startIcon={syncLoading ? <CircularProgress size={20} /> : <Refresh />}
-                  onClick={handleSyncContacts}
-                  disabled={syncLoading}
-                  sx={{ bgcolor: '#00a884', '&:hover': { bgcolor: '#008069' } }}
-                >
-                  {syncLoading ? 'Sincronizando...' : 'Sincronizar Contactos'}
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<Group />}
-                  onClick={async () => {
-                    try {
-                      
-                      setSyncLoading(true);
-                      setError(null);
-                      console.log('Sincronizando grupos...');
-
-                      const response = await fetch(`${getAPIBaseURL()}/api/sync/groups`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ sessionId })
-                      });
-
-                      const data = await response.json();
-
-                      if (data.success) {
-                        setSyncStats((prev: any) => ({ ...prev, groups: data.stats }));
-                        console.log('Grupos sincronizados:', data.stats);
-                        setSuccess(`✅ Grupos sincronizados: ${data.stats.groups} grupos, ${data.stats.totalMembers} miembros totales`);
-                      } else {
-                        console.error('Error sincronizando grupos:', data.error);
-                        setError(`❌ Error: ${data.error}`);
-                      }
-                    } catch (error) {
-                      console.error('Error en sincronización de grupos:', error);
-                      setError('❌ Error al sincronizar grupos');
-                    } finally {
-                      setSyncLoading(false);
-                    }
-                  }}
-                  disabled={syncLoading}
-                  sx={{ borderColor: '#9c27b0', color: '#9c27b0', '&:hover': { borderColor: '#7b1fa2', bgcolor: '#f3e5f5' } }}
-                >
-                  {syncLoading ? 'Sincronizando...' : 'Sincronizar Grupos'}
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<Person />}
-                  onClick={async () => {
-                    try {
-                      
-                      setSyncLoading(true);
-                      setError(null);
-                      console.log('Actualizando avatares...');
-
-                      const response = await fetch(`${getAPIBaseURL()}/api/update-contacts-avatars/${sessionId}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                      });
-
-                      const data = await response.json();
-
-                      if (data.success) {
-                        console.log('Avatares actualizados:', data.stats);
-                        setSuccess(`✅ Avatares actualizados: ${data.stats.updatedAvatars} de ${data.stats.totalContacts} contactos`);
-
-                        // Recargar contactos para mostrar avatares actualizados
-                        await loadSyncedContacts();
-                      } else {
-                        console.error('Error actualizando avatares:', data.error);
-                        setError(`❌ Error: ${data.error}`);
-                      }
-                    } catch (error) {
-                      console.error('Error actualizando avatares:', error);
-                      setError('❌ Error al actualizar avatares');
-                    } finally {
-                      setSyncLoading(false);
-                    }
-                  }}
-                  disabled={syncLoading}
-                  sx={{ borderColor: '#ff9800', color: '#ff9800', '&:hover': { borderColor: '#f57c00', bgcolor: '#fff3e0' } }}
-                >
-                  {syncLoading ? 'Actualizando...' : 'Actualizar Avatares'}
-                </Button>
               </Paper>
             </Grid>
           ) : (
@@ -1120,185 +880,91 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
               )
               .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
               .map((contact) => (
-              <Grid item xs={12} sm={6} md={4} key={contact.jid}>
-                <Card>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                      <Avatar
-                        src={contact.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${contact.jid}` || undefined}
-                        sx={{ width: 48, height: 48, bgcolor: '#00a884' }}
-                      >
-                        {(contact.name || contact.notify || contact.jid.split('@')[0]).charAt(0).toUpperCase()}
-                      </Avatar>
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="h6" gutterBottom>
-                          {contact.name || contact.notify || 'Sin nombre'}
-                        </Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          {contact.jid.split('@')[0]}
-                        </Typography>
+                <Grid item xs={12} sm={6} md={4} key={contact.jid}>
+                  <Card>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                        <Avatar
+                          src={contact.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${contact.jid}` || undefined}
+                          sx={{ width: 48, height: 48, bgcolor: '#00a884' }}
+                        >
+                          {(contact.name || contact.notify || contact.jid.split('@')[0]).charAt(0).toUpperCase()}
+                        </Avatar>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="h6" gutterBottom>
+                            {contact.name || contact.notify || 'Sin nombre'}
+                          </Typography>
+                          <Typography variant="body2" color="textSecondary">
+                            {contact.jid.split('@')[0]}
+                          </Typography>
+                        </Box>
+                        <IconButton
+                          onClick={(e) => {
+                            setAnchorEl(e.currentTarget);
+                            setSelectedSyncedContactMenu(contact);
+                          }}
+                        >
+                          <MoreVert />
+                        </IconButton>
                       </Box>
-                      <IconButton
-                        onClick={(e) => {
-                          setAnchorEl(e.currentTarget);
-                          setSelectedSyncedContactMenu(contact);
-                        }}
-                      >
-                        <MoreVert />
-                      </IconButton>
-                    </Box>
 
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Chip
-                        label="WhatsApp"
-                        size="small"
-                        color="success"
-                        variant="outlined"
-                      />
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<Person />}
-                        onClick={() => {
-                          // Aquí puedes agregar funcionalidad para iniciar chat
-                          console.log('Iniciar chat con:', contact.jid);
-                        }}
-                      >
-                        Chatear
-                      </Button>
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))
-          )}
-          </Grid>
-
-          {/* Pagination for WhatsApp Contacts */}
-          {syncedContacts.length > 0 && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-              <TablePagination
-                component="div"
-                count={syncedContacts.filter((contact) =>
-                  (contact.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  (contact.jid || '').includes(searchTerm.toLowerCase())
-                ).length}
-                page={page}
-                onPageChange={(event, newPage) => setPage(newPage)}
-                rowsPerPage={rowsPerPage}
-                onRowsPerPageChange={(event) => {
-                  setRowsPerPage(parseInt(event.target.value, 10));
-                  setPage(0);
-                }}
-                rowsPerPageOptions={[12, 24, 48, 96]}
-                labelRowsPerPage="Contactos por página:"
-                labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
-              />
-            </Box>
-          )}
-        </Box>
-      )}
-
-      {currentTab === 3 && (
-        // Synced Groups Tab
-        <Box>
-          <Grid container spacing={3}>
-            {syncedGroups.length === 0 ? (
-            <Grid item xs={12}>
-              <Paper sx={{ p: 6, textAlign: 'center' }}>
-                <Group sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                <Typography variant="h6" gutterBottom>
-                  No hay grupos sincronizados
-                </Typography>
-                <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
-                  Sincroniza tus grupos desde WhatsApp para verlos aquí
-                </Typography>
-                <Button
-                  variant="contained"
-                  startIcon={syncGroupsLoading ? <CircularProgress size={20} /> : <Refresh />}
-                  onClick={handleSyncGroups}
-                  disabled={syncGroupsLoading}
-                  sx={{ bgcolor: '#00a884', '&:hover': { bgcolor: '#008069' } }}
-                >
-                  {syncGroupsLoading ? 'Sincronizando...' : 'Sincronizar Grupos'}
-                </Button>
-              </Paper>
-            </Grid>
-          ) : (
-            syncedGroups
-              .filter((group) =>
-                (group.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (group.id || '').includes(searchTerm.toLowerCase())
-              )
-              .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-              .map((group) => (
-              <Grid item xs={12} sm={6} md={4} key={group.id}>
-                <Card>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                      <Avatar
-                        src={group.avatar}
-                        sx={{ width: 48, height: 48 }}
-                      >
-                        <Group />
-                      </Avatar>
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="h6" gutterBottom>
-                          {group.name}
-                        </Typography>
-                        <Typography variant="body2" color="textSecondary">
-                          {group.memberCount || 0} miembros
-                        </Typography>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Chip
+                          label="WhatsApp"
+                          size="small"
+                          color="success"
+                          variant="outlined"
+                        />
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<Chat />}
+                          onClick={() => {
+                            setQuickChatContact(contact);
+                            setShowQuickChatDialog(true);
+                          }}
+                          sx={{
+                            borderColor: isDarkMode ? '#00a884' : '#25d366',
+                            color: isDarkMode ? '#00a884' : '#25d366',
+                            '&:hover': {
+                              borderColor: isDarkMode ? '#008069' : '#1da851',
+                              bgcolor: isDarkMode ? 'rgba(0, 168, 132, 0.1)' : 'rgba(37, 211, 102, 0.1)'
+                            }
+                          }}
+                        >
+                          Chatear
+                        </Button>
                       </Box>
-                    </Box>
-
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Chip
-                        label="Grupo WhatsApp"
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                      />
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<Group />}
-                        onClick={() => loadGroupMembers(group)}
-                      >
-                        Ver Miembros
-                      </Button>
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))
           )}
-          </Grid>
+        </Grid>
 
-          {/* Pagination for WhatsApp Groups */}
-          {syncedGroups.length > 0 && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-              <TablePagination
-                component="div"
-                count={syncedGroups.filter((group) =>
-                  (group.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  (group.id || '').includes(searchTerm.toLowerCase())
-                ).length}
-                page={page}
-                onPageChange={(event, newPage) => setPage(newPage)}
-                rowsPerPage={rowsPerPage}
-                onRowsPerPageChange={(event) => {
-                  setRowsPerPage(parseInt(event.target.value, 10));
-                  setPage(0);
-                }}
-                rowsPerPageOptions={[12, 24, 48, 96]}
-                labelRowsPerPage="Grupos por página:"
-                labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
-              />
-            </Box>
-          )}
-        </Box>
-      )}
+        {/* Pagination for WhatsApp Contacts */}
+        {syncedContacts.length > 0 && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+            <TablePagination
+              component="div"
+              count={syncedContacts.filter((contact) =>
+                (contact.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (contact.jid || '').includes(searchTerm.toLowerCase())
+              ).length}
+              page={page}
+              onPageChange={(event, newPage) => setPage(newPage)}
+              rowsPerPage={rowsPerPage}
+              onRowsPerPageChange={(event) => {
+                setRowsPerPage(parseInt(event.target.value, 10));
+                setPage(0);
+              }}
+              rowsPerPageOptions={[12, 24, 48, 96]}
+              labelRowsPerPage="Contactos por página:"
+              labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+            />
+          </Box>
+        )}
+      </Box>
 
       {/* Context Menu */}
       <Menu
@@ -1340,7 +1006,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
             </MenuItem>
           </>
         )}
-        
+
         {/* Menu items for synced contacts (WhatsApp contacts) */}
         {selectedSyncedContactMenu && (
           <>
@@ -1349,14 +1015,14 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
                 try {
                   // Load boards first
                   await loadKanbanBoards();
-                  
+
                   // Buscar el tablero de "interesados" o crearlo si no existe
-                  let interesadosBoard = boards.find((board: any) => 
+                  let interesadosBoard = boards.find((board: any) =>
                     board.name.toLowerCase().includes('interesado') || board.name.toLowerCase().includes('interesados'));
-                  
+
                   if (!interesadosBoard) {
                     // Crear el tablero de interesados si no existe
-                    
+
                     const createResponse = await fetch(`${getAPIBaseURL()}/api/kanban/boards`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
@@ -1367,17 +1033,17 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
                       })
                     });
                     const createData = await createResponse.json();
-                    
+
                     if (createData.success) {
                       interesadosBoard = createData.data;
                       // Refresh boards after creating a new one
                       await loadKanbanBoards();
                     }
                   }
-                  
+
                   if (interesadosBoard) {
                     // Mover el contacto al tablero de interesados
-                    
+
                     const moveResponse = await fetch(`${getAPIBaseURL()}/api/kanban/move-contact`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
@@ -1389,9 +1055,9 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
                         boardId: interesadosBoard.id
                       })
                     });
-                    
+
                     const moveData = await moveResponse.json();
-                    
+
                     if (moveData.success) {
                       setSuccess(`Contacto enviado a "${interesadosBoard.name}"`);
                       setTimeout(() => setSuccess(null), 3000);
@@ -1408,7 +1074,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
                   setError('Error al enviar contacto a Kanban');
                   setTimeout(() => setError(null), 3000);
                 }
-                
+
                 setAnchorEl(null);
                 setSelectedSyncedContactMenu(null);
               }
@@ -1420,7 +1086,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
                 setSelectedContactForKanban(selectedSyncedContactMenu);
                 setAnchorEl(null);
                 setSelectedSyncedContactMenu(null);
-                
+
                 // Load boards before showing dialog
                 await loadKanbanBoards();
                 setShowKanbanDialog(true);
@@ -1458,15 +1124,15 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
         <DialogContent>
           <Alert severity="info" sx={{ mb: 2 }}>
             <Typography variant="body2">
-              <strong>Formato:</strong> numero,nombre,categoria,etiquetas<br/>
-              <strong>Ejemplo:</strong><br/>
-              +5491234567890,Juan Pérez,cliente,vip;importante<br/>
-              +5491234567891,María González,prospecto,nuevo<br/>
-              <br/>
+              <strong>Formato:</strong> numero,nombre,categoria,etiquetas<br />
+              <strong>Ejemplo:</strong><br />
+              +5491234567890,Juan Pérez,cliente,vip;importante<br />
+              +5491234567891,María González,prospecto,nuevo<br />
+              <br />
               <strong>Límite:</strong> Hasta 5000 contactos por importación
             </Typography>
           </Alert>
-          
+
           <FormControl fullWidth sx={{ mt: 2, mb: 1 }}>
             <InputLabel id="import-to-group-label">Añadir al Grupo (Opcional)</InputLabel>
             <Select
@@ -1485,7 +1151,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
               ))}
             </Select>
           </FormControl>
-          
+
           <TextField
             fullWidth
             multiline
@@ -1496,7 +1162,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
             placeholder="+5491234567890,Juan Pérez,cliente,vip&#10;+5491234567891,María González,prospecto,nuevo"
             helperText={`${importText.split('\n').filter(line => line.trim()).length} líneas ingresadas`}
           />
-          
+
           {loading && (
             <Box sx={{ mt: 2 }}>
               <LinearProgress variant="determinate" value={importProgress} />
@@ -1510,7 +1176,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
           <Button onClick={() => setShowImportDialog(false)}>
             Cancelar
           </Button>
-          <Button 
+          <Button
             onClick={handleBulkImport}
             disabled={!importText.trim() || loading}
             variant="contained"
@@ -1557,9 +1223,9 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
               fullWidth
               label="Etiquetas (separadas por coma)"
               value={contactForm.tags.join(', ')}
-              onChange={(e) => setContactForm(prev => ({ 
-                ...prev, 
-                tags: e.target.value.split(',').map(tag => tag.trim()).filter(tag => tag) 
+              onChange={(e) => setContactForm(prev => ({
+                ...prev,
+                tags: e.target.value.split(',').map(tag => tag.trim()).filter(tag => tag)
               }))}
               placeholder="vip, importante, nuevo"
             />
@@ -1603,7 +1269,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
               value={groupForm.color}
               onChange={(e) => setGroupForm(prev => ({ ...prev, color: e.target.value }))}
             />
-            
+
             <Typography variant="subtitle2">
               Contactos Seleccionados: {selectedContacts.length}
             </Typography>
@@ -1829,8 +1495,8 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
       </Dialog>
 
       {/* Dialog para editar nombre */}
-      <Dialog 
-        open={showEditNameDialog} 
+      <Dialog
+        open={showEditNameDialog}
         onClose={() => {
           setShowEditNameDialog(false);
           setContactToEdit(null);
@@ -1845,8 +1511,8 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
           }
         }}
       >
-        <DialogTitle sx={{ 
-          pb: 2, 
+        <DialogTitle sx={{
+          pb: 2,
           background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
           color: 'white',
           display: 'flex',
@@ -1875,7 +1541,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
           />
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
-          <Button 
+          <Button
             onClick={() => {
               setShowEditNameDialog(false);
               setContactToEdit(null);
@@ -1885,7 +1551,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
           >
             Cancelar
           </Button>
-          <Button 
+          <Button
             onClick={handleSaveEditedName}
             variant="contained"
             disabled={!editingContactName.trim()}
@@ -2074,9 +1740,243 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Diálogo de Chat Rápido */}
+      <Dialog
+        open={showQuickChatDialog}
+        onClose={() => {
+          setShowQuickChatDialog(false);
+          setQuickChatMessage('');
+          setShowEmojiPicker(false);
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            background: isDarkMode
+              ? 'linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%)'
+              : 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)'
+          }
+        }}
+      >
+        <DialogTitle
+          sx={{
+            background: 'linear-gradient(135deg, #00a884 0%, #008069 100%)',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            py: 2.5,
+            px: 3
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Avatar
+              src={quickChatContact?.avatar ? `${getAPIBaseURL()}${quickChatContact.avatar}` : undefined}
+              sx={{
+                width: 56,
+                height: 56,
+                border: '3px solid rgba(255, 255, 255, 0.3)',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
+                bgcolor: quickChatContact?.avatar ? 'transparent' : '#00a884',
+                fontSize: '1.5rem',
+                fontWeight: 600
+              }}
+            >
+              {!quickChatContact?.avatar && (
+                quickChatContact?.name 
+                  ? quickChatContact.name.substring(0, 2).toUpperCase()
+                  : <Person sx={{ fontSize: 32 }} />
+              )}
+            </Avatar>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                💬 Chat Rápido
+              </Typography>
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                {quickChatContact?.name || quickChatContact?.jid?.split('@')[0]}
+              </Typography>
+            </Box>
+          </Box>
+          <IconButton
+            onClick={() => {
+              setShowQuickChatDialog(false);
+              setQuickChatMessage('');
+              setShowEmojiPicker(false);
+            }}
+            sx={{ color: 'white' }}
+          >
+            <Close />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 3 }}>
+          {/* Selector de Emojis */}
+          <Box sx={{ mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, color: isDarkMode ? '#fff' : '#333' }}>
+                Emojis rápidos
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                sx={{
+                  bgcolor: showEmojiPicker ? '#00a884' : 'transparent',
+                  color: showEmojiPicker ? 'white' : '#00a884',
+                  '&:hover': {
+                    bgcolor: '#00a884',
+                    color: 'white'
+                  }
+                }}
+              >
+                <EmojiEmotions />
+              </IconButton>
+            </Box>
+
+            {showEmojiPicker && (
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  bgcolor: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 168, 132, 0.05)',
+                  borderRadius: 2,
+                  border: `1px solid ${isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 168, 132, 0.2)'}`,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 1,
+                  maxHeight: 200,
+                  overflow: 'auto'
+                }}
+              >
+                {commonEmojis.map((emoji, index) => (
+                  <IconButton
+                    key={index}
+                    onClick={() => setQuickChatMessage(prev => prev + emoji)}
+                    sx={{
+                      fontSize: '1.5rem',
+                      width: 45,
+                      height: 45,
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        transform: 'scale(1.3)',
+                        bgcolor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 168, 132, 0.1)'
+                      }
+                    }}
+                  >
+                    {emoji}
+                  </IconButton>
+                ))}
+              </Paper>
+            )}
+          </Box>
+
+          {/* Área de texto del mensaje */}
+          <TextField
+            fullWidth
+            multiline
+            rows={6}
+            value={quickChatMessage}
+            onChange={(e) => setQuickChatMessage(e.target.value)}
+            placeholder="Escribe tu mensaje aquí... 💬"
+            variant="outlined"
+            autoFocus
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendQuickMessage();
+              }
+            }}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2,
+                bgcolor: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'white',
+                fontSize: '1rem',
+                '& fieldset': {
+                  borderColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#e0e0e0',
+                  borderWidth: 2
+                },
+                '&:hover fieldset': {
+                  borderColor: '#00a884'
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: '#00a884'
+                }
+              },
+              '& .MuiInputBase-input': {
+                color: isDarkMode ? '#fff' : '#333'
+              }
+            }}
+          />
+
+          {/* Contador de caracteres */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">
+              {quickChatMessage.length} caracteres
+            </Typography>
+            <Typography variant="caption" sx={{ color: '#00a884', fontWeight: 600 }}>
+              Presiona Enter para enviar
+            </Typography>
+          </Box>
+        </DialogContent>
+
+        <DialogActions
+          sx={{
+            px: 3,
+            py: 2.5,
+            borderTop: `1px solid ${isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#f0f0f0'}`,
+            gap: 2
+          }}
+        >
+          <Button
+            onClick={() => {
+              setShowQuickChatDialog(false);
+              setQuickChatMessage('');
+              setShowEmojiPicker(false);
+            }}
+            variant="outlined"
+            sx={{
+              borderColor: isDarkMode ? 'rgba(255, 255, 255, 0.2)' : '#e0e0e0',
+              color: isDarkMode ? '#fff' : '#666',
+              '&:hover': {
+                borderColor: isDarkMode ? 'rgba(255, 255, 255, 0.3)' : '#ccc',
+                bgcolor: isDarkMode ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)'
+              }
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleSendQuickMessage}
+            disabled={!quickChatMessage.trim() || sendingMessage}
+            variant="contained"
+            startIcon={sendingMessage ? <CircularProgress size={20} color="inherit" /> : <Send />}
+            sx={{
+              background: 'linear-gradient(135deg, #00a884 0%, #008069 100%)',
+              color: 'white',
+              px: 4,
+              py: 1.2,
+              fontWeight: 600,
+              boxShadow: '0 4px 12px rgba(0, 168, 132, 0.3)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #008069 0%, #006d57 100%)',
+                boxShadow: '0 6px 16px rgba(0, 168, 132, 0.4)',
+                transform: 'translateY(-2px)'
+              },
+              '&:disabled': {
+                background: '#ccc',
+                color: '#999'
+              },
+              transition: 'all 0.3s ease'
+            }}
+          >
+            {sendingMessage ? 'Enviando...' : 'Enviar Mensaje'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
 
-export default ContactsManagerModule;  
- 
+export default ContactsManagerModule;

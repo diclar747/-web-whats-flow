@@ -1,0 +1,88 @@
+╔════════════════════════════════════════════════════════════════════╗
+║                 ⚠️  IMPORTANTE - LIMPIAR CACHÉ ⚠️                  ║
+╚════════════════════════════════════════════════════════════════════╝
+
+Los cambios en las campañas programadas YA ESTÁN APLICADOS en el servidor,
+pero necesitas LIMPIAR LA CACHÉ DEL NAVEGADOR para verlos.
+
+┌────────────────────────────────────────────────────────────────────┐
+│ OPCIÓN 1: Ir a esta URL (limpia automáticamente)                   │
+└────────────────────────────────────────────────────────────────────┘
+
+https://web.whats-flow.com/limpiar-cache-campanas.html
+
+Esta página:
+✅ Limpia la caché automáticamente
+✅ Elimina el service worker
+✅ Te redirige al sistema en 5 segundos
+
+┌────────────────────────────────────────────────────────────────────┐
+│ OPCIÓN 2: Limpiar manualmente                                      │
+└────────────────────────────────────────────────────────────────────┘
+
+1. Abre el navegador en: https://web.whats-flow.com
+2. Presiona estas teclas JUNTAS:
+   
+   Windows/Linux: Ctrl + Shift + R
+   Mac: Cmd + Shift + R
+
+3. Espera a que cargue completamente (5-10 segundos)
+
+┌────────────────────────────────────────────────────────────────────┐
+│ OPCIÓN 3: Limpiar desde las herramientas del navegador             │
+└────────────────────────────────────────────────────────────────────┘
+
+Chrome/Edge:
+1. Presiona F12 (abrir DevTools)
+2. Click derecho en el botón de recargar
+3. Selecciona "Vaciar caché y recargar de manera forzada"
+
+Firefox:
+1. Presiona Ctrl + Shift + Delete
+2. Marca "Caché"
+3. Click en "Limpiar ahora"
+4. Recarga la página (F5)
+
+┌────────────────────────────────────────────────────────────────────┐
+│ ✅ Verificar que los cambios se aplicaron correctamente            │
+└────────────────────────────────────────────────────────────────────┘
+
+Después de limpiar caché, verifica:
+
+1. Ve a "Campañas Personalizadas"
+2. Crea una campaña de prueba con fechas futuras
+3. Debes ver:
+   ✅ Estado: "PROGRAMADA" (chip naranja con reloj ⏰)
+   ✅ Alert azul con fechas: "Desde: ... Hasta: ..."
+   ✅ Barra de progreso con porcentaje (0%)
+   
+4. Click en "Ver Detalles / Mensaje"
+5. Debes ver:
+   ✅ Barra de progreso grande
+   ✅ Mensaje completo de la campaña
+   ✅ Tabla con contactos y sus estados
+   ✅ Cada contacto con chip de estado (pendiente/enviado/error)
+
+┌────────────────────────────────────────────────────────────────────┐
+│ 🐛 Si aún no ves los cambios                                       │
+└────────────────────────────────────────────────────────────────────┘
+
+1. Cierra TODAS las pestañas de web.whats-flow.com
+2. Cierra completamente el navegador
+3. Abre el navegador nuevamente
+4. Ve directamente a: https://web.whats-flow.com/limpiar-cache-campanas.html
+
+┌────────────────────────────────────────────────────────────────────┐
+│ 📊 Estado de la implementación                                     │
+└────────────────────────────────────────────────────────────────────┘
+
+✅ Base de datos actualizada (6 columnas nuevas)
+✅ Backend modificado y reiniciado
+✅ Frontend compilado y desplegado
+✅ Servidor funcionando correctamente
+
+El problema es SOLO la caché del navegador guardando la versión antigua.
+
+╔════════════════════════════════════════════════════════════════════╗
+║  Después de limpiar caché, los cambios serán visibles de inmediato║
+╚════════════════════════════════════════════════════════════════════╝

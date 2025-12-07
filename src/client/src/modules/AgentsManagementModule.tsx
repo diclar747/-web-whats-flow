@@ -341,7 +341,7 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
       // ✅ USAR ENDPOINT CORRECTO: /api/agents/:id/access
       // Cambiar entre 'active' (permitir) e 'inactive' (bloquear)
       const newStatus = agent.status === 'active' ? 'inactive' : 'active';
-      
+
       const response = await fetch(`${getAPIBaseURL()}/api/agents/${agent.id}/access`, {
         method: 'PUT',
         headers: {
@@ -730,72 +730,78 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
         <DialogTitle>
           {editingAgent ? 'Editar Agente' : 'Crear Nuevo Agente'}
         </DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 2 }}>
-            <TextField
-              fullWidth
-              label="Nombre completo"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              required
-            />
-            <TextField
-              fullWidth
-              label="Email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              required
-            />
-            <TextField
-              fullWidth
-              label="Teléfono (opcional)"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-            />
-            <TextField
-              fullWidth
-              label={editingAgent ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña'}
-              type={showPassword ? 'text' : 'password'}
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              required={!editingAgent}
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={() => setShowPassword(!showPassword)}
-                      edge="end"
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                )
-              }}
-            />
-            <TextField
-              fullWidth
-              label="Máximo de chats concurrentes"
-              type="number"
-              value={formData.max_concurrent_chats}
-              onChange={(e) => setFormData({ ...formData, max_concurrent_chats: parseInt(e.target.value) || 5 })}
-              inputProps={{ min: 1, max: 50 }}
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog} startIcon={<CloseIcon />}>
-            Cancelar
-          </Button>
-          <Button
-            onClick={handleSaveAgent}
-            variant="contained"
-            startIcon={<Save />}
-            sx={{ bgcolor: '#00a884', '&:hover': { bgcolor: '#008c6d' } }}
-          >
-            {editingAgent ? 'Actualizar' : 'Crear'}
-          </Button>
-        </DialogActions>
+        <form onSubmit={(e) => { e.preventDefault(); handleSaveAgent(); }}>
+          <DialogContent>
+            <Stack spacing={2} sx={{ mt: 2 }}>
+              <TextField
+                fullWidth
+                label="Nombre completo"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                required
+                autoComplete="name"
+              />
+              <TextField
+                fullWidth
+                label="Email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                required
+                autoComplete="email"
+              />
+              <TextField
+                fullWidth
+                label="Teléfono (opcional)"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                autoComplete="tel"
+              />
+              <TextField
+                fullWidth
+                label={editingAgent ? 'Nueva contraseña (dejar vacío para no cambiar)' : 'Contraseña'}
+                type={showPassword ? 'text' : 'password'}
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                required={!editingAgent}
+                autoComplete={editingAgent ? 'new-password' : 'new-password'}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setShowPassword(!showPassword)}
+                        edge="end"
+                      >
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  )
+                }}
+              />
+              <TextField
+                fullWidth
+                label="Máximo de chats concurrentes"
+                type="number"
+                value={formData.max_concurrent_chats}
+                onChange={(e) => setFormData({ ...formData, max_concurrent_chats: parseInt(e.target.value) || 5 })}
+                inputProps={{ min: 1, max: 50 }}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseDialog} startIcon={<CloseIcon />} type="button">
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              variant="contained"
+              startIcon={<Save />}
+              sx={{ bgcolor: '#00a884', '&:hover': { bgcolor: '#008c6d' } }}
+            >
+              {editingAgent ? 'Actualizar' : 'Crear'}
+            </Button>
+          </DialogActions>
+        </form>
       </Dialog>
 
       {/* Diálogo de confirmación de eliminación */}

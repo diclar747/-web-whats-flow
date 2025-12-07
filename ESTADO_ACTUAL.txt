@@ -1,0 +1,21 @@
+╔═══════════════════════════════════════════════════════════╗
+║            CORRIGIENDO AHORA - ESPERA 1 MINUTO           ║
+╚═══════════════════════════════════════════════════════════╝
+
+✅ CAMBIO APLICADO:
+
+Ahora la tarjeta SIEMPRE muestra:
+
+📅 Programada para:
+viernes, 5 de diciembre de 2025
+⏰ Hora: 10:13
+
+NO IMPORTA si está:
+- Pendiente
+- Enviando
+- Completada
+
+Si tiene fechas = DICE "Programada para:"
+Si NO tiene fechas = DICE "Campaña Directa"
+
+Compilando en este momento...

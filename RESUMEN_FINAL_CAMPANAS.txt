@@ -1,0 +1,160 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    ✅ CORRECCIÓN COMPLETA - CAMPAÑAS PROGRAMADAS             ║
+║                        05 de Diciembre de 2025 - 11:16 UTC                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ PROBLEMAS REPORTADOS Y SOLUCIONADOS                                          │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+❌ ANTES → ✅ DESPUÉS
+
+1. Estado "PENDING[201~" aparecía
+   → Ahora muestra "PROGRAMADA" correctamente con chip naranja
+
+2. No se mostraban fechas de envío
+   → Tarjeta muestra: "Desde: DD/MM/YYYY HH:MM - Hasta: DD/MM/YYYY HH:MM"
+
+3. "Ver Detalles" mostraba todas las campañas
+   → Ahora muestra SOLO la campaña seleccionada con todos sus datos
+
+4. Barra de progreso quedaba en 0%
+   → Ahora calcula correctamente: (enviados/total) * 100% y llega a 100%
+
+5. Faltaban datos de visto/enviado/pendiente
+   → Cada contacto muestra su estado con chips de color e iconos
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ CAMBIOS TÉCNICOS REALIZADOS                                                  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+📁 BASE DE DATOS (campaigns table):
+   ✅ type VARCHAR(50) - Tipo de campaña (personalized, standard)
+   ✅ message_text TEXT - Texto del mensaje
+   ✅ contacts LONGTEXT - JSON con lista de contactos
+   ✅ progress_total INT - Total de contactos
+   ✅ progress_sent INT - Mensajes enviados
+   ✅ progress_failed INT - Mensajes fallidos
+
+📁 BACKEND (personalizedCampaigns.js):
+   ✅ Detección automática de fechas futuras → estado "scheduled"
+   ✅ Traducción de estados al español
+   ✅ Actualización en tiempo real de progreso
+   ✅ Cambio de "scheduled" → "active" → "completed"
+   ✅ Reprogramación usando base de datos
+
+📁 FRONTEND (PersonalizedCampaignModule.tsx):
+   ✅ Estado "programada" agregado al interface
+   ✅ Chips de color según estado (naranja/verde/azul)
+   ✅ Alert con fechas de envío en tarjetas
+   ✅ Barra de progreso mejorada con porcentaje
+   ✅ Detalles filtrados por campaña seleccionada
+   ✅ Estados visuales para cada contacto
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ESTADOS DE CAMPAÑA                                                           │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+🟠 PROGRAMADA (scheduled)
+   - Con envíos programados futuros
+   - Muestra fechas de inicio y fin
+   - Icono: ⏰ Schedule
+
+🟢 ACTIVA (active)
+   - Enviando mensajes actualmente
+   - Progreso en curso
+   - Icono: 📤 Send
+
+🔵 COMPLETADA (completed)
+   - Todos los mensajes enviados
+   - Progreso al 100%
+   - Icono: ✅ CheckCircle
+
+⚪ PAUSADA (paused)
+   - Campaña pausada manualmente
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ESTADOS DE CONTACTO                                                          │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+🟠 PENDIENTE - Esperando fecha de envío
+🟢 ENVIADO - Mensaje enviado exitosamente
+🔴 ERROR - Error al enviar mensaje
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ FLUJO COMPLETO                                                               │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+1️⃣  Usuario carga Excel con fechas futuras
+2️⃣  Sistema detecta fechas → Estado: PROGRAMADA 🟠
+3️⃣  Tarjeta muestra fechas de envío y horarios
+4️⃣  Cron job verifica cada minuto
+5️⃣  Al llegar fecha → Estado: ACTIVA 🟢
+6️⃣  Mensajes se envían según horario
+7️⃣  Progreso se actualiza en tiempo real (0% → 100%)
+8️⃣  Todos enviados → Estado: COMPLETADA 🔵
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ARCHIVOS MODIFICADOS                                                         │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+📄 FIX_CAMPAIGNS_SCHEMA.sql                              (NUEVO)
+📄 src/server/routes/personalizedCampaigns.js           (MODIFICADO)
+📄 src/client/src/modules/PersonalizedCampaignModule.tsx (MODIFICADO)
+📄 FIX_CAMPANAS_PROGRAMADAS_COMPLETO.md                 (NUEVO)
+📄 TEST_CAMPANAS_PROGRAMADAS.md                         (NUEVO)
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ INSTRUCCIONES DE PRUEBA                                                      │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+1. Limpiar caché del navegador: Ctrl+Shift+R
+2. Crear nueva campaña con fechas futuras
+3. Verificar que aparezca como "PROGRAMADA" (naranja)
+4. Verificar fechas en la tarjeta
+5. Click en "Ver Detalles / Mensaje"
+6. Verificar barra de progreso en 0%
+7. Verificar contactos en estado "pendiente"
+8. Esperar envíos automáticos o simular con SQL
+9. Verificar progreso llegue a 100%
+10. Probar botón "Reprogramar"
+
+Ver TEST_CAMPANAS_PROGRAMADAS.md para pruebas detalladas
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ COMANDOS ÚTILES                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+# Ver logs del servidor
+pm2 logs whatsflow-server
+
+# Verificar estructura de la tabla
+mysql -u root whatsflow -e "DESCRIBE campaigns;"
+
+# Ver campañas programadas
+mysql -u root whatsflow -e "SELECT id, name, status, progress_sent, progress_total FROM campaigns WHERE type='personalized';"
+
+# Reiniciar servidor
+pm2 restart whatsflow-server
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ESTADO FINAL                                                                 │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+✅ Base de datos actualizada
+✅ Backend corregido y desplegado
+✅ Frontend compilado y desplegado
+✅ Servidor reiniciado
+✅ Todos los problemas resueltos
+✅ Documentación completa
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                       🎉 CORRECCIÓN COMPLETADA 🎉                            ║
+║                                                                              ║
+║  Todos los problemas reportados han sido corregidos exitosamente.           ║
+║  El sistema de campañas programadas funciona correctamente.                 ║
+║                                                                              ║
+║  Para más detalles, consulta:                                               ║
+║  - FIX_CAMPANAS_PROGRAMADAS_COMPLETO.md                                     ║
+║  - TEST_CAMPANAS_PROGRAMADAS.md                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝

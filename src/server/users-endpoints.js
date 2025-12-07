@@ -484,6 +484,8 @@ module.exports = function (app, pool) {
                 ORDER BY ca.assigned_at DESC
             `, [userId]);
 
+                console.log(`[AGENTS-CHATS] Agente ${userId} solicitó chats. Encontrados: ${chats.length}`);
+
                 res.json({ success: true, chats });
             } finally {
                 connection.release();
