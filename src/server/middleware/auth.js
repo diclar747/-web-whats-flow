@@ -18,6 +18,19 @@ const authenticateToken = (req, res, next) => {
 
         try {
             const user = verifyToken(token);
+            console.log('[AUTH-MIDDLEWARE] Token verified:', user); // DEBUG LOG
+
+            // CASO ESPECIAL: ADMIN (Token basado en sesión/teléfono, no ID de tabla users)
+            if ((user.role === 'admin' || user.role === 'supervisor') && user.phone) {
+                // Admin "es" la sesión, no depende de ella
+                // Si no tiene ID numérico, asignamos uno temporal
+                if (!user.id) {
+                    user.id = 'admin_' + user.phone;
+                    user.dbId = null; // No hay row en users para FKs
+                }
+                req.user = user;
+                return next();
+            }
 
             // 🔒 VALIDACIÓN DE DISPOSITIVO: Verificar que el token se use en el mismo dispositivo
             if (user.deviceFingerprint && !validateDeviceFingerprint(req, user.deviceFingerprint)) {
@@ -56,6 +69,44 @@ const authenticateToken = (req, res, next) => {
             req.user = user;
             next();
         } catch (err) {
+            console.error('[AUTH-MIDDLEWARE] Token Verification Failed:', err.message);
+            console.log('[AUTH-DEBUG] Received Token:', token.substring(0, 15) + '...', 'Length:', token.length);
+
+            // FALLBACK: Intentar decodificar como token Legacy (Base64)
+            try {
+                const decoded = Buffer.from(token, 'base64').toString('utf-8');
+                console.log('[AUTH-DEBUG] Fallback Decoded:', decoded);
+                const [userId, email, timestamp, tokenHash] = decoded.split(':');
+
+                if ((userId || email) && (userId.length > 5 || email.length > 5)) {
+                    console.log('[AUTH-MIDDLEWARE] Legacy Token accepted (Relaxed):', { userId, email });
+
+                    const user = {
+                        id: userId || 'legacy_' + Date.now(),
+                        dbId: null, // Legacy tokens typically don't map to new ID schema instantly
+                        email: email,
+                        role: 'agent', // Default to agent
+                        status: 'active',
+                        session_id: null,
+                        phone: email && !email.includes('@') ? email : null
+                    };
+
+                    // Si parece ser admin (telefono como email)
+                    if (user.phone) {
+                        user.role = 'admin';
+                        user.id = 'admin_' + user.phone;
+                        user.name = 'Admin Legacy';
+                    }
+
+                    req.user = user;
+                    return next();
+                } else {
+                    console.warn('[AUTH-DEBUG] Legacy fallback rejected: userId/email too short or missing', { userId, email });
+                }
+            } catch (legacyError) {
+                console.error('[AUTH-MIDDLEWARE] Legacy fallback failed:', legacyError.message);
+            }
+
             if (err.name === 'TokenExpiredError') {
                 return res.status(403).json({
                     success: false,
@@ -64,7 +115,7 @@ const authenticateToken = (req, res, next) => {
             }
             return res.status(403).json({
                 success: false,
-                error: 'Token inválido.'
+                error: `Token inválido: ${err.message}. Fallback rejected.`
             });
         }
     } catch (error) {

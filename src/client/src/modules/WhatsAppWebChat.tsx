@@ -136,7 +136,148 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   const [quickFilter, setQuickFilter] = useState('');
 
 
-  // Estados para multimedia
+
+  const [incomingTransfer, setIncomingTransfer] = useState<{
+    chatJid: string;
+    chatName: string;
+    sessionId: string;
+    agentId: string;
+    assignedBy: string;
+    assignedById: string;
+  } | null>(null);
+
+  // Helper para obtener ID de usuario actual
+  const getCurrentUserId = () => {
+    try {
+      // 1. Try decoding token
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          const base64Url = token.split('.')[1];
+          if (base64Url) {
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
+              return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            const payload = JSON.parse(jsonPayload);
+            if (payload.id || payload.userId) return payload.id || payload.userId;
+          }
+        } catch (e) { /* ignore jwt error */ }
+      }
+
+      // 2. Try explicit storage (Agents)
+      const agentBackup = localStorage.getItem('agent_userId_backup');
+      if (agentBackup) return agentBackup;
+
+      // 3. Try generic User ID
+      const storedId = localStorage.getItem('userId');
+      if (storedId) return storedId;
+
+      return null;
+    } catch (e) {
+      console.error('Error getting user ID:', e);
+      return null;
+    }
+  };
+
+  // Escuchar transferencias entrantes
+  useEffect(() => {
+    const socket = io(getAPIBaseURL());
+    const myId = getCurrentUserId();
+    console.log('🎧 [WhatsAppWebChat] Escuchando transferencias para usuario:', myId);
+
+    // DEBUG: Confirmar identidad
+    if (myId) {
+      setSnackbar({
+        open: true,
+        message: `Sistema de Transferencias Activo (ID: ${myId})`,
+        severity: 'info'
+      });
+    } else {
+      console.warn('⚠️ No se pudo identificar al usuario para transferencias');
+    }
+
+    // Listener universal para debug
+    socket.on('chat_transferred', (data: any) => {
+      console.log('📡 [WhatsAppWebChat] Evento chat_transferred recibido:', data);
+
+      // Verificar si es PARA MÍ
+      if (myId && String(data.agentId) === String(myId)) {
+        console.log('🔔 [WhatsAppWebChat] ¡Transferencia para mí detectada!', data);
+        setIncomingTransfer(data);
+        try {
+          // Haptic feedback or sound could go here
+          if (navigator.vibrate) navigator.vibrate(200);
+        } catch (e) { }
+      }
+    });
+
+    // Listener específico (redundancia)
+    if (myId) {
+      socket.on(`agent-${myId}-new-chat`, (data: any) => {
+        console.log('🔔 [WhatsAppWebChat] Evento personal agent-new-chat recibido:', data);
+        setIncomingTransfer(data);
+      });
+    }
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []); // Run once on mount
+
+  const handleAcceptTransfer = async () => {
+    if (!incomingTransfer) return;
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/chats/transfer/accept`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          session_id: incomingTransfer.sessionId,
+          chat_jid: incomingTransfer.chatJid
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setSnackbar({ open: true, message: 'Transferencia aceptada ✅', severity: 'success' });
+        setIncomingTransfer(null);
+        if (loadChats) loadChats(sessionId, 'all', 0, false); // Refresh chats
+      } else {
+        setSnackbar({ open: true, message: 'Error aceptando: ' + data.error, severity: 'error' });
+      }
+    } catch (e) {
+      console.error(e);
+      setSnackbar({ open: true, message: 'Error de conexión', severity: 'error' });
+    }
+  };
+
+  const handleRejectTransfer = async () => {
+    if (!incomingTransfer) return;
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/chats/transfer/reject`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          session_id: incomingTransfer.sessionId,
+          chat_jid: incomingTransfer.chatJid
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setSnackbar({ open: true, message: 'Transferencia rechazada ❌', severity: 'info' });
+        setIncomingTransfer(null);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
@@ -735,14 +876,30 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
       const response = await fetch(`${getAPIBaseURL()}/api/chats/transfer`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
         body: JSON.stringify({
-          sessionId: sessionId,
-          chatJid: activeChat.id, // El ID es el JID en WhatsApp
-          toAgentId: selectedAgentForTransfer,
-          fromAgentId: null // Puede ser null si no se sabe quién lo transfiere
+          session_id: sessionId,
+          chat_jid: activeChat.id, // El ID es el JID en WhatsApp
+          to_user_id: selectedAgentForTransfer,
+          from_user_id: null // Puede ser null si no se sabe quién lo transfiere
         })
       });
+
+      if (!response.ok) {
+        let errorMessage = `Error HTTP ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (e) {
+          // Si no es JSON, intentar texto
+          const text = await response.text();
+          if (text) errorMessage = text.substring(0, 200);
+        }
+        throw new Error(errorMessage);
+      }
 
       const data = await response.json();
       if (data.success) {
@@ -756,11 +913,12 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       } else {
         throw new Error(data.error || 'Error transfiriendo chat');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error transfiriendo a agente:', error);
+      const errorMsg = error?.message || (typeof error === 'string' ? error : 'Error desconocido de transferencia');
       setSnackbar({
         open: true,
-        message: `Error al transferir chat: ${error}`,
+        message: `Error al transferir chat: ${errorMsg}`,
         severity: 'error'
       });
     }
@@ -2725,6 +2883,57 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
             />
           )}
         </Box>
+      </Dialog>
+
+      {/* 🟢 MODAL DE TRANSFERENCIA ENTRANTE */}
+      <Dialog
+        open={!!incomingTransfer}
+        onClose={(e, reason) => {
+          if (reason !== 'backdropClick') setIncomingTransfer(null)
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: 'secondary.main', color: 'white', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Reply /> Solicitud de Transferencia
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            <strong>{incomingTransfer?.assignedBy}</strong> te quiere transferir un chat.
+          </Typography>
+          <Paper variant="outlined" sx={{ p: 2, bgcolor: 'background.default' }}>
+            <Box display="flex" alignItems="center" gap={2}>
+              <Avatar src={getAvatarUrlForJid(incomingTransfer?.chatJid)} />
+              <Box>
+                <Typography variant="subtitle1" fontWeight="bold">
+                  {incomingTransfer?.chatName || incomingTransfer?.chatJid}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {incomingTransfer?.chatJid}
+                </Typography>
+              </Box>
+            </Box>
+          </Paper>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={handleRejectTransfer}
+            color="error"
+            variant="outlined"
+            startIcon={<Close />}
+          >
+            Rechazar
+          </Button>
+          <Button
+            onClick={handleAcceptTransfer}
+            color="primary"
+            variant="contained"
+            startIcon={<Done />}
+            autoFocus
+          >
+            Aceptar Chat
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

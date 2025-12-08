@@ -12,7 +12,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
-const { checkAndStartCampaigns } = require('./campaign-scheduler-service');
+// const { checkAndStartCampaigns } = require('./campaign-scheduler-service'); // REMOVED: Using internal scheduler
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -112,15 +112,10 @@ setInterval(() => {
 }, 30000); // Cada 30 segundos
 
 // 🕒 SCHEDULER: Ejecutar campañas programadas cada minuto
-setInterval(async () => {
-    if (global.dbPool) {
-        try {
-            await checkAndStartCampaigns(global.dbPool);
-        } catch (error) {
-            console.error('[SCHEDULER-INTERVAL] Error:', error.message);
-        }
-    }
-}, 60000);
+// (Consolidado: este es el único scheduler activo)
+if (global.dbPool) {
+    console.log('✅ Scheduler de campañas configurado (esperando pool)');
+}
 
 // 🚀 MÓDULOS OPTIMIZADOS - TEMPORALMENTE DESACTIVADOS (causan hang en inicio)
 // const messageCache = require('./messageCache');
@@ -137,6 +132,9 @@ const socketManager = {
     emitToSession: (sessionId, event, data) => io.to(`session-${sessionId}`).emit(event, data),
     emitToChat: (sessionId, chatJid, event, data) => io.to(`session-${sessionId}`).emit(event, data)
 };
+
+// ==========================================
+// MÓDULOS MOVIDOS: Se cargarán después del middleware (ver línea ~246)
 
 console.log('✅ Servidor en modo estable (optimizaciones Redis temporalmente desactivadas)');
 
@@ -217,6 +215,32 @@ app.use(compression({
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.options('*', cors(corsOptions));
+
+// ==========================================
+// 🚀 CARGA DE ENDPOINTS (MÓDULOS)
+// ==========================================
+// CRÍTICO: Los endpoints se cargan DESPUÉS de express.json() para que req.body esté disponible
+const poolProxy = new Proxy({}, {
+    get: function (target, prop) {
+        if (!global.dbPool) {
+            console.error('[DB-PROXY] ⚠️ Intento de acceso a BD antes de inicialización:', prop);
+            return undefined;
+        }
+        return global.dbPool[prop];
+    }
+});
+
+console.log('[STARTUP] 🚀 Cargando sistemas con DB Proxy...');
+try {
+    require('./multiagent-endpoints')(app, poolProxy);
+    console.log('✅ Sistema Multi-Agente cargado');
+
+    require('./agents-permissions-endpoints')(app, poolProxy);
+    console.log('✅ Sistema Permisos Agentes cargado');
+} catch (error) {
+    console.error('❌ Error fatal cargando módulos:', error);
+}
+
 
 // 🔓 Rate limiter DESACTIVADO para desarrollo (estaba bloqueando demasiado)
 // app.use(generalLimiter);
@@ -811,39 +835,9 @@ async function createTables() {
         console.log('[DB-TABLES] Table \'appointment_reminders_sent\' ensured.');
 
         // Tabla unificada de Usuarios (Admins, Agentes, Staff)
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS users ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'email VARCHAR(255) UNIQUE NOT NULL,'
-            + 'password VARCHAR(255) COMMENT \'Hashed password\','
-            + 'phone VARCHAR(50),'
-            + 'role VARCHAR(50) DEFAULT \'agent\' COMMENT \'admin, agent, staff, etc\','
-            + 'department VARCHAR(100),'
-            + 'category VARCHAR(100),'
-            + 'status VARCHAR(50) DEFAULT \'active\' COMMENT \'active, inactive, suspended\','
-            + 'session_id VARCHAR(255) COMMENT \'Linked WhatsApp session ID\','
-            + 'admin_phone VARCHAR(50) COMMENT \'Phone of the admin who created this user\','
-            + 'agent_status VARCHAR(50) DEFAULT \'offline\' COMMENT \'online, busy, offline\','
-            + 'max_concurrent_chats INT DEFAULT 5,'
-            + 'avatar_url VARCHAR(1024),'
-            + 'last_login TIMESTAMP NULL,'
-            + 'is_admin BOOLEAN DEFAULT FALSE,'
-            + 'is_super_admin BOOLEAN DEFAULT FALSE,'
-            + 'subscription_plan VARCHAR(100) DEFAULT \'free\','
-            + 'subscription_status VARCHAR(50) DEFAULT \'inactive\','
-            + 'subscription_start_date DATETIME,'
-            + 'subscription_end_date DATETIME,'
-            + 'subscription_days INT DEFAULT 0,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'INDEX idx_email (email),'
-            + 'INDEX idx_session_id (session_id),'
-            + 'INDEX idx_role (role),'
-            + 'INDEX idx_phone (phone)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'users\' ensured.');
+        // NOTA: Se ha eliminado la definición duplicada que existía aquí. 
+        // La definición correcta está más abajo, cerca de la línea 1007.
+        console.log('[DB-TABLES] Table \'users\' check deferred to second definition.');
 
         // 🔧 MIGRACIÓN: Asegurar columnas en tabla 'users'
         const userColumns = [
@@ -10154,16 +10148,9 @@ app.get('/api/local-groups/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
 
     try {
-        const phoneNumber = await getUserPhoneNumber(sessionId);
-        if (!phoneNumber) {
-            return res.status(400).json({
-                success: false,
-                error: 'No se pudo obtener el número de teléfono para esta sesión'
-            });
-        }
-
         const connection = await pool.getConnection();
         try {
+            console.log(`[API-LOCAL-GROUPS] Cargando grupos para sesión: ${sessionId}`);
             const [segments] = await connection.execute(`
                 SELECT
                     s.id,
@@ -10177,7 +10164,9 @@ app.get('/api/local-groups/:sessionId', async (req, res) => {
                 WHERE s.session_id = ? AND s.is_system = 0
                 GROUP BY s.id
                 ORDER BY s.name ASC
-            `, [phoneNumber]);
+            `, [sessionId]); // USAR sessionId DIRECTAMENTE
+
+            console.log(`[API-LOCAL-GROUPS] Encontrados ${segments.length} grupos`);
 
             res.json({
                 success: true,
@@ -14632,11 +14621,16 @@ app.post('/api/campaigns/:campaignId/activate', async (req, res) => {
     try {
         const connection = await pool.getConnection();
         try {
-            await connection.execute(
-                "UPDATE campaigns SET status = 'scheduled' WHERE id = ? AND status = 'draft'",
+            const [result] = await connection.execute(
+                "UPDATE campaigns SET status = 'scheduled' WHERE id = ?",
                 [campaignId]
             );
-            console.log(`[CAMPAIGNS] 🚀 Campaña ${campaignId} activada manualemnte (draft -> scheduled)`);
+
+            if (result.affectedRows === 0) {
+                console.log(`[CAMPAIGNS] ⚠️ Intento de activar campaña ${campaignId} falló (No encontrada)`);
+                return res.status(404).json({ success: false, error: 'Campaña no encontrada' });
+            }
+            console.log(`[CAMPAIGNS] 🚀 Campaña ${campaignId} activada correctamente`);
             res.json({ success: true, message: 'Campaña activada' });
         } finally {
             connection.release();
@@ -16143,21 +16137,38 @@ app.get('/api/users/:userId/session', async (req, res) => {
             let phoneNumber = null;
 
             // Si es agente, obtener session_id del admin
-            if (user.role === 'agent' && user.admin_phone) {
-                // Buscar sesión activa del admin
-                const [adminSessions] = await connection.execute(
-                    'SELECT session_id, phone_number FROM user_sessions WHERE phone_number = ? AND is_active = 1 ORDER BY last_activity DESC LIMIT 1',
-                    [user.admin_phone]
-                );
+            if (user.role === 'agent') {
+                let adminSessions = [];
+
+                // 1. Intentar con admin_phone si existe
+                if (user.admin_phone) {
+                    [adminSessions] = await connection.execute(
+                        'SELECT session_id, phone_number FROM user_sessions WHERE phone_number = ? AND is_active = 1 ORDER BY last_activity DESC LIMIT 1',
+                        [user.admin_phone]
+                    );
+                }
+
+                // 2. Si no hay resultado (o no hay admin_phone), buscar CUALQUIER sesión activa de un admin
+                if (adminSessions.length === 0) {
+                    console.log(`[AGENT-SESSION] ⚠️ No se encontró sesión por admin_phone (${user.admin_phone}), buscando global...`);
+                    [adminSessions] = await connection.execute(
+                        `SELECT us.session_id, us.phone_number 
+                         FROM user_sessions us
+                         JOIN users u ON us.user_id = u.id
+                         WHERE u.role = 'admin' AND us.is_active = 1 
+                         ORDER BY us.last_activity DESC LIMIT 1`
+                    );
+                }
 
                 if (adminSessions.length > 0) {
-                    sessionId = adminSessions[0].session_id;
+                    // FIX CRÍTICO: Usar el número de teléfono como sessionId porque chat_assignments usa el número
+                    sessionId = adminSessions[0].phone_number;
                     phoneNumber = adminSessions[0].phone_number;
-                    console.log(`[AGENT-SESSION] ✅ Agente ${userId} usando sesión del admin: ${sessionId} (${phoneNumber})`);
+                    console.log(`[AGENT-SESSION] ✅ Agente ${userId} vinculado a sesión admin: ${sessionId} (Phone: ${phoneNumber})`);
                 } else {
                     return res.json({
                         success: false,
-                        message: 'Admin sin sesión activa de WhatsApp'
+                        message: 'No hay ninguna sesión de administrador activa'
                     });
                 }
             } else {
@@ -16169,7 +16180,9 @@ app.get('/api/users/:userId/session', async (req, res) => {
                         [sessionId]
                     );
                     if (sessions.length > 0) {
+                        // Para admins, mantener la lógica existente pero asegurar consistencia si es necesario
                         phoneNumber = sessions[0].phone_number;
+                        // Opcional: si el admin también tiene problemas, considerar usar phone_number aquí también
                     }
                 }
             }
@@ -16713,7 +16726,7 @@ app.get('/api/agents/list', async (req, res) => {
 // ⚠️ ENDPOINT DUPLICADO - COMENTADO PARA USAR EL DE agents-permissions-endpoints.js
 // Crear agente con contraseña
 /*
-app.post('/api/agents/create', async (req, res) => {
+app.post('/api/agents/create-deprecated', async (req, res) => {
     try {
         const { sessionId, name, email, password, phone } = req.body;
  
@@ -17145,7 +17158,7 @@ VALUES(?, ?, ?, ?, 'pending', ?)`,
 });
 
 // Endpoint simplificado para transferir chat
-app.post('/api/chats/transfer', async (req, res) => {
+app.post('/api/chats/transfer-deprecated', async (req, res) => {
     const { sessionId, chatJid, toAgentId, fromAgentId } = req.body;
 
     if (!sessionId || !chatJid || !toAgentId) {
@@ -17349,11 +17362,11 @@ app.post('/api/agent/accept-transfer', async (req, res) => {
             // Buscar todos los posibles sessionIds relacionados
             const allSessionIds = await getAllSessionIds(sessionId);
 
-            // Buscar la asignación pendiente
+            // Buscar la asignación pendiente O activa (para idempotencia)
             const placeholders = allSessionIds.map(() => '?').join(',');
             const [assignments] = await connection.execute(
                 `SELECT * FROM chat_assignments
-                 WHERE user_id = ? AND chat_jid = ? AND session_id IN(${placeholders}) AND status = 'pending'`,
+                 WHERE user_id = ? AND chat_jid = ? AND session_id IN(${placeholders}) AND status IN ('pending', 'active')`,
                 [agentId, chatJid, ...allSessionIds]
             );
 
@@ -17364,13 +17377,24 @@ app.post('/api/agent/accept-transfer', async (req, res) => {
                 });
             }
 
-            const targetSessionId = assignments[0].session_id;
+            const assignment = assignments[0];
+            const targetSessionId = assignment.session_id;
 
-            // Actualizar estado a 'active' (amarillo)
-            await connection.execute(
-                `UPDATE chat_assignments
+            // Si ya está activa, solo retornamos éxito (idempotencia)
+            if (assignment.status === 'active') {
+                console.log(`[ACCEPT - TRANSFER] ⚠️ El chat ya estaba activo para este agente. Retornando éxito.`);
+                return res.json({
+                    success: true,
+                    message: 'Chat aceptado exitosamente',
+                    alreadyActive: true
+                });
+            }
+
+            // Actualizar estado en chat_assignments
+            const [updateResult] = await connection.execute(
+                `UPDATE chat_assignments 
                  SET status = 'active', accepted_at = NOW()
-                 WHERE user_id = ? AND chat_jid = ? AND session_id = ? `,
+                 WHERE user_id = ? AND chat_jid = ? AND session_id = ?`,
                 [agentId, chatJid, targetSessionId]
             );
 
@@ -17572,7 +17596,7 @@ app.post('/api/agent/close-conversation', async (req, res) => {
             // Eliminamos "AND status = 'active'" para permitir idempotencia (si ya estaba cerrado, lo actualizamos igual)
             const [result] = await connection.execute(
                 `UPDATE chat_assignments 
-                 SET status = 'closed', conversation_status = 'closed', closed_at = NOW()
+                 SET status = 'closed', closed_at = NOW()
                  WHERE user_id = ? AND chat_jid = ? AND session_id = ? `,
                 [agentId, chatJid, targetSessionId]
             );
@@ -17623,124 +17647,7 @@ app.post('/api/agent/close-conversation', async (req, res) => {
     }
 });
 
-// Obtener chats asignados activos de un agente (para el dashboard del agente)
-app.get('/api/agents/:userId/chats', async (req, res) => {
-    const { userId } = req.params;
-    const { sessionId, dateFilter = 'today' } = req.query;
-
-    if (!sessionId) {
-        return res.status(400).json({
-            success: false,
-            error: 'sessionId is required'
-        });
-    }
-
-    console.log('[AGENTS-CHATS] 📅 Filtro de fecha:', dateFilter);
-
-    if (!pool) {
-        return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible' });
-    }
-
-    try {
-        const connection = await pool.getConnection();
-        try {
-            // Primero obtener el número de teléfono del sessionId
-            const [sessionInfo] = await connection.execute(
-                `SELECT phone_number FROM user_sessions WHERE session_id = ? LIMIT 1`,
-                [sessionId]
-            );
-
-            // Si no se encuentra, el sessionId probablemente ya ES el phoneNumber
-            const phoneNumber = sessionInfo[0]?.phone_number || sessionId;
-            console.log('[AGENTS-CHATS] SessionId:', sessionId, 'PhoneNumber:', phoneNumber);
-
-            // Calcular fecha límite según el filtro
-            // Calcular fecha límite según el filtro
-            let dateCondition = '';
-
-            // SIMPLIFICACIÓN: Usar solo session_id para relacionar mensajes
-            // params: [phoneNumber (contacts), phoneNumber (groups), userId, phoneNumber (assignments)]
-            // NOTA: phoneNumber aquí es realmente el session_id del admin (número de teléfono)
-            const params = [phoneNumber, phoneNumber, userId, phoneNumber];
-
-            if (dateFilter === 'today') {
-                dateCondition = 'AND DATE(ca.assigned_at) = CURDATE()';
-            } else if (dateFilter === 'week') {
-                dateCondition = 'AND ca.assigned_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
-            } else if (dateFilter === 'month') {
-                dateCondition = 'AND ca.assigned_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
-            }
-
-            const query = `SELECT
-                ca.chat_jid,
-                ca.session_id,
-                MAX(ca.assigned_at) as assigned_at,
-                MAX(ca.notes) as notes,
-                COALESCE(
-                    MAX(CASE WHEN ca.chat_jid LIKE '%@g.us' THEN cg.name ELSE c.name END),
-                    SUBSTRING_INDEX(ca.chat_jid, '@', 1)
-                ) as contact_name,
-                COALESCE(
-                    MAX(CASE WHEN ca.chat_jid LIKE '%@g.us' THEN cg.avatar_url ELSE c.avatar_url END)
-                ) as avatar_url,
-                (SELECT text_content FROM messages m
-                     WHERE m.chat_jid = ca.chat_jid
-                     AND m.session_id = ca.session_id
-                     ORDER BY m.timestamp DESC LIMIT 1) as last_message,
-                (SELECT timestamp FROM messages m
-                     WHERE m.chat_jid = ca.chat_jid
-                     AND m.session_id = ca.session_id
-                     ORDER BY m.timestamp DESC LIMIT 1) as last_message_time,
-                (SELECT COUNT(*) FROM messages m
-                     WHERE m.chat_jid = ca.chat_jid
-                     AND m.session_id = ca.session_id
-                     AND m.from_me = 0
-                     AND COALESCE(m.is_read, false) = false) as unread_count
-                FROM chat_assignments ca
-                LEFT JOIN contacts c ON c.jid = ca.chat_jid AND c.phone_number = ?
-                LEFT JOIN contact_groups cg ON cg.jid = ca.chat_jid AND cg.session_id = ?
-                WHERE ca.user_id = ?
-                AND ca.session_id = ?
-                AND ca.status IN('pending', 'accepted', 'active')
-                ${dateCondition}
-                GROUP BY ca.chat_jid, ca.session_id
-                ORDER BY last_message_time DESC`;
-
-            const [assignments] = await connection.execute(query, params);
-
-            console.log('[AGENTS-CHATS] ✅ Chats encontrados:', assignments.length);
-            if (assignments.length > 0) {
-                console.log('[AGENTS-CHATS] 📋 Primer chat:', JSON.stringify(assignments[0]));
-            } else {
-                console.log('[AGENTS-CHATS] ⚠️ No se encontraron chats para userId:', userId, 'phoneNumber:', phoneNumber);
-            }
-
-            // Formatear para que sea compatible con el formato de chats
-            const formattedChats = assignments.map(assignment => ({
-                chatJid: assignment.chat_jid,
-                name: assignment.contact_name || assignment.chat_jid.split('@')[0],
-                avatar: assignment.avatar_url,
-                lastMessage: assignment.last_message || '',
-                lastMessageTimestamp: assignment.last_message_time || assignment.assigned_at,
-                unreadCount: assignment.unread_count || 0,
-                assignedAt: assignment.assigned_at,
-                isGroup: assignment.chat_jid.includes('@g.us')
-            }));
-
-            res.json({
-                success: true,
-                sessionId,
-                chats: formattedChats,
-                count: formattedChats.length
-            });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[AGENTS] Error obteniendo chats asignados:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+// Endpoint removed: Duplicate and broken implementation. Handled by multiagent-endpoints.js
 
 // Obtener historial de chats de un agente
 app.get('/api/agents/:id/history', async (req, res) => {
@@ -18158,6 +18065,30 @@ app.post('/api/chat-assignments/transfer', async (req, res) => {
 
             const assignment = assignments[0];
 
+            // VERIFICACIÓN DE DISPONIBILIDAD DEL AGENTE DESTINO
+            const [targetUsers] = await connection.execute(
+                'SELECT id, name, agent_status, role FROM users WHERE id = ?',
+                [toUserId]
+            );
+
+            if (targetUsers.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Agente destino no encontrado'
+                });
+            }
+
+            const targetUser = targetUsers[0];
+
+            // Si el agente está offline, advertir o bloquear (a menos que se fuerce)
+            // Por ahora, bloqueamos si está offline
+            if (targetUser.agent_status === 'offline') {
+                return res.status(400).json({
+                    success: false,
+                    error: `El agente destino ${targetUser.name} está desconectado (Offline). No se puede transferir.`
+                });
+            }
+
             // Actualizar historial de transferencias
             const transferHistory = assignment.transfer_history ?
                 JSON.parse(assignment.transfer_history) : [];
@@ -18171,7 +18102,7 @@ app.post('/api/chat-assignments/transfer', async (req, res) => {
 
             // Actualizar asignación
             await connection.execute(
-                'UPDATE chat_assignments SET user_id = ?, status = \'pending\', transfer_history = ?, notes = CONCAT(IFNULL(notes, \'\'), \'\nTransferido de agente \', ?, \' a agente \', ?, \': \', ?) WHERE id = ?',
+                'UPDATE chat_assignments SET user_id = ?, status = \'active\', transfer_history = ?, notes = CONCAT(IFNULL(notes, \'\'), \'\nTransferido de agente \', ?, \' a agente \', ?, \': \', ?) WHERE id = ?',
                 [toUserId, JSON.stringify(transferHistory), fromUserId, toUserId, reason || 'Sin razón', assignmentId]
             );
 
@@ -21002,25 +20933,9 @@ server.listen(PORT, '0.0.0.0', async () => {
     console.log('✅ Sincronización periódica activada (cada 2 segundos - optimizado para tiempo real)');
 
     // ============= SISTEMA MULTI-AGENTE =============
-    // Cargar endpoints del sistema multi-agente después de inicializar BD
-    if (pool) {
-        try {
-            require('./multiagent-endpoints')(app, pool);
-            console.log('✅ Sistema multi-agente cargado correctamente');
-        } catch (error) {
-            console.error('❌ Error cargando sistema multi-agente:', error);
-        }
-
-        // Cargar sistema de gestión de agentes con privilegios
-        try {
-            require('./agents-permissions-endpoints')(app, pool);
-            console.log('✅ Sistema de gestión de agentes con privilegios cargado correctamente');
-        } catch (error) {
-            console.error('❌ Error cargando sistema de privilegios:', error);
-        }
-    } else {
-        console.log('⚠️  Pool no disponible - Sistema multi-agente no cargado');
-    }
+    // (Módulos movidos al inicio del archivo para evitar 404 por catch-all)
+    console.log('✅ Verificación post-inicio: Módulos ya cargados anteriormente.');
+    // (Cleanup of old location)
 
     // ============= SERVICIO DE RECORDATORIOS AUTOMÁTICOS =============
     // Iniciar servicio de recordatorios para citas
@@ -21054,20 +20969,68 @@ server.listen(PORT, '0.0.0.0', async () => {
                     for (const campaign of campaigns) {
                         console.log(`[SCHEDULER] ⏰ Ejecutando campaña programada: ${campaign.name} (ID: ${campaign.id}) - Scheduled: ${campaign.scheduled_at}, Now: ${new Date().toISOString()}`);
 
-                        const sessionId = campaign.session_id;
-                        const session = sessions.get(sessionId);
+                        // 🔍 SMART LOOKUP: Buscar sesión activa de forma robusta
+                        let activeSessionId = sessionId;
+                        let foundInMap = false;
 
-                        if (session && session.isConnected) {
+                        // 1. Verificar si existe directamente en el Map
+                        if (activeSessionId && sessions.has(activeSessionId)) {
+                            const sess = sessions.get(activeSessionId);
+                            if (sess && sess.isConnected) {
+                                foundInMap = true;
+                                console.log(`[SCHEDULER] ✅ Sesión encontrada directamente: ${activeSessionId}`);
+                            }
+                        }
+
+                        // 2. Si no, buscar por número de teléfono
+                        if (!foundInMap && campaign.phone_number) {
+                            if (sessions.has(campaign.phone_number)) {
+                                const sess = sessions.get(campaign.phone_number);
+                                if (sess && sess.isConnected) {
+                                    activeSessionId = campaign.phone_number;
+                                    foundInMap = true;
+                                    console.log(`[SCHEDULER] ✅ Sesión encontrada por teléfono: ${activeSessionId}`);
+                                }
+                            }
+                        }
+
+                        // 3. Si no, buscar en la base de datos la última sesión activa
+                        if (!foundInMap && campaign.phone_number) {
+                            try {
+                                const [userSessions] = await connection.execute(
+                                    `SELECT session_id FROM user_sessions 
+                                     WHERE phone_number = ? AND is_active = 1 
+                                     ORDER BY last_connection_time DESC LIMIT 1`,
+                                    [campaign.phone_number]
+                                );
+
+                                if (userSessions.length > 0) {
+                                    const dbSessionId = userSessions[0].session_id;
+                                    if (sessions.has(dbSessionId)) {
+                                        const sess = sessions.get(dbSessionId);
+                                        if (sess && sess.isConnected) {
+                                            activeSessionId = dbSessionId;
+                                            foundInMap = true;
+                                            console.log(`[SCHEDULER] ✅ Sesión recuperada de DB: ${activeSessionId}`);
+                                        }
+                                    }
+                                }
+                            } catch (dbErr) {
+                                console.error('[SCHEDULER] Error buscando sesión en DB:', dbErr.message);
+                            }
+                        }
+
+                        if (activeSessionId && foundInMap) {
                             // Iniciar la campaña
                             await connection.execute(
                                 'UPDATE campaigns SET status = \'sending\', updated_at = NOW() WHERE id = ?',
                                 [campaign.id]
                             );
 
-                            processCampaign(campaign.id, sessionId);
-                            console.log(`[SCHEDULER] ✅ Campaña ${campaign.id} iniciada`);
+                            processCampaign(campaign.id, activeSessionId);
+                            console.log(`[SCHEDULER] ✅ Campaña ${campaign.id} iniciada con sesión ${activeSessionId}`);
                         } else {
-                            console.log(`[SCHEDULER] ⚠️ Sesión ${sessionId} no conectada, reintentando en el próximo ciclo`);
+                            console.log(`[SCHEDULER] ⚠️ No se encontró sesión conectada para campaña ${campaign.id} (SessionID: ${sessionId})`);
                         }
                     }
                 } finally {
@@ -21081,146 +21044,9 @@ server.listen(PORT, '0.0.0.0', async () => {
     }
 });
 
-// ============= SCHEDULER DE CAMPAÑAS PROGRAMADAS (STANDALONE) =============
-// Este scheduler se ejecuta independientemente del server.listen para garantizar que funcione
-console.log('[STARTUP] 🕐 Configurando scheduler de campañas programadas (standalone)...');
-
-// Esperar 10 segundos para que el pool y las sesiones estén inicializados
-setTimeout(() => {
-    if (!pool) {
-        console.error('[SCHEDULER-STANDALONE] ❌ Pool no disponible, scheduler no puede iniciar');
-        return;
-    }
-
-    console.log('[SCHEDULER-STANDALONE] ✅ Pool disponible, iniciando scheduler...');
-
-    setInterval(async () => {
-        try {
-            const connection = await pool.getConnection();
-            try {
-                // Buscar campañas programadas cuya fecha ya pasó
-                const [campaigns] = await connection.execute(`
-                    SELECT id, session_id, phone_number, name, scheduled_at
-                    FROM campaigns
-                    WHERE status = 'scheduled'
-                    AND scheduled_at IS NOT NULL
-                    AND scheduled_at <= NOW()
-                    ORDER BY scheduled_at ASC
-                `);
-
-                if (campaigns.length > 0) {
-                    console.log(`[SCHEDULER-STANDALONE] 📋 Encontradas ${campaigns.length} campañas listas para ejecutar`);
-                }
-
-                for (const campaign of campaigns) {
-                    console.log(`[SCHEDULER-STANDALONE] ⏰ Ejecutando campaña: ${campaign.name} (ID: ${campaign.id})`);
-                    console.log(`[SCHEDULER-STANDALONE] 📞 Phone: ${campaign.phone_number}, SessionId: ${campaign.session_id}`);
-
-                    // Buscar sesión activa en la base de datos
-                    let activeSessionId = null;
-                    let foundInMap = false;
-
-                    // Primero intentar con phone_number directamente en el Map
-                    if (campaign.phone_number && sessions.has(campaign.phone_number)) {
-                        const sess = sessions.get(campaign.phone_number);
-                        if (sess && sess.isConnected) {
-                            activeSessionId = campaign.phone_number;
-                            foundInMap = true;
-                            console.log(`[SCHEDULER-STANDALONE] ✅ Sesión encontrada en Map: ${activeSessionId}`);
-                        }
-                    }
-
-                    // Si no está en el Map, buscar en la base de datos
-                    if (!activeSessionId) {
-                        console.log(`[SCHEDULER-STANDALONE] 🔍 Buscando en base de datos...`);
-                        try {
-                            const [userSessions] = await connection.execute(
-                                `SELECT session_id, phone_number FROM user_sessions 
-                                 WHERE phone_number = ? AND is_active = 1 
-                                 ORDER BY last_connection_time DESC LIMIT 1`,
-                                [campaign.phone_number]
-                            );
-
-                            if (userSessions.length > 0) {
-                                activeSessionId = userSessions[0].session_id;
-                                console.log(`[SCHEDULER-STANDALONE] ✅ Sesión encontrada en DB: ${activeSessionId}`);
-
-                                // Verificar si existe en el Map con este session_id
-                                if (sessions.has(activeSessionId)) {
-                                    const sess = sessions.get(activeSessionId);
-                                    if (!sess || !sess.isConnected) {
-                                        console.log(`[SCHEDULER-STANDALONE] ⚠️ Sesión en DB pero no conectada en Map`);
-                                        activeSessionId = null;
-                                    } else {
-                                        foundInMap = true;
-                                    }
-                                }
-                            }
-                        } catch (dbErr) {
-                            console.error(`[SCHEDULER-STANDALONE] ❌ Error buscando en DB:`, dbErr.message);
-                        }
-                    }
-
-                    // Si aún no encontramos, buscar en todas las sesiones del Map
-                    if (!activeSessionId && sessions.size > 0) {
-                        console.log(`[SCHEDULER-STANDALONE] 🔍 Buscando en ${sessions.size} sesiones del Map...`);
-                        for (const [sId, session] of sessions.entries()) {
-                            if (!session.isConnected) continue;
-
-                            try {
-                                const phone = await getUserPhoneNumber(sId);
-                                if (phone === campaign.phone_number || phone === campaign.session_id || sId === campaign.session_id) {
-                                    activeSessionId = sId;
-                                    foundInMap = true;
-                                    console.log(`[SCHEDULER-STANDALONE] ✅ Sesión encontrada iterando Map: ${activeSessionId}`);
-                                    break;
-                                }
-                            } catch (err) {
-                                // Ignorar errores
-                            }
-                        }
-                    }
-
-                    if (activeSessionId && foundInMap) {
-                        console.log(`[SCHEDULER-STANDALONE] 🚀 Iniciando campaña ${campaign.id} con sesión ${activeSessionId}`);
-
-                        // Actualizar estado a 'sending'
-                        await connection.execute(
-                            'UPDATE campaigns SET status = ?, updated_at = NOW() WHERE id = ?',
-                            ['sending', campaign.id]
-                        );
-
-                        // Llamar a la función que procesa la campaña
-                        if (typeof processCampaign === 'function') {
-                            processCampaign(campaign.id, activeSessionId);
-                            console.log(`[SCHEDULER-STANDALONE] ✅ Campaña ${campaign.id} iniciada exitosamente`);
-                        } else {
-                            console.error(`[SCHEDULER-STANDALONE] ❌ processCampaign no está definida`);
-                        }
-                    } else {
-                        console.warn(`[SCHEDULER-STANDALONE] ⚠️ No hay sesión activa para campaña ${campaign.id}`);
-                        console.warn(`[SCHEDULER-STANDALONE] 💡 Phone: ${campaign.phone_number}`);
-                        console.warn(`[SCHEDULER-STANDALONE] 💡 Sesiones en Map: ${sessions.size}`);
-                        console.warn(`[SCHEDULER-STANDALONE] 💡 Keys: ${Array.from(sessions.keys()).slice(0, 3).join(', ')}`);
-
-                        // Marcar como failed si han pasado más de 24 horas
-                        const hoursPassed = Math.floor((Date.now() - new Date(campaign.scheduled_at).getTime()) / (1000 * 60 * 60));
-                        if (hoursPassed > 24) {
-                            console.warn(`[SCHEDULER-STANDALONE] ⏰ Campaña ${campaign.id} expirada (${hoursPassed}h), marcando como failed`);
-                            await connection.execute(
-                                'UPDATE campaigns SET status = ?, updated_at = NOW() WHERE id = ?',
-                                ['failed', campaign.id]
-                            );
-                        }
-                    }
-                }
-            } finally {
-                connection.release();
-            }
-        } catch (error) {
-            console.error('[SCHEDULER-STANDALONE] ❌ Error:', error.message);
-        }
-    }, 60000); // Cada minuto
-
-    console.log('[SCHEDULER-STANDALONE] ✅ Scheduler iniciado correctamente (verificación cada 60s)');
-}, 10000); // Esperar 10 segundos para inicialización
+// ============= SCHEDULER DE CAMPAÑAS (INTERNAL) =============
+/* 
+   El scheduler "Standalone" ha sido eliminado para evitar conflictos.
+   El scheduler activo está definido en la línea 21041 (bloque startCampaignSchedulerLogic).
+*/
+console.log('[STARTUP] ✅ Scheduler optimizado y consolidado.');

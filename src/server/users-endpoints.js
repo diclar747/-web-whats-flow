@@ -499,7 +499,7 @@ module.exports = function (app, pool) {
     // ==================== TRANSFERENCIA DE CHATS ====================
 
     // Transferir chat entre usuarios
-    app.post('/api/chats/transfer', async (req, res) => {
+    app.post('/api/chats/transfer-legacy-1', async (req, res) => {
         try {
             if (!pool) {
                 return res.status(503).json({ success: false, error: 'DB service unavailable' });
@@ -642,7 +642,7 @@ module.exports = function (app, pool) {
     });
 
     // Transferir chat entre agentes
-    app.post('/api/chats/transfer', async (req, res) => {
+    app.post('/api/chats/transfer-legacy-2', async (req, res) => {
         try {
             if (!pool) {
                 return res.status(503).json({ success: false, error: 'DB service unavailable' });

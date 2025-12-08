@@ -203,9 +203,28 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
         console.error('Error al cargar agentes', data);
         showSnackbar(data.error || 'Error al cargar agentes', 'error');
       }
-    } catch (error) {
-      console.error('Error cargando agentes:', error);
-      showSnackbar('Error de conexión al cargar agentes', 'error');
+    } catch (error: any) {
+      console.error('Error al cargar agentes:', error);
+      let errorMsg = 'Error desconocido al cargar agentes';
+
+      if (typeof error === 'string') {
+        errorMsg = error;
+      } else if (error?.response?.data?.error) {
+        errorMsg = error.response.data.error;
+      } else if (error?.message) {
+        errorMsg = error.message;
+      }
+
+      setSnackbar({
+        open: true,
+        message: errorMsg,
+        severity: 'error'
+      });
+
+      if (error?.response?.status === 401 || error?.response?.status === 403) {
+        // Optional: redirect to login or show detailed auth error
+        console.warn('Auth error detected - Token might be invalid');
+      }
     } finally {
       setLoading(false);
     }
@@ -356,10 +375,17 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
       const data = await response.json();
 
       if (data.success) {
+        // ✅ Actualizar estado local INMEDIATAMENTE para evitar race conditions
+        setAgents(prev => prev.map(a =>
+          String(a.id) === String(agent.id) ? { ...a, status: newStatus } : a
+        ));
+
         showSnackbar(
           newStatus === 'inactive' ? 'Agente bloqueado' : 'Agente desbloqueado',
           'success'
         );
+
+        // Recargar para asegurar sincronización con el servidor
         loadAgents();
       } else {
         showSnackbar(data.error || 'Error al cambiar acceso del agente', 'error');
@@ -393,7 +419,7 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
       case 'busy': return 'Ocupado';
       case 'paused': return 'En pausa';
       case 'offline': return 'Desconectado';
-      default: return 'Desconocido';
+      default: return `Desconocido (${status})`;
     }
   };
 

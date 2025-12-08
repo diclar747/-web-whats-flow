@@ -7,40 +7,83 @@ module.exports = function (app, pool) {
     // Middleware para verificar autenticación (compatible con sistema base64)
     const authenticateToken = async (req, res, next) => {
         const authHeader = req.headers['authorization'];
+        console.log(`[AUTH-DEBUG] Header received: ${authHeader}`); // DEBUG LOG
         const token = authHeader && authHeader.split(' ')[1];
 
         if (!token) {
+            console.log('[AUTH-DEBUG] No token provided');
             return res.status(401).json({ success: false, error: 'Token requerido' });
         }
 
         try {
-            // Decodificar token base64 (formato: userId:email:timestamp)
-            const decoded = Buffer.from(token, 'base64').toString('utf-8');
-            const [userId, email, timestamp] = decoded.split(':');
+            // Primero intentar decodificar como JWT
+            const jwt = require('jsonwebtoken');
+            const JWT_SECRET = process.env.JWT_SECRET || 'whatsflow_jwt_secret';
 
-            if (!userId || !email) {
-                return res.status(403).json({ success: false, error: 'Token inválido' });
-            }
-
-            // Verificar que el usuario existe en la base de datos
-            const connection = await pool.getConnection();
             try {
-                const [users] = await connection.execute(
-                    'SELECT id, name, email, role, status FROM users WHERE id = ? AND email = ?',
-                    [userId, email]
-                );
+                const decoded = jwt.verify(token, JWT_SECRET);
+                console.log(`[AUTH-DEBUG] JWT Decoded:`, decoded);
 
-                if (users.length === 0 || users[0].status !== 'active') {
-                    return res.status(403).json({ success: false, error: 'Token inválido o usuario inactivo' });
+                // CASO ESPECIAL: ADMIN (Token basado en sesión/teléfono, no ID de tabla users)
+                if (decoded.role === 'admin' && decoded.phone) {
+                    console.log('[AUTH-DEBUG] Access granted to ADMIN');
+                    // Intentar buscar ID numérico real si existe
+                    // ... (Simplificación: Asumimos null para operaciones de BD si no es Agente)
+                    req.user = {
+                        id: 'admin_' + decoded.phone,
+                        permissions_id: null, // Admin no tiene row, so NULL 
+                        dbId: null, // Para FKs que requieran INT
+                        name: 'Admin',
+                        email: null,
+                        role: 'admin',
+                        status: 'active',
+                        phone: decoded.phone
+                    };
+                    return next();
                 }
 
-                // Adjuntar info del usuario al request
-                req.user = users[0];
-                connection.release();
-                next();
-            } catch (error) {
-                connection.release();
-                throw error;
+                // CASO AGENTE/USUARIO (Token con ID de base de datos)
+                // Verificar que el usuario existe y está activo
+                const connection = await pool.getConnection();
+                try {
+                    const [rows] = await connection.execute('SELECT * FROM users WHERE id = ?', [decoded.id]);
+                    if (rows.length === 0 || rows[0].status !== 'active') {
+                        return res.status(403).json({ success: false, error: 'Usuario no válido o inactivo' });
+                    }
+                    req.user = rows[0];
+                    req.user.dbId = rows[0].id; // Uniformidad
+                    next();
+                } finally {
+                    connection.release();
+                }
+            } catch (jwtError) {
+                // Si falla JWT, intentar decodificar como base64 (formato legacy)
+                const decoded = Buffer.from(token, 'base64').toString('utf-8');
+                const [userId, email, timestamp] = decoded.split(':');
+
+                if (!userId || !email) {
+                    return res.status(403).json({ success: false, error: 'Token inválido' });
+                }
+
+                const connection = await pool.getConnection();
+                try {
+                    const [users] = await connection.execute(
+                        'SELECT id, name, email, role, status FROM users WHERE id = ? AND email = ?',
+                        [userId, email]
+                    );
+
+                    if (users.length === 0 || users[0].status !== 'active') {
+                        connection.release();
+                        return res.status(403).json({ success: false, error: 'Token inválido o usuario inactivo' });
+                    }
+
+                    req.user = users[0];
+                    connection.release();
+                    next();
+                } catch (error) {
+                    connection.release();
+                    throw error;
+                }
             }
         } catch (error) {
             console.error('Error validando token:', error);
@@ -397,7 +440,7 @@ module.exports = function (app, pool) {
                 // Cerrar asignación actual si existe
                 await connection.execute(`
                     UPDATE chat_assignments 
-                    SET status = 'transferred', completed_at = NOW()
+                    SET status = 'transferred'
                     WHERE chat_jid = ? AND session_id = ? AND status = 'active'
                 `, [chat_jid, session_id]);
 
@@ -406,21 +449,19 @@ module.exports = function (app, pool) {
                     INSERT INTO chat_assignments 
                     (chat_jid, session_id, user_id, assigned_by, status)
                     VALUES (?, ?, ?, ?, 'pending')
-                `, [chat_jid, session_id, to_user_id, req.user.id]);
+                `, [chat_jid, session_id, to_user_id, req.user.dbId]); // Use numeric ID (or null)
 
                 // Registrar transferencia
                 await connection.execute(`
                     INSERT INTO chat_transfers 
                     (chat_jid, session_id, from_user_id, to_user_id, transferred_by, reason)
                     VALUES (?, ?, ?, ?, ?, ?)
-                `, [chat_jid, session_id, from_user_id || null, to_user_id, req.user.id, reason || 'Transferencia de chat']);
+                `, [chat_jid, session_id, from_user_id || null, to_user_id, req.user.dbId, reason || 'Transferencia de chat']);
 
                 // Actualizar mensajes
-                await connection.execute(`
-                    UPDATE messages 
-                    SET assigned_user_id = ? 
-                    WHERE chat_jid = ? AND session_id = ?
-                `, [to_user_id, chat_jid, session_id]);
+                // (Opcional) Actualizar algún flag en mensajes si fuera necesario, pero NO asignación directa
+                // Soportamos assignment en chat_assignments, así que omitimos update a 'messages'
+                // para evitar error de columna inexistente.
 
                 await connection.commit();
 
@@ -1105,6 +1146,12 @@ module.exports = function (app, pool) {
             }
         } catch (error) {
             console.error('[AGENT-CHATS-BY-ID] ❌ Error:', error);
+            try {
+                const fs = require('fs');
+                fs.appendFileSync('debug_error.log', `[${new Date().toISOString()}] Error in GET /api/agents/${req.params.agentId}/chats: ${error.message}\nStack: ${error.stack}\n`);
+            } catch (err) {
+                console.error('Error writing to debug log:', err);
+            }
             res.status(500).json({
                 success: false,
                 error: 'Error obteniendo chats del agente',

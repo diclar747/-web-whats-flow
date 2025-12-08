@@ -1255,8 +1255,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     try {
       setLoading(true);
 
-      // Si es campaña PROGRAMADA, solo mostrar mensaje de confirmación
-      // Ya está en estado 'scheduled' y el scheduler la ejecutará automáticamente
+      // Si es campaña PROGRAMADA, verificar la fecha
       if (campaign.type === 'scheduled' || campaign.scheduledAt) {
         const scheduledDate = new Date(campaign.scheduledAt!);
         const now = new Date();
@@ -1718,25 +1717,72 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                             <>
                               {/* CASO 1: Campaña PROGRAMADA (scheduled) - O si tiene fecha programada */}
                               {campaign.type === 'scheduled' || campaign.scheduledAt ? (
-                                <Button
-                                  variant="contained"
-                                  size="small"
-                                  startIcon={<PlayArrow />}
-                                  onClick={() => {
-                                    console.log("Click en ACTIVAR AHORA");
-                                    startCampaign(campaign.id);
-                                  }}
-                                  disabled={campaign.status === 'scheduled'}
-                                  sx={{
-                                    bgcolor: '#00a884',
-                                    color: 'white',
-                                    '&:hover': { bgcolor: '#008069' },
-                                    minWidth: 100,
-                                    display: campaign.status === 'scheduled' ? 'none' : 'inline-flex'
-                                  }}
-                                >
-                                  ACTIVAR AHORA
-                                </Button>
+                                (() => {
+                                  const scheduledDate = campaign.scheduledAt ? new Date(campaign.scheduledAt) : null;
+                                  const now = new Date();
+                                  const isPast = scheduledDate && scheduledDate <= now;
+
+                                  // Si está en DRAFT, mostrar botón para confirmar
+                                  if (campaign.status === 'draft') {
+                                    return (
+                                      <Button
+                                        variant="contained"
+                                        size="small"
+                                        startIcon={<PlayArrow />}
+                                        onClick={() => {
+                                          console.log("Click en CONFIRMAR PROGRAMACIÓN");
+                                          startCampaign(campaign.id);
+                                        }}
+                                        sx={{
+                                          bgcolor: '#00a884',
+                                          color: 'white',
+                                          '&:hover': { bgcolor: '#008069' },
+                                          minWidth: 100
+                                        }}
+                                      >
+                                        Confirmar Programación
+                                      </Button>
+                                    );
+                                  }
+
+                                  // Si está SCHEDULED pero la fecha ya pasó, mostrar botón para ejecutar manualmente
+                                  if (campaign.status === 'scheduled' && isPast) {
+                                    return (
+                                      <Button
+                                        variant="contained"
+                                        size="small"
+                                        startIcon={<PlayArrow />}
+                                        onClick={() => {
+                                          console.log("Click en EJECUTAR AHORA (fecha vencida)");
+                                          startCampaign(campaign.id);
+                                        }}
+                                        sx={{
+                                          bgcolor: '#ff9800',
+                                          color: 'white',
+                                          '&:hover': { bgcolor: '#f57c00' },
+                                          minWidth: 100
+                                        }}
+                                      >
+                                        Ejecutar Ahora
+                                      </Button>
+                                    );
+                                  }
+
+                                  // Si está SCHEDULED y la fecha es futura, no mostrar botón
+                                  // Estado Programado: No mostrar botón de acción manual
+                                  if (campaign.status === 'scheduled' && !isPast) {
+                                    return (
+                                      <Chip
+                                        icon={<CheckCircle />}
+                                        label="Programada (Automático)"
+                                        color="success"
+                                        variant="outlined"
+                                        size="small"
+                                      />
+                                    );
+                                  }
+                                  return null;
+                                })()
                               ) : (
                                 /* CASO 2: Campaña DIRECTA (direct) */
                                 <Button

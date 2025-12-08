@@ -50,8 +50,8 @@ module.exports = function (app, pool) {
                     name,
                     email,
                     phone,
-                    COALESCE(agent_status, 'offline') as status,
-                    CASE WHEN status = 'active' THEN 1 ELSE 0 END as is_active,
+                    status,
+                    COALESCE(agent_status, 'offline') as agent_status,
                     last_activity,
                     COALESCE(max_concurrent_chats, 5) as max_concurrent_chats,
                     created_at,
@@ -234,15 +234,20 @@ module.exports = function (app, pool) {
                 const [result] = await connection.execute(`
                 INSERT INTO users (
                     name, email, phone, password, role,
-                    status, agent_status, max_concurrent_chats, admin_phone
-                ) VALUES (?, ?, ?, ?, 'agent', 'active', 'offline', ?, ?)
+                    status, agent_status, max_concurrent_chats, admin_phone,
+                    created_at, updated_at,
+                    department, category, session_id
+                ) VALUES (?, ?, ?, ?, 'agent', 'active', 'offline', ?, ?, NOW(), NOW(), ?, ?, ?)
             `, [
                     name,
                     email,
                     phone || null,
                     hashedPassword,
                     req.body.max_concurrent_chats || 5,
-                    adminPhone
+                    adminPhone,
+                    null, // department
+                    null, // category
+                    userSessionId || null // session_id - Asegurar que sea null si undefined
                 ]);
 
                 const agentId = result.insertId;
@@ -262,8 +267,19 @@ module.exports = function (app, pool) {
                 connection.release();
             }
         } catch (error) {
-            console.error('Error creando agente:', error);
-            res.status(500).json({ success: false, error: error.message || 'Error creando agente' });
+            console.error('[AGENT-CREATE] ❌ Critical Error:', {
+                message: error.message,
+                code: error.code,
+                sqlMessage: error.sqlMessage,
+                sql: error.sql,
+                stack: error.stack
+            });
+            res.status(500).json({
+                success: false,
+                error: error.message || 'Error creando agente',
+                debugCode: error.code,
+                debugSqlMessage: error.sqlMessage
+            });
         }
     });
 
@@ -512,10 +528,15 @@ module.exports = function (app, pool) {
 
             try {
                 // Actualizar estado de acceso del agente en tabla users
-                await connection.execute(
+                const [result] = await connection.execute(
                     'UPDATE users SET status = ?, updated_at = NOW() WHERE id = ? AND role = \'agent\'',
                     [status, agentId]
                 );
+
+                if (result.affectedRows === 0) {
+                    console.warn(`⚠️ Intento de cambiar estado a agente no encontrado o no agente: ID ${agentId}`);
+                    return res.status(404).json({ success: false, error: 'Agente no encontrado' });
+                }
 
                 console.log(`✅ Acceso de agente actualizado: ${agentId} -> ${status}`);
 
@@ -862,7 +883,7 @@ module.exports = function (app, pool) {
                 if (global.io) {
                     global.io.emit('agent-status-changed', {
                         agentId,
-                        status,
+                        agent_status: status, // Frontend expects 'agent_status', not 'status'
                         agentName: agents[0].name
                     });
                     console.log('[AGENT-STATUS] 📡 Evento Socket.IO emitido');
@@ -879,10 +900,16 @@ module.exports = function (app, pool) {
             }
         } catch (error) {
             console.error('[AGENT-STATUS] ❌ Error:', error);
+            // Log full error details for debugging
+            if (error.code) console.error('[AGENT-STATUS] Error Code:', error.code);
+            if (error.sqlMessage) console.error('[AGENT-STATUS] SQL Message:', error.sqlMessage);
+            if (error.sql) console.error('[AGENT-STATUS] Failed SQL:', error.sql);
+
             res.status(500).json({
                 success: false,
                 error: 'Error actualizando estado',
-                details: error.message
+                details: error.message,
+                code: error.code || 'UNKNOWN'
             });
         }
     });
