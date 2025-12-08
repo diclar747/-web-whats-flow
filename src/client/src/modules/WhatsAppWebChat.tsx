@@ -11,6 +11,7 @@ import {
   Typography,
   Paper,
   List,
+  ListItem,
   ListItemButton,
   ListItemAvatar,
   ListItemText,
@@ -26,6 +27,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   Button,
   Chip,
@@ -34,6 +36,8 @@ import {
   FormControl,
   InputLabel
 } from '@mui/material';
+import { AgentsSidebar } from '../components/AgentsSidebar';
+import { ChatListItem } from '../components/ChatListItem';
 import {
   Search,
   MoreVert,
@@ -277,6 +281,124 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     }
   };
 
+  const [manualTransferNote, setManualTransferNote] = useState('');
+
+
+  // Agent Details Dialog State
+  const [agentDetailsDialog, setAgentDetailsDialog] = useState<{
+    open: boolean;
+    agent: any | null;
+    activeChats: any[];
+    loading: boolean;
+  }>({ open: false, agent: null, activeChats: [], loading: false });
+
+  const handleAgentClick = async (agent: any) => {
+    setAgentDetailsDialog({ ...agentDetailsDialog, open: true, agent, loading: true });
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/agents/${agent.id}/active-chats`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setAgentDetailsDialog(prev => ({ ...prev, activeChats: data.chats, loading: false }));
+      }
+    } catch (e) {
+      console.error(e);
+      setAgentDetailsDialog(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleRevokeAssignment = async (assignmentId: number, chatJid: string) => {
+    if (!agentDetailsDialog.agent) return;
+    if (!window.confirm('¿Estás seguro de que deseas revocar esta asignación?')) return;
+
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/chats/assignment/revoke`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          assignment_id: assignmentId,
+          chat_jid: chatJid,
+          agent_id: agentDetailsDialog.agent.id
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setSnackbar({ open: true, message: 'Asignación revocada', severity: 'success' });
+        // Refresh list
+        handleAgentClick(agentDetailsDialog.agent);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Transfer Confirmation Dialog State
+  const [transferDialog, setTransferDialog] = useState<{
+    open: boolean;
+    agentId: string;
+    chatJid: string;
+    note: string;
+    chatName?: string;
+    chatAvatar?: string;
+  }>({ open: false, agentId: '', chatJid: '', note: '' });
+
+  const handleDropTransfer = (agentId: string, chatJid: string) => {
+    console.log(`📦 [DnD] Dropped chat ${chatJid} on agent ${agentId}`);
+    // Find chat details
+    const chat = chats.find(c => c.id === chatJid);
+    setTransferDialog({
+      open: true,
+      agentId,
+      chatJid,
+      note: '',
+      chatName: chat?.name || normalizePhoneNumber(chatJid.split('@')[0]),
+      chatAvatar: `${getAPIBaseURL()}/api/avatar/${sessionId}/${chatJid}`
+    });
+  };
+
+  const confirmTransfer = async () => {
+    if (!transferDialog.agentId || !transferDialog.chatJid) return;
+
+    try {
+      const response = await fetch('/api/chats/transfer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          chat_jid: transferDialog.chatJid,
+          to_user_id: transferDialog.agentId,
+          note: transferDialog.note
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setSnackbar({
+          open: true,
+          message: 'Chat transferido exitosamente',
+          severity: 'success'
+        });
+        setTransferDialog({ ...transferDialog, open: false });
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (error: any) {
+      setSnackbar({
+        open: true,
+        message: 'Error al transferir: ' + error.message,
+        severity: 'error'
+      });
+    }
+  };
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
@@ -648,6 +770,16 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
         formData.append('number', activeChat.id);
         formData.append('caption', messageText.trim() || '');
         formData.append('file', fileToSend);
+
+        // ✅ AGREGADO: Información del agente
+        const sentByUserId = sessionStorage.getItem('userId');
+        const sentByUserName = sessionStorage.getItem('userName');
+        if (sentByUserId) formData.append('agentId', sentByUserId);
+        if (sentByUserName) formData.append('agentName', sentByUserName);
+        // Compatibilidad con ambos nombres de parámetros
+        if (sentByUserId) formData.append('sentBy', sentByUserId);
+        if (sentByUserName) formData.append('sentByName', sentByUserName);
+
         const endpoint = '/api/send/media';
 
         const response = await fetch(`${getAPIBaseURL()}${endpoint}`, {
@@ -884,19 +1016,23 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
           session_id: sessionId,
           chat_jid: activeChat.id, // El ID es el JID en WhatsApp
           to_user_id: selectedAgentForTransfer,
-          from_user_id: null // Puede ser null si no se sabe quién lo transfiere
+          from_user_id: null, // Puede ser null si no se sabe quién lo transfiere
+          note: manualTransferNote
         })
       });
 
       if (!response.ok) {
         let errorMessage = `Error HTTP ${response.status}`;
         try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (e) {
-          // Si no es JSON, intentar texto
           const text = await response.text();
-          if (text) errorMessage = text.substring(0, 200);
+          try {
+            const errorData = JSON.parse(text);
+            errorMessage = errorData.error || errorMessage;
+          } catch {
+            if (text) errorMessage = text.substring(0, 200);
+          }
+        } catch (readError) {
+          console.error("Error reading response error body", readError);
         }
         throw new Error(errorMessage);
       }
@@ -1267,102 +1403,27 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
           }}
         >
           {filteredChats.map((chat: any) => (
-            <ListItemButton
+            <ChatListItem
               key={chat.id}
-              selected={activeChat?.id === chat.id}
-              onClick={async () => {
+              chat={chat}
+              activeChatId={activeChat?.id}
+              chatListCollapsed={chatListCollapsed}
+              colors={colors}
+              onSelect={async (c) => {
                 // Fijar el chat activo
-                setActiveChat?.(chat);
+                setActiveChat?.(c);
                 // Cargar el historial del chat seleccionado
                 if (loadMessages) {
-                  await loadMessages(chat.id);
+                  await loadMessages(c.id);
                 }
                 // Marcar como leído si corresponde
-                if (chat.unreadCount && chat.unreadCount > 0 && markChatAsRead) {
-                  markChatAsRead(chat.id);
+                if (c.unreadCount && c.unreadCount > 0 && markChatAsRead) {
+                  markChatAsRead(c.id);
                 }
               }}
-              sx={{
-                px: 2,
-                py: 1.5,
-                '&.Mui-selected': { backgroundColor: colors.selected },
-                '&:hover': { backgroundColor: colors.hover }
-              }}
-            >
-              <ListItemAvatar sx={{ minWidth: chatListCollapsed ? 'auto' : 56, justifyContent: 'center', display: 'flex' }}>
-                <Tooltip title={chatListCollapsed ? chat.name : ''} placement="right">
-                  <Badge
-                    badgeContent={chat.unreadCount}
-                    color="error"
-                    invisible={!chat.unreadCount || chat.unreadCount === 0}
-                    sx={{
-                      '& .MuiBadge-badge': {
-                        backgroundColor: '#25d366',
-                        color: 'white',
-                        fontWeight: 'bold'
-                      }
-                    }}
-                  >
-                    <Avatar
-                      src={chat.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.id}`}
-                      imgProps={{
-                        onError: (e: any) => {
-                          e.target.src = '';
-                          e.target.onerror = null;
-                        }
-                      }}
-                      sx={{ bgcolor: chat.isGroup ? '#9c27b0' : colors.primary }}
-                    >
-                      {chat.name ? chat.name.charAt(0).toUpperCase() : chat.id.split('@')[0].charAt(0)}
-                    </Avatar>
-                  </Badge>
-                </Tooltip>
-              </ListItemAvatar>
-              {!chatListCollapsed && (
-                <ListItemText
-                  primary={
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        {chat.isGroup && <People sx={{ fontSize: 16, color: '#9c27b0' }} />}
-                        <Typography variant="body1" noWrap sx={{ fontWeight: chat.unreadCount ? 600 : 400, color: colors.text }}>
-                          {chat.name || chat.id.split('@')[0]}
-                        </Typography>
-                        {/* Etiqueta de Agente Asignado */}
-                        {(chat as any).assigned_agent_name && (
-                          <Chip
-                            label={`Agente: ${chat.assigned_agent_name}`}
-                            size="small"
-                            sx={{
-                              ml: 1,
-                              height: 16,
-                              fontSize: '0.65rem',
-                              bgcolor: '#e3f2fd',
-                              color: '#1976d2',
-                              fontWeight: 600
-                            }}
-                          />
-                        )}
-                      </Box>
-                      <Typography variant="caption" sx={{ color: colors.textSecondary, ml: 1 }}>
-                        {chat.timestamp ? formatTime(chat.timestamp) : ''}
-                      </Typography>
-                    </Box>
-                  }
-                  secondary={
-                    <Typography
-                      variant="body2"
-                      noWrap
-                      sx={{
-                        color: colors.textSecondary,
-                        fontWeight: chat.unreadCount ? 500 : 400
-                      }}
-                    >
-                      {chat.lastMessage || 'Toca para chatear'}
-                    </Typography>
-                  }
-                />
-              )}
-            </ListItemButton>
+              formatTime={formatTime}
+              sessionId={sessionId}
+            />
           ))}
 
           {/* Spinner de "Cargando más" al final de la lista */}
@@ -2656,6 +2717,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                                     agent.status === 'paused' ? '🟡 En pausa' :
                                       '⚫ Desconectado'
                               }
+                              {agent.active_chats_count !== undefined && ` • 📥 ${agent.active_chats_count} chats`}
                             </Typography>
                           </Box>
                         </Box>
@@ -2669,6 +2731,18 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                     </MenuItem>
                   )}
                 </TextField>
+
+                <TextField
+                  margin="dense"
+                  label="Nota para el agente (opcional)"
+                  fullWidth
+                  variant="outlined"
+                  value={manualTransferNote}
+                  onChange={(e) => setManualTransferNote(e.target.value)}
+                  placeholder="Ej: Cliente interesado, revisar historial..."
+                  sx={{ mt: 2 }}
+                />
+
                 {activeChat && (
                   <Paper sx={{ mt: 2, p: 2, bgcolor: '#f0f2f5' }}>
                     <Typography variant="caption" color="textSecondary">Chat a transferir:</Typography>
@@ -2732,6 +2806,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                     Eliminar mensaje
                   </Typography>
                 </Box>
+
+
               </DialogTitle>
 
               <DialogContent sx={{ bgcolor: colors.background, pt: 3, pb: 2 }}>
@@ -2818,7 +2894,75 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
             </Typography>
           </Box>
         )}
+
       </Box>
+
+      {/* Sidebar de Agentes (Derecha) */}
+      <AgentsSidebar
+        agents={availableAgents}
+        onTransfer={handleDropTransfer}
+        currentUserId={getCurrentUserId()}
+        onAgentClick={handleAgentClick}
+      />
+
+      {/* 🟢 Dialogo de Detalles del Agente (Revocar) */}
+      <Dialog
+        open={agentDetailsDialog.open}
+        onClose={() => setAgentDetailsDialog({ ...agentDetailsDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {agentDetailsDialog.agent?.name} - Chats Activos
+        </DialogTitle>
+        <DialogContent dividers>
+          {agentDetailsDialog.loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+              <CircularProgress />
+            </Box>
+          ) : agentDetailsDialog.activeChats.length === 0 ? (
+            <Typography color="textSecondary" align="center" sx={{ py: 3 }}>
+              No hay chats activos asignados a este agente.
+            </Typography>
+          ) : (
+            <List>
+              {agentDetailsDialog.activeChats.map((chat: any) => (
+                <React.Fragment key={chat.assignment_id}>
+                  <ListItem
+                    secondaryAction={
+                      <Button
+                        variant="outlined"
+                        color="error"
+                        size="small"
+                        onClick={() => handleRevokeAssignment(chat.assignment_id, chat.chat_jid)}
+                      >
+                        Revocar
+                      </Button>
+                    }
+                  >
+                    <ListItemAvatar>
+                      <Avatar src={`${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.chat_jid}`}>
+                        {chat.chat_name?.[0]}
+                      </Avatar>
+                    </ListItemAvatar>
+                    <ListItemText
+                      primary={chat.chat_name || chat.chat_jid.split('@')[0]}
+                      secondary={`Asignado: ${new Date(chat.assigned_at).toLocaleString()}`}
+                    />
+                  </ListItem>
+                  <Divider variant="inset" component="li" />
+                </React.Fragment>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAgentDetailsDialog({ ...agentDetailsDialog, open: false })}>
+            Cerrar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
 
       {/* Notificación personalizada */}
       <CustomSnackbar
@@ -2827,6 +2971,35 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
         severity={snackbar.severity}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
       />
+
+      {/* 🟢 Dialogo de Confirmación de Transferencia (DnD) */}
+      <Dialog open={transferDialog.open} onClose={() => setTransferDialog({ ...transferDialog, open: false })}>
+        <DialogTitle>Confirmar Transferencia</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+            {transferDialog.chatAvatar && (
+              <Avatar src={transferDialog.chatAvatar} sx={{ width: 50, height: 50 }} />
+            )}
+            <Typography variant="body1">
+              ¿Transferir chat de <b>{transferDialog.chatName}</b> al agente?
+            </Typography>
+          </Box>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Nota para el agente (opcional)"
+            fullWidth
+            variant="outlined"
+            value={transferDialog.note}
+            onChange={(e) => setTransferDialog({ ...transferDialog, note: e.target.value })}
+            placeholder="Ej: Cliente interesado en precios..."
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTransferDialog({ ...transferDialog, open: false })}>Cancelar</Button>
+          <Button onClick={confirmTransfer} variant="contained" color="primary">Transferir</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Lightbox para imágenes */}
       <Dialog

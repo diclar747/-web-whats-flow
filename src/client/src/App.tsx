@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { DndProvider } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material/styles';
 import { CircularProgress, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button } from '@mui/material';
@@ -60,163 +62,165 @@ const AppContent: React.FC<{
   }, [navigate, onNavigate]);
 
   return (
-    <Routes>
-      {/* Ruta principal - Admin con QR */}
-      <Route path="/" element={
-        sessionId ? (
-          <Navigate to="/dashboard" replace />
-        ) : (
-          <LandingPage onQRSuccess={handleQRSuccess} />
-        )
-      } />
-
-      {/* Ruta por defecto - igual que la raíz */}
-      <Route path="/home" element={
-        sessionId ? (
-          <Navigate to="/dashboard" replace />
-        ) : (
-          <LandingPage onQRSuccess={handleQRSuccess} />
-        )
-      } />
-
-      {/* Ruta de login para agentes - No para usuarios que se conectan con QR */}
-      <Route path="/login" element={
-        sessionId ? (
-          // Si ya hay un sessionId (conexión por QR), no permitir acceso a login
-          <Navigate to="/dashboard" replace />
-        ) : (
-          <Login onLoginSuccess={handleLoginSuccess} />
-        )
-      } />
-
-      {/* Dashboard - Requiere sessionId para todos */}
-      <Route path="/admin/agents" element={
-        user && token && user.role === 'admin' ? (
-          <AdminAgentManagement />
-        ) : (
-          <Navigate to="/admin/login" replace />
-        )
-      } />
-
-      {/* Gestión de Agentes con Privilegios */}
-      <Route path="/agents-permissions" element={
-        user && token ? (
-          <AgentPermissionsManager />
-        ) : (
-          <Navigate to="/login" replace />
-        )
-      } />
-
-      {/* Dashboard - Admin con QR (solo sessionId) o Agentes con login (sessionId + user) */}
-      <Route path="/dashboard/*" element={
-        (() => {
-          console.log('🔍 [DASHBOARD-ROUTE] Evaluando acceso:');
-          console.log('  - sessionId:', sessionId);
-          console.log('  - user:', user);
-          console.log('  - user.role:', user?.role);
-          console.log('  - Condición agente:', user && (user.role === 'agent' || user.role === 'supervisor'));
-          return (sessionId || (user && (user.role === 'agent' || user.role === 'supervisor'))) ? (
-            <>
-              {user && (user.role === 'agent' || user.role === 'supervisor') ? (
-                // Dashboard simplificado para agentes (requiere user pero NO requiere sessionId inmediato)
-                (() => {
-                  console.log('✅ [DASHBOARD-ROUTE] Cargando AgentDashboard para:', user.name);
-                  return (
-                    <WhatsAppProvider
-                      userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
-                      userRole={user?.role}
-                    >
-                      <AgentDashboardPro />
-                    </WhatsAppProvider>
-                  );
-                })()
-              ) : sessionId ? (
-                // Dashboard completo para admin (requiere sessionId del QR)
-                (() => {
-                  console.log('✅ [DASHBOARD-ROUTE] Cargando WhatsFlowDashboard (admin) con sessionId:', sessionId);
-                  return (
-                    <WhatsAppProvider
-                      userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
-                      userRole={user?.role || 'admin'}
-                    >
-                      <WhatsFlowDashboard
-                        sessionId={sessionId}
-                        onLogout={handleLogout}
-                      />
-                    </WhatsAppProvider>
-                  );
-                })()
-              ) : (
-                <Navigate to="/" replace />
-              )}
-            </>
-          ) : loading ? (
-            <div style={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              height: '100vh',
-              flexDirection: 'column',
-              gap: '20px'
-            }}>
-              <CircularProgress />
-              <p>Cargando sesión...</p>
-            </div>
+    <DndProvider backend={HTML5Backend}>
+      <Routes>
+        {/* Ruta principal - Admin con QR */}
+        <Route path="/" element={
+          sessionId ? (
+            <Navigate to="/dashboard" replace />
           ) : (
-            // Redirigir a login si no hay ni sessionId ni user agent
+            <LandingPage onQRSuccess={handleQRSuccess} />
+          )
+        } />
+
+        {/* Ruta por defecto - igual que la raíz */}
+        <Route path="/home" element={
+          sessionId ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <LandingPage onQRSuccess={handleQRSuccess} />
+          )
+        } />
+
+        {/* Ruta de login para agentes - No para usuarios que se conectan con QR */}
+        <Route path="/login" element={
+          sessionId ? (
+            // Si ya hay un sessionId (conexión por QR), no permitir acceso a login
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <Login onLoginSuccess={handleLoginSuccess} />
+          )
+        } />
+
+        {/* Dashboard - Requiere sessionId para todos */}
+        <Route path="/admin/agents" element={
+          user && token && user.role === 'admin' ? (
+            <AdminAgentManagement />
+          ) : (
+            <Navigate to="/admin/login" replace />
+          )
+        } />
+
+        {/* Gestión de Agentes con Privilegios */}
+        <Route path="/agents-permissions" element={
+          user && token ? (
+            <AgentPermissionsManager />
+          ) : (
             <Navigate to="/login" replace />
-          );
-        })()
-      } />
+          )
+        } />
 
-      {/* Ruta de login de admin - evitar interferencia con sesiones QR */}
-      <Route path="/admin" element={
-        userType === 'admin' && sessionId ? (
-          // Si ya hay un usuario admin con sesión QR, ir al dashboard principal
-          <Navigate to="/dashboard" replace />
-        ) : admin && adminToken ? (
-          <Navigate to="/admin/dashboard" replace />
-        ) : (
-          <AdminLogin onLogin={handleAdminLogin} />
-        )
-      } />
+        {/* Dashboard - Admin con QR (solo sessionId) o Agentes con login (sessionId + user) */}
+        <Route path="/dashboard/*" element={
+          (() => {
+            console.log('🔍 [DASHBOARD-ROUTE] Evaluando acceso:');
+            console.log('  - sessionId:', sessionId);
+            console.log('  - user:', user);
+            console.log('  - user.role:', user?.role);
+            console.log('  - Condición agente:', user && (user.role === 'agent' || user.role === 'supervisor'));
+            return (sessionId || (user && (user.role === 'agent' || user.role === 'supervisor'))) ? (
+              <>
+                {user && (user.role === 'agent' || user.role === 'supervisor') ? (
+                  // Dashboard simplificado para agentes (requiere user pero NO requiere sessionId inmediato)
+                  (() => {
+                    console.log('✅ [DASHBOARD-ROUTE] Cargando AgentDashboard para:', user.name);
+                    return (
+                      <WhatsAppProvider
+                        userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
+                        userRole={user?.role}
+                      >
+                        <AgentDashboardPro />
+                      </WhatsAppProvider>
+                    );
+                  })()
+                ) : sessionId ? (
+                  // Dashboard completo para admin (requiere sessionId del QR)
+                  (() => {
+                    console.log('✅ [DASHBOARD-ROUTE] Cargando WhatsFlowDashboard (admin) con sessionId:', sessionId);
+                    return (
+                      <WhatsAppProvider
+                        userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
+                        userRole={user?.role || 'admin'}
+                      >
+                        <WhatsFlowDashboard
+                          sessionId={sessionId}
+                          onLogout={handleLogout}
+                        />
+                      </WhatsAppProvider>
+                    );
+                  })()
+                ) : (
+                  <Navigate to="/" replace />
+                )}
+              </>
+            ) : loading ? (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                height: '100vh',
+                flexDirection: 'column',
+                gap: '20px'
+              }}>
+                <CircularProgress />
+                <p>Cargando sesión...</p>
+              </div>
+            ) : (
+              // Redirigir a login si no hay ni sessionId ni user agent
+              <Navigate to="/login" replace />
+            );
+          })()
+        } />
 
-      {/* Ruta de login específico de admin */}
-      <Route path="/admin/login" element={
-        userType === 'admin' && sessionId ? (
-          // Si ya hay un usuario admin con sesión QR, ir al dashboard principal
-          <Navigate to="/dashboard" replace />
-        ) : admin && adminToken ? (
-          <Navigate to="/admin/dashboard" replace />
-        ) : (
-          <AdminLogin onLogin={handleAdminLogin} />
-        )
-      } />
+        {/* Ruta de login de admin - evitar interferencia con sesiones QR */}
+        <Route path="/admin" element={
+          userType === 'admin' && sessionId ? (
+            // Si ya hay un usuario admin con sesión QR, ir al dashboard principal
+            <Navigate to="/dashboard" replace />
+          ) : admin && adminToken ? (
+            <Navigate to="/admin/dashboard" replace />
+          ) : (
+            <AdminLogin onLogin={handleAdminLogin} />
+          )
+        } />
 
-      {/* Dashboard de administrador */}
-      <Route path="/admin/dashboard" element={
-        admin && adminToken ? (
-          <AdminDashboard onLogout={handleLogout} admin={admin} adminToken={adminToken} />
-        ) : (
-          <Navigate to="/admin" replace />
-        )
-      } />
+        {/* Ruta de login específico de admin */}
+        <Route path="/admin/login" element={
+          userType === 'admin' && sessionId ? (
+            // Si ya hay un usuario admin con sesión QR, ir al dashboard principal
+            <Navigate to="/dashboard" replace />
+          ) : admin && adminToken ? (
+            <Navigate to="/admin/dashboard" replace />
+          ) : (
+            <AdminLogin onLogin={handleAdminLogin} />
+          )
+        } />
 
-      {/* Ruta para PWA Móvil - Publicador de Estados */}
-      <Route path="/mobile/status-publisher" element={<MobileStatusPublisher />} />
+        {/* Dashboard de administrador */}
+        <Route path="/admin/dashboard" element={
+          admin && adminToken ? (
+            <AdminDashboard onLogout={handleLogout} admin={admin} adminToken={adminToken} />
+          ) : (
+            <Navigate to="/admin" replace />
+          )
+        } />
 
-      {/* Ruta por defecto - para cualquier otra ruta no definida */}
-      <Route path="*" element={
-        // Si hay sessionId, ir al dashboard
-        sessionId ? (
-          <Navigate to="/dashboard" replace />
-        ) : (
-          // Si no hay sessionId, verificar si estamos en una ruta protegida
-          // Si intentamos acceder a dashboard sin sessionId, ir a la página principal
-          <Navigate to="/" replace />
-        )
-      } />
-    </Routes>
+        {/* Ruta para PWA Móvil - Publicador de Estados */}
+        <Route path="/mobile/status-publisher" element={<MobileStatusPublisher />} />
+
+        {/* Ruta por defecto - para cualquier otra ruta no definida */}
+        <Route path="*" element={
+          // Si hay sessionId, ir al dashboard
+          sessionId ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            // Si no hay sessionId, verificar si estamos en una ruta protegida
+            // Si intentamos acceder a dashboard sin sessionId, ir a la página principal
+            <Navigate to="/" replace />
+          )
+        } />
+      </Routes>
+    </DndProvider>
   );
 };
 

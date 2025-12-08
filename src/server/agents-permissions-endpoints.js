@@ -54,6 +54,12 @@ module.exports = function (app, pool) {
                     COALESCE(agent_status, 'offline') as agent_status,
                     last_activity,
                     COALESCE(max_concurrent_chats, 5) as max_concurrent_chats,
+                    (
+                        SELECT COUNT(*) 
+                        FROM chat_assignments ca 
+                        WHERE ca.user_id = users.id 
+                        AND ca.status = 'active'
+                    ) as active_chats_count,
                     created_at,
                     updated_at
                 FROM users

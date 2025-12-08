@@ -1821,6 +1821,27 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                                   Enviando... {sendingProgress[campaign.id] || 0}%
                                 </Typography>
                               </Box>
+                              {campaign.type !== 'scheduled' && (
+                                <Button
+                                  variant="contained"
+                                  size="small"
+                                  color="success"
+                                  startIcon={<PlayArrow />}
+                                  onClick={() => startCampaign(campaign.id)}
+                                >
+                                  Ejecutar Ahora
+                                </Button>
+                              )}
+                              {/* Mostrar icono de reloj para programadas */}
+                              {campaign.type === 'scheduled' && (
+                                <Chip
+                                  icon={<AccessTime />}
+                                  label="Programada"
+                                  color="info"
+                                  size="small"
+                                  variant="outlined"
+                                />
+                              )}
                               <Button
                                 variant="contained"
                                 size="small"

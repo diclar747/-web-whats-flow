@@ -4,6 +4,13 @@
 // ============================================
 
 module.exports = function (app, pool) {
+    console.log('📢 [MULTIAGENT] Cargando endpoints de multi-agente...');
+
+
+    app.get('/api/health-multiagent', (req, res) => {
+        res.json({ success: true, message: 'Multiagent module loaded' });
+    });
+
     // Middleware para verificar autenticación (compatible con sistema base64)
     const authenticateToken = async (req, res, next) => {
         const authHeader = req.headers['authorization'];
@@ -424,7 +431,10 @@ module.exports = function (app, pool) {
     // Transferir chat a otro agente
     app.post('/api/chats/transfer', authenticateToken, async (req, res) => {
         try {
-            const { chat_jid, session_id, from_user_id, to_user_id, reason } = req.body;
+            const { session_id, chat_jid, to_user_id, from_user_id, reason, note } = req.body;
+
+            // Use 'note' if provided, otherwise 'reason', otherwise default
+            const transferReason = note || reason || 'Transferencia de chat';
 
             if (!chat_jid || !session_id || !to_user_id) {
                 return res.status(400).json({
@@ -439,29 +449,24 @@ module.exports = function (app, pool) {
 
                 // Cerrar asignación actual si existe
                 await connection.execute(`
-                    UPDATE chat_assignments 
-                    SET status = 'transferred'
-                    WHERE chat_jid = ? AND session_id = ? AND status = 'active'
-                `, [chat_jid, session_id]);
+                        UPDATE chat_assignments 
+                        SET status = 'transferred'
+                        WHERE chat_jid = ? AND session_id = ? AND status = 'active'
+                    `, [chat_jid, session_id]);
 
                 // Crear nueva asignación con status 'pending' para indicar nueva transferencia
                 await connection.execute(`
-                    INSERT INTO chat_assignments 
-                    (chat_jid, session_id, user_id, assigned_by, status)
-                    VALUES (?, ?, ?, ?, 'pending')
-                `, [chat_jid, session_id, to_user_id, req.user.dbId]); // Use numeric ID (or null)
+                        INSERT INTO chat_assignments 
+                        (chat_jid, session_id, user_id, assigned_by, status)
+                        VALUES (?, ?, ?, ?, 'pending')
+                    `, [chat_jid, session_id, to_user_id, req.user.dbId]);
 
                 // Registrar transferencia
                 await connection.execute(`
-                    INSERT INTO chat_transfers 
-                    (chat_jid, session_id, from_user_id, to_user_id, transferred_by, reason)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                `, [chat_jid, session_id, from_user_id || null, to_user_id, req.user.dbId, reason || 'Transferencia de chat']);
-
-                // Actualizar mensajes
-                // (Opcional) Actualizar algún flag en mensajes si fuera necesario, pero NO asignación directa
-                // Soportamos assignment en chat_assignments, así que omitimos update a 'messages'
-                // para evitar error de columna inexistente.
+                        INSERT INTO chat_transfers 
+                        (chat_jid, session_id, from_user_id, to_user_id, transferred_by, reason)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    `, [chat_jid, session_id, from_user_id || null, to_user_id, req.user.dbId, transferReason]);
 
                 await connection.commit();
 
@@ -473,12 +478,12 @@ module.exports = function (app, pool) {
                     if (io) {
                         // Obtener nombre del contacto para la notificación
                         const [contactInfo] = await connection.execute(`
-                            SELECT COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as contact_name
-                            FROM (SELECT 1) as dummy
-                            LEFT JOIN contacts c ON c.jid = ? AND c.session_id = ?
-                            LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
-                            LIMIT 1
-                        `, [chat_jid, chat_jid, session_id, chat_jid, session_id]);
+                                SELECT COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as contact_name
+                                FROM (SELECT 1) as dummy
+                                LEFT JOIN contacts c ON c.jid = ? AND c.session_id = ?
+                                LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
+                                LIMIT 1
+                            `, [chat_jid, chat_jid, session_id, chat_jid, session_id]);
 
                         const chatName = contactInfo[0]?.contact_name || chat_jid.replace('@s.whatsapp.net', '');
 
@@ -489,8 +494,10 @@ module.exports = function (app, pool) {
                             agentId: to_user_id,
                             assignedBy: req.user.name,
                             assignedById: req.user.id,
-                            timestamp: new Date().toISOString()
+                            timestamp: new Date().toISOString(),
+                            note: transferReason // Include note for frontend display
                         };
+
 
                         // Emitir múltiples eventos para asegurar que el frontend los capture
                         io.emit('chat_transferred', eventData); // Evento general
@@ -844,22 +851,64 @@ module.exports = function (app, pool) {
                         VALUES (?, ?, ?, ?, 'Transferencia directa')
                     `, [chat_jid, session_id, to_user_id, req.user.id]);
 
+                    const transferReason = reason || 'Transferencia directa';
+
+                    // Registrar transferencia
                     await connection.execute(`
                         INSERT INTO chat_transfers 
                         (chat_jid, session_id, from_user_id, to_user_id, transferred_by, reason)
                         VALUES (?, ?, ?, ?, ?, ?)
-                    `, [
-                        chat_jid,
-                        session_id,
-                        from_user_id || req.user.id,
-                        to_user_id,
-                        req.user.id,
-                        reason || 'Transferencia directa'
-                    ]);
+                    `, [chat_jid, session_id, from_user_id, to_user_id, req.user.dbId, transferReason]);
+
+                    // Insertar mensaje de sistema en el chat
+                    // Usamos un ID random para el mensaje
+                    const systemMessageId = 'SYS-' + Date.now();
+                    const systemMessageContent = `🔄 Chat transferido por administración.\nNota: ${transferReason}`;
+
+                    // Intentar insertar mensaje visible en el chat localmente
+                    await connection.execute(`
+                    INSERT INTO messages 
+                    (id, session_id, chat_jid, sender, content, timestamp, from_me, status, type)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, 'sent', 'chat')
+                `, [systemMessageId, session_id, chat_jid, 'system', systemMessageContent, new Date(), 'chat']);
+
 
                     await connection.commit();
+
+                    // Obtener datos del destino para notificar
+                    const [targetUser] = await connection.execute('SELECT * FROM users WHERE id = ?', [to_user_id]);
+                    const targetAgent = targetUser[0];
+
+                    const eventData = {
+                        chatJid: chat_jid,
+                        sessionId: session_id,
+                        agentId: to_user_id,
+                        assignedBy: req.user.id,
+                        assignedById: req.user.dbId,
+                        note: transferReason // Incluir la nota en el evento
+                    };
+
+                    const io = app.get('io');
+                    io.emit('chat_transferred', eventData); // Evento general
+                    io.emit(`agent-${to_user_id}-new-chat`, eventData); // Evento específico del agente
+                    io.emit('chat:assigned', eventData); // Evento alternativo
+                    io.emit('chat-assignment-changed', eventData); // Evento de cambio
+
+                    // Emitir nuevo mensaje al socket para que aparezca en tiempo real
+                    io.emit('message', {
+                        id: systemMessageId,
+                        session_id: session_id,
+                        chat_jid: chat_jid,
+                        sender: 'system',
+                        content: systemMessageContent,
+                        timestamp: new Date().toISOString(),
+                        from_me: true,
+                        type: 'chat'
+                    });
+
                     res.json({ success: true, message: 'Chat transferido correctamente' });
-                }
+                } // Close else block
+
             } catch (error) {
                 await connection.rollback();
                 throw error;
@@ -869,6 +918,62 @@ module.exports = function (app, pool) {
         } catch (error) {
             console.error('Error transfiriendo chat:', error);
             res.status(500).json({ success: false, error: 'Error transfiriendo chat' });
+        }
+    });
+
+    // Nuevo: Obtener chats activos de un agente
+    app.get('/api/agents/:id/active-chats', authenticateToken, async (req, res) => {
+        try {
+            const agentId = req.params.id;
+            const connection = await pool.getConnection();
+            try {
+                const [rows] = await connection.execute(`
+                    SELECT 
+                        ca.id as assignment_id,
+                        ca.chat_jid,
+                        c.name as chat_name,
+                        ca.assigned_at
+                    FROM chat_assignments ca
+                    LEFT JOIN chats c ON c.id = ca.chat_jid
+                    WHERE ca.user_id = ? AND ca.status = 'active'
+                    ORDER BY ca.assigned_at DESC
+                `, [agentId]);
+                res.json({ success: true, chats: rows });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error obteniendo chats activos:', error);
+            res.status(500).json({ success: false, error: 'Error interno' });
+        }
+    });
+
+    // Nuevo: Revocar asignación (Admin cancela transferencia)
+    app.post('/api/chats/assignment/revoke', authenticateToken, async (req, res) => {
+        try {
+            // Solo admins deberían poder hacer esto, o el propio agente
+            // Por simplicidad, asumimos auth token checks
+            const { assignment_id, chat_jid, agent_id } = req.body;
+
+            const connection = await pool.getConnection();
+            try {
+                await connection.execute(`
+                    UPDATE chat_assignments 
+                    SET status = 'revoked' 
+                    WHERE id = ? OR (chat_jid = ? AND user_id = ? AND status = 'active')
+                `, [assignment_id, chat_jid, agent_id]);
+
+                res.json({ success: true, message: 'Asignación revocada' });
+
+                // Notificar cambio
+                const io = app.get('io');
+                io.emit('chat-assignment-changed', { chatJid: chat_jid, agentId: agent_id });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error revocando chat:', error);
+            res.status(500).json({ success: false, error: 'Error revocando chat' });
         }
     });
 

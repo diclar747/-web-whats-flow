@@ -111,16 +111,31 @@ setInterval(() => {
     }
 }, 30000); // Cada 30 segundos
 
-// 🕒 SCHEDULER: Ejecutar campañas programadas cada minuto
-// (Consolidado: este es el único scheduler activo)
-if (global.dbPool) {
-    console.log('✅ Scheduler de campañas configurado (esperando pool)');
-}
-
 // 🚀 MÓDULOS OPTIMIZADOS - TEMPORALMENTE DESACTIVADOS (causan hang en inicio)
 // const messageCache = require('./messageCache');
 // const SocketManager = require('./socketManager');
 // const socketManager = new SocketManager(io);
+
+/*
+// 🕒 SCHEDULER DUPLICADO DESACTIVADO
+// Se usa la versión consolidada al final del archivo (línea ~20962)
+// const { checkAndStartCampaigns } = require('./campaign-scheduler-service');
+
+if (global.dbPool) {
+    console.log('✅ Scheduler de campañas configurado (esperando pool)');
+}
+
+    // Intervalo de chequeo: cada 60 segundos
+    // setInterval(async () => {
+    //    if (global.dbPool) {
+    //        try {
+    //            await checkAndStartCampaigns(global.dbPool);
+    //        } catch (err) {
+    //            console.error('[SCHEDULER] Error en ciclo de verificación:', err);
+    //        }
+    //    }
+    // }, 60000);
+*/
 
 // Usar objetos dummy para compatibilidad
 const messageCache = {
@@ -230,16 +245,24 @@ const poolProxy = new Proxy({}, {
     }
 });
 
-console.log('[STARTUP] 🚀 Cargando sistemas con DB Proxy...');
-try {
-    require('./multiagent-endpoints')(app, poolProxy);
-    console.log('✅ Sistema Multi-Agente cargado');
+console.log('!!! DEBUG MARKER - LOADER STARTING !!!');
+const printStack = () => {
+    if (!app._router) { console.log('No router yet'); return; }
+    app._router.stack.forEach((L, i) => {
+        const path = L.route ? L.route.path : (L.name || 'unknown');
+        // if (path !== '<anonymous>') 
+        console.log(`Stack[${i}]: ${path} (Regexp: ${L.regexp})`);
+    });
+};
+printStack();
+// SIN try/catch para forzar crash si falla y ver el error real
+require('./multiagent-endpoints')(app, poolProxy);
+printStack();
+console.log('✅ Sistema Multi-Agente cargado (EXPLICIT CHECK)');
 
-    require('./agents-permissions-endpoints')(app, poolProxy);
-    console.log('✅ Sistema Permisos Agentes cargado');
-} catch (error) {
-    console.error('❌ Error fatal cargando módulos:', error);
-}
+require('./agents-permissions-endpoints')(app, poolProxy);
+console.log('✅ Sistema Permisos Agentes cargado');
+
 
 
 // 🔓 Rate limiter DESACTIVADO para desarrollo (estaba bloqueando demasiado)
@@ -15847,6 +15870,8 @@ app.post('/api/auth/generate-token', async (req, res) => {
         return res.status(400).json({ success: false, error: 'SessionId es requerido' });
     }
 
+    const jwt = require('jsonwebtoken');
+
     if (!pool) {
         return res.status(503).json({ success: false, error: 'Database not available' });
     }
@@ -15861,23 +15886,16 @@ app.post('/api/auth/generate-token', async (req, res) => {
             );
 
             if (users.length === 0) {
-                // Si no existe, crear el usuario admin
-                console.log(`[AUTH] Creando nuevo usuario admin para phone: ${sessionId}`);
+                // MODIFICACIÓN: Solicitud del usuario para NO crear registro en la tabla users
+                // Si no existe, generamos un token de sesión temporal sin persistir en users
+                console.log(`[AUTH] Admin NO encontrado en DB para phone: ${sessionId}. Generando token de sesión sin registro.`);
 
-                const [result] = await connection.execute(
-                    `INSERT INTO users (phone, name, is_admin, admin_phone, status, created_at) 
-                     VALUES (?, ?, 1, NULL, 'active', NOW())`,
-                    [sessionId, `Usuario ${sessionId}`]
-                );
-
-                const newUserId = result.insertId;
-
-                // Generar token para el nuevo usuario
+                // No insertamos en users. Usamos el sessionId como ID temporal.
                 const token = jwt.sign(
                     {
-                        id: newUserId,
+                        id: sessionId, // Usamos el string del teléfono/sessionId como ID
                         phone: sessionId,
-                        name: `Usuario ${sessionId}`,
+                        name: `Admin ${sessionId}`,
                         role: 'admin',
                         is_admin: 1
                     },
@@ -15885,56 +15903,55 @@ app.post('/api/auth/generate-token', async (req, res) => {
                     { expiresIn: '7d' }
                 );
 
-                console.log(`[AUTH] ✅ Nuevo usuario admin creado y token generado para: ${sessionId}`);
+                return res.json({
+                    success: true,
+                    token,
+                    user: {
+                        id: sessionId,
+                        name: `Admin ${sessionId}`,
+                        phone: sessionId,
+                        role: 'admin',
+                        is_admin: 1
+                    }
+                });
+            } else {
+                // Usuario YA EXISTE
+                const existingUser = users[0];
+                console.log(`[AUTH] Usuario admin existente encontrado: ${existingUser.name} (${existingUser.phone})`);
+
+                const token = jwt.sign(
+                    {
+                        id: existingUser.id,
+                        phone: existingUser.phone,
+                        name: existingUser.name,
+                        role: existingUser.role,
+                        is_admin: existingUser.is_admin
+                    },
+                    JWT_SECRET,
+                    { expiresIn: '7d' }
+                );
 
                 return res.json({
                     success: true,
                     token,
                     user: {
-                        id: newUserId,
-                        phone: sessionId,
-                        name: `Usuario ${sessionId}`,
-                        role: 'admin',
-                        is_admin: 1
+                        id: existingUser.id,
+                        name: existingUser.name,
+                        phone: existingUser.phone,
+                        role: existingUser.role,
+                        is_admin: existingUser.is_admin
                     }
                 });
             }
 
-            // Usuario ya existe, generar token
-            const user = users[0];
-            const token = jwt.sign(
-                {
-                    id: user.id,
-                    phone: user.phone,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role || 'admin',
-                    is_admin: user.is_admin
-                },
-                JWT_SECRET,
-                { expiresIn: '7d' }
-            );
 
-            console.log(`[AUTH] ✅ Token generado para usuario existente: ${sessionId}`);
 
-            res.json({
-                success: true,
-                token,
-                user: {
-                    id: user.id,
-                    phone: user.phone,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role,
-                    is_admin: user.is_admin
-                }
-            });
         } finally {
             connection.release();
         }
     } catch (error) {
-        console.error('[AUTH] Error generating token:', error);
-        res.status(500).json({ success: false, error: error.message });
+        console.error('[AUTH] Error inside generate-token:', error);
+        return res.status(500).json({ success: false, error: error.message });
     }
 });
 

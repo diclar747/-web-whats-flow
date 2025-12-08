@@ -959,48 +959,40 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     if (!session?.sessionId) return false;
 
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64Data = e.target?.result as string;
-        const base64Content = base64Data.split(',')[1];
+      // Usar FormData para enviar el archivo directamente al endpoint /api/send/media
+      // Esto soporta todos los tipos de archivos y permite enviar metadata del agente
+      const formData = new FormData();
+      formData.append('sessionId', session.sessionId);
+      formData.append('number', chatId);
+      formData.append('file', file);
+      if (caption) formData.append('caption', caption);
 
-        let endpoint = '';
-        const formData = {
-          sessionId: session.sessionId,
-          number: chatId
-        };
+      // Agregar información del agente
+      const sentByUserId = sessionStorage.getItem('userId');
+      const sentByUserName = sessionStorage.getItem('userName');
 
-        if (file.type.startsWith('image/')) {
-          endpoint = '/api/send/image';
-          (formData as any).url = `data:${file.type};base64,${base64Content}`;
-          (formData as any).caption = caption || '';
-          (formData as any).mimetype = file.type;
-        } else if (file.type.startsWith('audio/')) {
-          endpoint = '/api/send/audio';
-          (formData as any).url = `data:${file.type};base64,${base64Content}`;
-          (formData as any).mimetype = file.type;
-        } else if (file.type.startsWith('video/')) {
-          endpoint = '/api/send/video';
-          (formData as any).url = `data:${file.type};base64,${base64Content}`;
-          (formData as any).caption = caption || '';
-          (formData as any).mimetype = file.type;
-        }
+      if (sentByUserId) formData.append('agentId', sentByUserId);
+      if (sentByUserName) formData.append('agentName', sentByUserName);
+      // Compatibilidad
+      if (sentByUserId) formData.append('sentBy', sentByUserId);
+      if (sentByUserName) formData.append('sentByName', sentByUserName);
 
-        const response = await fetch(`${API_BASE}${endpoint}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData)
-        });
+      const endpoint = '/api/send/media';
 
-        const data = await response.json();
-        if (data.success) {
-          console.log('Archivo enviado exitosamente');
-        } else {
-          console.error('Error enviando archivo:', data.error);
-        }
-      };
-      reader.readAsDataURL(file);
-      return true;
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        method: 'POST',
+        // No establecer Content-Type header, el navegador lo hará con el boundary correcto para FormData
+        body: formData
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        console.log('✅ Archivo enviado exitosamente con atribución de agente');
+        return true;
+      } else {
+        console.error('❌ Error enviando archivo:', data.error);
+        return false;
+      }
     } catch (err) {
       setError('Error enviando archivo');
       return false;
