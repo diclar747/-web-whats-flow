@@ -1744,8 +1744,9 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               sx={{
                 flex: 1,
                 overflow: 'auto',
-                backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")',
-                backgroundColor: colors.chatBg,
+                // Dark mode background - sin imagen de fondo
+                backgroundColor: '#0f172a', // Deep slate dark
+                backgroundImage: 'none',
                 p: 3,
                 position: 'relative',
                 // Custom scrollbar
@@ -1756,7 +1757,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                   bgcolor: 'transparent'
                 },
                 '&::-webkit-scrollbar-thumb': {
-                  bgcolor: colors.divider,
+                  bgcolor: 'rgba(255,255,255,0.1)',
                   borderRadius: '10px',
                   transition: 'background-color 0.2s ease',
                   '&:hover': {

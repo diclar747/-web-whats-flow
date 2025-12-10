@@ -19,7 +19,8 @@ import {
   Lock,
   Visibility,
   VisibilityOff,
-  Login as LoginIcon
+  Login as LoginIcon,
+  WhatsApp
 } from '@mui/icons-material';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import { storageManager } from '../utils/storageManager';
@@ -153,47 +154,22 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       sx={{
         minHeight: '100vh',
         position: 'relative',
-        bgcolor: '#d1d7db', // WhatsApp Web Gray Background
-        fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif',
+        bgcolor: '#0f172a', // Dark mode background
+        fontFamily: '"Inter", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif',
         zIndex: 0
       }}
     >
-      {/* Green Header Bar */}
+      {/* Gradient Background */}
       <Box sx={{
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
-        height: '220px',
-        bgcolor: '#00a884', // WhatsApp Web Green
+        height: '100%',
+        background: 'radial-gradient(circle at top right, #1e293b 0%, #0f172a 50%)',
         zIndex: -1
-      }}>
-        <Box sx={{
-          maxWidth: '1000px',
-          margin: '0 auto',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          px: 4
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 8 }}>
-            <Box
-              component="img"
-              src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg"
-              sx={{ width: 35, height: 35 }}
-            />
-            <Typography sx={{
-              color: 'white',
-              fontWeight: 600,
-              fontSize: '14px',
-              letterSpacing: '1.5px',
-              textTransform: 'uppercase'
-            }}>
-              WHATSFLOW WEB
-            </Typography>
-          </Box>
-        </Box>
-      </Box>
+      }}
+      />
 
       {/* Main Content Card */}
       <Box sx={{
@@ -201,13 +177,16 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         margin: '0 auto',
         pt: '100px',
         px: 2,
-        height: 'calc(100vh - 40px)', // Full height minus margin
+        height: 'calc(100vh - 40px)',
       }}>
         <Card sx={{
           height: '75vh',
           minHeight: '500px',
-          boxShadow: '0 17px 50px 0 rgba(11,20,26,.19), 0 12px 15px 0 rgba(11,20,26,.24)', // WhatsApp Web Shadows
-          borderRadius: 0,
+          background: 'rgba(30, 41, 59, 0.6)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          borderRadius: 4,
           display: 'flex',
           overflow: 'hidden'
         }}>
@@ -218,24 +197,45 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             flexDirection: 'column',
             justifyContent: 'center',
             p: 8,
-            borderRight: '1px solid rgba(0,0,0,0.08)'
+            borderRight: '1px solid rgba(255,255,255,0.1)'
           }}>
-            <Typography variant="h4" sx={{
-              fontWeight: 300,
-              color: '#41525d',
-              mb: 4,
-              fontSize: '28px'
-            }}>
-              Usa WhatsFlow en tu computadora
-            </Typography>
-
-            <Box component="ol" sx={{ pl: 3, mb: 6, color: '#3b4a54', fontSize: '18px', lineHeight: 1.6 }}>
-              <li style={{ marginBottom: '15px' }}>Inicia sesión para gestionar tus agentes</li>
-              <li style={{ marginBottom: '15px' }}>Supervisa conversaciones en tiempo real</li>
-              <li style={{ marginBottom: '15px' }}>Configura bots y respuestas automáticas</li>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 4 }}>
+              <Box
+                sx={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 3,
+                  background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 8px 16px rgba(79, 70, 229, 0.3)'
+                }}
+              >
+                <WhatsApp sx={{ color: 'white', fontSize: 24 }} />
+              </Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em', color: 'white' }}>
+                WhatsFlow
+              </Typography>
             </Box>
 
-            <Typography sx={{ color: '#00a884', fontWeight: 500, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}>
+            <Typography variant="h4" sx={{
+              fontWeight: 700,
+              color: 'white',
+              mb: 4,
+              fontSize: '28px',
+              lineHeight: 1.3
+            }}>
+              Panel de Agentes
+            </Typography>
+
+            <Box component="ol" sx={{ pl: 3, mb: 6, color: '#cbd5e1', fontSize: '16px', lineHeight: 1.8 }}>
+              <li style={{ marginBottom: '15px' }}>Gestiona conversaciones en tiempo real</li>
+              <li style={{ marginBottom: '15px' }}>Accede a tu panel de control</li>
+              <li style={{ marginBottom: '15px' }}>Supervisa métricas y rendimiento</li>
+            </Box>
+
+            <Typography sx={{ color: '#6366f1', fontWeight: 500, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}>
               ¿Necesitas ayuda para iniciar sesión?
             </Typography>
           </Box>
@@ -247,14 +247,14 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
-            bgcolor: 'white'
+            bgcolor: 'rgba(15, 23, 42, 0.8)'
           }}>
-            <Typography variant="h5" sx={{ mb: 4, color: '#41525d', textAlign: 'center' }}>
+            <Typography variant="h5" sx={{ mb: 4, color: 'white', textAlign: 'center', fontWeight: 600 }}>
               Iniciar Sesión
             </Typography>
 
             {error && (
-              <Alert severity="error" sx={{ mb: 3, borderRadius: 0 }}>
+              <Alert severity="error" sx={{ mb: 3, borderRadius: 2, bgcolor: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
                 {error}
               </Alert>
             )}
@@ -269,7 +269,17 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 variant="outlined"
                 size="small"
                 InputProps={{
-                  sx: { borderRadius: 0 }
+                  sx: {
+                    borderRadius: 2,
+                    bgcolor: 'rgba(30, 41, 59, 0.5)',
+                    color: 'white',
+                    '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                    '&:hover fieldset': { borderColor: '#6366f1' },
+                    '&.Mui-focused fieldset': { borderColor: '#6366f1' }
+                  }
+                }}
+                InputLabelProps={{
+                  sx: { color: '#94a3b8' }
                 }}
               />
               <TextField
@@ -282,18 +292,29 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 variant="outlined"
                 size="small"
                 InputProps={{
-                  sx: { borderRadius: 0 },
+                  sx: {
+                    borderRadius: 2,
+                    bgcolor: 'rgba(30, 41, 59, 0.5)',
+                    color: 'white',
+                    '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                    '&:hover fieldset': { borderColor: '#6366f1' },
+                    '&.Mui-focused fieldset': { borderColor: '#6366f1' }
+                  },
                   endAdornment: (
                     <InputAdornment position="end">
                       <IconButton
                         onClick={() => setShowPassword(!showPassword)}
                         edge="end"
                         size="small"
+                        sx={{ color: '#94a3b8' }}
                       >
                         {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
                       </IconButton>
                     </InputAdornment>
                   ),
+                }}
+                InputLabelProps={{
+                  sx: { color: '#94a3b8' }
                 }}
               />
 
@@ -304,10 +325,10 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                     onChange={(e) => setRememberMe(e.target.checked)}
                     color="primary"
                     size="small"
-                    sx={{ color: '#00a884', '&.Mui-checked': { color: '#00a884' } }}
+                    sx={{ color: '#6366f1', '&.Mui-checked': { color: '#6366f1' } }}
                   />
                 }
-                label={<Typography variant="body2" sx={{ color: '#8696a0' }}>Mantener sesión iniciada</Typography>}
+                label={<Typography variant="body2" sx={{ color: '#94a3b8' }}>Mantener sesión iniciada</Typography>}
                 sx={{ mt: 2, mb: 3 }}
               />
 
@@ -317,17 +338,17 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 variant="contained"
                 disabled={loading}
                 sx={{
-                  bgcolor: '#00a884',
+                  bgcolor: '#6366f1',
                   color: 'white',
                   py: 1.5,
-                  borderRadius: 6,
+                  borderRadius: 3,
                   textTransform: 'none',
                   fontSize: '16px',
                   fontWeight: 600,
-                  boxShadow: 'none',
+                  boxShadow: '0 8px 16px rgba(99, 102, 241, 0.3)',
                   '&:hover': {
-                    bgcolor: '#008f6f',
-                    boxShadow: 'none'
+                    bgcolor: '#4f46e5',
+                    boxShadow: '0 12px 24px rgba(99, 102, 241, 0.4)'
                   }
                 }}
               >
