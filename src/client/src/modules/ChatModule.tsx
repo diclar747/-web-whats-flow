@@ -135,7 +135,10 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
   const [selectedTab, setSelectedTab] = useState(0);
   const [chatFilterTab, setChatFilterTab] = useState('all'); // all, sent, received, pending
   const [showChatInfo, setShowChatInfo] = useState(false);
-  const [messageDateFilter, setMessageDateFilter] = useState<string>('today'); // Filtro de fecha para mensajes
+  const [messageDateFilter, setMessageDateFilter] = useState<string>('all'); // CAMBIO: Cargar TODOS los mensajes por defecto
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [messagesOffset, setMessagesOffset] = useState(0);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
 
   // File upload states
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -197,8 +200,52 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     emit('join-session', { sessionId });
     console.log(`🔌 [ChatModule] Uniéndose a sala: session-${sessionId}`);
 
-    // NOTA: NO escuchamos 'message' aquí porque WhatsAppContext ya lo maneja globalmente
-    // Esto evita mensajes duplicados
+    // Escuchar nuevos mensajes en tiempo real
+    const handleNewMessage = (data: any) => {
+      console.log('📨 [ChatModule] Nuevo mensaje recibido:', data);
+      
+      const chatJid = data.chatJid || data.chat_jid || data.to || data.from;
+      const normalizedChatJid = chatJid?.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`;
+      
+      // Solo agregar si el mensaje es del contacto activo
+      if (activeContact && (normalizedChatJid === activeContact.id || chatJid === activeContact.id)) {
+        const newMsg: Message = {
+          id: data.id || data.messageId || Date.now().toString(),
+          from: data.from || data.sender_jid || normalizedChatJid,
+          to: data.to || activeContact.id,
+          content: data.message || data.text || data.text_content || '',
+          type: mapMessageType(data.type || data.message_type || 'text'),
+          timestamp: data.timestamp || new Date().toISOString(),
+          isFromMe: data.isFromMe || data.from_me || false,
+          status: data.status || 'delivered',
+          mediaUrl: data.media_url,
+          mediaMimeType: data.media_mime_type
+        };
+
+        // Evitar duplicados
+        setMessages(prev => {
+          if (prev.some(msg => msg.id === newMsg.id)) {
+            return prev;
+          }
+          return [...prev, newMsg];
+        });
+
+        // Actualizar último mensaje del contacto
+        setContacts(prev => prev.map(c =>
+          c.id === normalizedChatJid
+            ? { ...c, lastMessage: newMsg.content, timestamp: newMsg.timestamp, lastMessageIsFromMe: newMsg.isFromMe }
+            : c
+        ));
+
+        // Reproducir sonido si es un mensaje recibido
+        if (!newMsg.isFromMe) {
+          playNotificationSound();
+        }
+
+        // Scroll al final
+        setTimeout(() => scrollToBottom(), 100);
+      }
+    };
 
     // Escuchar actualizaciones de estado
     const handleStatusUpdate = (data: any) => {
@@ -231,17 +278,19 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
       }
     };
 
-    // Registrar listeners (SIN 'message' para evitar duplicados)
+    // Registrar listeners
+    on('message', handleNewMessage);
     on('message-status-update', handleStatusUpdate);
     on('typing', handleTyping);
 
-    console.log('✅ [ChatModule] Listeners registrados correctamente (sin message para evitar duplicados)');
+    console.log('✅ [ChatModule] Listeners registrados correctamente (incluyendo message para tiempo real)');
   };
 
   const cleanupRealtimeUpdates = () => {
     if (!socket) return;
 
     console.log('🔌 [ChatModule] Limpiando listeners');
+    off('message');
     off('message-status-update');
     off('typing');
 
@@ -287,6 +336,15 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
 
       if (chatsData.success) {
         console.log(`✅ [ChatModule] ${chatsData.chats.length} chats cargados`);
+        
+        // 🔍 DEBUG: Mostrar los primeros 3 chats recibidos
+        if (chatsData.chats.length > 0) {
+          console.log(`🔍 [ChatModule] PRIMEROS 3 CHATS RECIBIDOS DEL SERVIDOR:`);
+          chatsData.chats.slice(0, 3).forEach((chat: any, idx: number) => {
+            const phoneOnly = chat.id ? chat.id.split('@')[0] : 'UNKNOWN';
+            console.log(`  [${idx}] id: ${chat.id}, phone: ${phoneOnly}, name: ${chat.name}, timestamp: ${chat.timestamp}`);
+          });
+        }
 
         // Usar Map para deduplicar por ID
         const chatMap = new Map();
@@ -331,12 +389,19 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
         // Los grupos se siguen descargando pero no se muestran en la UI
         const contactsData = allContactsData.filter(c => !c.isGroup);
         console.log(`📋 [ChatModule] Chats filtrados (sin grupos): ${contactsData.length}`);
+        
+        // 🔍 DEBUG: Mostrar los primeros chats después de filtrar
+        if (contactsData.length > 0) {
+          console.log(`🔍 [ChatModule] PRIMER CHAT DESPUÉS DE FILTRAR: ${contactsData[0].id} (phone: ${contactsData[0].phone})`);
+        }
 
         setContacts(contactsData);
 
         if (contactsData.length > 0 && !activeContact) {
+          console.log(`🔍 [ChatModule] Automáticamente mostrando el primer chat: ${contactsData[0].id}`);
           setActiveContact(contactsData[0]);
-          loadContactMessages(contactsData[0].id, 'today'); // Por defecto cargar solo hoy
+          setMessagesOffset(0);
+          loadContactMessages(contactsData[0].id, 'all', 0, false); // CAMBIO: Por defecto cargar mensajes iniciales
         }
       } else {
         console.error('❌ [ChatModule] Error al cargar chats:', chatsData.error);
@@ -348,13 +413,14 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     }
   };
 
-  const loadContactMessages = async (contactId: string, dateFilter: string = 'today') => {
+  const loadContactMessages = async (contactId: string, dateFilter: string = 'all', offset: number = 0, append: boolean = false) => {
     try {
-      console.log(`📡 [ChatModule] Cargando mensajes para: ${contactId} (filtro: ${dateFilter})`);
+      setLoadingMessages(true);
+      console.log(`📡 [ChatModule] Cargando mensajes para: ${contactId} (filtro: ${dateFilter}, offset: ${offset})`);
 
-      // Cargar mensajes reales del contacto desde la API con filtro de fecha
+      // Cargar mensajes reales del contacto desde la API con filtro de fecha y paginación
       const messagesResponse = await fetch(
-        `${getAPIBaseURL()}/api/messages?contactId=${encodeURIComponent(contactId)}&dateFilter=${dateFilter}`,
+        `${getAPIBaseURL()}/api/messages?contactId=${encodeURIComponent(contactId)}&dateFilter=${dateFilter}&limit=500&offset=${offset}`,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -364,7 +430,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
       const messagesData = await messagesResponse.json();
 
       if (messagesData.success && messagesData.data) {
-        console.log(`✅ [ChatModule] ${messagesData.data.length} mensajes cargados (${dateFilter})`);
+        console.log(`✅ [ChatModule] ${messagesData.data.length} mensajes cargados (${dateFilter}, offset: ${offset})`);
 
         const formattedMessages: Message[] = messagesData.data.map((msg: any) => ({
           id: msg.messageId || msg.id,
@@ -379,15 +445,31 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
           mediaMimeType: msg.media_mime_type
         }));
 
-        setMessages(formattedMessages);
-        scrollToBottom();
+        // Si append=true, agregar a mensajes existentes; si no, reemplazar
+        if (append) {
+          setMessages(prev => [...formattedMessages, ...prev]);
+        } else {
+          setMessages(formattedMessages);
+        }
+
+        // Actualizar paginación
+        setMessagesOffset(offset + messagesData.data.length);
+        setHasMoreMessages(messagesData.pagination?.hasMore || false);
+
+        setTimeout(() => scrollToBottom(), 100);
       } else {
         console.log(`ℹ️ [ChatModule] No se encontraron mensajes para ${contactId}`);
-        setMessages([]);
+        if (!append) {
+          setMessages([]);
+        }
       }
     } catch (error) {
       console.error('❌ [ChatModule] Error loading contact messages:', error);
-      setMessages([]);
+      if (!append) {
+        setMessages([]);
+      }
+    } finally {
+      setLoadingMessages(false);
     }
   };
 
@@ -397,8 +479,10 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     setContacts(prev => prev.map(c =>
       c.id === contact.id ? { ...c, unreadCount: 0 } : c
     ));
-    // Cargar mensajes del contacto - siempre empezar con hoy
-    loadContactMessages(contact.id, 'today');
+    // Resetear paginación y cargar mensajes
+    setMessagesOffset(0);
+    setHasMoreMessages(false);
+    loadContactMessages(contact.id, messageDateFilter, 0, false);
   };
 
   const sendMessage = async () => {
@@ -733,34 +817,128 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
           {activeContact ? (
             <Paper sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
               {/* Header del chat */}
-              <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center' }}>
+              <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
                 <Avatar sx={{ mr: 2 }}>
                   {activeContact.isGroup ? <Group /> : activeContact.name[0]?.toUpperCase()}
                 </Avatar>
-                <Box sx={{ flex: 1 }}>
+                <Box sx={{ flex: 1, minWidth: 150 }}>
                   <Typography variant="h6">{activeContact.name}</Typography>
                   <Typography variant="caption" color="text.secondary">
                     {activeContact.status === 'typing' ? 'escribiendo...' : activeContact.lastSeen}
                   </Typography>
                 </Box>
-                <IconButton>
-                  <Phone />
-                </IconButton>
-                <IconButton>
-                  <VideoCall />
-                </IconButton>
-                <IconButton onClick={() => setShowChatInfo(true)}>
-                  <Info />
-                </IconButton>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Chip
+                    label={messageDateFilter === 'all' ? 'Todos' : messageDateFilter === 'today' ? 'Hoy' : messageDateFilter === 'week' ? 'Semana' : 'Mes'}
+                    size="small"
+                    onClick={(e) => setAnchorEl(e.currentTarget)}
+                    icon={<Schedule />}
+                    color="primary"
+                    variant="outlined"
+                  />
+                  <Chip
+                    label={`${messages.length} msgs`}
+                    size="small"
+                    color="default"
+                    variant="outlined"
+                  />
+                  <IconButton>
+                    <Phone />
+                  </IconButton>
+                  <IconButton>
+                    <VideoCall />
+                  </IconButton>
+                  <IconButton onClick={() => setShowChatInfo(true)}>
+                    <Info />
+                  </IconButton>
+                </Stack>
               </Box>
+
+              {/* Menú de filtro de período */}
+              <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={() => setAnchorEl(null)}
+              >
+                <MenuItem
+                  selected={messageDateFilter === 'all'}
+                  onClick={() => {
+                    setMessageDateFilter('all');
+                    setMessagesOffset(0);
+                    if (activeContact) loadContactMessages(activeContact.id, 'all', 0, false);
+                    setAnchorEl(null);
+                  }}
+                >
+                  📚 Todos los mensajes
+                </MenuItem>
+                <MenuItem
+                  selected={messageDateFilter === 'today'}
+                  onClick={() => {
+                    setMessageDateFilter('today');
+                    setMessagesOffset(0);
+                    if (activeContact) loadContactMessages(activeContact.id, 'today', 0, false);
+                    setAnchorEl(null);
+                  }}
+                >
+                  📅 Solo hoy
+                </MenuItem>
+                <MenuItem
+                  selected={messageDateFilter === 'week'}
+                  onClick={() => {
+                    setMessageDateFilter('week');
+                    setMessagesOffset(0);
+                    if (activeContact) loadContactMessages(activeContact.id, 'week', 0, false);
+                    setAnchorEl(null);
+                  }}
+                >
+                  📆 Esta semana
+                </MenuItem>
+                <MenuItem
+                  selected={messageDateFilter === 'month'}
+                  onClick={() => {
+                    setMessageDateFilter('month');
+                    setMessagesOffset(0);
+                    if (activeContact) loadContactMessages(activeContact.id, 'month', 0, false);
+                    setAnchorEl(null);
+                  }}
+                >
+                  🗓️ Este mes
+                </MenuItem>
+              </Menu>
 
               {/* Mensajes */}
               <Box sx={{ flex: 1, overflow: 'auto', p: 2, bgcolor: '#f0f0f0' }}>
-                {messages.length === 0 ? (
+                {/* Botón para cargar mensajes más antiguos */}
+                {hasMoreMessages && !loadingMessages && messages.length > 0 && (
+                  <Box sx={{ textAlign: 'center', mb: 2 }}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => activeContact && loadContactMessages(activeContact.id, messageDateFilter, messagesOffset, true)}
+                      startIcon={<Refresh />}
+                    >
+                      Cargar mensajes más antiguos
+                    </Button>
+                  </Box>
+                )}
+
+                {loadingMessages && messages.length === 0 ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                    <CircularProgress />
+                  </Box>
+                ) : messages.length === 0 ? (
                   <Box sx={{ textAlign: 'center', py: 4 }}>
                     <Typography color="text.secondary">
-                      No hay mensajes aún
+                      No hay mensajes para este período
                     </Typography>
+                    <Button
+                      startIcon={<Refresh />}
+                      onClick={() => activeContact && loadContactMessages(activeContact.id, 'all', 0, false)}
+                      sx={{ mt: 2 }}
+                      size="small"
+                    >
+                      Cargar todos los mensajes
+                    </Button>
                   </Box>
                 ) : (
                   messages.map((message) => (

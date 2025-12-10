@@ -12,10 +12,6 @@ import {
     DialogContent,
     DialogActions,
     TextField,
-    List,
-    ListItem,
-    ListItemText,
-    IconButton,
     Chip,
     FormControlLabel,
     Checkbox
@@ -24,16 +20,18 @@ import { Add, Edit, Delete, Check, Close } from '@mui/icons-material';
 
 interface Plan {
     id: number;
-    name: string;
-    description: string;
+    plan_name: string;
+    plan_display_name: string;
+    duration_days: number;
     price: string;
-    modules: string[];
-    max_agents: number;
-    max_sessions: number;
+    max_users: number;
+    max_messages_per_month: number;
+    max_campaigns: number;
+    max_contacts: number;
     max_channels: number;
-    max_messages: number;
     bot_enabled: boolean;
     api_enabled: boolean;
+    status: string;
 }
 
 const PlansManager: React.FC = () => {
@@ -49,14 +47,13 @@ const PlansManager: React.FC = () => {
     const fetchPlans = async () => {
         try {
             const token = localStorage.getItem('token');
-            const response = await fetch('/api/plans', {
+            const response = await fetch('/api/subscriptions/plans', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
             if (data.success) {
                 setPlans(data.plans.map((p: any) => ({
                     ...p,
-                    modules: typeof p.modules === 'string' ? JSON.parse(p.modules) : p.modules || [],
                     bot_enabled: Boolean(p.bot_enabled),
                     api_enabled: Boolean(p.api_enabled)
                 })));
@@ -70,7 +67,7 @@ const PlansManager: React.FC = () => {
         try {
             const token = localStorage.getItem('token');
             const method = isEditing ? 'PUT' : 'POST';
-            const url = isEditing ? `/api/plans/${currentPlan.id}` : '/api/plans';
+            const url = isEditing ? `/api/subscriptions/plans/${currentPlan.id}` : '/api/subscriptions/plans';
 
             const response = await fetch(url, {
                 method,
@@ -97,7 +94,7 @@ const PlansManager: React.FC = () => {
         if (!window.confirm('¿Estás seguro de eliminar este plan?')) return;
         try {
             const token = localStorage.getItem('token');
-            const response = await fetch(`/api/plans/${id}`, {
+            const response = await fetch(`/api/subscriptions/plans/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -119,7 +116,16 @@ const PlansManager: React.FC = () => {
                     variant="contained"
                     startIcon={<Add />}
                     onClick={() => {
-                        setCurrentPlan({ modules: [], bot_enabled: false, api_enabled: false });
+                        setCurrentPlan({
+                            bot_enabled: true,
+                            api_enabled: true,
+                            duration_days: 30,
+                            max_users: 1,
+                            max_channels: 1,
+                            max_messages_per_month: 1000,
+                            max_campaigns: 10,
+                            max_contacts: 1000
+                        });
                         setIsEditing(false);
                         setOpenDialog(true);
                     }}
@@ -134,20 +140,17 @@ const PlansManager: React.FC = () => {
                         <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                             <CardContent sx={{ flexGrow: 1 }}>
                                 <Typography variant="h5" component="div">
-                                    {plan.name}
+                                    {plan.plan_display_name}
                                 </Typography>
                                 <Typography sx={{ mb: 1.5 }} color="text.secondary">
-                                    ${plan.price}/mes
-                                </Typography>
-                                <Typography variant="body2" sx={{ mb: 2 }}>
-                                    {plan.description}
+                                    {plan.price} Gs/mes
                                 </Typography>
 
-                                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                                    <Typography variant="body2"><strong>Agentes:</strong> {plan.max_agents}</Typography>
+                                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mb: 2 }}>
+                                    <Typography variant="body2"><strong>Agentes:</strong> {plan.max_users}</Typography>
                                     <Typography variant="body2"><strong>Canales:</strong> {plan.max_channels || 1}</Typography>
-                                    <Typography variant="body2"><strong>Sesiones:</strong> {plan.max_sessions}</Typography>
-                                    <Typography variant="body2"><strong>Mensajes:</strong> {plan.max_messages || 1000}</Typography>
+                                    <Typography variant="body2"><strong>Mensajes:</strong> {plan.max_messages_per_month?.toLocaleString()}</Typography>
+                                    <Typography variant="body2"><strong>Campañas:</strong> {plan.max_campaigns}</Typography>
                                 </Box>
 
                                 <Box sx={{ mt: 2 }}>
@@ -167,13 +170,6 @@ const PlansManager: React.FC = () => {
                                         size="small"
                                     />
                                 </Box>
-
-                                <Box sx={{ mt: 2 }}>
-                                    <Typography variant="subtitle2">Módulos:</Typography>
-                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                        {plan.modules && plan.modules.map((m) => <Chip key={m} label={m} size="small" />)}
-                                    </Box>
-                                </Box>
                             </CardContent>
                             <CardActions>
                                 <Button size="small" startIcon={<Edit />} onClick={() => {
@@ -188,99 +184,103 @@ const PlansManager: React.FC = () => {
                 ))}
             </Grid>
 
-            <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>
+            <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
                 <DialogTitle>{isEditing ? 'Editar Plan' : 'Nuevo Plan'}</DialogTitle>
                 <DialogContent>
-                    <TextField
-                        autoFocus
-                        margin="dense"
-                        label="Nombre del Plan"
-                        fullWidth
-                        value={currentPlan.name || ''}
-                        onChange={(e) => setCurrentPlan({ ...currentPlan, name: e.target.value })}
-                    />
-                    <TextField
-                        margin="dense"
-                        label="Descripción"
-                        fullWidth
-                        multiline
-                        rows={2}
-                        value={currentPlan.description || ''}
-                        onChange={(e) => setCurrentPlan({ ...currentPlan, description: e.target.value })}
-                    />
-                    <Grid container spacing={2}>
-                        <Grid item xs={6}>
+                    <Grid container spacing={2} sx={{ mt: 1 }}>
+                        <Grid item xs={12} md={6}>
                             <TextField
-                                margin="dense"
-                                label="Precio (mensual)"
+                                label="Nombre Interno (slug)"
+                                fullWidth
+                                value={currentPlan.plan_name || ''}
+                                onChange={(e) => setCurrentPlan({ ...currentPlan, plan_name: e.target.value })}
+                                disabled={isEditing}
+                                helperText="Ej: basico, estandar, manager"
+                            />
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <TextField
+                                label="Nombre para Mostrar"
+                                fullWidth
+                                value={currentPlan.plan_display_name || ''}
+                                onChange={(e) => setCurrentPlan({ ...currentPlan, plan_display_name: e.target.value })}
+                            />
+                        </Grid>
+                        <Grid item xs={6} md={4}>
+                            <TextField
+                                label="Precio (Gs)"
                                 fullWidth
                                 type="number"
                                 value={currentPlan.price || ''}
                                 onChange={(e) => setCurrentPlan({ ...currentPlan, price: e.target.value })}
                             />
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid item xs={6} md={4}>
                             <TextField
-                                margin="dense"
-                                label="Máximo de Agentes"
+                                label="Duración (días)"
                                 fullWidth
                                 type="number"
-                                value={currentPlan.max_agents || ''}
-                                onChange={(e) => setCurrentPlan({ ...currentPlan, max_agents: parseInt(e.target.value) })}
+                                value={currentPlan.duration_days || 30}
+                                onChange={(e) => setCurrentPlan({ ...currentPlan, duration_days: parseInt(e.target.value) })}
                             />
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid item xs={6} md={4}>
                             <TextField
-                                margin="dense"
-                                label="Máximo de Canales"
+                                label="Máx. Agentes"
+                                fullWidth
+                                type="number"
+                                value={currentPlan.max_users || ''}
+                                onChange={(e) => setCurrentPlan({ ...currentPlan, max_users: parseInt(e.target.value) })}
+                            />
+                        </Grid>
+                        <Grid item xs={6} md={4}>
+                            <TextField
+                                label="Máx. Canales"
                                 fullWidth
                                 type="number"
                                 value={currentPlan.max_channels || ''}
                                 onChange={(e) => setCurrentPlan({ ...currentPlan, max_channels: parseInt(e.target.value) })}
                             />
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid item xs={6} md={4}>
                             <TextField
-                                margin="dense"
-                                label="Límite Envíos"
+                                label="Límite Mensajes/Mes"
                                 fullWidth
                                 type="number"
-                                value={currentPlan.max_messages || ''}
-                                onChange={(e) => setCurrentPlan({ ...currentPlan, max_messages: parseInt(e.target.value) })}
+                                value={currentPlan.max_messages_per_month || ''}
+                                onChange={(e) => setCurrentPlan({ ...currentPlan, max_messages_per_month: parseInt(e.target.value) })}
                             />
                         </Grid>
-                        <Grid item xs={6}>
+                        <Grid item xs={6} md={4}>
                             <TextField
-                                margin="dense"
-                                label="Máximo de Sesiones"
+                                label="Máx. Campañas"
                                 fullWidth
                                 type="number"
-                                value={currentPlan.max_sessions || ''}
-                                onChange={(e) => setCurrentPlan({ ...currentPlan, max_sessions: parseInt(e.target.value) })}
+                                value={currentPlan.max_campaigns || ''}
+                                onChange={(e) => setCurrentPlan({ ...currentPlan, max_campaigns: parseInt(e.target.value) })}
+                            />
+                        </Grid>
+                        <Grid item xs={12}>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={currentPlan.bot_enabled || false}
+                                        onChange={(e) => setCurrentPlan({ ...currentPlan, bot_enabled: e.target.checked })}
+                                    />
+                                }
+                                label="Habilitar BOT IA"
+                            />
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={currentPlan.api_enabled || false}
+                                        onChange={(e) => setCurrentPlan({ ...currentPlan, api_enabled: e.target.checked })}
+                                    />
+                                }
+                                label="Habilitar API REST"
                             />
                         </Grid>
                     </Grid>
-
-                    <Box sx={{ mt: 2 }}>
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    checked={currentPlan.bot_enabled || false}
-                                    onChange={(e) => setCurrentPlan({ ...currentPlan, bot_enabled: e.target.checked })}
-                                />
-                            }
-                            label="Habilitar BOT IA"
-                        />
-                        <FormControlLabel
-                            control={
-                                <Checkbox
-                                    checked={currentPlan.api_enabled || false}
-                                    onChange={(e) => setCurrentPlan({ ...currentPlan, api_enabled: e.target.checked })}
-                                />
-                            }
-                            label="Habilitar API REST"
-                        />
-                    </Box>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>

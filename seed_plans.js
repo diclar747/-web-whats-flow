@@ -10,112 +10,132 @@ const dbConfig = {
 
 const plans = [
     {
-        name: 'Básico',
+        plan_name: 'basico',
+        plan_display_name: 'Básico',
+        duration_days: 30,
         price: 80000,
-        description: 'Plan inicial para pequeños negocios',
-        max_agents: 1,
+        max_users: 1,
         max_channels: 1,
-        max_messages: 1000,
-        max_sessions: 1,
+        max_messages_per_month: 1000,
+        max_campaigns: 10,
+        max_contacts: 1000,
         bot_enabled: true,
-        api_enabled: true,
-        modules: []
+        api_enabled: true
     },
     {
-        name: 'Estándar',
+        plan_name: 'estandar',
+        plan_display_name: 'Estándar',
+        duration_days: 30,
         price: 160000,
-        description: 'Plan estándar para crecimiento',
-        max_agents: 2,
+        max_users: 2,
         max_channels: 2,
-        max_messages: 2500,
-        max_sessions: 2,
+        max_messages_per_month: 2500,
+        max_campaigns: 20,
+        max_contacts: 2500,
         bot_enabled: true,
-        api_enabled: true,
-        modules: []
+        api_enabled: true
     },
     {
-        name: 'Manager',
+        plan_name: 'manager',
+        plan_display_name: 'Manager',
+        duration_days: 30,
         price: 320000,
-        description: 'Plan para equipos en expansión',
-        max_agents: 5,
+        max_users: 5,
         max_channels: 5,
-        max_messages: 5000,
-        max_sessions: 5,
+        max_messages_per_month: 5000,
+        max_campaigns: 50,
+        max_contacts: 5000,
         bot_enabled: true,
-        api_enabled: true,
-        modules: []
+        api_enabled: true
     },
     {
-        name: 'Comercial',
+        plan_name: 'comercial',
+        plan_display_name: 'Comercial',
+        duration_days: 30,
         price: 640000,
-        description: 'Plan comercial avanzado',
-        max_agents: 10,
+        max_users: 10,
         max_channels: 10,
-        max_messages: 10000,
-        max_sessions: 10,
+        max_messages_per_month: 10000,
+        max_campaigns: 100,
+        max_contacts: 10000,
         bot_enabled: true,
-        api_enabled: true,
-        modules: []
+        api_enabled: true
     },
     {
-        name: 'Ejecutivo',
+        plan_name: 'ejecutivo',
+        plan_display_name: 'Ejecutivo',
+        duration_days: 30,
         price: 1280000,
-        description: 'Plan ejecutivo de alto rendimiento',
-        max_agents: 15,
+        max_users: 15,
         max_channels: 15,
-        max_messages: 15000,
-        max_sessions: 15,
+        max_messages_per_month: 15000,
+        max_campaigns: 150,
+        max_contacts: 15000,
         bot_enabled: true,
-        api_enabled: true,
-        modules: []
+        api_enabled: true
     },
     {
-        name: 'Corporativo',
+        plan_name: 'corporativo',
+        plan_display_name: 'Corporativo',
+        duration_days: 30,
         price: 2560000,
-        description: 'Solución corporativa completa',
-        max_agents: 25,
+        max_users: 25,
         max_channels: 25,
-        max_messages: 25000,
-        max_sessions: 25,
+        max_messages_per_month: 25000,
+        max_campaigns: 250,
+        max_contacts: 25000,
         bot_enabled: true,
-        api_enabled: true,
-        modules: []
+        api_enabled: true
     }
 ];
 
 async function seedPlans() {
-    console.log('🌱 Iniciando carga de planes...');
+    console.log('🌱 Iniciando carga de planes en subscription_plans...');
     let connection;
     try {
         connection = await mysql.createConnection(dbConfig);
         console.log('✅ Conectado a la base de datos');
 
-        // Eliminar planes existentes para evitar duplicados o conflictos
+        // Eliminar planes existentes para evitar duplicados
         console.log('🗑️ Eliminando planes existentes...');
-        await connection.execute('DELETE FROM plans');
+        await connection.execute('DELETE FROM subscription_plans');
         console.log('✅ Planes eliminados');
 
         // Reiniciar contador de ID
-        await connection.execute('ALTER TABLE plans AUTO_INCREMENT = 1');
+        await connection.execute('ALTER TABLE subscription_plans AUTO_INCREMENT = 1');
 
         console.log('📝 Insertando nuevos planes...');
         for (const plan of plans) {
             await connection.execute(`
-                INSERT INTO plans (name, description, price, modules, max_agents, max_sessions, max_channels, max_messages, bot_enabled, api_enabled)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO subscription_plans (
+                    plan_name, 
+                    plan_display_name, 
+                    duration_days, 
+                    price, 
+                    max_users, 
+                    max_messages_per_month, 
+                    max_campaigns, 
+                    max_contacts,
+                    max_channels,
+                    bot_enabled,
+                    api_enabled,
+                    status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
             `, [
-                plan.name,
-                plan.description,
+                plan.plan_name,
+                plan.plan_display_name,
+                plan.duration_days,
                 plan.price,
-                JSON.stringify(plan.modules),
-                plan.max_agents,
-                plan.max_sessions,
+                plan.max_users,
+                plan.max_messages_per_month,
+                plan.max_campaigns,
+                plan.max_contacts,
                 plan.max_channels,
-                plan.max_messages,
                 plan.bot_enabled,
                 plan.api_enabled
             ]);
-            console.log(`   - Plan ${plan.name} creado.`);
+            console.log(`   - Plan ${plan.plan_display_name} creado (${plan.price} Gs, ${plan.max_users} agentes, ${plan.max_channels} canales)`);
         }
 
         console.log('🎉 Carga de planes completada con éxito.');

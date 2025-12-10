@@ -325,7 +325,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       // Si es agente, usar endpoint de chats asignados
       const isAgent = userRole && userRole !== 'admin';
-      const limit = 20;
+      const limit = 500; // ⚡ OPTIMIZADO: Aumentado de 20 a 500 para cargar todos los chats
       const offsetParam = offset || 0; // Si no se pasa, es 0
 
       if (append) {
@@ -395,11 +395,26 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           if (chat.id.includes('@lid')) return false;
           if (chat.id.includes('status@broadcast')) return false;
 
-          if (currentPhone && (chat.id === currentPhone || chat.id.startsWith(currentPhone + ':') || chat.id === currentPhone + '@s.whatsapp.net')) {
-            console.log('[WhatsAppContext] 🚫 Filtrando chat propio en carga inicial:', chat.id);
+          // 🛡️ FILTRO MEJORADO: Normalizar números para comparación
+          const chatNumber = chat.id.split('@')[0].split(':')[0]; // Extraer solo el número
+
+          // Comparar números normalizados (sin @, sin :, sin espacios)
+          if (currentPhone && chatNumber === currentPhone) {
+            console.log('[WhatsAppContext] 🚫 Filtrando chat propio (número exacto):', chat.id, 'vs', currentPhone);
             return false;
           }
-          // 🛡️ Extra check: remove anything that looks like a UUID (length > 15 and has dashes?) NO, UUIDs dont appear in chat lists usually.
+
+          // Verificar variaciones comunes
+          if (currentPhone && (
+            chat.id === currentPhone ||
+            chat.id === `${currentPhone}@s.whatsapp.net` ||
+            chat.id === `${currentPhone}@c.us` ||
+            chat.id.startsWith(currentPhone + ':')
+          )) {
+            console.log('[WhatsAppContext] 🚫 Filtrando chat propio (variación):', chat.id);
+            return false;
+          }
+
           return true;
         })
           // ⚡ ORDENAR EXPLÍCITAMENTE
@@ -736,8 +751,23 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           const currentSessionId = session?.sessionId || userId;
           const currentPhone = String(currentSessionId || '').split(':')[0]?.split('@')[0];
 
-          if (currentPhone && chatPhone === currentPhone) {
-            console.log('[REAL-TIME] 🚫 Ignorando chat propio:', chatPhone);
+          // 🛡️ FILTRO MEJORADO: Normalizar números igual que en carga inicial
+          const chatNumber = mappedMessage.chatJid.split('@')[0].split(':')[0];
+
+          // Comparar números normalizados
+          if (currentPhone && chatNumber === currentPhone) {
+            console.log('[REAL-TIME] 🚫 Ignorando chat propio (número exacto):', chatNumber, 'vs', currentPhone);
+            return prev;
+          }
+
+          // Verificar variaciones comunes
+          if (currentPhone && (
+            mappedMessage.chatJid === currentPhone ||
+            mappedMessage.chatJid === `${currentPhone}@s.whatsapp.net` ||
+            mappedMessage.chatJid === `${currentPhone}@c.us` ||
+            mappedMessage.chatJid.startsWith(currentPhone + ':')
+          )) {
+            console.log('[REAL-TIME] 🚫 Ignorando chat propio (variación):', mappedMessage.chatJid);
             return prev;
           }
 

@@ -17,8 +17,8 @@ module.exports = function (app, pool) {
         }
     };
 
-    // GET /api/plans - Listar todos los planes
-    app.get('/api/plans', authenticateToken, async (req, res) => {
+    // GET /api/plans - Listar todos los planes (sin autenticación requerida)
+    app.get('/api/plans', async (req, res) => {
         try {
             const connection = await pool.getConnection();
             try {

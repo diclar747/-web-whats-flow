@@ -6,31 +6,37 @@ const { checkAdmin, checkSubscription } = require('../middleware/subscriptionMid
 function getPool(req) {
   // Intentar obtener del parent app
   const pool = req.app.get('dbPool') || req.app.parent?.get('dbPool');
-  
+
   // Si no existe, buscar en el scope global del servidor
   if (!pool && global.dbPool) {
     return global.dbPool;
   }
-  
+
   return pool;
 }
+
+// ⚠️ RUTA DE PRUEBA - Para verificar que el router funciona
+router.get('/test', (req, res) => {
+  console.log('[SUBSCRIPTIONS] ✅ Test route called');
+  res.json({ success: true, message: 'Router is working!' });
+});
 
 // Obtener información de planes disponibles
 router.get('/plans', async (req, res) => {
   const pool = getPool(req);
-  
+
   if (!pool) {
     return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
   }
-  
+
   try {
     const connection = await pool.getConnection();
-    
+
     try {
       const [plans] = await connection.query(
         'SELECT * FROM subscription_plans WHERE status = "active" ORDER BY price ASC'
       );
-      
+
       res.json({ success: true, plans });
     } finally {
       connection.release();
@@ -47,7 +53,7 @@ router.post('/plans', checkAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
   }
-  
+
   try {
     const {
       plan_name,
@@ -57,7 +63,10 @@ router.post('/plans', checkAdmin, async (req, res) => {
       max_users,
       max_messages_per_month,
       max_campaigns,
-      max_contacts
+      max_contacts,
+      max_channels,
+      bot_enabled,
+      api_enabled
     } = req.body;
 
     if (!plan_name || !plan_display_name || !duration_days || price === undefined) {
@@ -87,8 +96,11 @@ router.post('/plans', checkAdmin, async (req, res) => {
           max_messages_per_month, 
           max_campaigns, 
           max_contacts,
+          max_channels,
+          bot_enabled,
+          api_enabled,
           status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
       `, [
         plan_name,
         plan_display_name,
@@ -97,7 +109,10 @@ router.post('/plans', checkAdmin, async (req, res) => {
         max_users || 1,
         max_messages_per_month || 1000,
         max_campaigns || 10,
-        max_contacts || 1000
+        max_contacts || 1000,
+        max_channels || 1,
+        bot_enabled !== undefined ? bot_enabled : true,
+        api_enabled !== undefined ? api_enabled : true
       ]);
 
       res.json({ success: true, message: 'Plan creado exitosamente' });
@@ -116,7 +131,7 @@ router.put('/plans/:id', checkAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
   }
-  
+
   try {
     const { id } = req.params;
     const {
@@ -126,7 +141,10 @@ router.put('/plans/:id', checkAdmin, async (req, res) => {
       max_users,
       max_messages_per_month,
       max_campaigns,
-      max_contacts
+      max_contacts,
+      max_channels,
+      bot_enabled,
+      api_enabled
     } = req.body;
 
     const connection = await pool.getConnection();
@@ -141,6 +159,9 @@ router.put('/plans/:id', checkAdmin, async (req, res) => {
           max_messages_per_month = ?,
           max_campaigns = ?,
           max_contacts = ?,
+          max_channels = ?,
+          bot_enabled = ?,
+          api_enabled = ?,
           updated_at = NOW()
         WHERE id = ?
       `, [
@@ -151,6 +172,9 @@ router.put('/plans/:id', checkAdmin, async (req, res) => {
         max_messages_per_month,
         max_campaigns,
         max_contacts,
+        max_channels,
+        bot_enabled,
+        api_enabled,
         id
       ]);
 
@@ -174,7 +198,7 @@ router.delete('/plans/:id', checkAdmin, async (req, res) => {
   if (!pool) {
     return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
   }
-  
+
   try {
     const { id } = req.params;
 
@@ -182,7 +206,7 @@ router.delete('/plans/:id', checkAdmin, async (req, res) => {
     try {
       // Verificar si hay usuarios usando este plan
       const [plan] = await connection.query('SELECT plan_name FROM subscription_plans WHERE id = ?', [id]);
-      
+
       if (plan.length === 0) {
         return res.status(404).json({ success: false, error: 'Plan no encontrado' });
       }
@@ -193,9 +217,9 @@ router.delete('/plans/:id', checkAdmin, async (req, res) => {
       );
 
       if (users[0].count > 0) {
-        return res.status(409).json({ 
-          success: false, 
-          error: `No se puede eliminar. ${users[0].count} usuario(s) tienen este plan asignado` 
+        return res.status(409).json({
+          success: false,
+          error: `No se puede eliminar. ${users[0].count} usuario(s) tienen este plan asignado`
         });
       }
 
@@ -217,18 +241,67 @@ router.delete('/plans/:id', checkAdmin, async (req, res) => {
 
 // Obtener información de suscripción del usuario actual
 router.get('/my-subscription', async (req, res) => {
+  console.log('[SUBSCRIPTIONS] 🔍 GET /my-subscription llamado, query:', req.query);
   const pool = getPool(req);
+  console.log('[SUBSCRIPTIONS] 🔍 Pool obtenido:', !!pool);
   if (!pool) {
+    console.log('[SUBSCRIPTIONS] ❌ Pool no disponible');
     return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
   }
   try {
     const phone = req.query.phone || req.user?.phone;
+    console.log('[SUBSCRIPTIONS] 🔍 Phone:', phone);
     if (!phone) {
       return res.status(401).json({ success: false, error: 'Teléfono no proporcionado' });
     }
     const connection = await pool.getConnection();
     try {
-      // Actualizar suscripciones expiradas
+      // Primero buscar en user_sessions (para Super Admin y Admins que inician con QR)
+      const [adminSessions] = await connection.query(`
+        SELECT 
+          phone_number as phone,
+          session_id,
+          created_at,
+          last_connection_time
+        FROM user_sessions 
+        WHERE phone_number = ? AND is_active = 1
+        LIMIT 1
+      `, [phone]);
+
+      if (adminSessions.length > 0) {
+        // Es un Admin o Super Admin con sesión QR
+        console.log('[SUBSCRIPTIONS] ✅ Admin/Super Admin encontrado en user_sessions:', phone);
+        
+        // Para admins, retornar un plan "ilimitado" por defecto
+        return res.json({
+          success: true,
+          subscription: {
+            phone: phone,
+            subscription_plan: 'enterprise',
+            subscription_status: 'active',
+            subscription_start_date: adminSessions[0].created_at,
+            subscription_end_date: null, // Sin fecha de expiración
+            subscription_days: 999999,
+            is_admin: true,
+            days_remaining: 999999,
+            plan_details: {
+              plan_name: 'enterprise',
+              plan_display_name: 'Plan Administrador',
+              duration_days: 999999,
+              price: 0,
+              max_users: 999999,
+              max_messages_per_month: 999999,
+              max_campaigns: 999999,
+              max_contacts: 999999,
+              max_channels: 999999,
+              bot_enabled: true,
+              api_enabled: true
+            }
+          }
+        });
+      }
+
+      // Si no está en user_sessions, buscar en users (Agentes)
       await connection.query(`
         UPDATE users 
         SET subscription_status = 'expired'
@@ -286,8 +359,10 @@ router.get('/my-subscription', async (req, res) => {
 
 // Obtener todos los usuarios con sus suscripciones (solo admin)
 router.get('/users', checkAdmin, async (req, res) => {
+  console.log('[SUBSCRIPTIONS:/users] 🔍 GET /users llamado, query:', req.query, 'user:', req.user?.id);
   console.log('[SUBSCRIPTIONS:/users] query.phone=', req.query?.phone, 'user.id=', req.user?.id);
   const pool = getPool(req);
+  console.log('[SUBSCRIPTIONS:/users] 🔍 Pool obtenido:', !!pool);
   if (!pool) {
     return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
   }
@@ -326,31 +401,65 @@ router.get('/users', checkAdmin, async (req, res) => {
 });
 
 // Variante POST para permitir enviar phone en body desde el frontend
-router.post('/users', checkAdmin, async (req, res) => {
+router.post('/users', async (req, res) => {
+  console.log('[SUBSCRIPTIONS] 🔍 POST /users llamado, body:', req.body);
   const pool = getPool(req);
+  console.log('[SUBSCRIPTIONS] 🔍 Pool obtenido:', !!pool);
   if (!pool) {
     return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
   }
-  
+
   const { phone } = req.body;
-  
+
+  if (!phone) {
+    return res.status(400).json({ success: false, error: 'Teléfono requerido' });
+  }
+
   try {
     const connection = await pool.getConnection();
     try {
-      // Verificar si el usuario es SUPER ADMIN
-      const [adminCheck] = await connection.query(
-        'SELECT is_super_admin FROM users WHERE phone = ? LIMIT 1',
+      // PRIMERO: Verificar si quien consulta es SUPER ADMIN en user_sessions
+      const [superAdminCheck] = await connection.query(
+        'SELECT phone_number FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
         [phone]
       );
-      
-      const isSuperAdmin = adminCheck.length > 0 && adminCheck[0].is_super_admin === 1;
-      
-      let query;
-      let params;
-      
+
+      const isSuperAdmin = superAdminCheck.length > 0;
+      console.log('[SUBSCRIPTIONS] 🔍 Es Super Admin (user_sessions):', isSuperAdmin);
+
+      let users;
+
       if (isSuperAdmin) {
-        // SUPER ADMIN (595994854167) ve TODOS los admins
-        query = `
+        // SUPER ADMIN ve:
+        // 1. Todos los ADMINS de user_sessions (otros admins con QR)
+        // 2. Todos los AGENTES de users (agentes registrados por todos los admins)
+        
+        // Obtener todos los admins de user_sessions
+        const [adminSessions] = await connection.query(`
+          SELECT 
+            phone_number as phone,
+            session_id,
+            device_id,
+            is_active,
+            created_at as subscription_start_date,
+            last_connection_time as last_login,
+            'Admin' as name,
+            'admin@whats-flow.com' as email,
+            'enterprise' as subscription_plan,
+            'active' as subscription_status,
+            999999 as subscription_days,
+            999999 as days_remaining,
+            'Plan Administrador' as plan_display_name,
+            0 as price,
+            1 as is_admin,
+            CASE WHEN phone_number = '595994854167' THEN 1 ELSE 0 END as is_super_admin
+          FROM user_sessions
+          WHERE is_active = 1
+          ORDER BY phone_number
+        `);
+
+        // Obtener todos los agentes de users
+        const [agentUsers] = await connection.query(`
           SELECT 
             u.id,
             u.name,
@@ -363,7 +472,7 @@ router.post('/users', checkAdmin, async (req, res) => {
             u.subscription_end_date,
             u.subscription_days,
             u.is_admin,
-            u.is_super_admin,
+            0 as is_super_admin,
             u.admin_phone,
             u.created_at,
             u.last_login,
@@ -380,14 +489,16 @@ router.post('/users', checkAdmin, async (req, res) => {
             COALESCE(sp.price, 0) as price
           FROM users u
           LEFT JOIN subscription_plans sp ON u.subscription_plan COLLATE utf8mb4_unicode_ci = sp.plan_name COLLATE utf8mb4_unicode_ci
-          WHERE u.is_admin = 1
-          ORDER BY u.is_super_admin DESC, u.created_at DESC
-        `;
-        params = [];
-        console.log(`[SUBSCRIPTIONS] 🔑 SUPER ADMIN ${phone} ve TODOS los admins`);
+          ORDER BY u.created_at DESC
+        `);
+
+        // Combinar ambos arrays
+        users = [...adminSessions, ...agentUsers];
+        console.log(`[SUBSCRIPTIONS] 🔑 SUPER ADMIN ${phone} ve: ${adminSessions.length} admins + ${agentUsers.length} agentes = ${users.length} total`);
       } else {
-        // Admin normal ve: SU cuenta + usuarios que él registró (admin_phone = su teléfono)
-        query = `
+        // Admin normal (de user_sessions) ve solo:
+        // - SUS propios agentes (donde admin_phone = su teléfono en tabla users)
+        const [agentUsers] = await connection.query(`
           SELECT 
             u.id,
             u.name,
@@ -400,7 +511,7 @@ router.post('/users', checkAdmin, async (req, res) => {
             u.subscription_end_date,
             u.subscription_days,
             u.is_admin,
-            u.is_super_admin,
+            0 as is_super_admin,
             u.admin_phone,
             u.created_at,
             u.last_login,
@@ -417,17 +528,16 @@ router.post('/users', checkAdmin, async (req, res) => {
             COALESCE(sp.price, 0) as price
           FROM users u
           LEFT JOIN subscription_plans sp ON u.subscription_plan COLLATE utf8mb4_unicode_ci = sp.plan_name COLLATE utf8mb4_unicode_ci
-          WHERE u.phone = ? OR u.admin_phone = ?
-          ORDER BY u.is_admin DESC, u.created_at DESC
-        `;
-        params = [phone, phone];
-        console.log(`[SUBSCRIPTIONS] Admin normal ${phone} ve su cuenta + usuarios que registró`);
+          WHERE u.admin_phone = ?
+          ORDER BY u.created_at DESC
+        `, [phone]);
+
+        users = agentUsers;
+        console.log(`[SUBSCRIPTIONS] 👤 Admin ${phone} ve sus ${users.length} agentes registrados`);
       }
-      
-      const [users] = await connection.query(query, params);
-      
+
       console.log(`[SUBSCRIPTIONS] Devolviendo ${users.length} usuario(s) para ${phone}`);
-      
+
       res.json({ success: true, users, isSuperAdmin });
     } finally {
       connection.release();
@@ -448,10 +558,10 @@ router.post('/activate', checkAdmin, async (req, res) => {
     // Aceptar phone del query parameter también
     const phone = req.body.phone || req.query.phone;
     const { userId, planName, planType, days, customEndDate } = req.body;
-    
+
     // Aceptar tanto planName como planType
     const finalPlanName = planName || planType;
-    
+
     if ((!userId && !phone) || !finalPlanName) {
       return res.status(400).json({ success: false, error: 'Se requiere userId o phone, y planName/planType' });
     }

@@ -60,14 +60,24 @@ interface User {
 
 interface Plan {
   id: number;
-  plan_name: string;
-  plan_display_name: string;
-  duration_days: number;
+  name: string;
+  plan_name?: string;
+  plan_display_name?: string;
+  description: string;
   price: number;
-  max_users: number;
-  max_messages_per_month: number;
-  max_campaigns: number;
-  max_contacts: number;
+  duration_days?: number;
+  modules: string[];
+  max_agents: number;
+  max_sessions: number;
+  max_channels: number;
+  max_messages: number;
+  max_users?: number;
+  max_messages_per_month?: number;
+  max_campaigns?: number;
+  max_integrations?: number;
+  max_contacts?: number;
+  bot_enabled: boolean;
+  api_enabled: boolean;
 }
 
 interface ConnectionSession {
@@ -104,14 +114,23 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
 
   // Plan form state
   const [planFormData, setPlanFormData] = useState({
+    name: '',
     plan_name: '',
     plan_display_name: '',
-    duration_days: 30,
+    description: '',
     price: 0,
+    duration_days: 30,
+    max_agents: 1,
+    max_sessions: 1,
+    max_channels: 1,
+    max_messages: 1000,
     max_users: 1,
     max_messages_per_month: 1000,
     max_campaigns: 10,
-    max_contacts: 1000
+    max_contacts: 1000,
+    bot_enabled: false,
+    api_enabled: false,
+    modules: [] as string[]
   });
 
   useEffect(() => {
@@ -124,11 +143,14 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
       setError(null);
 
       // Cargar planes
-      const plansResponse = await fetch(`${getAPIBaseURL()}/api/subscriptions/plans`);
+      const plansResponse = await fetch(`${getAPIBaseURL()}/api/plans`);
       const plansData = await plansResponse.json();
-      
+
       if (plansData.success) {
-        setPlans(plansData.plans);
+        setPlans(plansData.plans.map((p: any) => ({
+          ...p,
+          modules: typeof p.modules === 'string' ? JSON.parse(p.modules) : p.modules || []
+        })));
       }
 
       // Cargar usuarios (solo si es admin) - usar POST con phone en body para asegurar middleware
@@ -280,26 +302,44 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
     if (plan) {
       setSelectedPlan(plan);
       setPlanFormData({
-        plan_name: plan.plan_name,
-        plan_display_name: plan.plan_display_name,
-        duration_days: plan.duration_days,
+        name: plan.name,
+        plan_name: plan.plan_name || '',
+        plan_display_name: plan.plan_display_name || '',
+        description: plan.description,
         price: plan.price,
-        max_users: plan.max_users,
-        max_messages_per_month: plan.max_messages_per_month,
-        max_campaigns: plan.max_campaigns,
-        max_contacts: plan.max_contacts
+        duration_days: plan.duration_days || 30,
+        max_agents: plan.max_agents,
+        max_sessions: plan.max_sessions,
+        max_channels: plan.max_channels,
+        max_messages: plan.max_messages,
+        max_users: plan.max_users || 1,
+        max_messages_per_month: plan.max_messages_per_month || 1000,
+        max_campaigns: plan.max_campaigns || 10,
+        max_contacts: plan.max_contacts || 1000,
+        bot_enabled: plan.bot_enabled,
+        api_enabled: plan.api_enabled,
+        modules: plan.modules || []
       });
     } else {
       setSelectedPlan(null);
       setPlanFormData({
+        name: '',
         plan_name: '',
         plan_display_name: '',
-        duration_days: 30,
+        description: '',
         price: 0,
+        duration_days: 30,
+        max_agents: 1,
+        max_sessions: 1,
+        max_channels: 1,
+        max_messages: 1000,
         max_users: 1,
         max_messages_per_month: 1000,
         max_campaigns: 10,
-        max_contacts: 1000
+        max_contacts: 1000,
+        bot_enabled: false,
+        api_enabled: false,
+        modules: []
       });
     }
     setPlanDialogOpen(true);
@@ -311,12 +351,15 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
       setError(null);
 
       const url = selectedPlan
-        ? `${getAPIBaseURL()}/api/subscriptions/plans/${selectedPlan.id}?phone=${userPhone}`
-        : `${getAPIBaseURL()}/api/subscriptions/plans?phone=${userPhone}`;
+        ? `${getAPIBaseURL()}/api/plans/${selectedPlan.id}`
+        : `${getAPIBaseURL()}/api/plans`;
 
       const response = await fetch(url, {
         method: selectedPlan ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
         body: JSON.stringify(planFormData)
       });
 
@@ -339,7 +382,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
   };
 
   const handleDeletePlan = async (plan: Plan) => {
-    if (!window.confirm(`¿Eliminar el plan ${plan.plan_display_name}?`)) {
+    if (!window.confirm(`¿Eliminar el plan ${plan.name}?`)) {
       return;
     }
 
@@ -347,8 +390,11 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`${getAPIBaseURL()}/api/subscriptions/plans/${plan.id}?phone=${userPhone}`, {
-        method: 'DELETE'
+      const response = await fetch(`${getAPIBaseURL()}/api/plans/${plan.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
       });
 
       const data = await response.json();
@@ -387,8 +433,8 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Card sx={{ 
-        mb: 3, 
+      <Card sx={{
+        mb: 3,
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         color: 'white'
       }}>
@@ -497,11 +543,11 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
                       </TableCell>
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <CircleIcon 
-                            sx={{ 
+                          <CircleIcon
+                            sx={{
                               fontSize: 12,
                               color: isUserOnline(user.phone) ? '#4caf50' : '#9e9e9e'
-                            }} 
+                            }}
                           />
                           <Typography variant="body2" sx={{ fontWeight: 500 }}>
                             {isUserOnline(user.phone) ? 'En línea' : 'Desconectado'}
@@ -570,7 +616,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
               variant="contained"
               startIcon={<Add />}
               onClick={() => handleOpenPlanDialog()}
-              sx={{ 
+              sx={{
                 background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                 '&:hover': { background: 'linear-gradient(135deg, #5568d3 0%, #653a8b 100%)' }
               }}
@@ -583,13 +629,13 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
               <Grid item xs={12} md={6} lg={3} key={plan.id}>
                 <Card sx={{
                   height: '100%',
-                  border: `2px solid ${getPlanColor(plan.plan_name)}`,
+                  border: `2px solid ${getPlanColor(plan.plan_name || plan.name)}`,
                   transition: 'transform 0.2s',
                   '&:hover': { transform: 'translateY(-4px)' }
                 }}>
                   <CardContent>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                      <Typography variant="h6" sx={{ fontWeight: 700, color: getPlanColor(plan.plan_name) }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700, color: getPlanColor(plan.plan_name || plan.name) }}>
                         {plan.plan_display_name}
                       </Typography>
                       <Box>
@@ -609,16 +655,16 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
                     </Typography>
                     <Box sx={{ mb: 2 }}>
                       <Typography variant="body2" color="textSecondary">
-                        ✓ {plan.max_users === 999999 ? 'Usuarios ilimitados' : `Hasta ${plan.max_users} usuarios`}
+                        ✓ {(plan.max_users || 0) === 999999 ? 'Usuarios ilimitados' : `Hasta ${plan.max_users || 0} usuarios`}
                       </Typography>
                       <Typography variant="body2" color="textSecondary">
-                        ✓ {plan.max_messages_per_month === 999999 ? 'Mensajes ilimitados' : `${plan.max_messages_per_month.toLocaleString()} mensajes/mes`}
+                        ✓ {(plan.max_messages_per_month || 0) === 999999 ? 'Mensajes ilimitados' : `${(plan.max_messages_per_month || 0).toLocaleString()} mensajes/mes`}
                       </Typography>
                       <Typography variant="body2" color="textSecondary">
-                        ✓ {plan.max_campaigns === 999999 ? 'Campañas ilimitadas' : `${plan.max_campaigns} campañas`}
+                        ✓ {(plan.max_campaigns || 0) === 999999 ? 'Campañas ilimitadas' : `${plan.max_campaigns || 0} campañas`}
                       </Typography>
                       <Typography variant="body2" color="textSecondary">
-                        ✓ {plan.max_contacts === 999999 ? 'Contactos ilimitados' : `${plan.max_contacts.toLocaleString()} contactos`}
+                        ✓ {(plan.max_contacts || 0) === 999999 ? 'Contactos ilimitados' : `${(plan.max_contacts || 0).toLocaleString()} contactos`}
                       </Typography>
                     </Box>
                   </CardContent>
@@ -684,32 +730,25 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
         <DialogContent>
           <Box sx={{ mt: 2 }}>
             <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}>
+              <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  label="Nombre del Plan (ID)"
-                  value={planFormData.plan_name}
-                  onChange={(e) => setPlanFormData({ ...planFormData, plan_name: e.target.value })}
-                  helperText="Identificador único (ej: premium, enterprise)"
-                  disabled={!!selectedPlan}
+                  label="Nombre del Plan"
+                  value={planFormData.name}
+                  onChange={(e) => setPlanFormData({ ...planFormData, name: e.target.value })}
+                  helperText="Nombre del plan (ej: Básico, Estándar, Premium)"
+                  required
                 />
               </Grid>
-              <Grid item xs={12} sm={6}>
+              <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  label="Nombre para Mostrar"
-                  value={planFormData.plan_display_name}
-                  onChange={(e) => setPlanFormData({ ...planFormData, plan_display_name: e.target.value })}
-                  helperText="Nombre visible para usuarios"
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Duración (días)"
-                  type="number"
-                  value={planFormData.duration_days}
-                  onChange={(e) => setPlanFormData({ ...planFormData, duration_days: parseInt(e.target.value) || 0 })}
+                  label="Descripción"
+                  value={planFormData.description}
+                  onChange={(e) => setPlanFormData({ ...planFormData, description: e.target.value })}
+                  multiline
+                  rows={2}
+                  helperText="Descripción del plan"
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
@@ -720,18 +759,36 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
                   value={planFormData.price}
                   onChange={(e) => setPlanFormData({ ...planFormData, price: parseFloat(e.target.value) || 0 })}
                   InputProps={{
-                    startAdornment: <Typography>$</Typography>
+                    startAdornment: <Typography>Gs. </Typography>
                   }}
+                  required
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
-                  label="Máximo de Usuarios"
+                  label="Máximo de Agentes"
                   type="number"
-                  value={planFormData.max_users}
-                  onChange={(e) => setPlanFormData({ ...planFormData, max_users: parseInt(e.target.value) || 0 })}
-                  helperText="999999 = ilimitado"
+                  value={planFormData.max_agents}
+                  onChange={(e) => setPlanFormData({ ...planFormData, max_agents: parseInt(e.target.value) || 0 })}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Máximo de Sesiones"
+                  type="number"
+                  value={planFormData.max_sessions}
+                  onChange={(e) => setPlanFormData({ ...planFormData, max_sessions: parseInt(e.target.value) || 0 })}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Máximo de Canales"
+                  type="number"
+                  value={planFormData.max_channels}
+                  onChange={(e) => setPlanFormData({ ...planFormData, max_channels: parseInt(e.target.value) || 0 })}
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
@@ -739,30 +796,35 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
                   fullWidth
                   label="Mensajes por Mes"
                   type="number"
-                  value={planFormData.max_messages_per_month}
-                  onChange={(e) => setPlanFormData({ ...planFormData, max_messages_per_month: parseInt(e.target.value) || 0 })}
-                  helperText="999999 = ilimitado"
+                  value={planFormData.max_messages}
+                  onChange={(e) => setPlanFormData({ ...planFormData, max_messages: parseInt(e.target.value) || 0 })}
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Máximo de Campañas"
-                  type="number"
-                  value={planFormData.max_campaigns}
-                  onChange={(e) => setPlanFormData({ ...planFormData, max_campaigns: parseInt(e.target.value) || 0 })}
-                  helperText="999999 = ilimitado"
-                />
+                <FormControl fullWidth>
+                  <InputLabel>BOT IA</InputLabel>
+                  <Select
+                    value={planFormData.bot_enabled ? 'true' : 'false'}
+                    onChange={(e) => setPlanFormData({ ...planFormData, bot_enabled: e.target.value === 'true' })}
+                    label="BOT IA"
+                  >
+                    <MenuItem value="true">Habilitado</MenuItem>
+                    <MenuItem value="false">Deshabilitado</MenuItem>
+                  </Select>
+                </FormControl>
               </Grid>
               <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Máximo de Contactos"
-                  type="number"
-                  value={planFormData.max_contacts}
-                  onChange={(e) => setPlanFormData({ ...planFormData, max_contacts: parseInt(e.target.value) || 0 })}
-                  helperText="999999 = ilimitado"
-                />
+                <FormControl fullWidth>
+                  <InputLabel>API REST</InputLabel>
+                  <Select
+                    value={planFormData.api_enabled ? 'true' : 'false'}
+                    onChange={(e) => setPlanFormData({ ...planFormData, api_enabled: e.target.value === 'true' })}
+                    label="API REST"
+                  >
+                    <MenuItem value="true">Habilitada</MenuItem>
+                    <MenuItem value="false">Deshabilitada</MenuItem>
+                  </Select>
+                </FormControl>
               </Grid>
             </Grid>
           </Box>
