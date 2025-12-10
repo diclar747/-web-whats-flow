@@ -336,6 +336,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
 
       if (chatsData.success) {
         console.log(`✅ [ChatModule] ${chatsData.chats.length} chats cargados`);
+        console.log(`🔍 [ChatModule] TODOS LOS CHATS RAW (primeros 15):`, JSON.stringify(chatsData.chats.slice(0, 15).map((c: any) => ({ id: c.id, name: c.name })), null, 2));
         
         // 🔍 DEBUG: Mostrar los primeros 3 chats recibidos
         if (chatsData.chats.length > 0) {
