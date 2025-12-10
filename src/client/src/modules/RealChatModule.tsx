@@ -950,7 +950,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
-          backgroundColor: isDarkMode ? '#0b141a' : '#e5ddd5',
+          backgroundColor: isDarkMode ? '#0c1317' : '#e5ddd5',
           minHeight: 0 // Para que el flex interno funcione correctamente
         }}>
           {activeChat ? (
@@ -1036,6 +1036,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                 flex: 1,
                 overflowY: 'auto',
                 padding: '20px',
+                backgroundColor: isDarkMode ? '#0c1317' : '#e5ddd5',
                 backgroundImage: isDarkMode
                   ? 'url("data:image/svg+xml,%3Csvg width=\"60\" height=\"60\" viewBox=\"0 0 60 60\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"%23111b21\" fill-opacity=\"0.05\" fill-rule=\"evenodd\"%3E%3Cpath d=\"M0 0h60v60H0V0zm4 4h52v7H4V4zm0 11h52v7H4v-7zm0 11h52v7H4v-7zm0 11h52v7H4v-7zm0 11h52v7H4v-7z\"/%3E%3C/g%3E%3C/svg%3E")'
                   : 'url("data:image/svg+xml,%3Csvg width=\"60\" height=\"60\" viewBox=\"0 0 60 60\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cg fill=\"%23e5ddd5\" fill-opacity=\"0.08\" fill-rule=\"evenodd\"%3E%3Cpath d=\"M0 0h60v60H0V0zm4 4h52v7H4V4zm0 11h52v7H4v-7zm0 11h52v7H4v-7zm0 11h52v7H4v-7zm0 11h52v7H4v-7z\"/%3E%3C/g%3E%3C/svg%3E")',

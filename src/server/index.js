@@ -263,6 +263,16 @@ console.log('✅ Sistema Multi-Agente cargado (EXPLICIT CHECK)');
 require('./agents-permissions-endpoints')(app, poolProxy);
 console.log('✅ Sistema Permisos Agentes cargado');
 
+require('./routes/plans')(app, poolProxy);
+console.log('✅ Rutas de Planes cargadas');
+
+require('./routes/clients')(app, poolProxy);
+console.log('✅ Rutas de Clientes cargadas');
+
+require('./analytics-endpoints')(app, poolProxy);
+console.log('✅ Analytics endpoints cargados');
+
+
 
 
 // 🔓 Rate limiter DESACTIVADO para desarrollo (estaba bloqueando demasiado)
@@ -1019,6 +1029,43 @@ async function createTables() {
             }
         }
 
+        // Tabla de Planes
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS plans ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'name VARCHAR(255) NOT NULL,'
+            + 'description TEXT,'
+            + 'price DECIMAL(10, 2) NOT NULL,'
+            + 'modules JSON COMMENT \'Array of module names\','
+            + 'max_agents INT DEFAULT 1,'
+            + 'max_sessions INT DEFAULT 1,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        console.log('[DB-TABLES] Table \'plans\' ensured.');
+
+        // 🔧 MIGRACIÓN: Agregar nuevas columnas a plans (canales, mensajes, bot, api)
+        const newPlanColumns = [
+            { name: 'max_channels', type: 'INT DEFAULT 1', description: 'Cantidad de canales' },
+            { name: 'max_messages', type: 'INT DEFAULT 1000', description: 'Cantidad de envíos' },
+            { name: 'bot_enabled', type: 'BOOLEAN DEFAULT FALSE', description: 'Bot IA habilitado' },
+            { name: 'api_enabled', type: 'BOOLEAN DEFAULT FALSE', description: 'API REST habilitada' }
+        ];
+
+        for (const col of newPlanColumns) {
+            try {
+                await connection.query(`ALTER TABLE plans ADD COLUMN ${col.name} ${col.type}`);
+                console.log(`[DB-MIGRATION] ✅ Columna '${col.name}' agregada a plans`);
+            } catch (error) {
+                if (error.code === 'ER_DUP_FIELDNAME') {
+                    // Columna ya existe, todo bien
+                } else {
+                    console.error(`[DB-MIGRATION] ⚠️ Error agregando columna '${col.name}' a plans:`, error.message);
+                }
+            }
+        }
+
         // Tabla de Usuarios (admins y agentes)
         await connection.query(
             'CREATE TABLE IF NOT EXISTS users ('
@@ -1092,6 +1139,40 @@ async function migrateTables() {
 
         // Migración 1: Agregar columnas faltantes a contact_groups
         console.log('[DB-MIGRATION] Checking contact_groups structure...');
+
+        // Migración: Crear tabla plans si no existe
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS plans ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'name VARCHAR(255) NOT NULL,'
+            + 'description TEXT,'
+            + 'price DECIMAL(10, 2) NOT NULL,'
+            + 'modules JSON,'
+            + 'max_agents INT DEFAULT 1,'
+            + 'max_sessions INT DEFAULT 1,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        console.log('[DB-MIGRATION] Table \'plans\' checked/created.');
+
+        // Migración: Agregar columnas a users
+        const userColumns = [
+            { name: 'plan_id', type: 'INT NULL', description: 'ID del plan asignado' },
+            { name: 'is_blocked', type: 'BOOLEAN DEFAULT FALSE', description: 'Si el cliente está bloqueado' },
+            { name: 'last_seen', type: 'DATETIME', description: 'Última conexión' }
+        ];
+
+        for (const col of userColumns) {
+            try {
+                await connection.query(`ALTER TABLE users ADD COLUMN ${col.name} ${col.type}`);
+                console.log(`[DB-MIGRATION] ✅ Columna '${col.name}' agregada a users`);
+            } catch (error) {
+                if (error.code !== 'ER_DUP_FIELDNAME') {
+                    console.error(`[DB-MIGRATION] ⚠️ Error agregando columna '${col.name}' a users:`, error.message);
+                }
+            }
+        }
 
         const addColumnIfNotExists = async (tableName, columnName, columnDef) => {
             try {
@@ -1834,7 +1915,8 @@ async function saveMessageToDB(sessionId, msg) {
             file_name = null,
             file_size = null,
             timestamp, // Should be a JS Date object or a string parsable by new Date()
-            status = 'sent' // Default status, can be updated later
+            status = 'sent', // Default status, can be updated later
+            is_read = false // 🆕 Default is_read
         } = msg;
 
         // Normalizar JIDs para eliminar sufijos de dispositivo/hilo
@@ -1932,25 +2014,64 @@ async function saveMessageToDB(sessionId, msg) {
             mysqlTimestamp,
             finalStatus,
             senderName, // Nombre del remitente
-            senderAvatar // Avatar del remitente
+            senderAvatar, // Avatar del remitente
+            is_read // 🆕 is_read
         ];
 
         // Asegurar que el contacto existe antes de guardar el mensaje
         try {
+            // FIX: Si el mensaje es enviado por mí, NO usar senderName (mi nombre) para el contacto del chat
+            const contactName = from_me ? chat_jid.split('@')[0] : (senderName || chat_jid.split('@')[0]);
+            const contactNotify = from_me ? null : senderName;
+
             await connection.execute(
                 `INSERT IGNORE INTO contacts (jid, session_id, name, notify_name, is_group, created_at) 
                  VALUES (?, ?, ?, ?, ?, NOW())`,
-                [chat_jid, phoneNumber, senderName || chat_jid.split('@')[0], senderName, chat_jid.includes('@g.us') ? 1 : 0]
+                [chat_jid, phoneNumber, contactName, contactNotify, chat_jid.includes('@g.us') ? 1 : 0]
             );
         } catch (contactErr) {
             console.log(`[DB-MSG] ⚠️ No se pudo crear contacto ${chat_jid}: ${contactErr.message}`);
         }
 
-        console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for phone number: ${phoneNumber}, user_session_id: ${userSessionId}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[8]}, status: ${params[16]}, sender_name: ${senderName}`);
+        console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for phone number: ${phoneNumber}, user_session_id: ${userSessionId}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[8]}, status: ${params[16]}, sender_name: ${senderName}, is_read: ${is_read}`);
         const [result] = await connection.execute(
-            'INSERT INTO messages (id, session_id, user_session_id, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, caption, file_name, file_size, timestamp, status, sender_name, sender_avatar) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = VALUES(agent_id), agent_name = VALUES(agent_name), sender_name = VALUES(sender_name), sender_avatar = VALUES(sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), caption = COALESCE(VALUES(caption), caption), file_name = COALESCE(VALUES(file_name), file_name), file_size = COALESCE(VALUES(file_size), file_size), text_content = COALESCE(VALUES(text_content), text_content), updated_at = CURRENT_TIMESTAMP',
+            'INSERT INTO messages (id, session_id, user_session_id, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, caption, file_name, file_size, timestamp, status, sender_name, sender_avatar, is_read) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = VALUES(agent_id), agent_name = VALUES(agent_name), sender_name = VALUES(sender_name), sender_avatar = VALUES(sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), caption = COALESCE(VALUES(caption), caption), file_name = COALESCE(VALUES(file_name), file_name), file_size = COALESCE(VALUES(file_size), file_size), text_content = COALESCE(VALUES(text_content), text_content), is_read = VALUES(is_read), updated_at = CURRENT_TIMESTAMP',
             params
         );
+        console.log(`[DB-MSG] ✅ Message saved/updated: ${messageId}`);
+
+        // 3. ACTUALIZAR TABLA CHATS (CRÍTICO PARA QUE APAREZCA EN LA LISTA)
+        // Como desactivamos la sync inicial, es vital crear/actualizar el chat aquí
+        try {
+            const chatName = senderName || chat_jid.split('@')[0];
+            // 🔧 FIX: Unread count solo incrementa si el mensaje es RECIBIDO y NO LEIDO
+            const shouldIncrementUnread = (!from_me && !is_read) ? 1 : 0;
+            const unreadIncrement = shouldIncrementUnread;
+
+            await connection.execute(
+                `INSERT INTO chats (jid, session_id, name, unread_count, last_message_time, last_message_content, is_group, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                 ON DUPLICATE KEY UPDATE
+                    last_message_content = IF(VALUES(last_message_time) >= COALESCE(last_message_time, '1970-01-01'), VALUES(last_message_content), last_message_content),
+                    last_message_time = IF(VALUES(last_message_time) >= COALESCE(last_message_time, '1970-01-01'), VALUES(last_message_time), last_message_time),
+                    unread_count = unread_count + VALUES(unread_count),
+                    updated_at = NOW(),
+                    name = IF(name = '' OR name IS NULL OR name = SUBSTRING_INDEX(jid, '@', 1), VALUES(name), name)
+                `,
+                [
+                    chat_jid,
+                    phoneNumber,
+                    chatName,
+                    unreadIncrement,
+                    new Date(Math.floor(mysqlTimestamp.getTime())), // last_message_time
+                    (text_content || caption || message_type || 'Media').substring(0, 255), // last_message_content
+                    chat_jid.includes('@g.us') ? 1 : 0 // is_group
+                ]
+            );
+            console.log(`[DB-CHAT] ✅ Chat updated: ${chat_jid}`);
+        } catch (chatErr) {
+            console.error(`[DB-CHAT] ❌ Error updating chat ${chat_jid}:`, chatErr.message);
+        }
 
         // 🔥 SIMULAR ACTUALIZACIÓN DE ESTADO para mensajes enviados
         if (from_me) {
@@ -2059,6 +2180,17 @@ async function saveMessageToDB(sessionId, msg) {
                 status: status
             });
             console.log(`[${sessionId}] ✅💾 Mensaje emitido desde BD`);
+
+            // 🆕 EMITIR CHAT UPDATE para actualizar la lista lateral
+            io.to(`session-${phoneNumber}`).emit('chat-update', {
+                id: chat_jid,
+                lastMessage: text_content || 'Media',
+                timestamp: new Date(timestamp).toISOString(),
+                unreadCount: !from_me ? 1 : 0, // Incrementará en el frontend si no es enviado por mi
+                name: senderName || chat_jid.split('@')[0],
+                profilePicUrl: senderAvatar
+            });
+            console.log(`[${sessionId}] 📡 chat-update emitido para ${chat_jid}`);
         }
         // ═══════════════════════════════════════════════════════════
 
@@ -2576,11 +2708,13 @@ async function forceFullSync(sessionId, sock, userSessionId) {
                 console.error(`[FORCE-SYNC] Error obteniendo grupos participantes:`, err.message);
             }
 
-            // 5. Sincronizar mensajes recientes
+            // 5. Sincronizar mensajes recientes (RESTAURADO)
             console.log(`[FORCE-SYNC] 💬 Sincronizando mensajes recientes...`);
             if (sock?.chats) { // Asegurarse de que exista el store de chats
                 for (const [jid, chat] of sock.chats.entries()) {
-                    if (chat?.unreadCount > 0 || chat?.timestamp > Date.now() - (7 * 24 * 60 * 60 * 1000)) { // Últimos 7 días o no leídos
+                    // Sincronizar si tiene mensajes no leídos o actividad reciente
+                    // (Anteriormente 24h, ahora restaurado a lo que Baileys tenga o considere relevante)
+                    if (chat?.unreadCount > 0 || (chat?.timestamp && chat.timestamp > Date.now() - (7 * 24 * 60 * 60 * 1000))) { // 7 días como fallback
                         try {
                             // Intentar obtener mensajes recientes de este chat
                             const messages = await sock.fetchMessagesFromWA ?
@@ -3525,6 +3659,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                       AND chat_jid NOT LIKE '%status@broadcast%'
                       AND chat_jid NOT LIKE '%@lid%'
                       ${includeGroups ? '' : 'AND chat_jid NOT LIKE \'%@g.us\''}
+                      AND SUBSTRING_INDEX(SUBSTRING_INDEX(chat_jid, '@', 1), ':', 1) != ? -- 🚫 EXCLUIR PROPIO NÚMERO (Robust device ID)
                       ${dateFilterSQL}
                     GROUP BY chat_jid
                 ) max_m ON m.chat_jid = max_m.chat_jid AND m.timestamp = max_m.max_timestamp
@@ -3533,7 +3668,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             LEFT JOIN contacts c ON latest.chat_jid = c.jid AND c.session_id IN (?, ?)
             ORDER BY latest.timestamp DESC, latest.chat_jid ASC
             LIMIT ? OFFSET ?;`,
-            [phoneNumber, sessionId, phoneNumber, sessionId, phoneNumber, sessionId, phoneNumber, sessionId, limit, offset]
+            [phoneNumber, sessionId, phoneNumber, phoneNumber, sessionId, phoneNumber, sessionId, limit, offset]
         );
 
         const chatList = rows.map(row => {
@@ -5233,9 +5368,12 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             // 'append' = mensajes enviados desde el teléfono (NECESARIOS para tiempo real)
             // 'prepend' = mensajes históricos antiguos (NO necesarios)
             // 'notify' = mensajes nuevos entrantes (NECESARIOS)
+            // 🔧 MODIFICADO: PERMITIR 'prepend' para cargar historial
+            // 'prepend' = mensajes históricos antiguos
+            // 'notify' = mensajes nuevos entrantes
             if (m.type === 'prepend') {
-                console.log(`[${sessionId}] 🚫 BLOQUEADO - Ignorando ${m.messages.length} mensajes HISTÓRICOS tipo prepend`);
-                return;
+                console.log(`[${sessionId}] 📥 Recibiendo ${m.messages.length} mensajes HISTÓRICOS (prepend) - Procesando...`);
+                // NO retornar, permitir que continúe
             }
 
             console.log(`[${sessionId}] ✅ Procesando ${m.messages.length} mensajes tipo: ${m.type} (${m.type === 'append' ? 'DESDE TELÉFONO' : m.type === 'notify' ? 'ENTRANTES' : 'OTROS'})`);
@@ -5248,7 +5386,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             for (const msg of m.messages) {
                 const msgTime = msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : 0;
                 const ageSeconds = Math.floor((now - msgTime) / 1000);
-                const isRecent = (now - msgTime) < 300000; // Últimos 5 MINUTOS
+                // 🔧 MEJORA: Aumentar ventana de tiempo a 10 minutos (600s) para evitar descartar mensajes por relojes desfasados
+                const isRecent = (now - msgTime) < 600000;
 
                 console.log(`[${sessionId}] 🔍 Verificando mensaje:`, {
                     id: msg.key?.id?.substring(0, 15),
@@ -5324,14 +5463,24 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         chatJid: senderJid,
                         increment: 1
                     });
+
+                    // 🆕 OPTIMISTIC CHAT UPDATE: Actualizar lista inmediatamente
+                    io.to(`session-${phoneNumber}`).emit('chat-update', {
+                        id: senderJid,
+                        lastMessage: textContent,
+                        timestamp: new Date(msgTime).toISOString(),
+                        unreadCount: 1, // Asumimos 1 para update optimista
+                        name: senderJid.split('@')[0],
+                        profilePicUrl: null
+                    });
+                    console.log(`[${sessionId}] 🚀 chat-update OPTIMISTA emitido para ${senderJid}`);
                 }
             }
             console.log(`[${sessionId}] 🏁 EMISIÓN COMPLETADA`);
             // ═══════════════════════════════════════════════════════════
 
-            // Procesar mensajes de tipo 'notify' (recibidos) y 'append' (enviados desde teléfono)
-            // Solo bloquear 'prepend' (históricos antiguos)
-            if (m.type === 'notify' || m.type === 'append') {
+            // Procesar mensajes de tipo 'notify', 'append' Y 'prepend'
+            if (m.type === 'notify' || m.type === 'append' || m.type === 'prepend') {
                 console.log(`[${sessionId}] 💾 GUARDANDO ${m.messages.length} mensajes de tipo ${m.type}`);
                 for (const msg of m.messages) {
                     const rawSenderJid = msg.key.remoteJid;
@@ -5538,12 +5687,12 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             file_name: fileName,
                             file_size: fileSize,
                             timestamp: msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000) : new Date(),
-                            status: msg.key.fromMe ? 'sent' : 'received' // Estado inicial
+                            status: msg.key.fromMe ? 'sent' : 'received', // Estado inicial
+                            is_read: m.type === 'prepend' || msg.key.fromMe || false
                         };
 
                         await saveMessageToDB(sessionId, dbMessage);
 
-                        // Emitir al cliente vía Socket.IO - TODOS los mensajes para tiempo real
                         // Cambio: Removido filtro !fromMe para que también emita mensajes propios
                         if (true) { // Emitir TODOS los mensajes en tiempo real
                             // Obtener nombre y avatar del contacto desde la base de datos
@@ -6335,6 +6484,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             console.log(`[${sessionId}] 📝 Procesando chats y mensajes del historial...`);
 
             // ═══════════════════════════════════════════════════════════
+            // ═══════════════════════════════════════════════════════════
+
             // FILTRO DE GRUPOS: No procesar chats de grupos
             // ═══════════════════════════════════════════════════════════
             const totalHistoryChats = historySet.chats?.length || 0;
@@ -6344,12 +6495,21 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 console.log(`[${sessionId}] 🚫 FILTRADOS ${totalHistoryChats - historySet.chats.length} grupos del historial`);
             }
 
-            // Filtrar mensajes de grupos
+            // Filtrar mensajes de grupos Y que sean de las últimas 24 horas (Optimización)
             const totalHistoryMessages = historySet.messages?.length || 0;
-            historySet.messages = historySet.messages?.filter(msg => !msg.key?.remoteJid?.includes('@g.us')) || [];
+            const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60); // Timestamp en segundos
+
+            historySet.messages = historySet.messages?.filter(msg => {
+                const isGroup = msg.key?.remoteJid?.includes('@g.us');
+                const msgTime = Number(msg.messageTimestamp);
+                const isRecent = msgTime > oneDayAgo;
+
+                // Conservar si NO es grupo Y es reciente
+                return !isGroup && isRecent;
+            }) || [];
 
             if (totalHistoryMessages > historySet.messages.length) {
-                console.log(`[${sessionId}] 🚫 FILTRADOS ${totalHistoryMessages - historySet.messages.length} mensajes de grupos del historial`);
+                console.log(`[${sessionId}] 🚫 OPTIMIZACIÓN: Filtrados ${totalHistoryMessages - historySet.messages.length} mensajes (grupos o antiguos > 24h)`);
             }
             // ═══════════════════════════════════════════════════════════
 
@@ -13304,7 +13464,7 @@ async function processCampaign(campaignId, sessionId) {
         if (recipients.length === 0) {
             console.log(`[CAMPAIGN-PROCESSOR] ✅ Campaña ${campaignId} completada (sin pendientes)`);
             await connection.execute(
-                'UPDATE campaigns SET status = \'completed\', completed_at = NOW() WHERE id = ?',
+                'UPDATE campaigns SET status = \'completed\', progress = progress_total, completed_at = NOW() WHERE id = ?',
                 [campaignId]
             );
             return;
@@ -13759,8 +13919,8 @@ app.post('/api/campaigns/create', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            // Determinar el estado inicial: siempre 'draft' si es programada, para requerir inicio manual
-            const initialStatus = campaign.scheduledAt ? 'draft' : 'pending';
+            // Determinar el estado inicial: 'scheduled' si es programada, 'pending' si es directo (para que el scheduler o worker lo tome)
+            const initialStatus = campaign.scheduledAt ? 'scheduled' : 'pending';
 
             // Convertir fecha ISO a formato MySQL DATETIME (YYYY-MM-DD HH:MM:SS)
             let scheduledAtMySQL = null;
@@ -20974,20 +21134,34 @@ server.listen(PORT, '0.0.0.0', async () => {
             try {
                 const connection = await pool.getConnection();
                 try {
-                    // Buscar campañas programadas cuya fecha ya pasó
+                    // Check Server Time for Debug
+                    const now = new Date();
+                    // const [dbTime] = await connection.execute('SELECT NOW() as db_time');
+
+                    // Formato UTC para comparación consistente: YYYY-MM-DD HH:mm:ss
+                    const nowISO = now.toISOString().slice(0, 19).replace('T', ' ');
+
+                    console.log(`[SCHEDULER] ⏳ Buscando campañas... JS-Time (UTC): ${now.toISOString()}, Query-Time: ${nowISO}`);
+
+                    // Buscar campañas programadas cuya fecha ya pasó (usando tiempo de Node/App)
+                    // FIX: Usar '?' parameter en lugar de NOW() para evitar desface de zona horaria de MySQL
                     const [campaigns] = await connection.execute(`
-                        SELECT id, session_id, name, scheduled_at
+                        SELECT id, session_id, name, scheduled_at, phone_number
                         FROM campaigns
                         WHERE status = 'scheduled'
                         AND scheduled_at IS NOT NULL
-                        AND scheduled_at <= NOW()
-                    `);
+                        AND scheduled_at <= ?
+                    `, [nowISO]);
+
+                    if (campaigns && campaigns.length > 0) {
+                        console.log(`[SCHEDULER] 🎯 Encontradas ${campaigns.length} campañas para ejecutar.`);
+                    }
 
                     for (const campaign of campaigns) {
                         console.log(`[SCHEDULER] ⏰ Ejecutando campaña programada: ${campaign.name} (ID: ${campaign.id}) - Scheduled: ${campaign.scheduled_at}, Now: ${new Date().toISOString()}`);
 
                         // 🔍 SMART LOOKUP: Buscar sesión activa de forma robusta
-                        let activeSessionId = sessionId;
+                        let activeSessionId = campaign.session_id;
                         let foundInMap = false;
 
                         // 1. Verificar si existe directamente en el Map
@@ -21047,7 +21221,10 @@ server.listen(PORT, '0.0.0.0', async () => {
                             processCampaign(campaign.id, activeSessionId);
                             console.log(`[SCHEDULER] ✅ Campaña ${campaign.id} iniciada con sesión ${activeSessionId}`);
                         } else {
-                            console.log(`[SCHEDULER] ⚠️ No se encontró sesión conectada para campaña ${campaign.id} (SessionID: ${sessionId})`);
+                            console.log(`[SCHEDULER] ⚠️ No se encontró sesión conectada para campaña ${campaign.id}`);
+                            console.log(`[SCHEDULER] 🔍 Detalles: SessionID=${campaign.session_id}, Phone=${campaign.phone_number}`);
+                            // Intento de diagnóstico: Listar sesiones disponibles
+                            console.log(`[SCHEDULER] 📋 Sesiones disponibles: ${Array.from(sessions.keys()).join(', ')}`);
                         }
                     }
                 } finally {

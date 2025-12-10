@@ -79,7 +79,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
   const [newKeyDescription, setNewKeyDescription] = useState('');
   const [generatedKey, setGeneratedKey] = useState('');
   const [showKey, setShowKey] = useState<{ [key: number]: boolean }>({});
-  
+
   // Estados para probar API
   const [testEndpoint, setTestEndpoint] = useState('text');
   const [testTo, setTestTo] = useState('');
@@ -90,27 +90,30 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
   const [testResult, setTestResult] = useState<any>(null);
   const [testLoading, setTestLoading] = useState(false);
   const [selectedApiKey, setSelectedApiKey] = useState('');
-  
+
   // Estado de WhatsApp
   const [whatsappStatus, setWhatsappStatus] = useState<any>(null);
   const [statusLoading, setStatusLoading] = useState(true);
 
+  // 🧹 Sanitizar sessionId (eliminar sufijos :1, etc)
+  const cleanSessionId = sessionId?.split(':')[0] || sessionId;
+
   useEffect(() => {
     loadAPIKeys();
     checkWhatsAppStatus();
-    
+
     // Verificar estado cada 10 segundos
     const interval = setInterval(checkWhatsAppStatus, 10000);
     return () => clearInterval(interval);
-  }, [sessionId]);
-  
+  }, [sessionId, cleanSessionId]);
+
   const checkWhatsAppStatus = async () => {
     try {
       setStatusLoading(true);
       // Usar endpoint más confiable que verifica desde la BD
       const response = await fetch(`${getAPIBaseURL()}/api/whatsapp-connected`);
       const data = await response.json();
-      
+
       // Transformar formato para compatibilidad
       setWhatsappStatus({
         isConnected: data.connected,
@@ -128,9 +131,9 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
   const loadAPIKeys = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${getAPIBaseURL()}/api/rest/keys/${sessionId}`);
+      const response = await fetch(`${getAPIBaseURL()}/api/rest/keys/${cleanSessionId}`);
       const data = await response.json();
-      
+
       if (data.success) {
         setApiKeys(data.keys);
         if (data.keys.length > 0 && !selectedApiKey) {
@@ -152,14 +155,14 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          sessionId: sessionId,
+          sessionId: cleanSessionId,
           name: newKeyName,
           description: newKeyDescription
         })
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         setGeneratedKey(data.api_key);
         setNewKeyName('');
@@ -185,7 +188,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         await loadAPIKeys();
       } else {
@@ -229,7 +232,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
           body = { to: testTo, document: testFileUrl, filename: testFilename, caption: testMessage };
           break;
         case 'status':
-          endpoint = `/api/rest/status/${sessionId}`;
+          endpoint = `/api/rest/status/${cleanSessionId}`;
           break;
       }
 
@@ -362,7 +365,7 @@ var_dump($result);
           La API usará tu sesión actual automáticamente. Genera una API Key para comenzar.
         </Typography>
       </Alert>
-      
+
       <Alert severity="info" sx={{ mb: 3 }}>
         <Typography variant="body2">
           <strong>🔐 API REST para WhatsApp</strong> - Envía y recibe mensajes, gestiona autenticación y más mediante API REST
@@ -432,9 +435,9 @@ var_dump($result);
                             </TableCell>
                             <TableCell>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <code style={{ 
-                                  background: '#f5f5f5', 
-                                  padding: '4px 8px', 
+                                <code style={{
+                                  background: '#f5f5f5',
+                                  padding: '4px 8px',
                                   borderRadius: 4,
                                   fontSize: '12px'
                                 }}>
@@ -469,7 +472,7 @@ var_dump($result);
                             </TableCell>
                             <TableCell>
                               <Typography variant="caption">
-                                {key.last_used_at 
+                                {key.last_used_at
                                   ? new Date(key.last_used_at).toLocaleString()
                                   : 'Nunca'
                                 }
@@ -519,7 +522,7 @@ var_dump($result);
 
                 <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 2, mb: 3 }}>
                   <pre style={{ margin: 0, fontSize: '13px' }}>
-X-API-Key: wf_tu_api_key_aqui
+                    X-API-Key: wf_tu_api_key_aqui
                   </pre>
                 </Box>
 
@@ -544,7 +547,7 @@ X-API-Key: wf_tu_api_key_aqui
                     <Typography variant="subtitle2" gutterBottom>Parámetros (JSON):</Typography>
                     <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 2, mb: 2 }}>
                       <pre style={{ margin: 0, fontSize: '12px' }}>
-{`{
+                        {`{
   "to": "595981234567",        // Número de teléfono (con código de país)
   "message": "Hola desde API"  // Mensaje a enviar
 }`}
@@ -554,7 +557,7 @@ X-API-Key: wf_tu_api_key_aqui
                     <Typography variant="subtitle2" gutterBottom>Ejemplo cURL:</Typography>
                     <Box sx={{ bgcolor: '#1e1e1e', color: '#fff', p: 2, borderRadius: 2, mb: 2 }}>
                       <pre style={{ margin: 0, fontSize: '11px', overflowX: 'auto' }}>
-{codeExamples.curl_text}
+                        {codeExamples.curl_text}
                       </pre>
                     </Box>
 
@@ -585,7 +588,7 @@ X-API-Key: wf_tu_api_key_aqui
                     <Typography variant="subtitle2" gutterBottom>Parámetros (JSON):</Typography>
                     <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 2, mb: 2 }}>
                       <pre style={{ margin: 0, fontSize: '12px' }}>
-{`{
+                        {`{
   "to": "595981234567",
   "image": "https://example.com/imagen.jpg",  // URL de la imagen
   "caption": "Mira esta imagen" (opcional)
@@ -595,7 +598,7 @@ X-API-Key: wf_tu_api_key_aqui
 
                     <Box sx={{ bgcolor: '#1e1e1e', color: '#fff', p: 2, borderRadius: 2, mb: 2 }}>
                       <pre style={{ margin: 0, fontSize: '11px', overflowX: 'auto' }}>
-{codeExamples.curl_image}
+                        {codeExamples.curl_image}
                       </pre>
                     </Box>
 
@@ -626,7 +629,7 @@ X-API-Key: wf_tu_api_key_aqui
                     <Typography variant="subtitle2" gutterBottom>Parámetros (JSON):</Typography>
                     <Box sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 2, mb: 2 }}>
                       <pre style={{ margin: 0, fontSize: '12px' }}>
-{`{
+                        {`{
   "to": "595981234567",
   "document": "https://example.com/doc.pdf",  // URL del archivo
   "filename": "documento.pdf",                // Nombre del archivo
@@ -638,7 +641,7 @@ X-API-Key: wf_tu_api_key_aqui
 
                     <Box sx={{ bgcolor: '#1e1e1e', color: '#fff', p: 2, borderRadius: 2, mb: 2 }}>
                       <pre style={{ margin: 0, fontSize: '11px', overflowX: 'auto' }}>
-{codeExamples.curl_document}
+                        {codeExamples.curl_document}
                       </pre>
                     </Box>
 
@@ -759,7 +762,7 @@ X-API-Key: wf_tu_api_key_aqui
                   <AccordionDetails>
                     <Box sx={{ bgcolor: '#1e1e1e', color: '#fff', p: 2, borderRadius: 2 }}>
                       <pre style={{ margin: 0, fontSize: '12px', overflowX: 'auto' }}>
-{codeExamples.javascript}
+                        {codeExamples.javascript}
                       </pre>
                     </Box>
                     <Button
@@ -780,7 +783,7 @@ X-API-Key: wf_tu_api_key_aqui
                   <AccordionDetails>
                     <Box sx={{ bgcolor: '#1e1e1e', color: '#fff', p: 2, borderRadius: 2 }}>
                       <pre style={{ margin: 0, fontSize: '12px', overflowX: 'auto' }}>
-{codeExamples.python}
+                        {codeExamples.python}
                       </pre>
                     </Box>
                     <Button
@@ -801,7 +804,7 @@ X-API-Key: wf_tu_api_key_aqui
                   <AccordionDetails>
                     <Box sx={{ bgcolor: '#1e1e1e', color: '#fff', p: 2, borderRadius: 2 }}>
                       <pre style={{ margin: 0, fontSize: '12px', overflowX: 'auto' }}>
-{codeExamples.php}
+                        {codeExamples.php}
                       </pre>
                     </Box>
                     <Button
@@ -827,7 +830,7 @@ X-API-Key: wf_tu_api_key_aqui
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>🧪 Probar API en Vivo</Typography>
-                
+
                 <FormControl fullWidth sx={{ mb: 2 }}>
                   <InputLabel>Selecciona API Key</InputLabel>
                   <Select
@@ -942,7 +945,7 @@ X-API-Key: wf_tu_api_key_aqui
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>📊 Resultado</Typography>
-                
+
                 {!testResult ? (
                   <Alert severity="info">
                     Configura los parámetros y presiona "Probar API" para ver el resultado
@@ -988,15 +991,15 @@ X-API-Key: wf_tu_api_key_aqui
                   ✅ API Key generada exitosamente
                 </Typography>
               </Alert>
-              
+
               <Typography variant="body2" sx={{ mb: 1 }}>
                 Copia y guarda esta API Key en un lugar seguro. No podrás verla nuevamente.
               </Typography>
 
-              <Box sx={{ 
-                bgcolor: '#f5f5f5', 
-                p: 2, 
-                borderRadius: 2, 
+              <Box sx={{
+                bgcolor: '#f5f5f5',
+                p: 2,
+                borderRadius: 2,
                 mb: 2,
                 display: 'flex',
                 alignItems: 'center',

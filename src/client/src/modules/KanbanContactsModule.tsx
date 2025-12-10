@@ -355,7 +355,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
 
       if (data.success) {
         console.log('✅ Contacto movido exitosamente');
-        
+
         // Actualizar estado local
         setContacts(prev => {
           const newContacts = { ...prev };
@@ -414,7 +414,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
     try {
       setLoading(true);
       const lines = importText.split('\n').filter(line => line.trim());
-      
+
       const contactsList = lines.map(line => {
         const [name, phone] = line.split(',').map(s => s.trim());
         return { name, phone };
@@ -428,7 +428,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
 
         try {
           const contactJid = `${contact.phone}@s.whatsapp.net`;
-          
+
           const response = await fetch(`${getAPIBaseURL()}/api/kanban/contacts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -664,11 +664,14 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
         sx={{
           mb: 2,
           cursor: 'grab',
+          bgcolor: '#334155', // Slate 700 - Darker Card
+          color: 'white',
           '&:active': { cursor: 'grabbing' },
           transition: 'all 0.2s',
           '&:hover': {
             transform: 'translateY(-2px)',
-            boxShadow: 3,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            bgcolor: '#475569' // Hover lighten
           },
         }}
       >
@@ -686,14 +689,14 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
               </Typography>
               {contact.phone && (
                 <Stack direction="row" spacing={1} alignItems="center">
-                  <Phone sx={{ fontSize: 14, color: '#999' }} />
-                  <Typography variant="body2" color="textSecondary">
+                  <Phone sx={{ fontSize: 14, color: 'rgba(255,255,255,0.6)' }} />
+                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.6)' }}>
                     {cleanPhoneNumber(contact.phone)}
                   </Typography>
                 </Stack>
               )}
               {contact.last_message_time && (
-                <Typography variant="caption" color="textSecondary">
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)' }}>
                   Último mensaje: {new Date(contact.last_message_time).toLocaleDateString()}
                 </Typography>
               )}
@@ -703,10 +706,10 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                 size="small"
                 onClick={(e) => handleOpenQuickChat(contact, e)}
                 sx={{
-                  bgcolor: 'primary.main',
-                  color: 'white',
+                  bgcolor: 'rgba(99, 102, 241, 0.2)',
+                  color: '#818cf8',
                   '&:hover': {
-                    bgcolor: 'primary.dark',
+                    bgcolor: 'rgba(99, 102, 241, 0.4)',
                     transform: 'scale(1.1)',
                   },
                   transition: 'all 0.2s',
@@ -732,17 +735,18 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
           sx={{
             height: '100%',
             minHeight: 500,
-            bgcolor: '#f5f5f5',
-            borderRadius: 2,
+            bgcolor: '#1e293b', // Slate 800 Back
+            borderRadius: 3,
             p: 2,
-            border: draggedFromBoard !== board.id ? `2px dashed ${board.color}` : '2px solid transparent',
+            border: draggedFromBoard !== board.id ? `2px dashed ${board.color}40` : '2px solid transparent', // Lower opacity border
             transition: 'all 0.3s',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
           }}
         >
           {/* Header de columna */}
           <Box
             sx={{
-              bgcolor: board.color,
+              bgcolor: board.color, // Mantener color del tablero
               color: 'white',
               p: 2,
               borderRadius: 2,
@@ -750,6 +754,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
             }}
           >
             <Stack direction="row" spacing={1} alignItems="center">
@@ -777,8 +782,8 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
           {/* Lista de contactos */}
           <Box sx={{ overflowY: 'auto', maxHeight: 'calc(100vh - 300px)' }}>
             {boardContacts.length === 0 ? (
-              <Card sx={{ p: 4, textAlign: 'center', bgcolor: 'white' }}>
-                <Typography variant="body2" color="textSecondary">
+              <Card sx={{ p: 4, textAlign: 'center', bgcolor: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', borderRadius: 2 }}>
+                <Typography variant="body2">
                   Arrastra contactos aquí
                 </Typography>
               </Card>
@@ -1438,7 +1443,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                         sx={{
                           color: showEmojiPicker ? '#667eea' : '#999',
                           bgcolor: showEmojiPicker ? 'rgba(102, 126, 234, 0.1)' : 'transparent',
-                          '&:hover': { 
+                          '&:hover': {
                             bgcolor: 'rgba(102, 126, 234, 0.15)',
                             color: '#667eea',
                           }
@@ -1466,8 +1471,8 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                   maxWidth: 360,
                 }}
               >
-                <Box sx={{ 
-                  p: 1.5, 
+                <Box sx={{
+                  p: 1.5,
                   borderBottom: '1px solid rgba(0,0,0,0.08)',
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -1476,8 +1481,8 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                   <Typography variant="body2" sx={{ fontWeight: 600, color: '#667eea' }}>
                     😊 Selecciona un emoji
                   </Typography>
-                  <IconButton 
-                    size="small" 
+                  <IconButton
+                    size="small"
                     onClick={() => setShowEmojiPicker(false)}
                     sx={{ p: 0.5 }}
                   >
@@ -1492,30 +1497,30 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                 }}>
                   {['😀', '😃', '😄', '😁', '😊', '😍', '🥰', '😘', '😂', '🤣', '😉', '😎', '🤔', '🤗', '🙌', '👍',
                     '👋', '🙏', '💪', '✨', '🎉', '🎊', '❤️', '💚', '💙', '💜', '🔥', '⭐', '✅', '❌', '📱', '💻'].map((emoji, index) => (
-                  <Box
-                    key={`${emoji}-${index}`}
-                    onClick={() => insertEmoji(emoji)}
-                    sx={{
-                      fontSize: '1.8rem',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      p: 1,
-                      borderRadius: 2,
-                      transition: 'all 0.2s',
-                      bgcolor: 'rgba(0,0,0,0.02)',
-                      '&:hover': {
-                        bgcolor: 'rgba(102, 126, 234, 0.15)',
-                        transform: 'scale(1.25)',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                      },
-                      '&:active': {
-                        transform: 'scale(0.95)',
-                      }
-                    }}
-                  >
-                    {emoji}
-                  </Box>
-                ))}
+                      <Box
+                        key={`${emoji}-${index}`}
+                        onClick={() => insertEmoji(emoji)}
+                        sx={{
+                          fontSize: '1.8rem',
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                          p: 1,
+                          borderRadius: 2,
+                          transition: 'all 0.2s',
+                          bgcolor: 'rgba(0,0,0,0.02)',
+                          '&:hover': {
+                            bgcolor: 'rgba(102, 126, 234, 0.15)',
+                            transform: 'scale(1.25)',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                          },
+                          '&:active': {
+                            transform: 'scale(0.95)',
+                          }
+                        }}
+                      >
+                        {emoji}
+                      </Box>
+                    ))}
                 </Box>
               </Box>
             )}
@@ -1581,8 +1586,8 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
       </Dialog>
 
       {/* Dialog para importar masivo */}
-      <Dialog 
-        open={showImportDialog} 
+      <Dialog
+        open={showImportDialog}
         onClose={() => {
           setShowImportDialog(false);
           setImportText('');
@@ -1599,12 +1604,12 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                 Pega tu lista aquí. <strong>Formato: Nombre,Teléfono</strong> (uno por línea)
               </Typography>
               <Typography variant="caption" sx={{ display: 'block', mt: 0.5 }}>
-                Ejemplo:<br/>
-                Juan Perez,595123456789<br/>
+                Ejemplo:<br />
+                Juan Perez,595123456789<br />
                 Maria Lopez,595987654321
               </Typography>
             </Alert>
-            
+
             <TextField
               multiline
               rows={10}
@@ -1619,7 +1624,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                 }
               }}
             />
-            
+
             {importText && (
               <Typography variant="caption" color="success.main">
                 ✓ {importText.split('\n').filter(l => l.trim()).length} contactos detectados
@@ -1664,9 +1669,9 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
           }}>
             Cancelar
           </Button>
-          <Button 
-            variant="contained" 
-            onClick={handleImportCSV} 
+          <Button
+            variant="contained"
+            onClick={handleImportCSV}
             disabled={!importText.trim() || !importBoardId || loading}
           >
             {loading ? 'Importando...' : 'Importar'}

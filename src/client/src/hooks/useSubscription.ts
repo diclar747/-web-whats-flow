@@ -67,6 +67,12 @@ export const useSubscription = (phone?: string): UseSubscriptionResult => {
         return;
       }
 
+      // 🧹 Sanitizar teléfono (eliminar :1, :82, etc)
+      if (userPhone && userPhone.includes(':')) {
+        console.warn(`[useSubscription] ⚠️ Phone tiene sufijo, limpiando: ${userPhone}`);
+        userPhone = userPhone.split(':')[0];
+      }
+
       console.log('[useSubscription] ✅ Verificando suscripción para:', userPhone);
       const endpoint = `${getAPIBaseURL()}/api/subscriptions/my-subscription?phone=${userPhone}`;
       const response = await fetch(endpoint);
@@ -77,8 +83,8 @@ export const useSubscription = (phone?: string): UseSubscriptionResult => {
         setSubscription(data.subscription);
         console.log('[useSubscription] Suscripción cargada:', {
           status: data.subscription.subscription_status,
-            is_admin: data.subscription.is_admin,
-            plan: data.subscription.subscription_plan
+          is_admin: data.subscription.is_admin,
+          plan: data.subscription.subscription_plan
         });
       } else {
         console.error('[useSubscription] Primera verificación fallida:', data.error);
@@ -140,7 +146,7 @@ export const useSubscription = (phone?: string): UseSubscriptionResult => {
 
   useEffect(() => {
     fetchSubscription();
-    
+
     // Re-fetch si sessionStorage cambia (ej. después de login)
     const intervalId = setInterval(() => {
       const currentSession = sessionStorage.getItem('whatsflow_session');

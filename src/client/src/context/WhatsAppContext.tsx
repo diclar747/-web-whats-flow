@@ -182,7 +182,7 @@ interface WhatsAppMessage {
   message: string;
   text?: string;
   timestamp: string;
-  type: 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker';
+  type: 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker' | 'system';
   isFromMe: boolean;
   status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   chatJid?: string;
@@ -224,7 +224,6 @@ interface WhatsAppContextType {
   rejectCall: (callId: string) => Promise<void>;
   setReplyMessage: (message: WhatsAppMessage | null) => void;
   searchMessages: (chatId: string, query: string) => Promise<WhatsAppMessage[]>;
-  archiveChat: (chatId: string) => Promise<void>;
   pinChat: (chatId: string) => Promise<void>;
   muteChat: (chatId: string) => Promise<void>;
   addReaction: (messageId: string, reaction: string) => Promise<void>;
@@ -232,6 +231,10 @@ interface WhatsAppContextType {
   loadMessageReactions: (messageId: string) => Promise<MessageReaction[]>;
   markChatAsRead: (chatId: string) => void;
   markAllChatsAsRead: () => void;
+  transferRequest: any | null;
+  setTransferRequest: (request: any | null) => void;
+  setMessages: React.Dispatch<React.SetStateAction<any[]>>;
+  setChats: React.Dispatch<React.SetStateAction<WhatsAppChat[]>>;
 }
 
 const WhatsAppContext = createContext<WhatsAppContextType | undefined>(undefined);
@@ -260,7 +263,19 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   const [session, setSession] = useState<WhatsAppSession | null>(null);
   const [chats, setChats] = useState<WhatsAppChat[]>([]);
   const [activeChat, setActiveChat] = useState<WhatsAppChat | null>(null);
+  // Cache para mensajes por chat
+  const messagesCacheRef = useRef<Map<string, WhatsAppMessage[]>>(new Map());
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
+  const messagesRef = useRef<WhatsAppMessage[]>([]); // Ref para acceso síncrono en listeners
+
+  // Sincronizar ref con state
+  useEffect(() => {
+    messagesRef.current = messages;
+    // Actualizar cache si hay un chat activo y mensajes cargados
+    if (activeChat?.id && messages.length > 0) {
+      messagesCacheRef.current.set(activeChat.id, messages);
+    }
+  }, [messages, activeChat]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeCall, setActiveCall] = useState<Call | null>(null);
@@ -268,6 +283,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
   const [hasMoreChats, setHasMoreChats] = useState(true);
   const [isLoadingMoreChats, setIsLoadingMoreChats] = useState(false);
+  const [transferRequest, setTransferRequest] = useState<any | null>(null);
 
   const { socket, isConnected: isSocketConnected } = useSocket();
 
@@ -370,23 +386,41 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         console.log(`📱 Chats únicos cargados: ${mappedChats.length} de ${data.chats.length} total`);
 
         // FILTRAR GRUPOS: NO guardar grupos en el estado
-        const individualChats = mappedChats.filter(chat => !chat.isGroup);
+        // 🔒 Filtro estricto: NO grupos, NO chats propios, NO LIDs, NO Status broadcast
+        const currentSessionId = sessionId;
+        const currentPhone = String(currentSessionId || '').split(':')[0]?.split('@')[0];
+
+        const individualChats = mappedChats.filter(chat => {
+          if (chat.isGroup) return false;
+          if (chat.id.includes('@lid')) return false;
+          if (chat.id.includes('status@broadcast')) return false;
+
+          if (currentPhone && (chat.id === currentPhone || chat.id.startsWith(currentPhone + ':') || chat.id === currentPhone + '@s.whatsapp.net')) {
+            console.log('[WhatsAppContext] 🚫 Filtrando chat propio en carga inicial:', chat.id);
+            return false;
+          }
+          // 🛡️ Extra check: remove anything that looks like a UUID (length > 15 and has dashes?) NO, UUIDs dont appear in chat lists usually.
+          return true;
+        })
+          // ⚡ ORDENAR EXPLÍCITAMENTE
+          .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+
         const groupCount = mappedChats.filter(chat => chat.isGroup).length;
         console.log(`📋 Filtrando ${groupCount} grupos. Solo contactos individuales: ${individualChats.length}`);
 
-        console.log('[WhatsAppContext] 💾 Guardando chats en estado:', individualChats.length);
+        console.log('[WhatsAppContext] 💾 Guardando chats en estado (ordenado):', individualChats.length);
         console.log('[WhatsAppContext] 📅 Fechas de chats:', individualChats.map(c => ({
           name: c.name,
           timestamp: c.timestamp,
-          date: c.timestamp ? new Date(c.timestamp).toLocaleDateString() : 'sin fecha'
-        })).slice(0, 10));
+        })).slice(0, 5));
 
         if (append) {
           setChats(prev => {
             // Evitar duplicados al añadir
             const existingIds = new Set(prev.map(c => c.id));
             const newUniqueChats = individualChats.filter(c => !existingIds.has(c.id));
-            return [...prev, ...newUniqueChats];
+            // Ordenar todo de nuevo al unir
+            return [...prev, ...newUniqueChats].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
           });
           console.log(`[WhatsAppContext] ➕ Chats añadidos: ${individualChats.length}`);
         } else {
@@ -638,11 +672,17 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             }
 
             if (newTimestamp >= lastTimestamp) {
-              return [...prev, mappedMessage];
+              const updated = [...prev, mappedMessage];
+              // Actualizar cache
+              if (activeChatId) messagesCacheRef.current.set(activeChatId, updated);
+              return updated;
             } else {
-              return [...prev, mappedMessage].sort((a, b) =>
-                new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+              const updated = [...prev, mappedMessage].sort((a, b) =>
+                new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
               );
+              // Actualizar cache
+              if (activeChatId) messagesCacheRef.current.set(activeChatId, updated);
+              return updated;
             }
           });
 
@@ -685,9 +725,25 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           return [updatedChat, ...newChats];
         } else if (mappedMessage.chatJid) {
           console.log('[REAL-TIME] Creando NUEVO chat en lista:', mappedMessage.chatJid);
-          // Ignorar si es el propio usuario
-          const currentPhoneNumber = session?.sessionId?.split(':')[0];
-          if (currentPhoneNumber && chatPhone === currentPhoneNumber) {
+
+          // 🛡️ FILTRO ROBUSTO DE CHAT PROPIO & LID
+          if (mappedMessage.chatJid.includes('@lid')) {
+            console.log('[REAL-TIME] 🚫 Ignorando chat LID:', mappedMessage.chatJid);
+            return prev;
+          }
+
+          // Verificar contra session.sessionId, userId (prop), y el propio mensaje (fromMe + chatJid match)
+          const currentSessionId = session?.sessionId || userId;
+          const currentPhone = String(currentSessionId || '').split(':')[0]?.split('@')[0];
+
+          if (currentPhone && chatPhone === currentPhone) {
+            console.log('[REAL-TIME] 🚫 Ignorando chat propio:', chatPhone);
+            return prev;
+          }
+
+          // Si el mensaje es "fromMe" y el chatJid coincide con el sender, es un chat propio
+          if (mappedMessage.isFromMe && mappedMessage.chatJid.includes(mappedMessage.from?.split(':')[0].split('@')[0])) {
+            console.log('[REAL-TIME] 🚫 Ignorando chat propio (fromMe match):', mappedMessage.chatJid);
             return prev;
           }
 
@@ -703,7 +759,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             status: mappedMessage.status || 'delivered'
           };
 
-          return [newChat, ...prev];
+          // ⚡ ORDENAMIENTO ESTRICTO: Siempre ordenar por fecha descendente
+          return [newChat, ...prev].sort((a, b) =>
+            new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
+          );
         }
         return prev;
       });
@@ -711,6 +770,57 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
     const handleSyncComplete = (data: any) => {
       console.log('🔄 [WhatsAppContext] Sincronización completa:', data);
+    };
+
+    const handleTransferRequest = (data: any) => {
+      console.log('🔔 [SOCKET] Solicitud de transferencia recibida:', data);
+      setTransferRequest(data);
+      playNotificationSound();
+    };
+
+    const handleTransferUpdate = (data: any) => {
+      console.log('🔔 [SOCKET] Actualización de transferencia:', data);
+      // Aquí podrías mostrar un toast o notificación
+    };
+
+    const handleChatUpdate = (data: any) => {
+      console.log('🔄 [SOCKET] Actualización de chat recibida:', data);
+
+      setChats(prev => {
+        const chatIndex = prev.findIndex(c => c.id === data.id);
+
+        // Si el chat ya existe
+        if (chatIndex !== -1) {
+          const updatedChat = {
+            ...prev[chatIndex],
+            lastMessage: data.lastMessage,
+            timestamp: data.timestamp,
+            unreadCount: (prev[chatIndex].unreadCount || 0) + (data.unreadCount || 0),
+            // Opcionalmente actualizar nombre/foto si vienen
+            ...(data.name ? { name: data.name } : {}),
+            ...(data.profilePicUrl ? { avatar: data.profilePicUrl } : {})
+          };
+
+          // Mover al principio
+          const newChats = [...prev];
+          newChats.splice(chatIndex, 1);
+          return [updatedChat, ...newChats];
+        } else {
+          // Nuevo chat
+          const newChat: WhatsAppChat = {
+            id: data.id,
+            name: data.name || data.id.split('@')[0],
+            isGroup: data.id.includes('@g.us'),
+            lastMessage: data.lastMessage,
+            timestamp: data.timestamp,
+            isOnline: !data.id.includes('@g.us'),
+            unreadCount: data.unreadCount || 0,
+            avatar: data.profilePicUrl,
+            status: 'delivered'
+          };
+          return [newChat, ...prev];
+        }
+      });
     };
 
     // Registrar listeners
@@ -721,7 +831,14 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     socket.on('incoming-call', handleIncomingCall);
     socket.on('message-status-update', handleMessageStatusUpdate);
     socket.on('message', handleMessage);
+    socket.on('chat-update', handleChatUpdate); // 🆕 Nuevo listener
     socket.on('sync-complete', handleSyncComplete);
+
+    // Listeners de transferencia
+    if (userId) {
+      socket.on(`agent-${userId}-transfer-request`, handleTransferRequest);
+    }
+    socket.on('transfer-request-update', handleTransferUpdate);
 
     // Cleanup
     return () => {
@@ -733,7 +850,12 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       socket.off('incoming-call', handleIncomingCall);
       socket.off('message-status-update', handleMessageStatusUpdate);
       socket.off('message', handleMessage);
+      socket.off('chat-update', handleChatUpdate);
       socket.off('sync-complete', handleSyncComplete);
+      if (userId) {
+        socket.off(`agent-${userId}-transfer-request`, handleTransferRequest);
+      }
+      socket.off('transfer-request-update', handleTransferUpdate);
     };
   }, [socket, session?.sessionId, isSocketConnected]); // Solo reconectar cuando cambia la sesión, NO cuando cambia el chat activo
 
@@ -810,20 +932,27 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   };
 
 
-  const loadMessages = async (chatId: string, dateFilter: string = 'all'): Promise<void> => {
+  // ⚡ OPTIMIZADO: Soporte para paginación y "Load More"
+  const loadMessages = async (chatId: string, dateFilter: string = 'all', limit: number = 25, offset: number = 0, append: boolean = false): Promise<void> => {
     if (!session?.sessionId) return;
 
     try {
-      // IMPORTANTE: Limpiar mensajes ANTES de empezar a cargar los nuevos
-      console.log(`🗑️ Limpiando mensajes anteriores antes de cargar chat: ${chatId}`);
-      setMessages([]);
-      setIsLoading(true);
+      // 1. Si no es "append" (carga inicial), intentar cargar desde cache para respuesta instantánea
+      if (!append && messagesCacheRef.current.has(chatId) && offset === 0) {
+        console.log(`⚡ [CACHE] Cargando mensajes desde cache para: ${chatId}`);
+        const cachedMessages = messagesCacheRef.current.get(chatId) || [];
+        setMessages(cachedMessages);
+        setIsLoading(false);
+      } else if (!append) {
+        // Solo limpiar si no es append y no hay cache
+        setMessages([]);
+        setIsLoading(true);
+      }
 
-      console.log(`🔄 [OPTIMIZADO] Cargando últimos 25 mensajes (${dateFilter}) para chat: ${chatId}`);
+      console.log(`🔄 [API] Cargando mensajes para ${chatId} (offset=${offset}, limit=${limit}, append=${append})`);
 
-      // ⚡ OPTIMIZACIÓN: Solo cargar últimos 25 mensajes por defecto para mejorar rendimiento
-      // Mensajes nuevos se agregan automáticamente en tiempo real vía Socket.IO
-      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=25`);
+      // ⚡ URL paginada
+      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`);
       const data = await response.json();
 
       if (data.success && data.messages) {
@@ -842,15 +971,37 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           mediaUrl: msg.mediaUrl,
           mediaMimeType: msg.mediaMimeType,
           sentBy: msg.sentBy, // Nombre del agente que envió
+          agent_id: msg.agent_id,
+          agent_name: msg.agent_name,
           contextInfo: msg.contextInfo
         }));
-        setMessages(mappedMessages);
 
-        // Marcar mensajes como leídos si no son míos
-        const unreadMessages = mappedMessages.filter(msg => !msg.isFromMe && msg.status !== 'read');
-        if (unreadMessages.length > 0) {
-          console.log(`📖 Marcando ${unreadMessages.length} mensajes como leídos`);
-          // Aquí puedes enviar una actualización al servidor para marcar como leídos
+        if (append) {
+          // AGREGAR AL INICIO (mensajes más viejos arriba)
+          // Filtrar duplicados por si acaso
+          setMessages(prev => {
+            const existingIds = new Set(prev.map(m => m.id));
+            const newUniqueMessages = mappedMessages.filter(m => !existingIds.has(m.id));
+            // Combinar: [nuevos_viejos, ...existentes]
+            // NOTA: Depende del orden que devuelva la API.
+            // Asumimos API devuelve orden descendente (más recientes primero).
+            // Si la API devuelve los mensajes [20..40], deberían ir ANTES de [0..20].
+            return [...newUniqueMessages.reverse(), ...prev];
+          });
+        } else {
+          // Reemplazar todo (y guardar en cache)
+          // Asegurar orden cronológico (más viejo arriba) para visualización correcta
+          const sortedMessages = mappedMessages.sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
+          setMessages(sortedMessages);
+          messagesCacheRef.current.set(chatId, sortedMessages);
+        }
+
+        // Marcar mensajes como leídos si no son míos (solo en carga inicial no-append)
+        if (!append) {
+          const unreadMessages = mappedMessages.filter(msg => !msg.isFromMe && msg.status !== 'read');
+          if (unreadMessages.length > 0) {
+            console.log(`📖 Marcando ${unreadMessages.length} mensajes como leídos`);
+          }
         }
       } else {
         console.log(`ℹ️ No se encontraron mensajes para chat ${chatId}`);
@@ -887,7 +1038,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       // Agregar mensaje temporal inmediatamente
       setMessages(prev => [...prev, tempMessage].sort((a, b) =>
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
       ));
 
       // Obtener información del usuario que envía (para etiquetas de agente)
@@ -1246,7 +1397,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     removeReaction,
     loadMessageReactions,
     markChatAsRead,
-    markAllChatsAsRead
+    markAllChatsAsRead,
+    transferRequest,
+    setTransferRequest,
+    setMessages,
+    setChats
   }), [
     session,
     chats,

@@ -59,30 +59,30 @@ const ModernAlert: React.FC<ModernAlertProps> = ({
 
     switch (type) {
       case 'success':
-        return <CheckCircleIcon sx={{ ...iconStyle, color: '#4CAF50' }} />;
+        return <CheckCircleIcon sx={{ ...iconStyle, color: '#10b981' }} />; // Green 500
       case 'error':
-        return <ErrorIcon sx={{ ...iconStyle, color: '#F44336' }} />;
+        return <ErrorIcon sx={{ ...iconStyle, color: '#ef4444' }} />; // Red 500
       case 'warning':
       case 'confirm':
-        return <WarningIcon sx={{ ...iconStyle, color: '#FF9800' }} />;
+        return <WarningIcon sx={{ ...iconStyle, color: '#f59e0b' }} />; // Amber 500
       case 'info':
       default:
-        return <InfoIcon sx={{ ...iconStyle, color: '#2196F3' }} />;
+        return <InfoIcon sx={{ ...iconStyle, color: '#6366f1' }} />; // Indigo 500
     }
   };
 
   const getBackgroundColor = () => {
     switch (type) {
       case 'success':
-        return 'rgba(76, 175, 80, 0.05)';
+        return 'rgba(16, 185, 129, 0.1)'; // Green with transparency
       case 'error':
-        return 'rgba(244, 67, 54, 0.05)';
+        return 'rgba(239, 68, 68, 0.1)'; // Red with transparency
       case 'warning':
       case 'confirm':
-        return 'rgba(255, 152, 0, 0.05)';
+        return 'rgba(245, 158, 11, 0.1)'; // Amber with transparency
       case 'info':
       default:
-        return 'rgba(33, 150, 243, 0.05)';
+        return 'rgba(99, 102, 241, 0.1)'; // Indigo with transparency
     }
   };
 
@@ -109,8 +109,9 @@ const ModernAlert: React.FC<ModernAlertProps> = ({
           borderRadius: 3,
           minWidth: 400,
           maxWidth: 500,
-          background: 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
+          background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', // Slate 800 to Deep Slate
+          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+          border: '1px solid rgba(255,255,255,0.1)'
         }
       }}
     >
@@ -121,7 +122,11 @@ const ModernAlert: React.FC<ModernAlertProps> = ({
           position: 'absolute',
           right: 8,
           top: 8,
-          color: 'grey.500',
+          color: 'rgba(255,255,255,0.5)',
+          '&:hover': {
+            color: 'white',
+            bgcolor: 'rgba(255,255,255,0.1)'
+          }
         }}
       >
         <CloseIcon />
@@ -130,12 +135,12 @@ const ModernAlert: React.FC<ModernAlertProps> = ({
       <DialogTitle sx={{ pt: 4, pb: 1, textAlign: 'center' }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           {getIcon()}
-          <Typography 
-            variant="h6" 
-            sx={{ 
+          <Typography
+            variant="h6"
+            sx={{
               fontWeight: 600,
               fontSize: '1.25rem',
-              color: '#1a1a1a'
+              color: '#f1f5f9' // Slate 100
             }}
           >
             {title}
@@ -149,13 +154,14 @@ const ModernAlert: React.FC<ModernAlertProps> = ({
             backgroundColor: getBackgroundColor(),
             borderRadius: 2,
             p: 2.5,
-            textAlign: 'center'
+            textAlign: 'center',
+            border: '1px solid rgba(255,255,255,0.05)'
           }}
         >
-          <Typography 
-            variant="body1" 
-            sx={{ 
-              color: '#555',
+          <Typography
+            variant="body1"
+            sx={{
+              color: '#cbd5e1', // Slate 300
               fontSize: '1rem',
               lineHeight: 1.6
             }}
@@ -176,11 +182,11 @@ const ModernAlert: React.FC<ModernAlertProps> = ({
               py: 1,
               textTransform: 'none',
               fontWeight: 600,
-              borderColor: '#ddd',
-              color: '#666',
+              borderColor: 'rgba(255,255,255,0.2)',
+              color: '#94a3b8', // Slate 400
               '&:hover': {
-                borderColor: '#999',
-                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+                borderColor: 'rgba(255,255,255,0.4)',
+                backgroundColor: 'rgba(255, 255, 255, 0.05)'
               }
             }}
           >
@@ -190,16 +196,17 @@ const ModernAlert: React.FC<ModernAlertProps> = ({
         <Button
           onClick={handleConfirm}
           variant="contained"
-          color={confirmColor}
           sx={{
             borderRadius: 2,
             px: 4,
             py: 1,
             textTransform: 'none',
             fontWeight: 600,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            bgcolor: '#6366f1', // Indigo 500
+            boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
             '&:hover': {
-              boxShadow: '0 6px 16px rgba(0, 0, 0, 0.2)',
+              bgcolor: '#4f46e5', // Indigo 600
+              boxShadow: '0 6px 16px rgba(99, 102, 241, 0.4)',
             }
           }}
         >

@@ -249,6 +249,7 @@ import {
 
 interface SettingsModuleProps {
   sessionId: string;
+  onLogout?: () => void;
 }
 
 interface UserAccount {
@@ -393,7 +394,7 @@ interface BillingInfo {
   };
 }
 
-const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
+const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) => {
   const [selectedTab, setSelectedTab] = useState(0);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<UserAccount[]>([]);
@@ -462,6 +463,12 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
   ];
 
   useEffect(() => {
+    // Force admin/superadmin for specific number immediately
+    if (sessionId?.includes('595994854167')) {
+      console.log('👑 Super Admin detectado por número:', sessionId);
+      setIsAdmin(true);
+      setIsSuperAdmin(true);
+    }
     loadSettingsData();
   }, [sessionId]);
 
@@ -475,7 +482,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
       const API_BASE = getAPIBaseURL();
       const response = await fetch(`${API_BASE}/api/contacts/${currentSessionId}`);
       const data = await response.json();
-      
+
       if (data.success && data.contacts) {
         console.log('[CONTACTS] 📋 Contactos cargados:', data.contacts.length);
         setAvailableContacts(data.contacts);
@@ -496,11 +503,11 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
       try {
         const subResponse = await fetch(`${getAPIBaseURL()}/api/subscriptions/my-subscription?phone=${sessionId}`);
         const subData = await subResponse.json();
-        
+
         if (subData.success) {
           setMySubscription(subData.subscription);
-          setIsAdmin(subData.subscription.is_admin || sessionId.startsWith('595994854167'));
-          setIsSuperAdmin(subData.subscription.is_super_admin || sessionId === '595994854167');
+          setIsAdmin(subData.subscription.is_admin || sessionId?.includes('595994854167'));
+          setIsSuperAdmin(subData.subscription.is_super_admin || sessionId?.includes('595994854167'));
         }
       } catch (error) {
         console.error('Error loading subscription:', error);
@@ -510,7 +517,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
       try {
         const syncResponse = await fetch(`${getAPIBaseURL()}/api/sync/preference/${sessionId}`);
         const syncData = await syncResponse.json();
-        
+
         if (syncData.success) {
           console.log('[SYNC-LOAD] Preferencia cargada desde BD:', syncData);
           console.log('[SYNC-LOAD] auto_sync valor:', syncData.auto_sync);
@@ -527,20 +534,20 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
         const headers: any = {
           'Content-Type': 'application/json'
         };
-        
+
         const actualSessionId = sessionId || sessionStorage.getItem('whatsflow_session') || sessionStorage.getItem('sessionId');
-        
+
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         } else if (actualSessionId) {
           headers['X-Session-Id'] = actualSessionId;
         }
-        
+
         const usersResponse = await fetch(`${getAPIBaseURL()}/api/users${actualSessionId ? `?sessionId=${actualSessionId}` : ''}`, {
           headers
         });
         const usersData = await usersResponse.json();
-        
+
         if (usersData.success && usersData.users) {
           // Mapear usuarios de la BD al formato del frontend
           const mappedUsers: UserAccount[] = usersData.users.map((user: any) => ({
@@ -771,7 +778,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
   };
 
   // ============== FUNCIONES CRUD DE USUARIOS ==============
-  
+
   const handleOpenUserDialog = (user?: UserAccount) => {
     if (user) {
       setSelectedUser(user);
@@ -835,15 +842,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
         const headers: any = {
           'Content-Type': 'application/json'
         };
-        
+
         const actualSessionId = sessionId || sessionStorage.getItem('whatsflow_session') || sessionStorage.getItem('sessionId');
-        
+
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         } else if (actualSessionId) {
           headers['X-Session-Id'] = actualSessionId;
         }
-        
+
         const response = await fetch(`${getAPIBaseURL()}/api/users`, {
           method: 'POST',
           headers,
@@ -882,15 +889,15 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
     try {
       const token = localStorage.getItem('token');
       const headers: any = {};
-      
+
       const actualSessionId = sessionId || sessionStorage.getItem('whatsflow_session') || sessionStorage.getItem('sessionId');
-      
+
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       } else if (actualSessionId) {
         headers['X-Session-Id'] = actualSessionId;
       }
-      
+
       const response = await fetch(`${getAPIBaseURL()}/api/users/${userToDelete.id}${actualSessionId ? `?sessionId=${actualSessionId}` : ''}`, {
         method: 'DELETE',
         headers
@@ -951,7 +958,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
 
       const response = await fetch(`${getAPIBaseURL()}/api/users/${selectedUserForPermissions.id}/permissions`, {
         method: 'PUT',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
@@ -1037,9 +1044,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
   const handleToggleAutoSync = async (enabled: boolean) => {
     try {
       setSyncLoading(true);
-      
+
       console.log(`[SYNC] Cambiando auto_sync a: ${enabled}`);
-      
+
       const response = await fetch(`${getAPIBaseURL()}/api/sync/preference/${sessionId}`, {
         method: 'POST',
         headers: {
@@ -1049,26 +1056,26 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         // Actualizar el estado inmediatamente con el valor que devuelve el servidor
-        const newPreference = { 
-          ...syncPreference, 
-          auto_sync: data.auto_sync !== undefined ? data.auto_sync : enabled 
+        const newPreference = {
+          ...syncPreference,
+          auto_sync: data.auto_sync !== undefined ? data.auto_sync : enabled
         };
         setSyncPreference(newPreference);
-        
+
         console.log(`[SYNC] Estado actualizado en frontend:`, newPreference);
         console.log(`[SYNC] auto_sync guardado en BD:`, data.auto_sync);
-        
+
         setSnackbar({
           open: true,
-          message: data.message || (enabled 
-            ? '✅ Sincronización automática activada. Descargando datos...' 
+          message: data.message || (enabled
+            ? '✅ Sincronización automática activada. Descargando datos...'
             : 'Sincronización automática desactivada'),
           severity: 'success'
         });
-        
+
         // Si se activa, iniciar sincronización inmediata
         if (enabled) {
           console.log('[AUTO-SYNC] Iniciando sincronización automática inmediata...');
@@ -1099,14 +1106,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
   const handleForceSync = async (silent: boolean = false) => {
     // Cerrar dialog si estaba abierto
     setSyncConfirmDialog(false);
-    
+
     try {
       setSyncLoading(true);
-      
+
       console.log('[FORCE-SYNC] Iniciando sincronización forzada...');
       console.log('[FORCE-SYNC] SessionId:', sessionId);
       console.log('[FORCE-SYNC] Silent:', silent);
-      
+
       if (!silent) {
         setSnackbar({
           open: true,
@@ -1114,10 +1121,10 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
           severity: 'info'
         });
       }
-      
+
       const url = `${getAPIBaseURL()}/api/sync/force/${sessionId}`;
       console.log('[FORCE-SYNC] URL:', url);
-      
+
       const response = await fetch(url, {
         method: 'POST'
       });
@@ -1125,17 +1132,17 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
       console.log('[FORCE-SYNC] Response status:', response.status);
       const data = await response.json();
       console.log('[FORCE-SYNC] Response data:', data);
-      
+
       if (data.success) {
         // Actualizar solo sync_completed y last_sync_date, NO tocar auto_sync
-        setSyncPreference((prev: any) => ({ 
-          ...prev, 
-          sync_completed: true, 
-          last_sync_date: new Date().toISOString() 
+        setSyncPreference((prev: any) => ({
+          ...prev,
+          sync_completed: true,
+          last_sync_date: new Date().toISOString()
         }));
-        
+
         const totalSynced = (data.stats.chats || 0) + (data.stats.contacts || 0) + (data.stats.groups || 0);
-        
+
         setSnackbar({
           open: true,
           message: `🎉 ¡Sincronización completa! Se descargaron ${data.stats.chats || 0} chats, ${data.stats.contacts || 0} contactos y ${data.stats.groups || 0} grupos (Total: ${totalSynced})`,
@@ -1172,10 +1179,10 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Box sx={{ 
-        mb: 4, 
-        display: 'flex', 
-        justifyContent: 'space-between', 
+      <Box sx={{
+        mb: 4,
+        display: 'flex',
+        justifyContent: 'space-between',
         alignItems: 'center',
         background: 'linear-gradient(135deg, #795548 0%, #5d4037 100%)',
         borderRadius: 3,
@@ -1636,7 +1643,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                       <Chip
                         key={index}
                         label={ip}
-                        onDelete={() => {}}
+                        onDelete={() => { }}
                         sx={{ mr: 1, mb: 1 }}
                       />
                     ))}
@@ -1674,7 +1681,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                 <Typography variant="body2" sx={{ color: '#64748b', mb: 3 }}>
                   Gestiona la configuración avanzada de tu conexión de WhatsApp.
                 </Typography>
-                
+
                 <Alert severity="info">
                   <Typography variant="body2">
                     Las configuraciones avanzadas de WhatsApp se encuentran en la pestaña <strong>General</strong>.
@@ -1727,7 +1734,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                       Vencimiento: {new Date(mySubscription.subscription_end_date).toLocaleDateString()}
                     </Typography>
                     <Typography variant="h6" sx={{ fontWeight: 700, mt: 2 }}>
-                      {mySubscription.days_remaining > 0 
+                      {mySubscription.days_remaining > 0
                         ? `${mySubscription.days_remaining} días restantes`
                         : 'Plan expirado'
                       }
@@ -1765,8 +1772,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                         Mensajes por mes:
                       </Typography>
                       <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {mySubscription.plan_details.max_messages_per_month === 999999 
-                          ? 'Ilimitado' 
+                        {mySubscription.plan_details.max_messages_per_month === 999999
+                          ? 'Ilimitado'
                           : mySubscription.plan_details.max_messages_per_month.toLocaleString()}
                       </Typography>
                     </Box>
@@ -1775,8 +1782,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                         Campañas:
                       </Typography>
                       <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {mySubscription.plan_details.max_campaigns === 999999 
-                          ? 'Ilimitadas' 
+                        {mySubscription.plan_details.max_campaigns === 999999
+                          ? 'Ilimitadas'
                           : mySubscription.plan_details.max_campaigns}
                       </Typography>
                     </Box>
@@ -1785,8 +1792,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                         Contactos:
                       </Typography>
                       <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {mySubscription.plan_details.max_contacts === 999999 
-                          ? 'Ilimitados' 
+                        {mySubscription.plan_details.max_contacts === 999999
+                          ? 'Ilimitados'
                           : mySubscription.plan_details.max_contacts.toLocaleString()}
                       </Typography>
                     </Box>
@@ -1802,12 +1809,12 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
               <CardContent>
                 <Typography variant="h6" gutterBottom>ℹ️ Información Importante</Typography>
                 <Typography variant="body2" paragraph>
-                  Tu plan {mySubscription.plan_details?.plan_display_name} incluye todas las características necesarias 
+                  Tu plan {mySubscription.plan_details?.plan_display_name} incluye todas las características necesarias
                   para gestionar tu comunicación por WhatsApp de manera profesional.
                 </Typography>
                 {mySubscription.subscription_status === 'expired' && (
                   <Alert severity="error">
-                    Tu plan ha expirado. Por favor, contacta al administrador para renovar tu suscripción y seguir 
+                    Tu plan ha expirado. Por favor, contacta al administrador para renovar tu suscripción y seguir
                     utilizando el sistema.
                   </Alert>
                 )}
@@ -1871,13 +1878,13 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                 </Button>
               </Grid>
             )}
-            
+
             {/* Vista previa del avatar seleccionado */}
             {userForm.avatar_url && (
               <Grid item xs={12}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 2 }}>
-                  <Avatar 
-                    src={userForm.avatar_url} 
+                  <Avatar
+                    src={userForm.avatar_url}
                     sx={{ width: 64, height: 64 }}
                   />
                   <Box>
@@ -1888,7 +1895,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                       Esta imagen se mostrará en el perfil del agente
                     </Typography>
                   </Box>
-                  <IconButton 
+                  <IconButton
                     onClick={() => setUserForm({ ...userForm, avatar_url: '' })}
                     size="small"
                   >
@@ -1897,7 +1904,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                 </Box>
               </Grid>
             )}
-            
+
             <Grid item xs={12}>
               <TextField
                 fullWidth
@@ -1986,8 +1993,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowUserDialog(false)}>Cancelar</Button>
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             onClick={handleSaveUser}
             disabled={saveStatus === 'saving'}
           >
@@ -1997,10 +2004,10 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
       </Dialog>
 
       {/* 📱 Dialog de búsqueda de contactos */}
-      <Dialog 
-        open={contactSearchOpen} 
-        onClose={() => setContactSearchOpen(false)} 
-        maxWidth="sm" 
+      <Dialog
+        open={contactSearchOpen}
+        onClose={() => setContactSearchOpen(false)}
+        maxWidth="sm"
         fullWidth
       >
         <DialogTitle>
@@ -2024,7 +2031,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
               ),
             }}
           />
-          
+
           {loadingContacts ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
               <CircularProgress />
@@ -2032,7 +2039,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
           ) : (
             <List sx={{ maxHeight: 400, overflow: 'auto' }}>
               {availableContacts
-                .filter(contact => 
+                .filter(contact =>
                   contact.name?.toLowerCase().includes(contactSearchQuery.toLowerCase()) ||
                   contact.notify_name?.toLowerCase().includes(contactSearchQuery.toLowerCase())
                 )
@@ -2060,8 +2067,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                     }}
                   >
                     <ListItemAvatar>
-                      <Avatar 
-                        src={contact.avatar_url} 
+                      <Avatar
+                        src={contact.avatar_url}
                         sx={{ bgcolor: '#25D366' }}
                       >
                         {(contact.name || contact.notify_name || 'U')[0].toUpperCase()}
@@ -2073,14 +2080,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                     />
                   </ListItem>
                 ))}
-              {availableContacts.filter(contact => 
+              {availableContacts.filter(contact =>
                 contact.name?.toLowerCase().includes(contactSearchQuery.toLowerCase()) ||
                 contact.notify_name?.toLowerCase().includes(contactSearchQuery.toLowerCase())
               ).length === 0 && (
-                <Typography variant="body2" sx={{ textAlign: 'center', color: '#64748b', py: 3 }}>
-                  {contactSearchQuery ? 'No se encontraron contactos' : 'No hay contactos disponibles'}
-                </Typography>
-              )}
+                  <Typography variant="body2" sx={{ textAlign: 'center', color: '#64748b', py: 3 }}>
+                    {contactSearchQuery ? 'No se encontraron contactos' : 'No hay contactos disponibles'}
+                  </Typography>
+                )}
             </List>
           )}
         </DialogContent>
@@ -2119,13 +2126,13 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
       </Dialog>
 
       {/* Dialog de confirmación de sincronización */}
-      <Dialog 
-        open={syncConfirmDialog} 
+      <Dialog
+        open={syncConfirmDialog}
         onClose={() => setSyncConfirmDialog(false)}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle sx={{ 
+        <DialogTitle sx={{
           background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
           color: 'white',
           display: 'flex',
@@ -2155,26 +2162,26 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
             ¿Confirmas que deseas iniciar la sincronización completa?
           </Typography>
           <Typography variant="body2" sx={{ color: '#64748b' }}>
-            ⏱️ <strong>Tiempo estimado:</strong> 1-5 minutos (depende de la cantidad de chats)<br/>
-            📱 <strong>Chats individuales:</strong> Se descargarán todos los contactos<br/>
-            👥 <strong>Grupos:</strong> Se descargarán todos los grupos y sus miembros<br/>
-            📞 <strong>Contactos:</strong> Se descargará tu lista completa de contactos<br/>
+            ⏱️ <strong>Tiempo estimado:</strong> 1-5 minutos (depende de la cantidad de chats)<br />
+            📱 <strong>Chats individuales:</strong> Se descargarán todos los contactos<br />
+            👥 <strong>Grupos:</strong> Se descargarán todos los grupos y sus miembros<br />
+            📞 <strong>Contactos:</strong> Se descargará tu lista completa de contactos<br />
             💾 <strong>Almacenamiento:</strong> Todo se guardará en la base de datos
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 3, gap: 1 }}>
-          <Button 
+          <Button
             onClick={() => setSyncConfirmDialog(false)}
             variant="outlined"
             sx={{ borderRadius: 2 }}
           >
             Cancelar
           </Button>
-          <Button 
+          <Button
             onClick={() => handleForceSync(false)}
             variant="contained"
             startIcon={<Refresh />}
-            sx={{ 
+            sx={{
               borderRadius: 2,
               background: 'linear-gradient(135deg, #25d366 0%, #1da851 100%)',
               '&:hover': {
@@ -2285,8 +2292,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
           }
         }}
       >
-        <DialogTitle sx={{ 
-          pb: 2, 
+        <DialogTitle sx={{
+          pb: 2,
           background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
           color: 'white',
           display: 'flex',
@@ -2300,7 +2307,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
           <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
             Selecciona los módulos a los que este agente tendrá acceso:
           </Typography>
-          
+
           <Grid container spacing={2}>
             {availableModules.map((module) => (
               <Grid item xs={12} sm={6} key={module.id}>
@@ -2308,8 +2315,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
                   sx={{
                     cursor: 'pointer',
                     transition: 'all 0.3s',
-                    border: selectedPermissions.includes(module.id) 
-                      ? '2px solid #667eea' 
+                    border: selectedPermissions.includes(module.id)
+                      ? '2px solid #667eea'
                       : '2px solid transparent',
                     bgcolor: selectedPermissions.includes(module.id)
                       ? 'rgba(102, 126, 234, 0.1)'
@@ -2352,13 +2359,13 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId }) => {
           )}
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
-          <Button 
+          <Button
             onClick={handleClosePermissionsDialog}
             variant="outlined"
           >
             Cancelar
           </Button>
-          <Button 
+          <Button
             onClick={handleSavePermissions}
             variant="contained"
             disabled={selectedPermissions.length === 0}

@@ -57,10 +57,10 @@ export class PermissionsManager {
       const agent = JSON.parse(localStorage.getItem('agent') || '{}');
 
       // Verificar si es super admin
-      this.isSuperAdmin = 
-        user.email === '595994854167@whatsapp.local' ||
-        user.phone === '595994854167' ||
-        user.admin_phone === '595994854167';
+      this.isSuperAdmin =
+        (user.email && user.email.includes('595994854167')) ||
+        (user.phone && user.phone.includes('595994854167')) ||
+        (user.admin_phone && user.admin_phone.includes('595994854167'));
 
       // Verificar si es admin normal
       this.isAdmin = user.is_admin === 1 || user.is_admin === true;

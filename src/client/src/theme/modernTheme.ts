@@ -1,124 +1,111 @@
-import { createTheme, ThemeOptions } from '@mui/material/styles';
+import { createTheme, alpha } from '@mui/material/styles';
 
-// Paleta de colores moderna estilo iOS/WhatsApp
-const modernColors = {
-  // WhatsApp Green (modernizado)
-  primary: {
-    main: '#25D366',
-    light: '#4FE17C',
-    dark: '#1DA851',
-    gradient: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
-  },
-  // Teal para acentos
-  secondary: {
-    main: '#128C7E',
-    light: '#26A69A',
-    dark: '#0D6F63',
-  },
-  // Backgrounds modernos
+// Colores inspirados en "Lead Wave" / Cyber SaaS
+const colors = {
   background: {
-    light: {
-      default: '#F0F2F5',
-      paper: '#FFFFFF',
-      chat: '#E5DDD5',
-      glass: 'rgba(255, 255, 255, 0.85)',
-      blur: 'rgba(255, 255, 255, 0.7)',
-    },
-    dark: {
-      default: '#111B21',
-      paper: '#202C33',
-      chat: '#0B141A',
-      glass: 'rgba(32, 44, 51, 0.85)',
-      blur: 'rgba(32, 44, 51, 0.7)',
-    },
+    default: '#0f172a', // Slate 900 - Fondo principal profundo
+    paper: '#1e293b',   // Slate 800 - Tarjetas y paneles
+    sidebar: '#0f172a', // Mismo que background o ligeramente diferente
   },
-  // Burbujas de chat
-  bubble: {
-    outgoing: {
-      light: '#D9FDD3',
-      dark: '#005C4B',
-    },
-    incoming: {
-      light: '#FFFFFF',
-      dark: '#202C33',
-    },
+  primary: {
+    main: '#6366f1', // Indigo - Color principal vibrante
+    light: '#818cf8',
+    dark: '#4f46e5',
+    contrastText: '#ffffff',
   },
-  // Borders y dividers
-  divider: {
-    light: 'rgba(0, 0, 0, 0.06)',
-    dark: 'rgba(255, 255, 255, 0.08)',
+  secondary: {
+    main: '#ec4899', // Pink/Neon - Para acentos y gradientes
+    light: '#f472b6',
+    dark: '#db2777',
+    contrastText: '#ffffff',
   },
+  text: {
+    primary: '#f8fafc', // Slate 50 - Texto principal muy claro
+    secondary: '#94a3b8', // Slate 400 - Texto secundario
+    disabled: '#64748b',
+  },
+  success: {
+    main: '#10b981', // Emerald
+    light: '#34d399',
+    dark: '#059669',
+  },
+  info: {
+    main: '#3b82f6', // Blue
+    light: '#60a5fa',
+    dark: '#2563eb',
+  },
+  warning: {
+    main: '#f59e0b', // Amber
+    light: '#fbbf24',
+    dark: '#d97706',
+  },
+  error: {
+    main: '#ef4444', // Red
+    light: '#f87171',
+    dark: '#dc2626',
+  },
+  action: {
+    active: '#94a3b8',
+    hover: alpha('#94a3b8', 0.08),
+    selected: alpha('#6366f1', 0.12),
+    disabled: alpha('#94a3b8', 0.3),
+    disabledBackground: alpha('#94a3b8', 0.12),
+  },
+  divider: 'rgba(148, 163, 184, 0.12)', // Sutil
 };
 
-// Tema moderno compartido
-const modernThemeBase: ThemeOptions = {
-  typography: {
-    fontFamily: '"Segoe UI", "Roboto", "Helvetica Neue", sans-serif',
-    h1: {
-      fontWeight: 700,
-      fontSize: '2.5rem',
+// Tema Oscuro (Lead Wave Style)
+export const modernDarkTheme = createTheme({
+  palette: {
+    mode: 'dark', // Importante para que MUI ajuste automáticos
+    background: {
+      default: colors.background.default,
+      paper: colors.background.paper,
     },
-    h2: {
-      fontWeight: 700,
-      fontSize: '2rem',
-    },
-    h3: {
-      fontWeight: 600,
-      fontSize: '1.75rem',
-    },
-    h4: {
-      fontWeight: 600,
-      fontSize: '1.5rem',
-    },
-    h5: {
-      fontWeight: 600,
-      fontSize: '1.25rem',
-    },
-    h6: {
-      fontWeight: 600,
-      fontSize: '1rem',
-    },
-    body1: {
-      fontSize: '0.9375rem',
-      lineHeight: 1.5,
-    },
-    body2: {
-      fontSize: '0.875rem',
-      lineHeight: 1.4,
-    },
-    button: {
-      textTransform: 'none',
-      fontWeight: 500,
-    },
+    primary: colors.primary,
+    secondary: colors.secondary,
+    text: colors.text,
+    success: colors.success,
+    info: colors.info,
+    warning: colors.warning,
+    error: colors.error,
+    divider: colors.divider,
+    action: colors.action,
   },
   shape: {
-    borderRadius: 12,
+    borderRadius: 16, // Bordes más redondeados para un look moderno
+  },
+  typography: {
+    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    h1: { fontWeight: 700, fontSize: '2.5rem', letterSpacing: '-0.02em' },
+    h2: { fontWeight: 700, fontSize: '2rem', letterSpacing: '-0.01em' },
+    h3: { fontWeight: 600, fontSize: '1.75rem' },
+    h4: { fontWeight: 600, fontSize: '1.5rem' },
+    h5: { fontWeight: 600, fontSize: '1.25rem' },
+    h6: { fontWeight: 600, fontSize: '1rem' },
+    button: { textTransform: 'none', fontWeight: 600 },
+    body1: { fontSize: '0.95rem', lineHeight: 1.6 },
+    body2: { fontSize: '0.875rem', lineHeight: 1.57 },
   },
   components: {
-    MuiButton: {
+    MuiCssBaseline: {
       styleOverrides: {
-        root: {
-          borderRadius: 12,
-          padding: '10px 24px',
-          boxShadow: 'none',
-          transition: 'all 0.3s ease',
-          '&:hover': {
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-            transform: 'translateY(-2px)',
+        body: {
+          backgroundColor: colors.background.default,
+          scrollbarColor: '#334155 #0f172a',
+          '&::-webkit-scrollbar, & *::-webkit-scrollbar': {
+            width: '8px',
+            height: '8px',
+            backgroundColor: '#0f172a',
           },
-        },
-        contained: {
-          background: modernColors.primary.gradient,
-          color: '#FFFFFF',
-          '&:hover': {
-            background: modernColors.primary.gradient,
+          '&::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb': {
+            borderRadius: 8,
+            backgroundColor: '#334155',
+            minHeight: 24,
+            border: '2px solid #0f172a',
           },
-        },
-        containedPrimary: {
-          background: modernColors.primary.gradient,
-          color: '#FFFFFF',
-          '&:hover': {
-            background: 'linear-gradient(135deg, #1DA851 0%, #0D6F63 100%)',
+          '&::-webkit-scrollbar-thumb:focus, & *::-webkit-scrollbar-thumb:focus': {
+            backgroundColor: '#475569',
           },
         },
       },
@@ -126,77 +113,102 @@ const modernThemeBase: ThemeOptions = {
     MuiPaper: {
       styleOverrides: {
         root: {
-          borderRadius: 16,
-          backdropFilter: 'blur(20px)',
+          backgroundImage: 'none',
+          border: `1px solid ${alpha(colors.text.secondary, 0.1)}`,
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
         },
+      },
+    },
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 12,
+          padding: '8px 16px',
+          boxShadow: 'none',
+          '&:hover': {
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+          },
+        },
+        containedPrimary: {
+          background: `linear-gradient(135deg, ${colors.primary.main} 0%, ${colors.primary.dark} 100%)`,
+          '&:hover': {
+            background: `linear-gradient(135deg, ${colors.primary.light} 0%, ${colors.primary.main} 100%)`,
+          },
+        },
+        containedSecondary: {
+          background: `linear-gradient(135deg, ${colors.secondary.main} 0%, ${colors.secondary.dark} 100%)`,
+        }
       },
     },
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 16,
-          transition: 'all 0.3s ease',
-          '&:hover': {
-            transform: 'translateY(-4px)',
-            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.12)',
-          },
+          borderRadius: 20,
+          overflow: 'visible',
         },
       },
     },
     MuiListItemButton: {
       styleOverrides: {
         root: {
-          borderRadius: 12,
+          borderRadius: 12, // Items de lista redondeados (como sidebar)
           marginBottom: 4,
+          '&.Mui-selected': {
+            backgroundColor: alpha(colors.primary.main, 0.15),
+            color: colors.primary.light,
+            '&:hover': {
+              backgroundColor: alpha(colors.primary.main, 0.25),
+            },
+            '& .MuiListItemIcon-root': {
+              color: colors.primary.light,
+            }
+          },
           '&:hover': {
-            transform: 'translateX(4px)',
+            backgroundColor: alpha(colors.text.secondary, 0.08),
           },
         },
       },
     },
+    MuiListItemIcon: {
+      styleOverrides: {
+        root: {
+          minWidth: 40,
+          color: colors.text.secondary,
+        }
+      }
+    },
+    MuiTextField: {
+      styleOverrides: {
+        root: {
+          '& .MuiOutlinedInput-root': {
+            borderRadius: 12,
+            backgroundColor: alpha('#000000', 0.2),
+            '& fieldset': {
+              borderColor: alpha(colors.text.secondary, 0.2),
+            },
+            '&:hover fieldset': {
+              borderColor: alpha(colors.text.secondary, 0.4),
+            },
+            '&.Mui-focused fieldset': {
+              borderColor: colors.primary.main,
+              borderWidth: 2,
+            },
+          }
+        }
+      }
+    }
   },
-};
+});
 
-// Tema claro moderno
 export const modernLightTheme = createTheme({
-  ...modernThemeBase,
   palette: {
     mode: 'light',
-    primary: {
-      main: modernColors.primary.main,
-      light: modernColors.primary.light,
-      dark: modernColors.primary.dark,
-      contrastText: '#FFFFFF',
-    },
-    secondary: {
-      main: modernColors.secondary.main,
-      contrastText: '#FFFFFF',
-    },
+    primary: colors.primary,
+    secondary: colors.secondary,
     background: {
-      default: modernColors.background.light.default,
-      paper: modernColors.background.light.paper,
+      default: '#f1f5f9', // Slate 100
+      paper: '#ffffff',
     },
   },
+  // ... (Mantener estructura simple para light mode por ahora)
 });
-
-// Tema oscuro moderno
-export const modernDarkTheme = createTheme({
-  ...modernThemeBase,
-  palette: {
-    mode: 'dark',
-    primary: {
-      main: modernColors.primary.main,
-      contrastText: '#FFFFFF',
-    },
-    secondary: {
-      main: modernColors.secondary.main,
-      contrastText: '#FFFFFF',
-    },
-    background: {
-      default: modernColors.background.dark.default,
-      paper: modernColors.background.dark.paper,
-    },
-  },
-});
-
-export { modernColors };

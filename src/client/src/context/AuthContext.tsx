@@ -57,13 +57,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           return; // NO verificar token, esperar Socket.IO
         }
 
-        // 🔒 LIMPIAR localStorage siempre al inicio (forzar sesiones únicas) - SOLO para agentes
-        const localStorageKeys = ['token', 'whatsflow_token', 'userRole', 'userName', 'userId', 'whatsflow_session', 'sessionToken'];
-        localStorageKeys.forEach(key => localStorage.removeItem(key));
-        console.log('🧹 localStorage limpiado - forzando sesiones únicas por pestaña');
+        // 🔒 MODIFICACIÓN: No limpiar localStorage para permitir persistencia
+        // const localStorageKeys = ['token', 'whatsflow_token', 'userRole', 'userName', 'userId', 'whatsflow_session', 'sessionToken'];
+        // localStorageKeys.forEach(key => localStorage.removeItem(key));
+        console.log('🔄 AuthContext: Verificando sesión (soporte persistente habilitado)');
 
-        // SOLO buscar en sessionStorage (nunca en localStorage)
-        const token = sessionStorage.getItem('whatsflow_token') || sessionStorage.getItem('token');
+        // Buscar en sessionStorage O localStorage
+        const token = sessionStorage.getItem('whatsflow_token') || sessionStorage.getItem('token') || localStorage.getItem('whatsflow_token') || localStorage.getItem('token');
 
         if (token) {
           console.log('🔍 Token encontrado en sessionStorage, verificando...');
@@ -143,7 +143,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const logout = () => {
     const sessionToken = sessionStorage.getItem('sessionToken');
-    
+
     // Notificar al servidor para destruir la sesión
     if (sessionToken) {
       fetch('/api/auth/logout', {
@@ -154,10 +154,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       }).catch(err => console.error('Error en logout:', err));
     }
-    
+
     setUser(null);
-    // Limpiar SOLO sessionStorage (sesiones únicas)
+    // Limpiar sessionStorage y localStorage
     sessionStorage.clear();
+    localStorage.removeItem('token');
+    localStorage.removeItem('whatsflow_token');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userName');
+    localStorage.removeItem('userId');
+    localStorage.removeItem('whatsflow_session');
+
+    // O limpiar todo localStorage si es seguro:
+    // localStorage.clear();
     console.log('👋 Sesión cerrada correctamente');
   };
 

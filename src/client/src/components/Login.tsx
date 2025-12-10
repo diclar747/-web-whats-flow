@@ -33,7 +33,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState(''); // Email como estaba antes
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false); // Nueva opción
+  const [rememberMe, setRememberMe] = useState(true); // Default true para comodidad
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,7 +72,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         sessionStorage.setItem('userName', data.user.name);
         sessionStorage.setItem('userId', data.user.id);
         sessionStorage.setItem('sessionToken', data.sessionToken);
-        
+
         // Guardar permisos del usuario
         if (data.permissions) {
           sessionStorage.setItem('userPermissions', JSON.stringify(data.permissions));
@@ -80,15 +80,34 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           console.log('✅ Permisos cargados:', data.permissions.length, 'permisos');
         }
 
-        // Limpiar localStorage para evitar sesiones compartidas
-        localStorage.removeItem('token');
-        localStorage.removeItem('whatsflow_token');
-        localStorage.removeItem('userRole');
-        localStorage.removeItem('userName');
-        localStorage.removeItem('userId');
-        localStorage.removeItem('whatsflow_session');
-        localStorage.removeItem('userPermissions');
-        localStorage.removeItem('permissionsByModule');
+        // Gestionar persistencia según "Recordar sesión"
+        if (rememberMe) {
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('whatsflow_token', data.token);
+          localStorage.setItem('userRole', data.user.role);
+          localStorage.setItem('userName', data.user.name);
+          localStorage.setItem('userId', data.user.id);
+          localStorage.setItem('sessionToken', data.sessionToken);
+          if (data.sessionId) {
+            localStorage.setItem('whatsflow_session', data.sessionId);
+          }
+          if (data.permissions) {
+            localStorage.setItem('userPermissions', JSON.stringify(data.permissions));
+            localStorage.setItem('permissionsByModule', JSON.stringify(data.permissionsByModule));
+          }
+          console.log('✅ Sesión guardada en localStorage (Persistente)');
+        } else {
+          // Si no quiere recordar, limpiar localStorage
+          localStorage.removeItem('token');
+          localStorage.removeItem('whatsflow_token');
+          localStorage.removeItem('userRole');
+          localStorage.removeItem('userName');
+          localStorage.removeItem('userId');
+          localStorage.removeItem('whatsflow_session');
+          localStorage.removeItem('userPermissions');
+          localStorage.removeItem('permissionsByModule');
+          console.log('🧹 localStorage limpio (Sesión temporal)');
+        }
 
         console.log('📦 Sesión única guardada en sessionStorage');
 
@@ -107,7 +126,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
         // Redirigir según el rol del usuario
         const userRole = data.user?.role;
-        
+
         if (userRole === 'agent' || userRole === 'supervisor') {
           console.log('✅ Navegando al dashboard de agente');
           navigate('/dashboard');  // El mismo /dashboard mostrará AgentDashboard según el rol
@@ -133,261 +152,191 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     <Box
       sx={{
         minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #075E54 0%, #128C7E 50%, #25D366 100%)',
-        p: 2,
         position: 'relative',
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundImage: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.05"%3E%3Cpath d="M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-          opacity: 0.3
-        }
+        bgcolor: '#d1d7db', // WhatsApp Web Gray Background
+        fontFamily: '"Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif',
+        zIndex: 0
       }}
     >
-      <Card sx={{ 
-        maxWidth: 480, 
-        width: '100%', 
-        boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-        borderRadius: 4,
-        overflow: 'hidden',
-        position: 'relative',
-        zIndex: 1
+      {/* Green Header Bar */}
+      <Box sx={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: '220px',
+        bgcolor: '#00a884', // WhatsApp Web Green
+        zIndex: -1
       }}>
-        {/* Header con gradiente */}
         <Box sx={{
-          background: 'linear-gradient(135deg, #075E54 0%, #128C7E 100%)',
-          py: 5,
-          px: 4,
-          textAlign: 'center',
-          position: 'relative',
-          '&::after': {
-            content: '""',
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: '4px',
-            background: 'linear-gradient(90deg, #25D366 0%, #128C7E 100%)'
-          }
+          maxWidth: '1000px',
+          margin: '0 auto',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          px: 4
         }}>
-          {/* Logo de WhatsApp */}
-          <Box
-            sx={{
-              width: 100,
-              height: 100,
-              borderRadius: '50%',
-              background: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 20px',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-              border: '4px solid rgba(255,255,255,0.3)'
-            }}
-          >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 8 }}>
             <Box
               component="img"
               src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg"
-              alt="WhatsApp"
-              sx={{ width: 60, height: 60 }}
+              sx={{ width: 35, height: 35 }}
             />
-          </Box>
-          
-          {/* Título */}
-          <Typography 
-            variant="h3" 
-            component="h1" 
-            sx={{ 
+            <Typography sx={{
               color: 'white',
-              fontWeight: 800,
-              mb: 1,
-              textShadow: '0 2px 4px rgba(0,0,0,0.2)',
-              letterSpacing: '-0.5px'
-            }}
-          >
-            WhatsFlow
-          </Typography>
-          
-          {/* Subtítulo */}
-          <Typography 
-            variant="h6" 
-            sx={{ 
-              color: 'rgba(255,255,255,0.95)',
-              fontWeight: 500,
-              letterSpacing: '0.5px'
-            }}
-          >
-            Acceso Agente
-          </Typography>
+              fontWeight: 600,
+              fontSize: '14px',
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase'
+            }}>
+              WHATSFLOW WEB
+            </Typography>
+          </Box>
         </Box>
+      </Box>
 
-        <CardContent sx={{ p: 5 }}>
-          <Typography 
-            variant="body1" 
-            sx={{ 
-              textAlign: 'center',
-              color: 'text.secondary',
+      {/* Main Content Card */}
+      <Box sx={{
+        maxWidth: '1000px',
+        margin: '0 auto',
+        pt: '100px',
+        px: 2,
+        height: 'calc(100vh - 40px)', // Full height minus margin
+      }}>
+        <Card sx={{
+          height: '75vh',
+          minHeight: '500px',
+          boxShadow: '0 17px 50px 0 rgba(11,20,26,.19), 0 12px 15px 0 rgba(11,20,26,.24)', // WhatsApp Web Shadows
+          borderRadius: 0,
+          display: 'flex',
+          overflow: 'hidden'
+        }}>
+          {/* Left Side (Info/Promo) -> Hidden on mobile */}
+          <Box sx={{
+            flex: 1,
+            display: { xs: 'none', md: 'flex' },
+            flexDirection: 'column',
+            justifyContent: 'center',
+            p: 8,
+            borderRight: '1px solid rgba(0,0,0,0.08)'
+          }}>
+            <Typography variant="h4" sx={{
+              fontWeight: 300,
+              color: '#41525d',
               mb: 4,
-              fontWeight: 500
-            }}
-          >
-            Inicia sesión para gestionar tus conversaciones
-          </Typography>
+              fontSize: '28px'
+            }}>
+              Usa WhatsFlow en tu computadora
+            </Typography>
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>
-              {error}
-            </Alert>
-          )}
+            <Box component="ol" sx={{ pl: 3, mb: 6, color: '#3b4a54', fontSize: '18px', lineHeight: 1.6 }}>
+              <li style={{ marginBottom: '15px' }}>Inicia sesión para gestionar tus agentes</li>
+              <li style={{ marginBottom: '15px' }}>Supervisa conversaciones en tiempo real</li>
+              <li style={{ marginBottom: '15px' }}>Configura bots y respuestas automáticas</li>
+            </Box>
 
-          <form onSubmit={handleLogin}>
-            <TextField
-              fullWidth
-              label="Email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              margin="normal"
-              required
-              disabled={loading}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
-                  '&:hover fieldset': {
-                    borderColor: '#25D366',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#25D366',
-                  }
-                },
-                '& .MuiInputLabel-root.Mui-focused': {
-                  color: '#25D366'
+            <Typography sx={{ color: '#00a884', fontWeight: 500, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}>
+              ¿Necesitas ayuda para iniciar sesión?
+            </Typography>
+          </Box>
+
+          {/* Right Side (Login Form) */}
+          <Box sx={{
+            width: { xs: '100%', md: '450px' },
+            p: 6,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            bgcolor: 'white'
+          }}>
+            <Typography variant="h5" sx={{ mb: 4, color: '#41525d', textAlign: 'center' }}>
+              Iniciar Sesión
+            </Typography>
+
+            {error && (
+              <Alert severity="error" sx={{ mb: 3, borderRadius: 0 }}>
+                {error}
+              </Alert>
+            )}
+
+            <form onSubmit={handleLogin}>
+              <TextField
+                fullWidth
+                label="Correo electrónico"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                margin="normal"
+                variant="outlined"
+                size="small"
+                InputProps={{
+                  sx: { borderRadius: 0 }
+                }}
+              />
+              <TextField
+                fullWidth
+                label="Contraseña"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                margin="normal"
+                variant="outlined"
+                size="small"
+                InputProps={{
+                  sx: { borderRadius: 0 },
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setShowPassword(!showPassword)}
+                        edge="end"
+                        size="small"
+                      >
+                        {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    color="primary"
+                    size="small"
+                    sx={{ color: '#00a884', '&.Mui-checked': { color: '#00a884' } }}
+                  />
                 }
-              }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Email sx={{ color: '#128C7E' }} />
-                  </InputAdornment>
-                ),
-              }}
-            />
+                label={<Typography variant="body2" sx={{ color: '#8696a0' }}>Mantener sesión iniciada</Typography>}
+                sx={{ mt: 2, mb: 3 }}
+              />
 
-            <TextField
-              fullWidth
-              label="Contraseña"
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              margin="normal"
-              required
-              disabled={loading}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  borderRadius: 2,
-                  '&:hover fieldset': {
-                    borderColor: '#25D366',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: '#25D366',
+              <Button
+                fullWidth
+                type="submit"
+                variant="contained"
+                disabled={loading}
+                sx={{
+                  bgcolor: '#00a884',
+                  color: 'white',
+                  py: 1.5,
+                  borderRadius: 6,
+                  textTransform: 'none',
+                  fontSize: '16px',
+                  fontWeight: 600,
+                  boxShadow: 'none',
+                  '&:hover': {
+                    bgcolor: '#008f6f',
+                    boxShadow: 'none'
                   }
-                },
-                '& .MuiInputLabel-root.Mui-focused': {
-                  color: '#25D366'
-                }
-              }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <Lock sx={{ color: '#128C7E' }} />
-                  </InputAdornment>
-                ),
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={() => setShowPassword(!showPassword)}
-                      edge="end"
-                      disabled={loading}
-                      sx={{ color: '#128C7E' }}
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-            />
-
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  color="primary"
-                  disabled={loading}
-                />
-              }
-              label={
-                <Typography variant="body2" color="text.secondary">
-                  Recordar mi sesión (mantener sesión activa al cerrar el navegador)
-                </Typography>
-              }
-              sx={{ mt: 2, mb: 1 }}
-            />
-
-            <Alert severity="info" sx={{ mb: 2, fontSize: '0.875rem' }}>
-              {rememberMe ? (
-                <>
-                  <strong>Sesión permanente:</strong> Tu sesión se mantendrá activa incluso después de cerrar el navegador.
-                </>
-              ) : (
-                <>
-                  <strong>Sesión temporal:</strong> Tu sesión se cerrará automáticamente al cerrar el navegador (más seguro).
-                </>
-              )}
-            </Alert>
-
-            <Button
-              fullWidth
-              type="submit"
-              variant="contained"
-              size="large"
-              disabled={loading}
-              startIcon={loading ? <CircularProgress size={20} sx={{ color: 'white' }} /> : <LoginIcon />}
-              sx={{
-                mt: 3,
-                mb: 2,
-                py: 1.8,
-                fontSize: '1.1rem',
-                fontWeight: 700,
-                background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
-                color: 'white',
-                textTransform: 'none',
-                borderRadius: 3,
-                boxShadow: '0 8px 20px rgba(37, 211, 102, 0.3)',
-                '&:hover': {
-                  background: 'linear-gradient(135deg, #20c55a 0%, #0f7a6b 100%)',
-                  boxShadow: '0 12px 28px rgba(37, 211, 102, 0.4)',
-                  transform: 'translateY(-2px)',
-                },
-                '&:disabled': {
-                  background: 'linear-gradient(135deg, #90EE90 0%, #76c7c0 100%)',
-                  color: 'white'
-                },
-                transition: 'all 0.3s ease'
-              }}
-            >
-              {loading ? <CircularProgress size={24} /> : 'Iniciar Sesión'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+                }}
+              >
+                {loading ? <CircularProgress size={24} sx={{ color: 'white' }} /> : 'Acceder'}
+              </Button>
+            </form>
+          </Box>
+        </Card>
+      </Box>
     </Box>
   );
 };

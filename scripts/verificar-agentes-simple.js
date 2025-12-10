@@ -17,7 +17,7 @@ console.log('========================================================\n');
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
+  password: process.env.DB_PASSWORD || 'whatsflow2024',
   database: process.env.DB_NAME || 'whatsflow',
   waitForConnections: true,
   connectionLimit: 10,
@@ -32,7 +32,7 @@ console.log(`   - Contraseña: ${dbConfig.password ? '***' : '(vacía)'}\n`);
 
 async function analyzeSessionIssue() {
   let connection;
-  
+
   try {
     console.log('🔌 INTENTANDO CONECTAR A LA BASE DE DATOS...');
     connection = await mysql.createConnection(dbConfig);
@@ -120,28 +120,28 @@ async function analyzeSessionIssue() {
 
     // 6. Análisis del problema
     console.log('\n🔍 ANÁLISIS DEL PROBLEMA:');
-    
+
     if (agents.length > 1) {
       console.log(`   ⚠️  Hay ${agents.length} agentes activos, pero solo debería haber 1 (claudio@cnid.com.py)`);
       console.log('   💡 Posible causa: Agentes duplicados o múltiples sesiones activas');
     }
-    
+
     if (duplicates.length > 0) {
       console.log('   💡 Solución: Desactivar agentes duplicados manteniendo solo el más reciente');
     }
-    
+
     if (multipleSessions.length > 0) {
       console.log('   💡 Solución: Limpiar sesiones múltiples para el mismo dispositivo');
     }
 
     // 7. Crear recomendaciones específicas
     console.log('\n💡 RECOMENDACIONES ESPECÍFICAS:');
-    
+
     if (agents.length > 1) {
       console.log('   1. Ejecutar script de limpieza de agentes duplicados');
       console.log('   2. Verificar que solo claudio@cnid.com.py esté activo');
     }
-    
+
     if (multipleSessions.length > 0) {
       console.log('   3. Limpiar sesiones múltiples para el mismo dispositivo');
     }
@@ -225,7 +225,7 @@ SELECT device_id, COUNT(*) FROM whatsapp_sessions WHERE is_active = 1 GROUP BY d
 
   const fs = require('fs');
   const scriptPath = path.join(__dirname, 'fix-agents-automatico.sql');
-  
+
   fs.writeFileSync(scriptPath, fixScript);
   console.log(`   📁 Script de corrección creado: fix-agents-automatico.sql`);
   console.log('   💡 Ejecuta este script en tu base de datos para corregir los problemas');

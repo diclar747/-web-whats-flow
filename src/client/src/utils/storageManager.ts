@@ -51,10 +51,8 @@ class StorageManager {
    */
   getItem(key: string): string | null {
     try {
-      // SOLO buscar en el storage configurado (sessionStorage por defecto)
-      // NO buscar en localStorage para forzar sesiones únicas
-      const value = this.getStorage().getItem(key);
-      return value;
+      // Buscar en ambos storages para asegurar persistencia
+      return sessionStorage.getItem(key) || localStorage.getItem(key);
     } catch (error) {
       console.error(`Error obteniendo ${key}:`, error);
       return null;
@@ -97,7 +95,9 @@ class StorageManager {
    */
   hasActiveSession(): boolean {
     const token = sessionStorage.getItem('whatsflow_token') ||
-                 sessionStorage.getItem('token');
+      sessionStorage.getItem('token') ||
+      localStorage.getItem('whatsflow_token') ||
+      localStorage.getItem('token');
 
     return !!token;
   }

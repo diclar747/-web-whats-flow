@@ -3,7 +3,7 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material/styles';
-import { CircularProgress, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button } from '@mui/material';
+import { CircularProgress, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button, CssBaseline, Box, Typography } from '@mui/material';
 import { ThemeProvider as CustomThemeProvider } from './contexts/ThemeContext';
 import { WhatsAppProvider } from './context/WhatsAppContext';
 import { LocalizationProvider } from '@mui/x-date-pickers';
@@ -12,7 +12,7 @@ import WhatsFlowDashboard from './pages/WhatsFlowDashboard';
 import Login from './components/Login';
 import LandingPage from './components/LandingPage';
 import AdminLogin from './pages/admin/AdminLogin';
-import AdminDashboard from './pages/admin/AdminDashboard';
+// import AdminDashboard from './pages/admin/AdminDashboard'; // Removed as per request
 import AgentLogin from './pages/AgentLogin';
 import AgentDashboard from './pages/AgentDashboard';
 import AgentDashboardPro from './pages/AgentDashboardPro';
@@ -197,13 +197,7 @@ const AppContent: React.FC<{
         } />
 
         {/* Dashboard de administrador */}
-        <Route path="/admin/dashboard" element={
-          admin && adminToken ? (
-            <AdminDashboard onLogout={handleLogout} admin={admin} adminToken={adminToken} />
-          ) : (
-            <Navigate to="/admin" replace />
-          )
-        } />
+        {/* Route removed as per request */}
 
         {/* Ruta para PWA Móvil - Publicador de Estados */}
         <Route path="/mobile/status-publisher" element={<MobileStatusPublisher />} />
@@ -275,18 +269,11 @@ const App: React.FC = () => {
     };
 
     const initializeSession = async () => {
-      // 🔒 SEGURIDAD: Limpiar localStorage SIEMPRE al inicio para forzar sesiones únicas
-      const localStorageKeys = ['whatsflow_session', 'whatsflow_token', 'whatsflow_user_id', 'whatsflow_user_type',
-        'whatsflow_session_device_id', 'whatsflow_session_token', 'whatsflow_device_id',
-        'token', 'userId', 'userRole', 'userName', 'sessionToken', 'device_id'];
-      let localStorageHadData = false;
-      localStorageKeys.forEach(key => {
-        if (localStorage.getItem(key)) localStorageHadData = true;
-        localStorage.removeItem(key);
-      });
-      if (localStorageHadData) {
-        console.log('🧹 localStorage limpiado - Sesiones únicas por pestaña forzadas');
-      }
+      // 🔒 MODIFICACIÓN: Preservar localStorage para mantener la sesión al recargar
+      // Anteriormente se limpiaba para forzar "sesiones únicas", pero el usuario requiere persistencia
+      // al recargar la página.
+      console.log('🔄 [APP-INIT] Iniciando validación de sesión (Persistencia habilitada)');
+
 
       // Generar ID de dispositivo ÚNICO para esta pestaña/sesión del navegador
       let deviceId = sessionStorage.getItem('whatsflow_device_id');
@@ -295,15 +282,15 @@ const App: React.FC = () => {
         sessionStorage.setItem('whatsflow_device_id', deviceId);
       }
 
-      // Leer SOLO de sessionStorage (ÚNICO por pestaña - más seguro)
-      const savedToken = sessionStorage.getItem('token');
-      const savedSessionId = sessionStorage.getItem('whatsflow_session');
-      const savedUserType = sessionStorage.getItem('whatsflow_user_type') as 'admin' | 'agent' | null;
-      const savedUserId = sessionStorage.getItem('userId');
-      const savedUserName = sessionStorage.getItem('userName');
-      const savedUserRole = sessionStorage.getItem('userRole');
-      const savedDeviceId = sessionStorage.getItem('whatsflow_session_device_id');
-      const savedSessionToken = sessionStorage.getItem('sessionToken');
+      // Intentar recuperar de sessionStorage (primero) O localStorage (segundo, para persistencia)
+      const savedToken = sessionStorage.getItem('token') || localStorage.getItem('token');
+      const savedSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+      const savedUserType = (sessionStorage.getItem('whatsflow_user_type') || localStorage.getItem('whatsflow_user_type')) as 'admin' | 'agent' | null;
+      const savedUserId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
+      const savedUserName = sessionStorage.getItem('userName') || localStorage.getItem('userName');
+      const savedUserRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+      const savedDeviceId = sessionStorage.getItem('whatsflow_session_device_id') || localStorage.getItem('whatsflow_session_device_id');
+      const savedSessionToken = sessionStorage.getItem('sessionToken') || localStorage.getItem('sessionToken');
 
       console.log('🔍 [APP-INIT] Verificando sesión guardada en sessionStorage (sesión única)...');
       console.log('Token:', savedToken ? 'Existe' : 'No');
@@ -446,7 +433,7 @@ const App: React.FC = () => {
                   id: parseInt(savedUserId),
                   name: savedUserName || 'Usuario',
                   role: savedUserRole || 'agent',
-                  email: sessionStorage.getItem('userEmail') || ''
+                  email: (sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail')) || ''
                 };
 
                 setUser(restoredUser);
@@ -457,8 +444,12 @@ const App: React.FC = () => {
                 console.log('✅ Usuario agente restaurado:', restoredUser.name);
               } else {
                 // Sin credenciales válidas - requiere autenticación
+                // Sin credenciales válidas - requiere autenticación
                 console.log('🚫 Sin credenciales de autenticación válidas');
                 sessionStorage.clear();
+                // No limpiar localStorage aquí automáticamente para evitar loops si el servidor falla, 
+                // pero si falla la autenticación real, se limpiará en el catch o login.
+                // localStorage.clear(); 
                 setLoading(false);
                 return;
               }
@@ -509,7 +500,8 @@ const App: React.FC = () => {
           id: parseInt(savedUserId),
           name: savedUserName || 'Usuario',
           role: savedUserRole || 'agent',
-          email: sessionStorage.getItem('userEmail') || ''
+
+          email: (sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail')) || ''
         };
 
         setUser(restoredUser);
@@ -676,23 +668,31 @@ const App: React.FC = () => {
       setUserType('agent');
     }
 
-    // Guardar en sessionStorage (único por pestaña - MÁS SEGURO)
-    sessionStorage.setItem('whatsflow_token', authToken);
-    sessionStorage.setItem('whatsflow_user_type', userData.role === 'admin' ? 'admin' : 'agent');
-    sessionStorage.setItem('token', authToken);
-    sessionStorage.setItem('userRole', userData.role);
-    sessionStorage.setItem('userName', userData.name);
-    sessionStorage.setItem('userId', userData.id);
-    sessionStorage.setItem('userEmail', userData.email || '');
+    // Guardar en sessionStorage (sesión actual) y localStorage (persistencia)
+    const storageKeys = [
+      { key: 'whatsflow_token', value: authToken },
+      { key: 'whatsflow_user_type', value: userData.role === 'admin' ? 'admin' : 'agent' },
+      { key: 'token', value: authToken },
+      { key: 'userRole', value: userData.role },
+      { key: 'userName', value: userData.name },
+      { key: 'userId', value: userData.id },
+      { key: 'userEmail', value: userData.email || '' }
+    ];
+
+    storageKeys.forEach(({ key, value }) => {
+      sessionStorage.setItem(key, String(value));
+      localStorage.setItem(key, String(value));
+    });
 
     // Si viene sessionId desde el login, guardarlo
     if (sessionIdFromLogin) {
       sessionStorage.setItem('whatsflow_session', sessionIdFromLogin);
+      localStorage.setItem('whatsflow_session', sessionIdFromLogin);
       setSessionId(sessionIdFromLogin);
       console.log('✅ SessionId recibido del backend:', sessionIdFromLogin);
     } else {
       // Verificar si hay sessionId guardado previamente
-      const savedSessionId = sessionStorage.getItem('whatsflow_session');
+      const savedSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
       if (savedSessionId) {
         setSessionId(savedSessionId);
         console.log('✅ SessionId establecido desde sessionStorage:', savedSessionId);
@@ -765,18 +765,27 @@ const App: React.FC = () => {
     const sessionToken = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
 
     // Obtener o generar deviceId ÚNICO
-    let deviceId = sessionStorage.getItem('whatsflow_device_id');
+    // Obtener o generar deviceId ÚNICO
+    let deviceId = localStorage.getItem('whatsflow_device_id') || sessionStorage.getItem('whatsflow_device_id');
     if (!deviceId) {
       deviceId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
+      localStorage.setItem('whatsflow_device_id', deviceId);
       sessionStorage.setItem('whatsflow_device_id', deviceId);
     }
 
-    // Guardar en sessionStorage (único por pestaña/navegador)
-    sessionStorage.setItem('whatsflow_session', newSessionId);
-    sessionStorage.setItem('whatsflow_session_token', sessionToken);
-    sessionStorage.setItem('whatsflow_session_device_id', deviceId);
-    sessionStorage.setItem('whatsflow_user_type', 'admin');
-    sessionStorage.setItem('userRole', 'admin'); // Para SocketContext
+    // Guardar en sessionStorage (sesión actual) y localStorage (persistencia)
+    const sessionData = [
+      { key: 'whatsflow_session', value: newSessionId },
+      { key: 'whatsflow_session_token', value: sessionToken },
+      { key: 'whatsflow_session_device_id', value: deviceId },
+      { key: 'whatsflow_user_type', value: 'admin' },
+      { key: 'userRole', value: 'admin' }
+    ];
+
+    sessionData.forEach(({ key, value }) => {
+      sessionStorage.setItem(key, value);
+      localStorage.setItem(key, value);
+    });
 
     console.log('✅ [APP] SessionId, SessionToken y Device ID guardados (sesión única)');
     console.log('📊 [APP] Datos guardados:');
@@ -809,8 +818,11 @@ const App: React.FC = () => {
             console.log('✅ [APP] Usando __reactNavigate');
             nav('/dashboard');
           } else {
-            console.warn('⚠️ [APP] __reactNavigate no definido, usando window.location.href');
+            console.warn('⚠️ [APP] __reactNavigate no definido, forzando recarga para ir al dashboard');
+            // Usar reload para asegurar que el estado de sesión se tome limpio desde storage
             window.location.href = '/dashboard';
+            // Si href no funciona por alguna razón SPA, reload forzado
+            setTimeout(() => window.location.reload(), 500);
           }
         } else {
           console.error('❌ [APP] Error registrando sesión:', data.error);
@@ -878,7 +890,7 @@ const App: React.FC = () => {
                 onNavigate={() => { }}
               />
 
-              {/* Dialog de sesión cerrada - Diseño mejorado */}
+              {/* Dialog de sesión cerrada - Diseño mejorado Dark Mode */}
               <Dialog
                 open={sessionClosedDialog.open}
                 onClose={() => { }}
@@ -887,37 +899,45 @@ const App: React.FC = () => {
                 PaperProps={{
                   sx: {
                     borderRadius: 3,
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                    bgcolor: '#1e293b', // Slate 800
+                    color: 'white',
+                    border: '1px solid rgba(255,255,255,0.1)'
                   }
                 }}
               >
                 <DialogTitle
                   sx={{
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', // Indigo gradient
                     color: 'white',
-                    fontSize: '1.5rem',
+                    fontSize: '1.25rem',
                     fontWeight: 600,
-                    pb: 2
+                    pb: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
                   }}
                 >
                   🔒 Sesión Cerrada
                 </DialogTitle>
                 <DialogContent sx={{ mt: 3, pb: 2 }}>
-                  <DialogContentText sx={{ fontSize: '1.1rem', color: 'text.primary', mb: 2 }}>
+                  <DialogContentText sx={{ fontSize: '1rem', color: 'rgba(255,255,255,0.9)', mb: 2 }}>
                     Tu sesión ha sido cerrada porque iniciaste sesión en otro dispositivo o navegador.
                   </DialogContentText>
-                  <DialogContentText sx={{
-                    fontSize: '0.95rem',
-                    color: 'text.secondary',
-                    bgcolor: 'grey.100',
+                  <Box sx={{
+                    bgcolor: 'rgba(0,0,0,0.2)',
                     p: 2,
                     borderRadius: 2,
-                    border: '1px solid',
-                    borderColor: 'grey.300'
+                    border: '1px solid rgba(255,255,255,0.1)'
                   }}>
-                    <strong>Razón:</strong> {sessionClosedDialog.reason}
-                  </DialogContentText>
-                  <DialogContentText sx={{ fontSize: '0.9rem', color: 'text.secondary', mt: 2 }}>
+                    <Typography variant="body2" sx={{ color: '#94a3b8', fontWeight: 500, mb: 0.5 }}>
+                      Razón:
+                    </Typography>
+                    <Typography variant="body1" sx={{ color: 'white' }}>
+                      {sessionClosedDialog.reason}
+                    </Typography>
+                  </Box>
+                  <DialogContentText sx={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.5)', mt: 3 }}>
                     Por seguridad, solo puedes tener una sesión activa a la vez. Serás redirigido a la página de inicio.
                   </DialogContentText>
                 </DialogContent>
@@ -926,21 +946,20 @@ const App: React.FC = () => {
                     onClick={() => {
                       sessionStorage.clear();
                       localStorage.clear();
-                      window.location.href = 'https://web.whats-flow.com/';
+                      window.location.href = '/';
                     }}
                     variant="contained"
                     size="large"
                     fullWidth
                     sx={{
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      color: 'white',
+                      background: 'white',
+                      color: '#0f172a',
                       py: 1.5,
-                      fontSize: '1rem',
                       fontWeight: 600,
                       textTransform: 'none',
                       borderRadius: 2,
                       '&:hover': {
-                        background: 'linear-gradient(135deg, #5568d3 0%, #6a3f91 100%)',
+                        bgcolor: 'rgba(255,255,255,0.9)',
                       }
                     }}
                   >

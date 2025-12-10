@@ -157,9 +157,9 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
   const [categories, setCategories] = useState<AppointmentCategory[]>([]);
   const [newCategory, setNewCategory] = useState({ name: '', color: '#1a73e8', icon: '📋' });
   const [searchingContact, setSearchingContact] = useState(false);
-  
+
   // Estados para búsqueda de contactos por nombre
-  const [contactOptions, setContactOptions] = useState<Array<{name: string, phone: string, jid: string}>>([]);
+  const [contactOptions, setContactOptions] = useState<Array<{ name: string, phone: string, jid: string }>>([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
 
   const getStatusColor = (status: string) => {
@@ -177,8 +177,8 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     const now = moment();
     const appointmentDateTime = moment(`${appointment.appointment_date} ${appointment.appointment_time}`);
     return appointmentDateTime.isBefore(now) &&
-           appointment.status !== 'completed' &&
-           appointment.status !== 'cancelled';
+      appointment.status !== 'completed' &&
+      appointment.status !== 'cancelled';
   };
 
   // Cargar categorías
@@ -216,14 +216,14 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
           if (typeof dateStr === 'string' && dateStr.includes('T')) {
             dateStr = dateStr.split('T')[0];
           }
-          
+
           // Normalizar el tiempo - puede venir como HH:mm o HH:mm:ss
           const timeStr = apt.appointment_time.includes(':') ? apt.appointment_time.substring(0, 5) : apt.appointment_time;
-          
+
           // Parsear fecha y hora manualmente para evitar conversiones de zona horaria
           const [year, month, day] = dateStr.split('-').map(Number);
           const [hour, minute] = timeStr.split(':').map(Number);
-          
+
           // Crear Date en zona horaria local sin conversiones
           const startDateTime = new Date(year, month - 1, day, hour, minute);
           const endDateTime = new Date(year, month - 1, day, hour + 1, minute);
@@ -332,21 +332,21 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
 
   const handleEventDrop = async ({ event, start, end }: any) => {
     const appointment = event.resource;
-    
+
     // Extraer fecha y hora directamente sin conversiones de zona horaria
     const year = start.getFullYear();
     const month = String(start.getMonth() + 1).padStart(2, '0');
     const day = String(start.getDate()).padStart(2, '0');
     const hour = String(start.getHours()).padStart(2, '0');
     const minute = String(start.getMinutes()).padStart(2, '0');
-    
+
     const newDate = `${year}-${month}-${day}`;
     const newTime = `${hour}:${minute}`;
 
-    console.log('[CALENDAR] Event dropped:', { 
-      newDate, 
-      newTime, 
-      original: start.toLocaleString() 
+    console.log('[CALENDAR] Event dropped:', {
+      newDate,
+      newTime,
+      original: start.toLocaleString()
     });
 
     try {
@@ -413,13 +413,13 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     const day = String(dateObj.getDate()).padStart(2, '0');
     const hour = String(dateObj.getHours()).padStart(2, '0');
     const minute = String(dateObj.getMinutes()).padStart(2, '0');
-    
+
     const selectedDate = `${year}-${month}-${day}`;
     const selectedTime = `${hour}:${minute}`;
 
-    console.log('[CALENDAR] Slot selected:', { 
-      selectedDate, 
-      selectedTime, 
+    console.log('[CALENDAR] Slot selected:', {
+      selectedDate,
+      selectedTime,
       original: slotInfo.start.toLocaleString(),
       iso: slotInfo.start.toISOString()
     });
@@ -467,7 +467,7 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
       if (cleanDate && cleanDate.includes('T')) {
         cleanDate = cleanDate.split('T')[0];
       }
-      
+
       let cleanTime = formData.appointment_time;
       if (cleanTime && cleanTime.length > 5) {
         cleanTime = cleanTime.substring(0, 5);
@@ -539,16 +539,16 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
             }, 300);
           } else {
             showError('Error al eliminar: ' + (data.error || 'Error desconocido'), '❌ Error');
+          }
+        } catch (error) {
+          console.error('Error eliminando cita:', error);
+          showError('Error al eliminar la cita', '❌ Error');
+        } finally {
+          setSaving(false);
         }
-      } catch (error) {
-        console.error('Error eliminando cita:', error);
-        showError('Error al eliminar la cita', '❌ Error');
-      } finally {
-        setSaving(false);
-      }
-    },
-    'Sí, eliminar',
-    'Cancelar'
+      },
+      'Sí, eliminar',
+      'Cancelar'
     );
   };
 
@@ -674,9 +674,34 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
   }
 
   return (
-    <Box sx={{ height: '100%', p: 3, backgroundColor: '#f5f5f5' }}>
+    <Box sx={{
+      height: '100%',
+      p: 3,
+      backgroundColor: '#0f172a', // Deep Slate
+      color: 'white',
+      '& .rbc-calendar': { color: 'rgba(255,255,255,0.8)' },
+      '& .rbc-off-range-bg': { bgcolor: 'rgba(255,255,255,0.05)' },
+      '& .rbc-today': { bgcolor: 'rgba(99, 102, 241, 0.1)' },
+      '& .rbc-toolbar button': { color: 'white', borderColor: 'rgba(255,255,255,0.2)' },
+      '& .rbc-toolbar button:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
+      '& .rbc-toolbar button.rbc-active': { bgcolor: '#6366f1', borderColor: '#6366f1' },
+      '& .rbc-header': {
+        borderBottom: '1px solid rgba(255,255,255,0.1)',
+        bgcolor: '#1e293b',
+        color: 'white',
+        p: 1,
+        fontWeight: 600
+      },
+      '& .rbc-month-view, & .rbc-time-view, & .rbc-agenda-view': { border: '1px solid rgba(255,255,255,0.1)' },
+      '& .rbc-day-bg + .rbc-day-bg': { borderLeft: '1px solid rgba(255,255,255,0.1)' },
+      '& .rbc-month-row + .rbc-month-row': { borderTop: '1px solid rgba(255,255,255,0.1)' },
+      '& .rbc-time-header-content': { borderLeft: '1px solid rgba(255,255,255,0.1)' },
+      '& .rbc-time-content': { borderTop: '1px solid rgba(255,255,255,0.1)' },
+      '& .rbc-time-content > * + * > *': { borderLeft: '1px solid rgba(255,255,255,0.1)' },
+      '& .rbc-timeslot-group': { borderBottom: '1px solid rgba(255,255,255,0.1)' }
+    }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, alignItems: 'center' }}>
-        <Typography variant="h4" sx={{ fontWeight: 600, color: '#202124' }}>
+        <Typography variant="h4" sx={{ fontWeight: 600, color: 'white' }}>
           📅 Calendario de Citas
         </Typography>
 
@@ -689,7 +714,13 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
               borderRadius: '24px',
               textTransform: 'none',
               fontWeight: 600,
-              px: 3
+              px: 3,
+              color: 'white',
+              borderColor: 'rgba(255,255,255,0.3)',
+              '&:hover': {
+                borderColor: 'white',
+                bgcolor: 'rgba(255,255,255,0.05)'
+              }
             }}
           >
             Configuración
@@ -706,7 +737,7 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
               const day = String(now.getDate()).padStart(2, '0');
               const hour = String(now.getHours()).padStart(2, '0');
               const minute = String(now.getMinutes()).padStart(2, '0');
-              
+
               setFormData({
                 status: 'scheduled',
                 appointment_date: `${year}-${month}-${day}`,
@@ -719,8 +750,8 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
               setShowDialog(true);
             }}
             sx={{
-              backgroundColor: '#1a73e8',
-              '&:hover': { backgroundColor: '#1557b0' },
+              background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', // Indigo Gradient
+              '&:hover': { boxShadow: '0 4px 12px rgba(99, 102, 241, 0.4)' },
               borderRadius: '24px',
               textTransform: 'none',
               fontWeight: 600,
@@ -733,33 +764,34 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
       </Box>
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+        <Alert severity="error" sx={{ mb: 2, bgcolor: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5' }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
 
       <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap' }}>
-        <Chip label="Programado" size="small" sx={{ backgroundColor: '#FFB84D', color: 'white', fontWeight: 500 }} />
-        <Chip label="Confirmado" size="small" sx={{ backgroundColor: '#4CAF50', color: 'white', fontWeight: 500 }} />
-        <Chip label="Completado" size="small" sx={{ backgroundColor: '#2196F3', color: 'white', fontWeight: 500 }} />
-        <Chip label="Cancelado" size="small" sx={{ backgroundColor: '#F44336', color: 'white', fontWeight: 500 }} />
-        <Chip label="Vencido" size="small" sx={{ backgroundColor: '#9C27B0', color: 'white', fontWeight: 500 }} />
+        <Chip label="Programado" size="small" sx={{ backgroundColor: '#FFB84D', color: 'black', fontWeight: 600 }} />
+        <Chip label="Confirmado" size="small" sx={{ backgroundColor: '#4CAF50', color: 'white', fontWeight: 600 }} />
+        <Chip label="Completado" size="small" sx={{ backgroundColor: '#2196F3', color: 'white', fontWeight: 600 }} />
+        <Chip label="Cancelado" size="small" sx={{ backgroundColor: '#F44336', color: 'white', fontWeight: 600 }} />
+        <Chip label="Vencido" size="small" sx={{ backgroundColor: '#9C27B0', color: 'white', fontWeight: 600 }} />
       </Box>
 
-      <Alert severity="info" sx={{ mb: 2 }}>
+      <Alert severity="info" sx={{ mb: 2, bgcolor: 'rgba(56, 189, 248, 0.1)', color: '#7dd3fc', '& .MuiAlert-icon': { color: '#38bdf8' } }}>
         💡 <strong>Tip:</strong> Puedes arrastrar y soltar las citas para cambiar su fecha/hora
       </Alert>
 
       <Box sx={{
         height: 'calc(100vh - 350px)',
-        backgroundColor: 'white',
-        borderRadius: 2,
+        backgroundColor: '#1e293b', // Slate 800
+        borderRadius: 3,
         p: 2,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+        border: '1px solid rgba(255,255,255,0.05)'
       }}>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-            <CircularProgress />
+            <CircularProgress sx={{ color: '#6366f1' }} />
           </Box>
         ) : (
           <DnDCalendar
@@ -818,8 +850,8 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
               onChange={(event, newValue) => {
                 if (typeof newValue === 'object' && newValue !== null) {
                   // Seleccionó un contacto de la lista
-                  setFormData({ 
-                    ...formData, 
+                  setFormData({
+                    ...formData,
                     patient_name: newValue.name,
                     patient_phone: newValue.phone
                   });

@@ -1636,11 +1636,22 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                           {Math.round((campaign.progress.sent / campaign.progress.total) * 100)}%
                         </Typography>
                       </Box>
-                      <LinearProgress
-                        variant="determinate"
-                        value={(campaign.progress.sent / campaign.progress.total) * 100}
-                        sx={{ height: 8, borderRadius: 4 }}
-                      />
+                      {(() => {
+                        const sent = campaign.progress.sent;
+                        const total = campaign.progress.total;
+                        const progressValue = campaign.status === 'completed'
+                          ? 100
+                          : total > 0
+                            ? (sent / total) * 100
+                            : 0;
+                        return (
+                          <LinearProgress
+                            variant="determinate"
+                            value={progressValue}
+                            sx={{ height: 8, borderRadius: 4 }}
+                          />
+                        );
+                      })()}
                     </Box>
 
                     <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
@@ -1713,78 +1724,95 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                       {/* Botones de acción organizados */}
                       {campaign.status !== 'completed' ? (
                         <>
-                          {campaign.status === 'draft' || campaign.status === 'scheduled' ? (
-                            <>
-                              {/* CASO 1: Campaña PROGRAMADA (scheduled) - O si tiene fecha programada */}
-                              {campaign.type === 'scheduled' || campaign.scheduledAt ? (
-                                (() => {
-                                  const scheduledDate = campaign.scheduledAt ? new Date(campaign.scheduledAt) : null;
-                                  const now = new Date();
-                                  const isPast = scheduledDate && scheduledDate <= now;
+                          {(() => {
+                            const scheduledDate = campaign.scheduledAt ? new Date(campaign.scheduledAt) : null;
+                            const now = new Date();
+                            const isPast = scheduledDate && scheduledDate <= now;
 
-                                  // Si está en DRAFT, mostrar botón para confirmar
-                                  if (campaign.status === 'draft') {
-                                    return (
-                                      <Button
-                                        variant="contained"
-                                        size="small"
-                                        startIcon={<PlayArrow />}
-                                        onClick={() => {
-                                          console.log("Click en CONFIRMAR PROGRAMACIÓN");
-                                          startCampaign(campaign.id);
-                                        }}
-                                        sx={{
-                                          bgcolor: '#00a884',
-                                          color: 'white',
-                                          '&:hover': { bgcolor: '#008069' },
-                                          minWidth: 100
-                                        }}
-                                      >
-                                        Confirmar Programación
-                                      </Button>
-                                    );
-                                  }
+                            // 1. Enviar / Sending
+                            if (campaign.status === 'sending') {
+                              return (
+                                <>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
+                                    <CircularProgress size={20} />
+                                    <Typography variant="body2">
+                                      Enviando... {sendingProgress[campaign.id] || 0}%
+                                    </Typography>
+                                  </Box>
+                                  {/* Force Execute for non-scheduled or just manual override? 
+                                      User wanted "one button". If sending, usually no start button. */}
 
-                                  // Si está SCHEDULED pero la fecha ya pasó, mostrar botón para ejecutar manualmente
-                                  if (campaign.status === 'scheduled' && isPast) {
-                                    return (
-                                      <Button
-                                        variant="contained"
-                                        size="small"
-                                        startIcon={<PlayArrow />}
-                                        onClick={() => {
-                                          console.log("Click en EJECUTAR AHORA (fecha vencida)");
-                                          startCampaign(campaign.id);
-                                        }}
-                                        sx={{
-                                          bgcolor: '#ff9800',
-                                          color: 'white',
-                                          '&:hover': { bgcolor: '#f57c00' },
-                                          minWidth: 100
-                                        }}
-                                      >
-                                        Ejecutar Ahora
-                                      </Button>
-                                    );
-                                  }
+                                  <Button
+                                    variant="contained"
+                                    size="small"
+                                    color="warning"
+                                    startIcon={<Pause />}
+                                    onClick={() => pauseCampaign(campaign.id)}
+                                  >
+                                    Pausar
+                                  </Button>
+                                  <Button
+                                    variant="contained"
+                                    size="small"
+                                    color="error" // Detener = Eliminar proceso de envio
+                                    startIcon={<Stop />}
+                                    onClick={() => confirmDeleteCampaign(campaign)}
+                                  >
+                                    Detener
+                                  </Button>
+                                </>
+                              );
+                            }
 
-                                  // Si está SCHEDULED y la fecha es futura, no mostrar botón
-                                  // Estado Programado: No mostrar botón de acción manual
-                                  if (campaign.status === 'scheduled' && !isPast) {
-                                    return (
-                                      <Chip
-                                        icon={<CheckCircle />}
-                                        label="Programada (Automático)"
-                                        color="success"
-                                        variant="outlined"
-                                        size="small"
-                                      />
-                                    );
-                                  }
-                                  return null;
-                                })()
-                              ) : (
-                                /* CASO 2: Campaña DIRECTA (direct) */
+                            // 2. Pausado / Paused
+                            if (campaign.status === 'paused') {
+                              return (
+                                <>
+                                  <Chip
+                                    icon={<Pause />}
+                                    label="Campaña Pausada"
+                                    color="warning"
+                                    size="small"
+                                  />
+                                  <Button
+                                    variant="contained"
+                                    size="small"
+                                    color="success"
+                                    startIcon={<PlayArrow />}
+                                    onClick={() => resumeCampaign(campaign.id)}
+                                    sx={{
+                                      bgcolor: '#00a884',
+                                      color: 'white',
+                                      '&:hover': { bgcolor: '#008069' },
+                                      minWidth: 100
+                                    }}
+                                  >
+                                    Reanudar
+                                  </Button>
+                                </>
+                              );
+                            }
+
+                            // 3. Programada / Scheduled
+                            if (campaign.status === 'scheduled') {
+                              return (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <Chip
+                                    icon={<AccessTime />}
+                                    label="Esperando ejecución..."
+                                    color="info"
+                                    variant="outlined"
+                                    size="small"
+                                  />
+                                </Box>
+                              );
+                            }
+
+                            // 4. Borrador / Draft (Default start)
+                            // Aplica para Draft y Direct (que empieza como draft)
+                            // O cualquier otro estado no manejado
+                            return (
+                              <>
                                 <Button
                                   variant="contained"
                                   size="small"
@@ -1799,93 +1827,20 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                                 >
                                   Iniciar
                                 </Button>
-                              )}
-
-                              {/* Botón EDITAR (Común para draft/scheduled) */}
-                              <Button
-                                variant="outlined"
-                                size="small"
-                                startIcon={<Edit />}
-                                onClick={() => openEditDialog(campaign)}
-                                sx={{ minWidth: 100 }}
-                              >
-                                Editar
-                              </Button>
-                            </>
-                          ) : campaign.status === 'sending' ? (
-                            /* ... Botones para estado SENDING ... */
-                            <>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1 }}>
-                                <CircularProgress size={20} />
-                                <Typography variant="body2">
-                                  Enviando... {sendingProgress[campaign.id] || 0}%
-                                </Typography>
-                              </Box>
-                              {campaign.type !== 'scheduled' && (
                                 <Button
-                                  variant="contained"
-                                  size="small"
-                                  color="success"
-                                  startIcon={<PlayArrow />}
-                                  onClick={() => startCampaign(campaign.id)}
-                                >
-                                  Ejecutar Ahora
-                                </Button>
-                              )}
-                              {/* Mostrar icono de reloj para programadas */}
-                              {campaign.type === 'scheduled' && (
-                                <Chip
-                                  icon={<AccessTime />}
-                                  label="Programada"
-                                  color="info"
-                                  size="small"
                                   variant="outlined"
-                                />
-                              )}
-                              <Button
-                                variant="contained"
-                                size="small"
-                                color="warning"
-                                startIcon={<Pause />}
-                                onClick={() => pauseCampaign(campaign.id)}
-                              >
-                                Pausar
-                              </Button>
-                              <Button
-                                variant="contained"
-                                size="small"
-                                color="error" // Detener = Eliminar proceso de envio
-                                startIcon={<Stop />}
-                                onClick={() => confirmDeleteCampaign(campaign)}
-                              >
-                                Detener
-                              </Button>
-                            </>
-                          ) : campaign.status === 'paused' ? (
-                            <>
-                              <Chip
-                                icon={<Pause />}
-                                label="Campaña Pausada"
-                                color="warning"
-                                size="small"
-                              />
-                              <Button
-                                variant="contained"
-                                size="small"
-                                color="success"
-                                startIcon={<PlayArrow />}
-                                onClick={() => resumeCampaign(campaign.id)}
-                                sx={{
-                                  bgcolor: '#00a884',
-                                  color: 'white',
-                                  '&:hover': { bgcolor: '#008069' },
-                                  minWidth: 100
-                                }}
-                              >
-                                Reanudar
-                              </Button>
-                            </>
-                          ) : null}
+                                  size="small"
+                                  startIcon={<Edit />}
+                                  onClick={() => openEditDialog(campaign)}
+                                  sx={{ minWidth: 100 }}
+                                >
+                                  Editar
+                                </Button>
+                              </>
+                            );
+                          })()}
+
+                          {/* Botones Comunes (Detalles - Eliminar) */}
                           <Button
                             variant="outlined"
                             size="small"
@@ -1895,18 +1850,23 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                           >
                             Detalles
                           </Button>
-                          <Button
-                            variant="outlined"
-                            size="small"
-                            color="error"
-                            startIcon={<Delete />}
-                            onClick={() => confirmDeleteCampaign(campaign)}
-                            sx={{ minWidth: 100 }}
-                          >
-                            Eliminar
-                          </Button>
+
+                          {/* Eliminar: No mostrar si estamos 'sending' porque ya mostramos 'Detener' */}
+                          {campaign.status !== 'sending' && (
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              color="error"
+                              startIcon={<Delete />}
+                              onClick={() => confirmDeleteCampaign(campaign)}
+                              sx={{ minWidth: 100 }}
+                            >
+                              Eliminar
+                            </Button>
+                          )}
                         </>
                       ) : (
+                        /* Completed State */
                         <>
                           <Chip
                             label={campaign.completedAt && !isNaN(new Date(campaign.completedAt).getTime())
@@ -1941,8 +1901,9 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                   </CardContent>
                 </Card>
               </Grid>
-            ))}
-        </Grid>
+            ))
+          }
+        </Grid >
       )
       }
 

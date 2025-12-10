@@ -41,56 +41,22 @@ import {
 } from '@mui/material';
 import {
   WhatsApp,
-  Send,
+  QrCode,
+  Person,
+  Settings,
+  CheckCircle,
+  Message,
   Campaign,
   Analytics,
   People,
   Schedule,
-  Settings,
-  Notifications,
-  Refresh,
-  Add,
-  QrCode,
-  Message,
   TrendingUp,
-  CheckCircle,
+  Refresh,
   Schedule as ScheduleIcon,
-  AttachFile as AttachFileIcon,
-  Search as SearchIcon,
-  MoreVert as MoreVertIcon,
-  EmojiEmotions as EmojiIcon,
-  Mic as MicIcon,
-  DoneAll as DoneAllIcon,
-  Check as CheckIcon,
-  Phone,
-  VideoCall,
-  PushPin,
-  Person,
-  Archive,
-  Delete,
 } from '@mui/icons-material';
 import { whatsappAPI, initializeSocket } from '../services/api';
 
-interface Message {
-  id: string;
-  from: string;
-  to?: string;
-  message: string;
-  timestamp: string;
-  type: string;
-  isFromMe: boolean;
-}
 
-interface Chat {
-  id: string;
-  name: string;
-  lastMessage?: string;
-  timestamp?: string;
-  unreadCount?: number;
-  avatar?: string;
-  isGroup: boolean;
-  isOnline?: boolean;
-}
 
 interface LandingPageProps {
   onQRSuccess: (sessionId: string) => void;
@@ -108,33 +74,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
   const [showQRModal, setShowQRModal] = useState(false);
   // Sesión que este navegador inició (para evitar tomar sesiones ajenas)
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState(0);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [recipientNumber, setRecipientNumber] = useState('');
 
-  // Chat state
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [activeChat, setActiveChat] = useState<Chat | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sendingMessage, setSendingMessage] = useState(false);
-  const [loadingChats, setLoadingChats] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Sincronizar pendingSessionId con ref para uso en listeners
-  useEffect(() => {
-    pendingSessionIdRef.current = pendingSessionId;
-  }, [pendingSessionId]);
-
-  // Menu state
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [contextMenuChatId, setContextMenuChatId] = useState<string | null>(null);
-  const [contextMenuAnchorEl, setContextMenuAnchorEl] = useState<null | HTMLElement>(null);
-
-  // Auto scroll to bottom when new messages
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
 
   // VERIFICAR SI YA HAY SESIÓN ACTIVA AL CARGAR + POLLING COMO RESPALDO
   useEffect(() => {
@@ -434,21 +374,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
       }
     });
 
-    // Escuchar nuevos mensajes
-    newSocket.on('message-real', (message: any) => {
-      console.log('📨 Nuevo mensaje recibido:', message);
-      const mappedMessage: Message = {
-        id: message.id || Date.now().toString(),
-        from: message.from,
-        to: message.to,
-        message: message.message,
-        timestamp: message.timestamp || new Date().toISOString(),
-        type: message.type || 'text',
-        isFromMe: false
-      };
-      setMessages(prev => [...prev, mappedMessage]);
-      updateChatWithNewMessage(mappedMessage);
-    });
+
 
     return () => {
       console.log('[LANDING] Desconectando socket...');
@@ -518,158 +444,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
     }
   };
 
-  const loadRealChats = async (currentSessionId?: string) => {
-    const useSessionId = currentSessionId || sessionId;
-    if (!useSessionId) return;
 
-    setLoadingChats(true);
-    try {
-      console.log('📋 Cargando chats reales...');
-      const baseURL = getAPIBaseURL();
-      const response = await fetch(`${baseURL}/api/chats/${useSessionId}`);
-      const data = await response.json();
-      console.log('📋 Respuesta chats:', data);
-
-      if (data.success && data.chats) {
-        const realChats: Chat[] = Object.values(data.chats).map((chat: any) => ({
-          id: chat.id,
-          name: chat.subject || chat.name || chat.id.split('@')[0],
-          isGroup: chat.id.includes('@g.us'),
-          lastMessage: 'Haz clic para cargar mensajes',
-          timestamp: new Date().toISOString(),
-          isOnline: false
-        }));
-
-        setChats(realChats);
-        console.log('✅ Chats cargados:', realChats.length);
-      } else {
-        // Crear chats de prueba si no hay reales
-        const testChats: Chat[] = [
-          {
-            id: 'test1@c.us',
-            name: 'Chat de Prueba',
-            isGroup: false,
-            lastMessage: 'Envía un mensaje para probar',
-            timestamp: new Date().toISOString(),
-            isOnline: true
-          }
-        ];
-        setChats(testChats);
-      }
-    } catch (error) {
-      console.error('❌ Error cargando chats:', error);
-      setError('Error al cargar chats');
-    } finally {
-      setLoadingChats(false);
-    }
-  };
-
-  const loadMessages = async (chatId: string) => {
-    if (!sessionId) return;
-
-    try {
-      console.log('💬 Cargando mensajes para:', chatId);
-      const baseURL = getAPIBaseURL();
-      const response = await fetch(`${baseURL}/api/messages/${sessionId}?number=${chatId}`);
-      const data = await response.json();
-      console.log('💬 Respuesta mensajes:', data);
-
-      if (data.success && data.messages) {
-        const mappedMessages = data.messages.map((msg: any) => ({
-          ...msg,
-          isFromMe: msg.from === 'me' || msg.type === 'sent'
-        }));
-        setMessages(mappedMessages);
-      } else {
-        setMessages([]);
-      }
-    } catch (error) {
-      console.error('❌ Error cargando mensajes:', error);
-      setMessages([]);
-    }
-  };
-
-  const sendMessage = async () => {
-    if (!newMessage.trim() || !activeChat || !sessionId || sendingMessage) return;
-
-    setSendingMessage(true);
-    const messageText = newMessage;
-    setNewMessage('');
-
-    // Agregar mensaje inmediatamente a la UI
-    const tempMessage: Message = {
-      id: Date.now().toString(),
-      from: 'me',
-      to: activeChat.id,
-      message: messageText,
-      timestamp: new Date().toISOString(),
-      type: 'text',
-      isFromMe: true
-    };
-
-    setMessages(prev => [...prev, tempMessage]);
-
-    try {
-      console.log('📤 Enviando mensaje:', messageText, 'a:', activeChat.id);
-
-      const baseURL = getAPIBaseURL();
-      const response = await fetch(`${baseURL}/api/send/message`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          number: activeChat.id,
-          message: messageText
-        })
-      });
-
-      const data = await response.json();
-      console.log('📤 Respuesta envío:', data);
-
-      if (data.success) {
-        updateChatWithNewMessage(tempMessage);
-      } else {
-        console.error('❌ Error enviando:', data.error);
-        // Remover mensaje si falló
-        setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
-        setError('Error al enviar mensaje: ' + (data.error || 'Error desconocido'));
-        setNewMessage(messageText); // Restaurar mensaje
-      }
-    } catch (error) {
-      console.error('❌ Error de red:', error);
-      setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
-      setError('Error de conexión al enviar mensaje');
-      setNewMessage(messageText); // Restaurar mensaje
-    } finally {
-      setSendingMessage(false);
-    }
-  };
-
-  const updateChatWithNewMessage = (message: Message) => {
-    setChats(prev => prev.map(chat =>
-      chat.id === (message.isFromMe ? message.to : message.from)
-        ? { ...chat, lastMessage: message.message, timestamp: message.timestamp }
-        : chat
-    ));
-  };
-
-  const handleChatSelect = (chat: Chat) => {
-    console.log('👆 Chat seleccionado:', chat.name);
-    setActiveChat(chat);
-    loadMessages(chat.id);
-    setContextMenuChatId(null); // Cerrar menú contextual si estuviera abierto
-  };
-
-  const handleOpenChatContextMenu = (event: React.MouseEvent<HTMLElement>, chatId: string) => {
-    event.stopPropagation(); // Evitar que se seleccione el chat al abrir el menú
-    setContextMenuChatId(chatId);
-    setContextMenuAnchorEl(event.currentTarget);
-  };
-
-  const handleCloseChatContextMenu = () => {
-    setContextMenuChatId(null);
-    setContextMenuAnchorEl(null);
-  };
 
   const handleConnect = () => {
     // Prevenir múltiples llamadas si ya está cargando o conectado
@@ -682,854 +457,420 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
     fetchQR();
   };
 
-  const TabPanel = ({ children, value, index }: any) => (
-    <div hidden={value !== index}>
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
-    </div>
-  );
 
-  const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString('es-ES', {
-      hour: '2-digit',
-      minute: '2-digit'
+  // Ref para controlar que el QR solo se genere una vez automáticamente
+  const autoQRGeneratedRef = useRef(false);
+
+  // Generar QR automáticamente al cargar (solo una vez)
+  useEffect(() => {
+    const shouldGenerate = !isConnected && !autoQRGeneratedRef.current;
+
+    console.log('[LANDING] 🔍 Verificando si generar QR automáticamente:', {
+      isConnected,
+      autoQRGenerated: autoQRGeneratedRef.current,
+      shouldGenerate
     });
-  };
 
-  const formatMessageTime = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
+    if (shouldGenerate) {
+      console.log('[LANDING] 🎯 Generando QR automáticamente al cargar...');
+      autoQRGeneratedRef.current = true;
 
-    if (isToday) {
-      return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-    } else {
-      return date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' });
+      // Pequeño delay para asegurar que el socket esté conectado
+      setTimeout(() => {
+        fetchQR();
+      }, 500);
     }
-  };
-
-  const filteredChats = chats.filter(chat =>
-    chat.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  // StyleSheet para mostrar el botón de opciones del chat al hacer hover sobre el ListItem
-  const styles = `
-    .MuiListItemButton-root:hover .chat-options-button {
-      visibility: visible !important;
-    }
-  `;
+  }, [isConnected]); // Solo depender de isConnected
 
   if (!isConnected) {
     return (
-      <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#F0F2F5' }}>
-        {/* Landing Content */}
-        <Box sx={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexDirection: 'column',
-          gap: 6,
-          background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
-          position: 'relative',
-          overflow: 'hidden',
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'radial-gradient(circle at 20% 50%, rgba(255,255,255,0.1) 0%, transparent 50%)',
-            pointerEvents: 'none'
-          }
-        }}>
-          <Box sx={{ textAlign: 'center', color: 'white', position: 'relative', zIndex: 1, maxWidth: 700, px: 3 }}>
-            <Box sx={{
-              display: 'inline-block',
-              bgcolor: 'rgba(255,255,255,0.15)',
-              borderRadius: 4,
-              p: 3,
-              mb: 4,
-              backdropFilter: 'blur(10px)'
-            }}>
-              <WhatsApp sx={{ fontSize: 80, opacity: 1 }} />
-            </Box>
-
-            <Typography
-              variant="h2"
-              sx={{
-                fontWeight: 700,
-                mb: 2,
-                fontSize: { xs: '2.5rem', md: '3.5rem' },
-                letterSpacing: '-0.02em',
-                textShadow: '0 2px 10px rgba(0,0,0,0.1)'
-              }}
-            >
-              WhatsFlow
-            </Typography>
-
-            <Typography
-              variant="h5"
-              sx={{
-                mb: 5,
-                opacity: 0.95,
-                fontWeight: 400,
-                lineHeight: 1.6,
-                color: 'rgba(255,255,255,0.95)',
-                maxWidth: 600,
-                mx: 'auto'
-              }}
-            >
-              Gestiona tu comunicación de WhatsApp desde tu computadora con todas las funciones empresariales
-            </Typography>
-
-            <Box sx={{
-              display: 'flex',
-              gap: 2,
-              justifyContent: 'center',
-              flexWrap: 'wrap',
-              mb: 4
-            }}>
-              <Chip
-                icon={<CheckCircle />}
-                label="Mensajes en tiempo real"
-                sx={{
-                  bgcolor: 'rgba(255,255,255,0.2)',
-                  color: 'white',
-                  backdropFilter: 'blur(10px)',
-                  fontWeight: 500,
-                  fontSize: '0.95rem',
-                  py: 2.5,
-                  '& .MuiChip-icon': { color: 'white' }
-                }}
-              />
-              <Chip
-                icon={<CheckCircle />}
-                label="Sincronización automática"
-                sx={{
-                  bgcolor: 'rgba(255,255,255,0.2)',
-                  color: 'white',
-                  backdropFilter: 'blur(10px)',
-                  fontWeight: 500,
-                  fontSize: '0.95rem',
-                  py: 2.5,
-                  '& .MuiChip-icon': { color: 'white' }
-                }}
-              />
-              <Chip
-                icon={<CheckCircle />}
-                label="100% Seguro y privado"
-                sx={{
-                  bgcolor: 'rgba(255,255,255,0.2)',
-                  color: 'white',
-                  backdropFilter: 'blur(10px)',
-                  fontWeight: 500,
-                  fontSize: '0.95rem',
-                  py: 2.5,
-                  '& .MuiChip-icon': { color: 'white' }
-                }}
-              />
-            </Box>
-
-            {/* Lista de módulos */}
-            <Box sx={{
-              maxWidth: 600,
-              mx: 'auto',
-              mb: 4,
-              bgcolor: 'rgba(255,255,255,0.1)',
-              backdropFilter: 'blur(10px)',
-              borderRadius: 3,
-              p: 3
-            }}>
-              <Grid container spacing={1.5}>
-                <Grid item xs={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Message sx={{ fontSize: 20 }} />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>Chat en Tiempo Real</Typography>
-                  </Box>
-                </Grid>
-                <Grid item xs={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Campaign sx={{ fontSize: 20 }} />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>Campañas Masivas</Typography>
-                  </Box>
-                </Grid>
-                <Grid item xs={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Settings sx={{ fontSize: 20 }} />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>Chatbot IA</Typography>
-                  </Box>
-                </Grid>
-                <Grid item xs={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Schedule sx={{ fontSize: 20 }} />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>Mensajes Programados</Typography>
-                  </Box>
-                </Grid>
-                <Grid item xs={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Analytics sx={{ fontSize: 20 }} />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>Reportes y Análisis</Typography>
-                  </Box>
-                </Grid>
-                <Grid item xs={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <People sx={{ fontSize: 20 }} />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>Gestión de Agentes</Typography>
-                  </Box>
-                </Grid>
-                <Grid item xs={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <ScheduleIcon sx={{ fontSize: 20 }} />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>Calendario/Agenda</Typography>
-                  </Box>
-                </Grid>
-                <Grid item xs={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <TrendingUp sx={{ fontSize: 20 }} />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>Kanban CRM</Typography>
-                  </Box>
-                </Grid>
-                <Grid item xs={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <CheckCircle sx={{ fontSize: 20 }} />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>Cobranzas Automáticas</Typography>
-                  </Box>
-                </Grid>
-                <Grid item xs={6}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Campaign sx={{ fontSize: 20 }} />
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>Campañas Personalizadas</Typography>
-                  </Box>
-                </Grid>
-              </Grid>
-            </Box>
-
-            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', flexDirection: { xs: 'column', sm: 'row' } }}>
-              <Button
-                variant="contained"
-                size="large"
-                startIcon={<QrCode sx={{ fontSize: 28 }} />}
-                onClick={handleConnect}
-                sx={{
-                  bgcolor: 'white',
-                  color: '#075E54',
-                  minWidth: '280px',
-                  px: 4,
-                  py: 2.5,
-                  fontSize: '1.3rem',
-                  fontWeight: 700,
-                  borderRadius: 4,
-                  textTransform: 'none',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-                  border: '2px solid rgba(255,255,255,0.3)',
-                  '&:hover': {
-                    bgcolor: '#f8f9fa',
-                    transform: 'translateY(-4px) scale(1.02)',
-                    boxShadow: '0 12px 32px rgba(0,0,0,0.35)',
-                  },
-                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-                }}
-              >
-                Conectar WhatsApp
-              </Button>
-
-              <Button
-                variant="contained"
-                size="large"
-                startIcon={<Person sx={{ fontSize: 28 }} />}
-                onClick={() => window.location.href = '/login'}
-                sx={{
-                  bgcolor: 'white',
-                  color: '#075E54',
-                  minWidth: '280px',
-                  px: 4,
-                  py: 2.5,
-                  fontSize: '1.3rem',
-                  fontWeight: 700,
-                  borderRadius: 4,
-                  textTransform: 'none',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
-                  border: '2px solid rgba(255,255,255,0.3)',
-                  '&:hover': {
-                    bgcolor: '#f8f9fa',
-                    transform: 'translateY(-4px) scale(1.02)',
-                    boxShadow: '0 12px 32px rgba(0,0,0,0.35)',
-                  },
-                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-                }}
-              >
-                Conectar Agente
-              </Button>
-            </Box>
-          </Box>
-        </Box>
-
-        {/* QR Modal */}
-        <Dialog
-          open={showQRModal}
-          onClose={() => setShowQRModal(false)}
-          maxWidth="sm"
-          PaperProps={{
-            sx: {
-              borderRadius: 4,
-              p: 2
-            }
+      <Box
+        sx={{
+          minHeight: '100vh',
+          bgcolor: '#0f172a', // Deep Slate
+          color: 'white',
+          fontFamily: '"Inter", "Segoe UI", sans-serif'
+        }}
+      >
+        {/* Hero Section */}
+        <Box
+          sx={{
+            background: 'radial-gradient(circle at top right, #1e293b 0%, #0f172a 50%)',
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column'
           }}
         >
-          <DialogContent sx={{ textAlign: 'center', p: 4 }}>
-            <Box sx={{
-              display: 'inline-block',
-              bgcolor: 'rgba(37, 211, 102, 0.1)',
-              borderRadius: 3,
-              p: 2,
-              mb: 3
-            }}>
-              <WhatsApp sx={{ fontSize: 48, color: '#25D366' }} />
-            </Box>
-
-            <Typography
-              variant="h4"
-              sx={{
-                mb: 2,
-                fontWeight: 700,
-                color: '#1E293B',
-                letterSpacing: '-0.02em'
-              }}
-            >
-              Conectar WhatsFlow
-            </Typography>
-
-            <Typography
-              variant="body1"
-              sx={{
-                mb: 4,
-                color: '#64748B',
-                lineHeight: 1.6
-              }}
-            >
-              Escanea el código QR con tu teléfono
-            </Typography>
-
-            {loading ? (
-              <Box py={4}>
-                <CircularProgress size={60} sx={{ mb: 2, color: '#25D366' }} />
-                <Typography sx={{ color: '#64748B' }}>Generando código QR...</Typography>
-              </Box>
-            ) : error ? (
-              <Box>
-                <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>{error}</Alert>
-                <Button
-                  onClick={fetchQR}
-                  startIcon={<Refresh />}
-                  variant="contained"
+          {/* Header */}
+          <Box sx={{ p: 3, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <Container maxWidth="lg">
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box
                   sx={{
-                    background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
-                    borderRadius: 2,
-                    textTransform: 'none',
-                    fontWeight: 600,
-                    px: 4
+                    width: 40,
+                    height: 40,
+                    borderRadius: 3,
+                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 8px 16px rgba(79, 70, 229, 0.3)'
                   }}
                 >
-                  Intentar nuevamente
-                </Button>
-              </Box>
-            ) : qrDataUrl ? (
-              <Box>
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 3,
-                    mb: 4,
-                    bgcolor: '#F8FAFC',
-                    border: '2px solid #E2E8F0',
-                    borderRadius: 3
-                  }}
-                >
-                  <img
-                    src={qrDataUrl}
-                    alt="Código QR WhatsFlow"
-                    style={{ maxWidth: '280px', width: '100%', borderRadius: '8px' }}
-                  />
-                </Paper>
-
-                <Typography
-                  variant="h6"
-                  sx={{
-                    mb: 3,
-                    fontWeight: 600,
-                    color: '#1E293B'
-                  }}
-                >
-                  📱 Instrucciones
+                  <WhatsApp sx={{ color: 'white', fontSize: 24 }} />
+                </Box>
+                <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
+                  WhatsFlow
                 </Typography>
+              </Box>
+            </Container>
+          </Box>
 
-                <Box sx={{
-                  textAlign: 'left',
-                  bgcolor: '#F8FAFC',
-                  p: 3,
-                  borderRadius: 2,
-                  border: '1px solid #E2E8F0'
-                }}>
+          {/* Main Content */}
+          <Container maxWidth="lg" sx={{ flex: 1, display: 'flex', alignItems: 'center', py: 8 }}>
+            <Grid container spacing={6} alignItems="center">
+              {/* Left Side - Text & Agent Button */}
+              <Grid item xs={12} md={6}>
+                <Box sx={{ pr: { md: 4 } }}>
                   <Typography
-                    variant="body2"
+                    variant="h2"
                     sx={{
-                      color: '#475569',
-                      lineHeight: 2,
-                      '& strong': { color: '#1E293B', fontWeight: 600 }
+                      fontWeight: 800,
+                      fontSize: { xs: '2.5rem', md: '3.5rem' },
+                      lineHeight: 1.1,
+                      mb: 3,
+                      background: 'linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent'
                     }}
                   >
-                    <strong>1.</strong> Abre WhatsApp en tu teléfono<br />
-                    <strong>2.</strong> Ve a <strong>Menú</strong> o <strong>Ajustes</strong><br />
-                    <strong>3.</strong> Toca <strong>Dispositivos vinculados</strong><br />
-                    <strong>4.</strong> Toca <strong>Vincular un dispositivo</strong><br />
-                    <strong>5.</strong> Apunta tu cámara a este código QR
+                    Plataforma Empresarial de WhatsApp
                   </Typography>
+
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      color: '#94a3b8',
+                      mb: 4,
+                      lineHeight: 1.6,
+                      fontWeight: 400
+                    }}
+                  >
+                    Gestiona conversaciones, automatiza respuestas, y escala tu negocio con la plataforma más completa para WhatsApp Business.
+                  </Typography>
+
+                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                    <Button
+                      variant="outlined"
+                      size="large"
+                      onClick={() => navigate('/login')}
+                      sx={{
+                        borderRadius: 3,
+                        px: 4,
+                        py: 1.5,
+                        borderColor: '#6366f1',
+                        color: '#818cf8',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        fontSize: '1rem',
+                        '&:hover': {
+                          borderColor: '#818cf8',
+                          bgcolor: 'rgba(99, 102, 241, 0.1)'
+                        }
+                      }}
+                    >
+                      <Person sx={{ mr: 1 }} />
+                      Acceder como Agente
+                    </Button>
+                  </Box>
+
+                  {/* Features List */}
+                  <Box sx={{ mt: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {[
+                      { icon: <CheckCircle sx={{ color: '#10b981' }} />, text: 'Multi-agente en tiempo real' },
+                      { icon: <CheckCircle sx={{ color: '#10b981' }} />, text: 'Chatbots inteligentes con IA' },
+                      { icon: <CheckCircle sx={{ color: '#10b981' }} />, text: 'Campañas masivas programadas' }
+                    ].map((feature, i) => (
+                      <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        {feature.icon}
+                        <Typography sx={{ color: '#cbd5e1' }}>{feature.text}</Typography>
+                      </Box>
+                    ))}
+                  </Box>
                 </Box>
-              </Box>
-            ) : null}
-          </DialogContent>
-        </Dialog>
+              </Grid>
+
+              {/* Right Side - QR Code */}
+              <Grid item xs={12} md={6}>
+                <Card
+                  sx={{
+                    background: 'rgba(30, 41, 59, 0.6)',
+                    backdropFilter: 'blur(12px)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 4,
+                    p: 4,
+                    boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+                  }}
+                >
+                  <Box sx={{ textAlign: 'center' }}>
+                    <QrCode sx={{ fontSize: 48, color: '#6366f1', mb: 2 }} />
+                    <Typography variant="h5" sx={{ fontWeight: 600, mb: 1, color: 'white' }}>
+                      Conecta tu WhatsApp
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#94a3b8', mb: 4 }}>
+                      Escanea el código QR con tu teléfono
+                    </Typography>
+
+                    {/* QR Code Display */}
+                    <Box
+                      sx={{
+                        bgcolor: 'white',
+                        borderRadius: 3,
+                        p: 3,
+                        display: 'inline-block',
+                        mb: 3
+                      }}
+                    >
+                      {loading ? (
+                        <Box sx={{ width: 256, height: 256, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <CircularProgress size={60} sx={{ color: '#6366f1' }} />
+                        </Box>
+                      ) : qrDataUrl ? (
+                        <img
+                          src={qrDataUrl}
+                          alt="QR Code"
+                          style={{ width: 256, height: 256, display: 'block' }}
+                        />
+                      ) : (
+                        <Box sx={{ width: 256, height: 256, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2 }}>
+                          <QrCode sx={{ fontSize: 80, color: '#cbd5e1' }} />
+                          <Button
+                            variant="contained"
+                            onClick={fetchQR}
+                            sx={{
+                              bgcolor: '#6366f1',
+                              '&:hover': { bgcolor: '#4f46e5' }
+                            }}
+                          >
+                            Generar QR
+                          </Button>
+                        </Box>
+                      )}
+                    </Box>
+
+                    {/* Instructions */}
+                    <Box sx={{ textAlign: 'left', color: '#cbd5e1', fontSize: '0.9rem' }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 2, color: 'white' }}>
+                        Pasos para conectar:
+                      </Typography>
+                      <ol style={{ paddingLeft: '1.5rem', margin: 0 }}>
+                        <li style={{ marginBottom: '0.5rem' }}>Abre WhatsApp en tu teléfono</li>
+                        <li style={{ marginBottom: '0.5rem' }}>Ve a Configuración → Dispositivos vinculados</li>
+                        <li style={{ marginBottom: '0.5rem' }}>Toca "Vincular un dispositivo"</li>
+                        <li>Escanea este código QR</li>
+                      </ol>
+                    </Box>
+                  </Box>
+                </Card>
+              </Grid>
+            </Grid>
+          </Container>
+        </Box>
+
+        {/* Services Section */}
+        <Box
+          sx={{
+            bgcolor: '#1e293b',
+            py: 10,
+            borderTop: '1px solid rgba(255,255,255,0.05)'
+          }}
+        >
+          <Container maxWidth="lg">
+            <Box sx={{ textAlign: 'center', mb: 8 }}>
+              <Typography
+                variant="h3"
+                sx={{
+                  fontWeight: 700,
+                  mb: 2,
+                  color: 'white'
+                }}
+              >
+                Nuestros Servicios
+              </Typography>
+              <Typography variant="h6" sx={{ color: '#94a3b8', fontWeight: 400 }}>
+                Todo lo que necesitas para gestionar tu negocio en WhatsApp
+              </Typography>
+            </Box>
+
+            <Grid container spacing={3}>
+              {[
+                {
+                  icon: <Message sx={{ fontSize: 40 }} />,
+                  title: 'Chat Multi-agente',
+                  description: 'Gestión de conversaciones con múltiples agentes en tiempo real',
+                  color: '#6366f1'
+                },
+                {
+                  icon: <Campaign sx={{ fontSize: 40 }} />,
+                  title: 'Campañas Masivas',
+                  description: 'Envío masivo de mensajes programados y personalizados',
+                  color: '#ff9800'
+                },
+                {
+                  icon: <Settings sx={{ fontSize: 40 }} />,
+                  title: 'Chatbots Inteligentes',
+                  description: 'Automatización de respuestas con inteligencia artificial',
+                  color: '#e91e63'
+                },
+                {
+                  icon: <People sx={{ fontSize: 40 }} />,
+                  title: 'CRM Integrado',
+                  description: 'Gestión completa de contactos y clientes',
+                  color: '#00bcd4'
+                },
+                {
+                  icon: <Schedule sx={{ fontSize: 40 }} />,
+                  title: 'Calendario de Citas',
+                  description: 'Programación y seguimiento de citas automático',
+                  color: '#3b82f6'
+                },
+                {
+                  icon: <Analytics sx={{ fontSize: 40 }} />,
+                  title: 'Analytics en Tiempo Real',
+                  description: 'Métricas y estadísticas detalladas de tu negocio',
+                  color: '#10b981'
+                },
+                {
+                  icon: <TrendingUp sx={{ fontSize: 40 }} />,
+                  title: 'Kanban de Contactos',
+                  description: 'Organización visual de leads y pipeline de ventas',
+                  color: '#9c27b0'
+                },
+                {
+                  icon: <Message sx={{ fontSize: 40 }} />,
+                  title: 'API para Mensajes',
+                  description: 'Integración con sistemas externos vía API REST',
+                  color: '#64748b'
+                }
+              ].map((service, index) => (
+                <Grid item xs={12} sm={6} md={3} key={index}>
+                  <Card
+                    sx={{
+                      height: '100%',
+                      bgcolor: '#0f172a',
+                      border: '1px solid rgba(255,255,255,0.05)',
+                      borderRadius: 3,
+                      p: 3,
+                      transition: 'all 0.3s',
+                      '&:hover': {
+                        transform: 'translateY(-8px)',
+                        borderColor: service.color,
+                        boxShadow: `0 20px 40px ${service.color}20`
+                      }
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 64,
+                        height: 64,
+                        borderRadius: 3,
+                        bgcolor: `${service.color}15`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        mb: 2,
+                        color: service.color
+                      }}
+                    >
+                      {service.icon}
+                    </Box>
+                    <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, color: 'white' }}>
+                      {service.title}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#94a3b8', lineHeight: 1.6 }}>
+                      {service.description}
+                    </Typography>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Container>
+        </Box>
+
+        {/* Botón flotante de WhatsApp */}
+        <Fab
+          sx={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            bgcolor: '#25D366',
+            color: 'white',
+            width: 64,
+            height: 64,
+            boxShadow: '0 8px 24px rgba(37, 211, 102, 0.4)',
+            '&:hover': {
+              bgcolor: '#20BA5A',
+              transform: 'scale(1.1)',
+              boxShadow: '0 12px 32px rgba(37, 211, 102, 0.6)'
+            },
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            zIndex: 1000
+          }}
+          href="https://wa.me/595994854167"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <WhatsApp sx={{ fontSize: 32 }} />
+        </Fab>
+
+        {/* Footer */}
+        <Box
+          sx={{
+            bgcolor: '#0f172a',
+            py: 4,
+            borderTop: '1px solid rgba(255,255,255,0.05)'
+          }}
+        >
+          <Container maxWidth="lg">
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
+                © 2024 WhatsFlow - Plataforma Empresarial de WhatsApp
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>
+                Todos los Derechos Reservados por <strong>CNID</strong> Centro-Nacional-Información-Digital
+              </Typography>
+              <br />
+              <Typography variant="caption" sx={{ color: '#64748b' }}>
+                NRO REG: 17789
+              </Typography>
+            </Box>
+          </Container>
+        </Box>
       </Box>
     );
   }
 
   return (
-    <>
-      <style>{styles}</style>
-      <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: '#f0f2f5' }}>
-        {/* Header */}
-        <AppBar position="static" sx={{ bgcolor: '#00a884' }}>
-          <Toolbar>
-            <Avatar sx={{ bgcolor: '#128c7e', mr: 2 }}>
-              <WhatsApp />
-            </Avatar>
-            <Typography variant="h6" sx={{ flexGrow: 1 }}>
-              WhatsFlow
-            </Typography>
-            <Chip
-              label="Conectado"
-              size="small"
-              sx={{ bgcolor: '#25d366', color: 'white', mr: 2 }}
-            />
-            <Button
-              color="inherit"
-              onClick={() => loadRealChats()}
-              startIcon={<Refresh />}
-              sx={{ mr: 2 }}
-            >
-              Actualizar
-            </Button>
-            <IconButton
-              color="inherit"
-              onClick={(e) => setAnchorEl(e.currentTarget)}
-            >
-              <MoreVertIcon />
-            </IconButton>
-            <Menu
-              anchorEl={anchorEl}
-              open={Boolean(anchorEl)}
-              onClose={() => setAnchorEl(null)}
-            >
-              <MenuItem onClick={() => setAnchorEl(null)}>
-                <Campaign sx={{ mr: 2 }} /> Campañas
-              </MenuItem>
-              <MenuItem onClick={() => setAnchorEl(null)}>
-                <Analytics sx={{ mr: 2 }} /> Análisis
-              </MenuItem>
-              <MenuItem onClick={() => setAnchorEl(null)}>
-                <People sx={{ mr: 2 }} /> Contactos
-              </MenuItem>
-              <MenuItem onClick={() => setAnchorEl(null)}>
-                <Schedule sx={{ mr: 2 }} /> Programados
-              </MenuItem>
-            </Menu>
-          </Toolbar>
-        </AppBar>
-
-        {error && (
-          <Alert severity="error" sx={{ m: 2 }} onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        )}
-
-        <Box sx={{ flex: 1, display: 'flex' }}>
-          {/* Sidebar - Lista de Chats */}
-          <Paper sx={{
-            width: 400,
-            display: 'flex',
-            flexDirection: 'column',
-            borderRadius: 0,
-            borderRight: '1px solid #e9edef'
-          }}>
-            {/* Buscador */}
-            <Box sx={{ p: 2, bgcolor: '#f0f2f5' }}>
-              <TextField
-                fullWidth
-                size="small"
-                placeholder="Buscar o iniciar un chat nuevo"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon sx={{ color: '#667781' }} />
-                    </InputAdornment>
-                  ),
-                  sx: { bgcolor: 'white', borderRadius: 2 }
-                }}
-              />
-            </Box>
-
-            {/* Lista de Chats */}
-            <List sx={{ flex: 1, p: 0, overflow: 'auto' }}>
-              {loadingChats ? (
-                <Box sx={{ p: 4, textAlign: 'center' }}>
-                  <CircularProgress size={40} />
-                  <Typography sx={{ mt: 2 }}>Cargando chats...</Typography>
-                </Box>
-              ) : filteredChats.length === 0 ? (
-                <Box sx={{ p: 4, textAlign: 'center', color: '#667781' }}>
-                  <Typography>No hay chats disponibles</Typography>
-                  <Button
-                    size="small"
-                    onClick={() => loadRealChats()}
-                    startIcon={<Refresh />}
-                    sx={{ mt: 1 }}
-                  >
-                    Recargar chats
-                  </Button>
-                </Box>
-              ) : (
-                filteredChats.map((chat) => (
-                  <ListItem key={chat.id} disablePadding>
-                    <ListItemButton
-                      onClick={() => handleChatSelect(chat)}
-                      selected={activeChat?.id === chat.id}
-                      sx={{
-                        py: 1.5,
-                        borderBottom: '1px solid #f0f2f5',
-                        '&.Mui-selected': {
-                          bgcolor: '#f0f2f5'
-                        },
-                        '&:hover': {
-                          bgcolor: '#f5f6f6'
-                        }
-                      }}
-                    >
-                      <ListItemAvatar>
-                        <Avatar sx={{ bgcolor: chat.isGroup ? '#25d366' : '#00a884' }}>
-                          {chat.name.charAt(0).toUpperCase()}
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Typography sx={{ fontWeight: 500, fontSize: '1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>
-                              {chat.name}
-                            </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              {chat.timestamp && (
-                                <Typography variant="caption" sx={{ color: '#667781' }}>
-                                  {formatMessageTime(chat.timestamp)}
-                                </Typography>
-                              )}
-                              {chat.isOnline && (
-                                <Box sx={{
-                                  width: 8,
-                                  height: 8,
-                                  borderRadius: '50%',
-                                  bgcolor: '#25d366'
-                                }} />
-                              )}
-                            </Box>
-                          </Box>
-                        }
-                        secondary={
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Typography
-                              variant="body2"
-                              sx={{
-                                color: '#667781',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                maxWidth: chat.unreadCount ? '170px' : '200px'
-                              }}
-                            >
-                              {chat.id}
-                            </Typography>
-                            {chat.unreadCount && chat.unreadCount > 0 && (
-                              <Badge
-                                badgeContent={chat.unreadCount}
-                                sx={{
-                                  '& .MuiBadge-badge': {
-                                    bgcolor: '#00a884',
-                                    color: 'white',
-                                    fontSize: '0.75rem',
-                                    minWidth: '20px',
-                                    height: '20px'
-                                  }
-                                }}
-                              />
-                            )}
-                          </Box>
-                        }
-                      />
-                      <IconButton
-                        size="small"
-                        onClick={(e) => handleOpenChatContextMenu(e, chat.id)}
-                        sx={{ ml: 1, visibility: contextMenuChatId === chat.id ? 'visible' : 'hidden' }}
-                        className="chat-options-button" // Para que sea visible al hacer hover con CSS si se desea
-                      >
-                        <MoreVertIcon fontSize="small" />
-                      </IconButton>
-                    </ListItemButton>
-                  </ListItem>
-                ))
-              )}
-            </List>
-            {/* Menú contextual para chats */}
-            <Menu
-              anchorEl={contextMenuAnchorEl}
-              open={Boolean(contextMenuChatId && contextMenuAnchorEl)}
-              onClose={handleCloseChatContextMenu}
-              MenuListProps={{
-                'aria-labelledby': 'chat-options-button',
-              }}
-              anchorOrigin={{
-                vertical: 'bottom',
-                horizontal: 'right',
-              }}
-              transformOrigin={{
-                vertical: 'top',
-                horizontal: 'right',
-              }}
-            >
-              <MenuItem onClick={() => { console.log(`Ver perfil: ${contextMenuChatId}`); handleCloseChatContextMenu(); }}>
-                <Person sx={{ mr: 1 }} /> Ver Info
-              </MenuItem>
-              <MenuItem onClick={() => { console.log(`Archivar: ${contextMenuChatId}`); handleCloseChatContextMenu(); }}>
-                <Archive sx={{ mr: 1 }} /> Archivar Chat
-              </MenuItem>
-              <MenuItem onClick={() => { console.log(`Silenciar: ${contextMenuChatId}`); handleCloseChatContextMenu(); }}>
-                <Notifications sx={{ mr: 1 }} /> Silenciar
-              </MenuItem>
-              <Divider />
-              <MenuItem sx={{ color: 'error.main' }} onClick={() => { console.log(`Eliminar: ${contextMenuChatId}`); handleCloseChatContextMenu(); }}>
-                <Delete sx={{ mr: 1 }} /> Eliminar Chat
-              </MenuItem>
-            </Menu>
-          </Paper>
-
-          {/* Área Principal de Chat */}
-          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            {activeChat ? (
-              <>
-                {/* Header del Chat */}
-                <Paper sx={{
-                  p: 2,
-                  borderRadius: 0,
-                  borderBottom: '1px solid #e9edef',
-                  bgcolor: '#f0f2f5'
-                }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Avatar sx={{ mr: 2, bgcolor: activeChat.isGroup ? '#25d366' : '#00a884' }}>
-                      {activeChat.name.charAt(0).toUpperCase()}
-                    </Avatar>
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 500, lineHeight: 1.2 }}>
-                        {activeChat.name}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.2 }}>
-                        {activeChat.id}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                        {activeChat.isGroup ? 'Grupo' : 'Contacto'} •
-                        {activeChat.isOnline ? ' en línea' : ' última vez hace un momento'}
-                      </Typography>
-                    </Box>
-                    <IconButton onClick={() => loadMessages(activeChat.id)}>
-                      <Refresh />
-                    </IconButton>
-                    <IconButton>
-                      <Phone />
-                    </IconButton>
-                    <IconButton>
-                      <VideoCall />
-                    </IconButton>
-                    <IconButton>
-                      <MoreVertIcon />
-                    </IconButton>
-                  </Box>
-                </Paper>
-
-                {/* Área de Mensajes */}
-                <Box sx={{
-                  flex: 1,
-                  p: 2,
-                  overflow: 'auto',
-                  backgroundImage: 'url(data:image/svg+xml,%3Csvg width="100" height="100" xmlns="http://www.w3.org/2000/svg"%3E%3Cdefs%3E%3Cpattern id="a" patternUnits="userSpaceOnUse" width="100" height="100"%3E%3Cpath d="M50 0L100 50L50 100L0 50Z" fill="none" stroke="%23e5ddd5" stroke-width="0.5" opacity="0.3"/%3E%3C/pattern%3E%3C/defs%3E%3Crect width="100%25" height="100%25" fill="url(%23a)"/%3E%3C/svg%3E)',
-                  bgcolor: '#efeae2'
-                }}>
-                  {messages.length === 0 ? (
-                    <Box sx={{ textAlign: 'center', mt: 4, color: '#667781' }}>
-                      <Typography variant="h6" sx={{ mb: 2 }}>
-                        ¡Empieza una conversación!
-                      </Typography>
-                      <Typography variant="body2">
-                        Los mensajes que envíes y recibas aparecerán aquí
-                      </Typography>
-                    </Box>
-                  ) : (
-                    messages.map((message) => (
-                      <Box
-                        key={message.id}
-                        sx={{
-                          mb: 1,
-                          display: 'flex',
-                          justifyContent: message.isFromMe ? 'flex-end' : 'flex-start'
-                        }}
-                      >
-                        <Paper
-                          elevation={1}
-                          sx={{
-                            p: 1.5,
-                            maxWidth: '70%',
-                            bgcolor: message.isFromMe ? '#d9fdd3' : 'white',
-                            borderRadius: 2,
-                            position: 'relative',
-                            '&::before': message.isFromMe ? {
-                              content: '""',
-                              position: 'absolute',
-                              top: '50%',
-                              right: '-8px',
-                              transform: 'translateY(-50%)',
-                              width: 0,
-                              height: 0,
-                              borderLeft: '8px solid #d9fdd3',
-                              borderTop: '8px solid transparent',
-                              borderBottom: '8px solid transparent'
-                            } : {
-                              content: '""',
-                              position: 'absolute',
-                              top: '50%',
-                              left: '-8px',
-                              transform: 'translateY(-50%)',
-                              width: 0,
-                              height: 0,
-                              borderRight: '8px solid white',
-                              borderTop: '8px solid transparent',
-                              borderBottom: '8px solid transparent'
-                            }
-                          }}
-                        >
-                          <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
-                            {message.message}
-                          </Typography>
-                          <Box sx={{
-                            display: 'flex',
-                            justifyContent: 'flex-end',
-                            alignItems: 'center',
-                            mt: 0.5,
-                            gap: 0.5
-                          }}>
-                            <Typography variant="caption" sx={{ color: '#667781', fontSize: '0.7rem' }}>
-                              {formatTime(message.timestamp)}
-                            </Typography>
-                            {message.isFromMe && (
-                              <DoneAllIcon sx={{ fontSize: 14, color: '#53bdeb' }} />
-                            )}
-                          </Box>
-                        </Paper>
-                      </Box>
-                    ))
-                  )}
-                  <div ref={messagesEndRef} />
-                </Box>
-
-                {/* Input de Mensajes */}
-                <Paper sx={{
-                  p: 2,
-                  borderRadius: 0,
-                  borderTop: '1px solid #e9edef'
-                }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <IconButton sx={{ color: '#667781' }}>
-                      <EmojiIcon />
-                    </IconButton>
-                    <IconButton sx={{ color: '#667781' }}>
-                      <AttachFileIcon />
-                    </IconButton>
-                    <TextField
-                      fullWidth
-                      size="small"
-                      placeholder="Escribe un mensaje"
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          sendMessage();
-                        }
-                      }}
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          borderRadius: 3,
-                          bgcolor: 'white'
-                        }
-                      }}
-                    />
-                    <IconButton
-                      onClick={sendMessage}
-                      sx={{
-                        bgcolor: newMessage.trim() ? '#00a884' : '#f0f2f5',
-                        color: newMessage.trim() ? 'white' : '#667781',
-                        '&:hover': {
-                          bgcolor: newMessage.trim() ? '#008069' : '#e4e6ea'
-                        },
-                        '&:disabled': {
-                          bgcolor: '#f0f2f5',
-                          color: '#bbb'
-                        }
-                      }}
-                    >
-                      {newMessage.trim() ? (
-                        <Send />
-                      ) : (
-                        <MicIcon />
-                      )}
-                    </IconButton>
-                  </Box>
-                </Paper>
-              </>
-            ) : (
-              <Box sx={{
-                flex: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexDirection: 'column',
-                color: '#667781',
-                bgcolor: '#f8f9fa'
-              }}>
-                <WhatsApp sx={{ fontSize: 120, mb: 3, opacity: 0.3, color: '#00a884' }} />
-                <Typography variant="h4" sx={{ mb: 2, fontWeight: 300 }}>
-                  WhatsFlow
-                </Typography>
-                <Typography variant="body1" sx={{ textAlign: 'center', maxWidth: 400, mb: 2 }}>
-                  Selecciona un chat para comenzar a enviar mensajes
-                </Typography>
-                <Typography variant="body2" sx={{ opacity: 0.7 }}>
-                  Todos tus chats personales estarán aquí
-                </Typography>
-              </Box>
-            )}
-          </Box>
-        </Box>
-      </Box>
-    </>
+    <Box sx={{
+      height: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+      bgcolor: '#0f172a'
+    }}>
+      <CircularProgress size={60} sx={{ color: '#6366f1', mb: 4 }} />
+      <Typography variant="h5" sx={{ color: 'white', fontWeight: 300 }}>
+        Conectando con WhatsApp...
+      </Typography>
+      <Typography variant="body2" sx={{ color: '#94a3b8', mt: 1 }}>
+        Por favor espere mientras verificamos su sesión
+      </Typography>
+    </Box>
   );
+
+
+
 };
 
-export default LandingPage; 
+export default LandingPage;

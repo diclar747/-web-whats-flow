@@ -47,14 +47,14 @@
 
 .rbc-toolbar {
   padding: 16px;
-  background: #f8f9fa;
+  background: #1e293b;
   border-radius: 8px 8px 0 0;
-  border-bottom: 2px solid #e0e0e0;
+  border-bottom: 2px solid rgba(255,255,255,0.1);
 }
 
 .rbc-toolbar button {
-  color: #5f6368;
-  border: 1px solid #dadce0;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.2);
   padding: 8px 16px;
   font-weight: 500;
   border-radius: 4px;
@@ -62,14 +62,14 @@
 }
 
 .rbc-toolbar button:hover {
-  background: #f1f3f4;
-  border-color: #5f6368;
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.3);
 }
 
 .rbc-toolbar button.rbc-active {
-  background: #1a73e8;
+  background: #6366f1;
   color: white;
-  border-color: #1a73e8;
+  border-color: #6366f1;
 }
 
 .rbc-show-more {

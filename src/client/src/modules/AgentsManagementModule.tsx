@@ -445,14 +445,14 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
   };
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: 3, bgcolor: '#0f172a', minHeight: '100vh' }}>
       {/* Header */}
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
-          <Typography variant="h4" gutterBottom sx={{ fontWeight: 700, color: '#1a1a1a' }}>
+          <Typography variant="h4" gutterBottom sx={{ fontWeight: 700, color: '#f1f5f9' }}>
             Gestión de Agentes
           </Typography>
-          <Typography variant="body2" color="textSecondary">
+          <Typography variant="body2" sx={{ color: '#94a3b8' }}>
             Administra tus agentes y monitorea su estado en tiempo real
           </Typography>
         </Box>
@@ -467,8 +467,8 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
             startIcon={<PersonAdd />}
             onClick={() => handleOpenDialog()}
             sx={{
-              bgcolor: '#00a884',
-              '&:hover': { bgcolor: '#008c6d' }
+              bgcolor: '#6366f1',
+              '&:hover': { bgcolor: '#4f46e5' }
             }}
           >
             Crear Agente
@@ -479,72 +479,72 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
       {/* Estadísticas */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={6} md={2}>
-          <Card sx={{ bgcolor: '#f5f5f5', borderLeft: '4px solid #2196f3' }}>
+          <Card sx={{ bgcolor: '#1e293b', borderLeft: '4px solid #6366f1', border: '1px solid rgba(255,255,255,0.05)' }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: '#2196f3' }}>
+              <Typography variant="h4" sx={{ fontWeight: 700, color: '#6366f1' }}>
                 {stats.total}
               </Typography>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
                 Total Agentes
               </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} sm={6} md={2}>
-          <Card sx={{ bgcolor: '#e8f5e9', borderLeft: '4px solid #4caf50' }}>
+          <Card sx={{ bgcolor: '#1e293b', borderLeft: '4px solid #10b981', border: '1px solid rgba(255,255,255,0.05)' }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: '#4caf50' }}>
+              <Typography variant="h4" sx={{ fontWeight: 700, color: '#10b981' }}>
                 {stats.online}
               </Typography>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
                 En línea
               </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} sm={6} md={2}>
-          <Card sx={{ bgcolor: '#ffebee', borderLeft: '4px solid #f44336' }}>
+          <Card sx={{ bgcolor: '#1e293b', borderLeft: '4px solid #ef4444', border: '1px solid rgba(255,255,255,0.05)' }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: '#f44336' }}>
+              <Typography variant="h4" sx={{ fontWeight: 700, color: '#ef4444' }}>
                 {stats.busy}
               </Typography>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
                 Ocupados
               </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} sm={6} md={2}>
-          <Card sx={{ bgcolor: '#fff3e0', borderLeft: '4px solid #ff9800' }}>
+          <Card sx={{ bgcolor: '#1e293b', borderLeft: '4px solid #f59e0b', border: '1px solid rgba(255,255,255,0.05)' }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: '#ff9800' }}>
+              <Typography variant="h4" sx={{ fontWeight: 700, color: '#f59e0b' }}>
                 {stats.paused}
               </Typography>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
                 En pausa
               </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} sm={6} md={2}>
-          <Card sx={{ bgcolor: '#fafafa', borderLeft: '4px solid #9e9e9e' }}>
+          <Card sx={{ bgcolor: '#1e293b', borderLeft: '4px solid #64748b', border: '1px solid rgba(255,255,255,0.05)' }}>
             <CardContent sx={{ py: 2 }}>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: '#9e9e9e' }}>
+              <Typography variant="h4" sx={{ fontWeight: 700, color: '#64748b' }}>
                 {stats.offline}
               </Typography>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
                 Desconectados
               </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} sm={6} md={2}>
-          <Card sx={{ bgcolor: '#fce4ec', borderLeft: '4px solid #e91e63' }}>
+          <Card sx={{ bgcolor: '#1e293b', borderLeft: '4px solid #e91e63', border: '1px solid rgba(255,255,255,0.05)' }}>
             <CardContent sx={{ py: 2 }}>
               <Typography variant="h4" sx={{ fontWeight: 700, color: '#e91e63' }}>
                 {stats.blocked}
               </Typography>
-              <Typography variant="body2" color="textSecondary">
+              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
                 Bloqueados
               </Typography>
             </CardContent>
@@ -553,7 +553,7 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
       </Grid>
 
       {/* Filtros y búsqueda */}
-      <Card sx={{ mb: 3 }}>
+      <Card sx={{ mb: 3, bgcolor: '#1e293b', border: '1px solid rgba(255,255,255,0.05)' }}>
         <CardContent>
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} md={6}>
@@ -592,7 +592,7 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
       </Card>
 
       {/* Tabla de agentes */}
-      <Card>
+      <Card sx={{ bgcolor: '#1e293b', border: '1px solid rgba(255,255,255,0.05)' }}>
         <CardContent>
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>

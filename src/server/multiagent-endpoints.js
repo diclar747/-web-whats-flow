@@ -540,6 +540,32 @@ module.exports = function (app, pool) {
                     WHERE chat_jid = ? AND session_id = ? AND status = 'active'
                 `, [chat_jid, session_id]);
 
+                // Insertar mensaje de sistema
+                const systemMessageId = 'SYS-CLOSE-' + Date.now();
+                const systemContent = `🛑 Conversación finalizada por ${req.user.name}`;
+
+                await connection.execute(`
+                    INSERT INTO messages 
+                    (id, session_id, chat_jid, sender, content, timestamp, from_me, status, type)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, 'sent', 'system')
+                `, [systemMessageId, session_id, chat_jid, 'system', systemContent, new Date()]);
+
+                // Emitir mensaje de sistema
+                const io = app.get('io');
+                io.emit('message', {
+                    id: systemMessageId,
+                    session_id: session_id,
+                    chatJid: chat_jid,
+                    message: systemContent,
+                    from: 'system',
+                    type: 'system',
+                    timestamp: new Date(),
+                    isFromMe: true
+                });
+
+                // Emitir evento de cierre
+                io.emit('chat-closed', { chatJid: chat_jid, by: req.user.name });
+
                 res.json({ success: true, message: 'Chat cerrado correctamente' });
             } finally {
                 connection.release();
@@ -766,6 +792,40 @@ module.exports = function (app, pool) {
                     );
 
                     await connection.commit();
+
+                    // Insertar mensaje de sistema
+                    const systemMessageId = 'SYS-ACC-' + Date.now();
+                    const systemContent = `✅ Solicitud de transferencia aceptada por ${req.user.name}`;
+
+                    /* Se debe insertar fuera de la transacción anterior si ya se commiteó, o idealmente dentro. 
+                       Aquí lo hacemos después para simplificar, ya que la asignación es lo crítico */
+                    await pool.execute(`
+                        INSERT INTO messages 
+                        (id, session_id, chat_jid, sender, content, timestamp, from_me, status, type)
+                        VALUES (?, ?, ?, ?, ?, ?, 1, 'sent', 'system')
+                    `, [systemMessageId, request.session_id, request.chat_jid, 'system', systemContent, new Date()]);
+
+                    // Notificar cambios
+                    const io = app.get('io');
+                    io.emit('transfer-request-update', {
+                        requestId,
+                        status: 'accepted',
+                        chatJid: request.chat_jid,
+                        by: req.user.name
+                    });
+
+                    // Emitir mensaje de sistema
+                    io.emit('message', {
+                        id: systemMessageId,
+                        session_id: request.session_id,
+                        chatJid: request.chat_jid,
+                        message: systemContent,
+                        from: 'system',
+                        type: 'system',
+                        timestamp: new Date(),
+                        isFromMe: true
+                    });
+
                     res.json({ success: true, message: 'Chat aceptado y transferido' });
                 } else {
                     // Rechazar: Solo actualizar estado de la solicitud
@@ -775,6 +835,38 @@ module.exports = function (app, pool) {
                     );
 
                     await connection.commit();
+
+                    // Insertar mensaje de sistema
+                    const systemMessageId = 'SYS-REJ-' + Date.now();
+                    const systemContent = `🚫 Solicitud de transferencia rechazada por ${req.user.name}`;
+
+                    await pool.execute(`
+                        INSERT INTO messages 
+                        (id, session_id, chat_jid, sender, content, timestamp, from_me, status, type)
+                        VALUES (?, ?, ?, ?, ?, ?, 1, 'sent', 'system')
+                    `, [systemMessageId, request.session_id, request.chat_jid, 'system', systemContent, new Date()]);
+
+                    // Notificar cambios
+                    const io = app.get('io');
+                    io.emit('transfer-request-update', {
+                        requestId,
+                        status: 'rejected',
+                        chatJid: request.chat_jid,
+                        by: req.user.name
+                    });
+
+                    // Emitir mensaje de sistema
+                    io.emit('message', {
+                        id: systemMessageId,
+                        session_id: request.session_id,
+                        chatJid: request.chat_jid,
+                        message: systemContent,
+                        from: 'system',
+                        type: 'system',
+                        timestamp: new Date(),
+                        isFromMe: true
+                    });
+
                     res.json({ success: true, message: 'Solicitud rechazada' });
                 }
             } catch (error) {
@@ -835,6 +927,22 @@ module.exports = function (app, pool) {
                         message: 'Solicitud de transferencia enviada',
                         request_id: result.insertId
                     });
+
+                    // Notificar al agente destino
+                    const io = app.get('io');
+                    const [fromUser] = await connection.execute('SELECT name FROM users WHERE id = ?', [from_user_id || req.user.id]);
+                    const requestData = {
+                        id: result.insertId,
+                        chatJid: chat_jid,
+                        sessionId: session_id,
+                        fromUserName: fromUser[0]?.name || 'Admin',
+                        reason: reason || 'Transferencia solicitada',
+                        timestamp: new Date()
+                    };
+
+                    console.log(`📡 Emitiendo incoming-transfer-request a agente ${to_user_id}`);
+                    io.emit(`agent-${to_user_id}-transfer-request`, requestData);
+
                 } else {
                     // Transferencia directa (admin/supervisor)
                     await connection.beginTransaction();

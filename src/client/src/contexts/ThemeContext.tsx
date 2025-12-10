@@ -31,8 +31,8 @@ function ThemeProvider({ children }: ThemeProviderProps) {
     const saved = localStorage.getItem('whatsflow-theme');
     if (saved === 'light' || saved === 'dark') return saved;
 
-    // Por defecto modo claro (no detectar sistema)
-    return 'light';
+    // Por defecto modo oscuro "Lead Wave"
+    return 'dark';
   });
 
   const toggleTheme = () => {

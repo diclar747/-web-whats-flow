@@ -9,13 +9,17 @@ interface ProtectedRouteProps {
   module?: string; // Módulo requerido (ej: 'chat', 'campaign')
   action?: 'view' | 'create' | 'edit' | 'delete'; // Acción requerida
   requireAuth?: boolean; // Si requiere estar autenticado (default: true)
+  canAccess?: boolean; // Condición personalizada de acceso
+  redirectPath?: string; // Ruta de redirección si falla
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
   module,
   action = 'view',
-  requireAuth = true
+  requireAuth = true,
+  canAccess,
+  redirectPath
 }) => {
   const { hasPermission, hasModuleAccess, userRole } = usePermissions();
   const token = sessionStorage.getItem('token');
@@ -24,6 +28,14 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // Verificar autenticación (token O sessionId de QR)
   if (requireAuth && !token && !sessionId) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Verificar condición personalizada explícita si existe
+  if (canAccess !== undefined) {
+    if (!canAccess) {
+      return redirectPath ? <Navigate to={redirectPath} replace /> : <Navigate to="/dashboard" replace />;
+    }
+    return <>{children}</>;
   }
 
   // Si no requiere módulo específico, mostrar contenido
