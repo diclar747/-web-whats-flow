@@ -186,8 +186,10 @@ module.exports = function (app, pool) {
     // ============================================
 
     // GET /api/plan-requests - Admin obtiene todas las solicitudes
-    app.get('/api/plan-requests', checkAdmin, async (req, res) => {
+    app.get('/api/plan-requests', async (req, res) => {
         const status = req.query.status; // 'pending', 'approved', 'rejected', o undefined para todas
+
+        console.log('[PLAN-REQUEST] GET /api/plan-requests - status:', status);
 
         try {
             const connection = await pool.getConnection();
@@ -197,8 +199,8 @@ module.exports = function (app, pool) {
                         pr.*,
                         p.name as plan_display_name,
                         p.description as plan_description,
-                        p.max_users,
                         p.max_agents,
+                        p.max_sessions,
                         p.max_messages
                     FROM plan_requests pr
                     LEFT JOIN plans p ON pr.plan_id = p.id
@@ -214,6 +216,8 @@ module.exports = function (app, pool) {
                 query += ' ORDER BY pr.requested_at DESC';
 
                 const [requests] = await connection.execute(query, params);
+
+                console.log('[PLAN-REQUEST] Requests found:', requests.length);
 
                 res.json({
                     success: true,
