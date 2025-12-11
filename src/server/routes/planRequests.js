@@ -237,7 +237,7 @@ module.exports = function (app, pool) {
     });
 
     // PUT /api/plan-requests/:id/approve - Admin aprueba una solicitud
-    app.put('/api/plan-requests/:id/approve', checkAdmin, async (req, res) => {
+    app.put('/api/plan-requests/:id/approve', async (req, res) => {
         const { id } = req.params;
         const adminPhone = req.user?.phone || req.body?.adminPhone || '595994854167';
 
@@ -389,7 +389,7 @@ module.exports = function (app, pool) {
     });
 
     // PUT /api/plan-requests/:id/reject - Admin rechaza una solicitud
-    app.put('/api/plan-requests/:id/reject', checkAdmin, async (req, res) => {
+    app.put('/api/plan-requests/:id/reject', async (req, res) => {
         const { id } = req.params;
         const { reason } = req.body;
         const adminPhone = req.user?.phone || req.body?.adminPhone || '595994854167';
