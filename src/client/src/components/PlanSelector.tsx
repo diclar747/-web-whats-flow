@@ -16,12 +16,14 @@ import {
   List,
   ListItem,
   ListItemIcon,
-  ListItemText
+  ListItemText,
+  IconButton
 } from '@mui/material';
 import {
   CheckCircle,
   Star,
-  Info
+  Info,
+  Close
 } from '@mui/icons-material';
 import { getAPIBaseURL } from '../utils/socketConfig';
 
@@ -63,6 +65,8 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone }) => {
   const [success, setSuccess] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentInfo, setPaymentInfo] = useState<{ amount: number; alias: string; bank: string } | null>(null);
 
   useEffect(() => {
     if (userPhone) {
@@ -136,12 +140,14 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone }) => {
       if (data.success) {
         setSuccess(`Solicitud enviada exitosamente. ${data.paymentInfo ? `Por favor deposita Gs. ${data.paymentInfo.amount.toLocaleString()} al alias ${data.paymentInfo.alias} - ${data.paymentInfo.bank}` : ''}`);
         setDialogOpen(false);
-        loadData();
-
-        // Mostrar alert con información de pago
+        
+        // Mostrar dialog elegante con información de pago
         if (data.paymentInfo) {
-          alert(`Solicitud enviada!\n\nEnvíe su depósito de Gs. ${data.paymentInfo.amount.toLocaleString()} al alias ${data.paymentInfo.alias} – ${data.paymentInfo.bank} y cargue su comprobante de pago.\n\nEl administrador revisará su solicitud pronto.`);
+          setPaymentInfo(data.paymentInfo);
+          setPaymentDialogOpen(true);
         }
+        
+        loadData();
       } else {
         setError(data.error || 'Error al solicitar plan');
       }
@@ -442,6 +448,141 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone }) => {
             }}
           >
             {submitting ? 'Enviando...' : 'Confirmar Solicitud'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog de confirmación de pago */}
+      <Dialog
+        open={paymentDialogOpen}
+        onClose={() => setPaymentDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+            color: 'white',
+            borderRadius: 3,
+            border: '1px solid rgba(76, 175, 80, 0.3)'
+          }
+        }}
+      >
+        <DialogTitle sx={{ color: 'white', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CheckCircle sx={{ color: '#4ade80', fontSize: 28 }} />
+            <span>Solicitud Enviada</span>
+          </Box>
+          <IconButton
+            onClick={() => setPaymentDialogOpen(false)}
+            sx={{ color: 'white' }}
+            size="small"
+          >
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 3 }}>
+            <Alert
+              severity="success"
+              sx={{
+                mb: 3,
+                bgcolor: 'rgba(76, 175, 80, 0.2)',
+                color: 'white',
+                border: '1px solid rgba(76, 175, 80, 0.4)',
+                '& .MuiAlert-icon': {
+                  color: '#4ade80'
+                }
+              }}
+            >
+              ¡Tu solicitud ha sido registrada exitosamente!
+            </Alert>
+
+            <Box sx={{
+              p: 3,
+              bgcolor: 'rgba(255,255,255,0.05)',
+              borderRadius: 2,
+              border: '2px solid rgba(76, 175, 80, 0.3)',
+              mb: 3
+            }}>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 2 }}>
+                Para completar tu solicitud, realiza el siguiente depósito:
+              </Typography>
+
+              <Box sx={{ 
+                textAlign: 'center', 
+                py: 2.5,
+                bgcolor: 'rgba(102, 126, 234, 0.1)',
+                borderRadius: 2,
+                border: '1px solid rgba(102, 126, 234, 0.3)',
+                mb: 2.5
+              }}>
+                <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 1 }}>
+                  Monto a transferir
+                </Typography>
+                <Typography variant="h4" sx={{ fontWeight: 700, color: '#4ade80', mb: 1 }}>
+                  Gs. {paymentInfo?.amount.toLocaleString()}
+                </Typography>
+                <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                  al alias <strong>{paymentInfo?.alias}</strong>
+                </Typography>
+              </Box>
+
+              <Box sx={{ bgcolor: 'rgba(255,255,255,0.05)', p: 2, borderRadius: 2, mb: 2.5 }}>
+                <Typography variant="body2" sx={{ color: '#667eea', fontWeight: 600, mb: 1 }}>
+                  🏦 Banco
+                </Typography>
+                <Typography variant="body1" sx={{ fontWeight: 700, color: 'white', mb: 2 }}>
+                  {paymentInfo?.bank}
+                </Typography>
+
+                <Typography variant="body2" sx={{ color: '#667eea', fontWeight: 600, mb: 1 }}>
+                  💳 Alias
+                </Typography>
+                <Typography variant="body1" sx={{ fontWeight: 700, color: 'white', mb: 2, fontFamily: 'monospace' }}>
+                  {paymentInfo?.alias}
+                </Typography>
+              </Box>
+
+              <Box sx={{ 
+                p: 2.5, 
+                bgcolor: 'rgba(255, 193, 7, 0.1)', 
+                borderRadius: 2,
+                border: '1px solid rgba(255, 193, 7, 0.3)'
+              }}>
+                <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)' }}>
+                  📸 <strong>Importante:</strong> Guarda tu comprobante de pago. Lo necesitarás para completar tu solicitud.
+                </Typography>
+              </Box>
+            </Box>
+
+            <Alert
+              severity="info"
+              sx={{
+                bgcolor: 'rgba(102, 126, 234, 0.2)',
+                color: 'white',
+                border: '1px solid rgba(102, 126, 234, 0.4)',
+                '& .MuiAlert-icon': {
+                  color: '#667eea'
+                }
+              }}
+            >
+              El administrador revisará tu solicitud y te confirmará la activación en breve.
+            </Alert>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(255,255,255,0.1)', p: 2.5 }}>
+          <Button
+            variant="contained"
+            onClick={() => setPaymentDialogOpen(false)}
+            fullWidth
+            sx={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #5568d3 0%, #66428a 100%)'
+              }
+            }}
+          >
+            Entendido
           </Button>
         </DialogActions>
       </Dialog>
