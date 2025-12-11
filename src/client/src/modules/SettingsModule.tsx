@@ -1701,11 +1701,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       )}
 
 
-      {/* Tab 4: Mi Plan - mostrar siempre para permitir cambio de plan */}
-      {selectedTab === 3 && (
-        <PlanSelector userPhone={sessionId} currentSubscription={mySubscription} />
-      )}
-
+      {/* Tab 4: Mi Plan */}
       {selectedTab === 3 && mySubscription && (
         <Grid container spacing={3}>
           {/* Plan actual */}
@@ -1843,6 +1839,13 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
             </Card>
           </Grid>
         </Grid>
+      )}
+
+      {/* Mostrar planes disponibles - siempre visible en tab Mi Plan */}
+      {selectedTab === 3 && (
+        <Box sx={{ mt: mySubscription ? 4 : 0 }}>
+          <PlanSelector userPhone={sessionId} currentSubscription={mySubscription} />
+        </Box>
       )}
 
       {/* Tab 6: API REST */}
