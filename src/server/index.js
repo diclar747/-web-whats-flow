@@ -2455,16 +2455,18 @@ async function getOrCreateUserSession(sessionId, phoneNumber) {
             + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
         );
 
-        // Buscar sesión existente ACTIVA por número de teléfono
+        // Buscar sesión existente por número de teléfono (activa o inactiva)
         const [existingSessions] = await connection.execute(
-            'SELECT id, session_id FROM user_sessions WHERE phone_number = ? AND is_active = TRUE',
+            'SELECT id, session_id, is_active FROM user_sessions WHERE phone_number = ? ORDER BY last_connection_time DESC LIMIT 1',
             [phoneNumber]
         );
 
         let userSessionId;
         if (existingSessions.length > 0) {
-            // Ya existe una sesión activa para este número de teléfono
+            // Ya existe una sesión para este número (puede estar activa o inactiva)
             userSessionId = existingSessions[0].id;
+            const wasInactive = !existingSessions[0].is_active;
+
             // Actualizar con el nuevo session_id, device_id, session_token y marcar como activa
             const deviceId = sessionDeviceMap.get(sessionId) || null;
             const sessionToken = sessionTokenMap.get(sessionId)?.sessionToken || null;
@@ -2472,7 +2474,7 @@ async function getOrCreateUserSession(sessionId, phoneNumber) {
                 'UPDATE user_sessions SET session_id = ?, is_active = TRUE, device_id = ?, session_token = ?, last_activity = CURRENT_TIMESTAMP, last_connection_time = CURRENT_TIMESTAMP WHERE id = ?',
                 [sessionId, deviceId, sessionToken, userSessionId]
             );
-            console.log(`[DB-USER] Sesión existente actualizada para ${phoneNumber}: user_session_id ${userSessionId}, deviceId: ${deviceId?.substring(0, 20)}...`);
+            console.log(`[DB-USER] Sesión ${wasInactive ? '🔄 REACTIVADA' : '✅ actualizada'} para ${phoneNumber}: user_session_id ${userSessionId}, deviceId: ${deviceId?.substring(0, 20)}...`);
         } else {
             // Primera vez o nueva sesión para este número, crear nuevo registro
             const deviceId = sessionDeviceMap.get(sessionId) || null;
