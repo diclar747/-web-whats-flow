@@ -2474,12 +2474,6 @@ async function getOrCreateUserSession(sessionId, phoneNumber) {
             );
             console.log(`[DB-USER] Sesión existente actualizada para ${phoneNumber}: user_session_id ${userSessionId}, deviceId: ${deviceId?.substring(0, 20)}...`);
         } else {
-            // Deactivar cualquier sesión inactiva anterior para este número
-            await connection.execute(
-                'UPDATE user_sessions SET is_active = FALSE WHERE phone_number = ? AND is_active = TRUE',
-                [phoneNumber]
-            );
-            
             // Primera vez o nueva sesión para este número, crear nuevo registro
             const deviceId = sessionDeviceMap.get(sessionId) || null;
             const sessionToken = sessionTokenMap.get(sessionId)?.sessionToken || null;
