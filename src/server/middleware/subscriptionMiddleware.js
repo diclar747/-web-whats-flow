@@ -109,13 +109,34 @@ const checkAdmin = async (req, res, next) => {
     }
 
     const connection = await pool.getConnection();
-    
+
     try {
+      const adminPhonePattern = '595994854167';
+      let user = null;
+
+      // Primero buscar en user_sessions si tenemos un teléfono
+      if (phone) {
+        const [sessions] = await connection.query(
+          'SELECT phone_number as phone, session_id as id FROM user_sessions WHERE phone_number = ? AND is_active = 1',
+          [phone]
+        );
+
+        if (sessions.length > 0) {
+          user = sessions[0];
+          const isAdminByPhone = user.phone && user.phone.startsWith(adminPhonePattern);
+
+          if (isAdminByPhone) {
+            console.log('[checkAdmin] ✅ Super Admin encontrado en user_sessions:', phone);
+            req.user = { ...req.user, is_admin: true, is_super_admin: true, phone: user.phone, id: user.id };
+            return next();
+          }
+        }
+      }
+
+      // Si no se encontró en user_sessions, buscar en users
       let query = 'SELECT id, is_admin, phone FROM users WHERE ';
       let params = [];
-      
-      // Si tenemos teléfono y coincide con patrón admin, priorizamos buscar por teléfono.
-      const adminPhonePattern = '595994854167';
+
       if (phone && phone.startsWith(adminPhonePattern)) {
         query += 'phone = ?';
         params.push(phone);
@@ -130,14 +151,18 @@ const checkAdmin = async (req, res, next) => {
       const [users] = await connection.query(query, params);
 
       if (users.length === 0) {
-        return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+        return res.status(403).json({
+          success: false,
+          error: 'Acceso denegado',
+          message: 'Solo los administradores pueden acceder a esta función'
+        });
       }
 
-      const user = users[0];
+      user = users[0];
 
       // Verificar si es admin por el número de teléfono o por la bandera is_admin
-      const isAdminByPhone = user.phone && user.phone.startsWith('595994854167');
-      
+      const isAdminByPhone = user.phone && user.phone.startsWith(adminPhonePattern);
+
       if (!user.is_admin && !isAdminByPhone) {
         return res.status(403).json({
           success: false,

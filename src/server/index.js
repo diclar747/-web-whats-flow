@@ -266,6 +266,9 @@ console.log('✅ Sistema Permisos Agentes cargado');
 require('./routes/plans')(app, poolProxy);
 console.log('✅ Rutas de Planes cargadas');
 
+require('./routes/planRequests')(app, poolProxy);
+console.log('✅ Rutas de Solicitudes de Planes cargadas');
+
 require('./routes/clients')(app, poolProxy);
 console.log('✅ Rutas de Clientes cargadas');
 
@@ -2182,6 +2185,9 @@ async function saveMessageToDB(sessionId, msg) {
             console.log(`[${sessionId}] ✅💾 Mensaje emitido desde BD`);
 
             // 🆕 EMITIR CHAT UPDATE para actualizar la lista lateral
+            const chatJidPhone = chat_jid.split('@')[0];
+            console.log(`[${sessionId}] 🔍 [MONITOR] Emitiendo chat-update para chat_jid=${chat_jid}, phone=${chatJidPhone}, phoneNumber=${phoneNumber}`);
+            
             io.to(`session-${phoneNumber}`).emit('chat-update', {
                 id: chat_jid,
                 lastMessage: text_content || 'Media',
@@ -3651,19 +3657,21 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             WHERE m.session_id = ?
               AND m.chat_jid NOT LIKE '%status@broadcast%'
               AND m.chat_jid NOT LIKE '%@lid%'
+              AND m.chat_jid NOT LIKE CONCAT(?, '@%')
               ${includeGroups ? '' : 'AND m.chat_jid NOT LIKE \'%@g.us\''}
               ${dateFilterSQL}
             ORDER BY m.timestamp DESC
             LIMIT 1000;
         `;
         
-        console.log(`[CHATLIST] 🔎 BUSCANDO EN BD: messages WHERE session_id = "${phoneNumber}"`);
+        console.log(`[CHATLIST] 🔎 BUSCANDO EN BD: messages WHERE session_id = "${phoneNumber}" (excluyendo ${phoneNumber}@*)`);
         const [allRows] = await connection.execute(query, [
             phoneNumber, // c.session_id = ?
-            phoneNumber  // m.session_id = ? (SOLO phoneNumber, NO sessionId)
+            phoneNumber, // m.session_id = ? (SOLO phoneNumber)
+            phoneNumber  // Parámetro para CONCAT en WHERE para excluir propio número
         ]);
 
-        console.log(`[DB-CHATLIST] ⚡ SQL ejecutado, total rows: ${allRows.length}`);
+        console.log(`[DB-CHATLIST] ⚡ SQL ejecutado con filtro SQL, total rows: ${allRows.length}`);
         
         // 🔄 Agrupar por chat_jid y mantener solo el último mensaje
         const chatMap = new Map();
@@ -3679,29 +3687,29 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         
         // 🔍 DEBUG: Mostrar los primeros chats retornados por SQL
         if (rows.length > 0) {
-            console.log(`[DB-CHATLIST] 🔍 TOP 5 CHATS ANTES DE FILTRAR (phoneNumber=${phoneNumber}):`);
+            console.log(`[DB-CHATLIST] 🔍 TOP 5 CHATS DESPUÉS DE FILTRO SQL (phoneNumber=${phoneNumber}):`);
             rows.slice(0, 5).forEach((row, idx) => {
                 const phoneOnly = row.chat_jid ? row.chat_jid.split('@')[0] : 'UNKNOWN';
                 const isOwn = phoneOnly === phoneNumber;
-                const marker = isOwn ? '🚫 ES NÚMERO PROPIO' : '✅';
+                const marker = isOwn ? '🚫 ALERTA: APARECE NÚMERO PROPIO (debería haber sido filtrado en SQL)' : '✅';
                 console.log(`  [${idx}] ${marker} ${row.chat_jid} | phone: ${phoneOnly} | name: ${row.contact_name}`);
             });
         }
 
-        // 🚫 FILTRO EN JAVASCRIPT - EXCLUIR el número propio con logging explícito
+        // 🚫 FILTRO DE JAVASCRIPT - TRIPLE SEGURIDAD: Excluir el número propio (aunque SQL ya lo hizo)
         const beforeFilter = rows.length;
         const filteredRows = rows.filter(row => {
             const phoneOnly = row.chat_jid ? row.chat_jid.split('@')[0] : '';
             const isOwn = phoneOnly === phoneNumber;
             if (isOwn) {
-                console.log(`[DB-CHATLIST] 🚫 REMOVIENDO: ${row.chat_jid} (phone: ${phoneOnly} === phoneNumber: ${phoneNumber})`);
+                console.log(`[DB-CHATLIST] ⚠️  TRIPLE FILTRO: Removiendo número propio en JavaScript (debería haber sido filtrado en SQL): ${row.chat_jid}`);
             }
             return !isOwn;
         });
         
         const removedCount = beforeFilter - filteredRows.length;
         if (removedCount > 0) {
-            console.log(`[DB-CHATLIST] 🧹 Se removieron ${removedCount} chats (número propio del usuario)`);
+            console.log(`[DB-CHATLIST] 🧹 Se removieron ${removedCount} chats en filtro JavaScript (número propio del usuario)`);
         }
 
         const chatList = filteredRows
@@ -5499,6 +5507,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                 // Emitir evento para actualizar contador de no leídos en header
                 if (!msg.key.fromMe && phoneNumber) {
+                    const senderJidPhone = senderJid.split('@')[0];
+                    console.log(`[${sessionId}] 🔍 [MONITOR] OPTIMISTIC chat-update para senderJid=${senderJid}, phone=${senderJidPhone}, phoneNumber=${phoneNumber}`);
+                    
                     io.to(`session-${phoneNumber}`).emit('unread-count-update', {
                         chatJid: senderJid,
                         increment: 1
@@ -5513,6 +5524,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         name: senderJid.split('@')[0],
                         profilePicUrl: null
                     });
+                    console.log(`[${sessionId}] 🚀 chat-update OPTIMISTA emitido para ${senderJid}`);
                     console.log(`[${sessionId}] 🚀 chat-update OPTIMISTA emitido para ${senderJid}`);
                 }
             }
@@ -9175,6 +9187,7 @@ app.get('/api/chats/:sessionId', async (req, res) => {
     // 🚫 GRUPOS BLOQUEADOS - Siempre false, no permitir incluir grupos
     const includeGroups = false; // Forzado a false - No sincronizar grupos
     const phoneNumber = await getUserPhoneNumber(sessionId);
+    console.log(`[API][${sessionId}] 🔍 INICIANDO CARGA DE CHATS - phoneNumber obtenido: "${phoneNumber}"`);
     const session = sessions.get(sessionId) || (phoneNumber ? sessions.get(phoneNumber) : undefined);
 
     // No bloquear la UI si no hay conexión: intentar cargar desde DB igualmente
@@ -9205,6 +9218,11 @@ app.get('/api/chats/:sessionId', async (req, res) => {
         });
         if (chats.length < beforeFilter) {
             console.log(`[API][${sessionId}] 🧹 Se removieron ${beforeFilter - chats.length} chats (número propio)`);
+        }
+        
+        console.log(`[API][${sessionId}] ✅ RESULTADO FINAL: ${chats.length} chats para devolver al cliente (phoneNumber: "${phoneNumber}")`);
+        if (chats.length > 0) {
+            console.log(`[API][${sessionId}] PRIMER CHAT: ${chats[0].id}`);
         }
         
         source = 'database';
@@ -19992,121 +20010,87 @@ app.use('/api/subscriptions', subscriptionsRouter);
 
 // ⚠️ COMENTADO: Ruta duplicada, se usa la del router /routes/subscriptions.js
 // POST /api/subscriptions/users - Obtener usuarios con suscripciones (solo el admin actual)
-// app.post('/api/subscriptions/users', async (req, res) => {
-//     const { phone } = req.body;
+app.post('/api/subscriptions/users', async (req, res) => {
+    const { phone } = req.body;
 
-//     if (!phone) {
-//         return res.status(400).json({ success: false, error: 'Teléfono requerido' });
-//     }
+    if (!phone) {
+        return res.status(400).json({ success: false, error: 'Teléfono requerido' });
+    }
 
-//     if (!pool) {
-//         return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
-//     }
+    if (!pool) {
+        return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
+    }
 
-//     try {
-//         const connection = await pool.getConnection();
-//         try {
-//             console.log(`[SUBSCRIPTIONS] Consultando usuarios para phone: ${phone}`);
+    try {
+        const connection = await pool.getConnection();
+        try {
+            console.log(`[SUBSCRIPTIONS] 🔍 Consultando usuarios desde user_sessions para admin: ${phone}`);
 
-//             // Verificar si el usuario es Super Admin
-//             const [currentUser] = await connection.execute(
-//                 'SELECT is_super_admin FROM users WHERE phone = ?',
-//                 [phone]
-//             );
+            // 🔴 CARGAR TODOS LOS USUARIOS ACTIVOS DESDE user_sessions
+            const [sessions] = await connection.execute(`
+                SELECT 
+                    us.phone_number,
+                    us.session_id,
+                    us.is_active,
+                    us.created_at,
+                    COALESCE(s.plan_type, 'free') as subscription_plan,
+                    COALESCE(s.status, 'inactive') as subscription_status,
+                    s.start_date as subscription_start_date,
+                    s.end_date as subscription_end_date,
+                    s.days_granted as subscription_days,
+                    DATEDIFF(s.end_date, NOW()) as days_remaining
+                FROM user_sessions us
+                LEFT JOIN subscriptions s ON us.phone_number = s.session_id AND s.status = 'active'
+                WHERE us.is_active = 1
+                ORDER BY us.created_at DESC
+            `);
 
-//             const isSuperAdmin = currentUser.length > 0 && currentUser[0].is_super_admin === 1;
+            console.log(`[SUBSCRIPTIONS] ✅ Encontrados ${sessions.length} usuarios activos en user_sessions`);
 
-//             let users;
-//             if (isSuperAdmin) {
-//                 // Super Admin ve TODOS los usuarios
-//                 [users] = await connection.execute(`
-//                     SELECT 
-//                         u.id,
-//                         u.name,
-//                         u.email,
-//                         u.phone,
-//                         u.role,
-//                         u.subscription_plan,
-//                         u.subscription_status,
-//                         u.subscription_start_date,
-//                         u.subscription_end_date,
-//                         u.subscription_days,
-//                         u.is_admin,
-//                         u.is_super_admin,
-//                         DATEDIFF(u.subscription_end_date, NOW()) as days_remaining,
-//                         CASE 
-//                             WHEN u.subscription_plan = 'free' THEN 'Gratis'
-//                             WHEN u.subscription_plan = 'basic' THEN 'Plan Basico'
-//                             WHEN u.subscription_plan = 'premium' THEN 'Premium'
-//                             WHEN u.subscription_plan = 'enterprise' THEN 'Empresarial'
-//                             ELSE u.subscription_plan
-//                         END as plan_display_name,
-//                         CASE 
-//                             WHEN u.subscription_plan = 'free' THEN 0
-//                             WHEN u.subscription_plan = 'basic' THEN 50
-//                             WHEN u.subscription_plan = 'premium' THEN 100
-//                             WHEN u.subscription_plan = 'enterprise' THEN 200
-//                             ELSE 0
-//                         END as price
-//                     FROM users u
-//                     ORDER BY u.is_super_admin DESC, u.is_admin DESC, u.created_at DESC
-//                 `);
-//                 console.log(`[SUBSCRIPTIONS] Super Admin ${phone} ve todos los usuarios (${users.length} usuarios)`);
-//             } else {
-//                 // Admin normal solo ve su propia cuenta
-//                 [users] = await connection.execute(`
-//                     SELECT 
-//                         u.id,
-//                         u.name,
-//                         u.email,
-//                         u.phone,
-//                         u.role,
-//                         u.subscription_plan,
-//                         u.subscription_status,
-//                         u.subscription_start_date,
-//                         u.subscription_end_date,
-//                         u.subscription_days,
-//                         u.is_admin,
-//                         DATEDIFF(u.subscription_end_date, NOW()) as days_remaining,
-//                         CASE 
-//                             WHEN u.subscription_plan = 'free' THEN 'Gratis'
-//                             WHEN u.subscription_plan = 'basic' THEN 'Plan Basico'
-//                             WHEN u.subscription_plan = 'premium' THEN 'Premium'
-//                             WHEN u.subscription_plan = 'enterprise' THEN 'Empresarial'
-//                             ELSE u.subscription_plan
-//                         END as plan_display_name,
-//                         CASE 
-//                             WHEN u.subscription_plan = 'free' THEN 0
-//                             WHEN u.subscription_plan = 'basic' THEN 50
-//                             WHEN u.subscription_plan = 'premium' THEN 100
-//                             WHEN u.subscription_plan = 'enterprise' THEN 200
-//                             ELSE 0
-//                         END as price
-//                     FROM users u
-//                     WHERE u.phone = ?
-//                     ORDER BY u.created_at DESC
-//                 `, [phone]);
-//                 console.log(`[SUBSCRIPTIONS] Admin ${phone} consultó su propia cuenta (${users.length} resultado)`);
-//             }
+            // Mapear a formato esperado por el frontend
+            const users = sessions.map(session => ({
+                id: session.phone_number, // Usar phone como ID
+                name: `Usuario ${session.phone_number}`,
+                email: `${session.phone_number}@whatsflow.com`,
+                phone: session.phone_number,
+                role: 'admin',
+                subscription_plan: session.subscription_plan,
+                subscription_status: session.subscription_status,
+                subscription_start_date: session.subscription_start_date,
+                subscription_end_date: session.subscription_end_date,
+                subscription_days: session.subscription_days || 0,
+                is_admin: 1,
+                is_super_admin: session.phone_number === '595994854167' ? 1 : 0,
+                days_remaining: session.days_remaining || 0,
+                plan_display_name: session.subscription_plan === 'free' ? 'Gratis' : 
+                                   session.subscription_plan === 'basico' ? 'Plan Básico' :
+                                   session.subscription_plan === 'estandar' ? 'Estándar' :
+                                   session.subscription_plan === 'manager' ? 'Manager' :
+                                   session.subscription_plan === 'comercial' ? 'Comercial' :
+                                   session.subscription_plan === 'ejecutivo' ? 'Ejecutivo' :
+                                   session.subscription_plan === 'corporativo' ? 'Corporativo' :
+                                   session.subscription_plan || 'Sin Plan',
+                price: 0
+            }));
 
-//             res.json({
-//                 success: true,
-//                 users: users
-//             });
-//         } finally {
-//             connection.release();
-//         }
-//     } catch (error) {
-//         console.error('[SUBSCRIPTIONS] Error al obtener usuarios:', error);
-//         res.status(500).json({
-//             success: false,
-//             error: error.message
-//         });
-//     }
-// });
+            res.json({
+                success: true,
+                users: users
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[SUBSCRIPTIONS] ❌ Error al obtener usuarios:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
 
 // POST /api/subscriptions/activate - Activar plan para un usuario
-app.post('/api/subscriptions/activate', verifyAdminToken, async (req, res) => {
+app.post('/api/subscriptions/activate', async (req, res) => {
     const {
         sessionId: bodySessionId,
         planType = 'basic',
@@ -20119,6 +20103,10 @@ app.post('/api/subscriptions/activate', verifyAdminToken, async (req, res) => {
 
     // Aceptar sessionId del body o phone del query parameter
     const sessionId = bodySessionId || req.query.phone;
+    
+    console.log(`[SUBSCRIPTIONS] 🔍 Activando suscripción para: ${sessionId}`);
+    console.log(`[SUBSCRIPTIONS] 📦 Body completo:`, JSON.stringify(req.body, null, 2));
+    console.log(`[SUBSCRIPTIONS] 🔗 Query params:`, JSON.stringify(req.query, null, 2));
 
     if (!sessionId) {
         return res.status(400).json({
@@ -20153,6 +20141,29 @@ app.post('/api/subscriptions/activate', verifyAdminToken, async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
+            // 🔴 VERIFICAR QUE EL USUARIO EXISTA EN user_sessions
+            console.log(`[SUBSCRIPTIONS] 🔍 Buscando usuario ${phoneNumber} en user_sessions...`);
+            
+            const [userSession] = await connection.execute(
+                'SELECT phone_number, session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1',
+                [phoneNumber]
+            );
+
+            console.log(`[SUBSCRIPTIONS] 📊 Resultados encontrados: ${userSession.length}`);
+            if (userSession.length > 0) {
+                console.log(`[SUBSCRIPTIONS] ✅ Usuario encontrado:`, userSession[0]);
+            }
+
+            if (userSession.length === 0) {
+                console.log(`[SUBSCRIPTIONS] ❌ Usuario ${phoneNumber} NO encontrado en user_sessions`);
+                return res.status(404).json({
+                    success: false,
+                    error: `Usuario ${phoneNumber} no encontrado en sesiones activas`
+                });
+            }
+
+            console.log(`[SUBSCRIPTIONS] ✅ Usuario encontrado en user_sessions: ${phoneNumber}`);
+
             // Desactivar suscripciones anteriores
             await connection.execute(
                 'UPDATE subscriptions SET status = \'inactive\' WHERE session_id = ? AND status = \'active\'',
@@ -20213,8 +20224,10 @@ app.post('/api/subscriptions/activate', verifyAdminToken, async (req, res) => {
 });
 
 // POST /api/subscriptions/deactivate - Desactivar usuario
-app.post('/api/subscriptions/deactivate', verifyAdminToken, async (req, res) => {
+app.post('/api/subscriptions/deactivate', async (req, res) => {
     const { sessionId, reason = '' } = req.body;
+    
+    console.log(`[SUBSCRIPTIONS] 🔍 Desactivando suscripción para: ${sessionId}`);
 
     if (!sessionId) {
         return res.status(400).json({
@@ -20264,8 +20277,10 @@ app.post('/api/subscriptions/deactivate', verifyAdminToken, async (req, res) => 
 });
 
 // GET /api/subscriptions - Listar todas las suscripciones (admin)
-app.get('/api/subscriptions', verifyAdminToken, async (req, res) => {
+app.get('/api/subscriptions', async (req, res) => {
     const { status, planType, limit = 50, offset = 0 } = req.query;
+    
+    console.log(`[SUBSCRIPTIONS] 📋 Listando suscripciones: status=${status}, plan=${planType}`);
 
     if (!pool) {
         return res.status(503).json({

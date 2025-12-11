@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import AdminSubscriptionPanel from '../components/AdminSubscriptionPanel';
 import APIRestSettings from '../components/APIRestSettings';
+import PlanSelector from '../components/PlanSelector';
 import {
   Box,
   Grid,
@@ -506,8 +507,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
 
         if (subData.success) {
           setMySubscription(subData.subscription);
-          setIsAdmin(subData.subscription.is_admin || sessionId?.includes('595994854167'));
-          setIsSuperAdmin(subData.subscription.is_super_admin || sessionId?.includes('595994854167'));
+          if (subData.subscription) {
+            setIsAdmin(subData.subscription.is_admin || sessionId?.includes('595994854167'));
+            setIsSuperAdmin(subData.subscription.is_super_admin || sessionId?.includes('595994854167'));
+          } else {
+            // Sin suscripción, verificar si es super admin por teléfono
+            setIsAdmin(sessionId?.includes('595994854167') || false);
+            setIsSuperAdmin(sessionId?.includes('595994854167') || false);
+          }
         }
       } catch (error) {
         console.error('Error loading subscription:', error);
@@ -1695,6 +1702,10 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
 
 
       {/* Tab 4: Mi Plan - ajustado de índice 5 a 4 */}
+      {selectedTab === 3 && !mySubscription && (
+        <PlanSelector userPhone={sessionId} />
+      )}
+
       {selectedTab === 3 && mySubscription && (
         <Grid container spacing={3}>
           {/* Plan actual */}

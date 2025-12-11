@@ -87,15 +87,32 @@ interface ConnectionSession {
   timestamp: string;
 }
 
+interface PlanRequest {
+  id: number;
+  phone_number: string;
+  session_id: string;
+  plan_id: number;
+  plan_name: string;
+  plan_display_name: string;
+  plan_price: number;
+  duration_days: number;
+  status: 'pending' | 'approved' | 'rejected';
+  requested_at: string;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+  rejection_reason: string | null;
+}
+
 interface AdminSubscriptionPanelProps {
   sessionId: string;
   userPhone: string;
 }
 
-const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ sessionId, userPhone }) => {
+const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPhone }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [connections, setConnections] = useState<ConnectionSession[]>([]);
+  const [planRequests, setPlanRequests] = useState<PlanRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -104,6 +121,9 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
   const [success, setSuccess] = useState<string | null>(null);
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState<PlanRequest | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -149,8 +169,12 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
       if (plansData.success) {
         setPlans(plansData.plans.map((p: any) => ({
           ...p,
+          plan_name: p.name?.toLowerCase().replace(/\s+/g, '_') || 'basic', // Básico -> basico
+          plan_display_name: p.name || 'Plan Básico',
+          duration_days: 30, // Por defecto 30 días
           modules: typeof p.modules === 'string' ? JSON.parse(p.modules) : p.modules || []
         })));
+        console.log(`[AdminSubscriptionPanel] Planes cargados:`, plansData.plans.length);
       }
 
       // Cargar usuarios (solo si es admin) - usar POST con phone en body para asegurar middleware
@@ -181,6 +205,22 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
         // No bloquear el panel por error de conexiones
         console.warn('Error al cargar conexiones activas:', err);
       }
+
+      // Cargar solicitudes de planes
+      try {
+        const requestsResponse = await fetch(`${getAPIBaseURL()}/api/plan-requests?status=pending`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        const requestsData = await requestsResponse.json();
+        if (requestsData.success) {
+          setPlanRequests(requestsData.requests || []);
+          console.log(`[AdminSubscriptionPanel] Solicitudes cargadas:`, requestsData.requests?.length || 0);
+        }
+      } catch (err) {
+        console.warn('Error al cargar solicitudes de planes:', err);
+      }
     } catch (error) {
       console.error('Error loading data:', error);
       setError('Error al cargar datos');
@@ -206,20 +246,25 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
       setLoading(true);
       setError(null);
 
-      const response = await fetch(`${getAPIBaseURL()}/api/subscriptions/activate?phone=${userPhone}`, {
+      // 🔴 USAR EL TELÉFONO DEL USUARIO SELECCIONADO, NO DEL ADMIN
+      console.log(`[AdminSubscriptionPanel] Activando plan para usuario: ${selectedUser.phone}`);
+      console.log(`[AdminSubscriptionPanel] Plan: ${formData.planName}, Días: ${formData.days}`);
+
+      const response = await fetch(`${getAPIBaseURL()}/api/subscriptions/activate?phone=${selectedUser.phone}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          userId: selectedUser.id,
-          planName: formData.planName,
+          sessionId: selectedUser.phone, // También en el body
+          planType: formData.planName,
           days: formData.days,
           customEndDate: formData.customEndDate || undefined
         })
       });
 
       const data = await response.json();
+      console.log(`[AdminSubscriptionPanel] Respuesta del servidor:`, data);
 
       if (data.success) {
         setSuccess('Suscripción activada exitosamente');
@@ -414,6 +459,84 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
     }
   };
 
+  const handleApproveRequest = async (request: PlanRequest) => {
+    if (!window.confirm(`¿Aprobar solicitud de ${request.phone_number} para el plan ${request.plan_name}?`)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(`${getAPIBaseURL()}/api/plan-requests/${request.id}/approve`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ adminPhone: userPhone })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess('Solicitud aprobada y plan activado exitosamente');
+        loadData();
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError(data.error || 'Error al aprobar solicitud');
+      }
+    } catch (error) {
+      console.error('Error approving request:', error);
+      setError('Error al aprobar solicitud');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenRejectDialog = (request: PlanRequest) => {
+    setSelectedRequest(request);
+    setRejectionReason('');
+    setRejectDialogOpen(true);
+  };
+
+  const handleRejectRequest = async () => {
+    if (!selectedRequest) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(`${getAPIBaseURL()}/api/plan-requests/${selectedRequest.id}/reject`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          reason: rejectionReason,
+          adminPhone: userPhone
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess('Solicitud rechazada');
+        setRejectDialogOpen(false);
+        loadData();
+        setTimeout(() => setSuccess(null), 3000);
+      } else {
+        setError(data.error || 'Error al rechazar solicitud');
+      }
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      setError('Error al rechazar solicitud');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading && users.length === 0) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
@@ -478,6 +601,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
         <Tabs value={selectedTab} onChange={(_, value) => setSelectedTab(value)}>
           <Tab label={`Usuarios (${users.length})`} />
           <Tab label={`Planes (${plans.length})`} />
+          <Tab label={`Solicitudes (${planRequests.length})`} />
           <Tab label={`Conexiones (${connections.length})`} />
         </Tabs>
       </Paper>
@@ -675,8 +799,102 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
         </Box>
       )}
 
-      {/* Tab: Conexiones */}
+      {/* Tab: Solicitudes de Planes */}
       {selectedTab === 2 && (
+        <Card>
+          <CardContent>
+            {planRequests.length === 0 ? (
+              <Alert severity="info">No hay solicitudes pendientes en este momento.</Alert>
+            ) : (
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Teléfono</TableCell>
+                      <TableCell>Plan Solicitado</TableCell>
+                      <TableCell>Precio</TableCell>
+                      <TableCell>Duración</TableCell>
+                      <TableCell>Fecha Solicitud</TableCell>
+                      <TableCell>Estado</TableCell>
+                      <TableCell>Acciones</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {planRequests.map((request) => (
+                      <TableRow key={request.id} hover>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            {request.phone_number}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={request.plan_display_name || request.plan_name}
+                            size="small"
+                            sx={{
+                              bgcolor: '#667eea20',
+                              color: '#667eea',
+                              fontWeight: 600
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            Gs. {request.plan_price.toLocaleString()}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>{request.duration_days} días</TableCell>
+                        <TableCell>
+                          {new Date(request.requested_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={request.status === 'pending' ? 'Pendiente' : request.status === 'approved' ? 'Aprobada' : 'Rechazada'}
+                            size="small"
+                            color={request.status === 'pending' ? 'warning' : request.status === 'approved' ? 'success' : 'error'}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {request.status === 'pending' && (
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Tooltip title="Aprobar">
+                                <IconButton
+                                  size="small"
+                                  color="success"
+                                  onClick={() => handleApproveRequest(request)}
+                                >
+                                  <CheckCircle />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Rechazar">
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleOpenRejectDialog(request)}
+                                >
+                                  <Block />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          )}
+                          {request.status !== 'pending' && (
+                            <Typography variant="caption" color="textSecondary">
+                              {request.status === 'approved' ? 'Aprobada' : `Rechazada: ${request.rejection_reason || 'Sin motivo'}`}
+                            </Typography>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tab: Conexiones */}
+      {selectedTab === 3 && (
         <Card>
           <CardContent>
             <TableContainer>
@@ -927,6 +1145,49 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ session
             startIcon={loading ? <CircularProgress size={16} /> : <CheckCircle />}
           >
             {loading ? 'Activando...' : 'Activar Suscripción'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog para rechazar solicitud */}
+      <Dialog open={rejectDialogOpen} onClose={() => setRejectDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Rechazar Solicitud
+        </DialogTitle>
+        <DialogContent>
+          {selectedRequest && (
+            <Box sx={{ pt: 2 }}>
+              <Typography variant="body1" sx={{ mb: 3 }}>
+                <strong>Usuario:</strong> {selectedRequest.phone_number}
+              </Typography>
+              <Typography variant="body1" sx={{ mb: 3 }}>
+                <strong>Plan:</strong> {selectedRequest.plan_display_name || selectedRequest.plan_name}
+              </Typography>
+
+              <TextField
+                fullWidth
+                label="Motivo del rechazo"
+                multiline
+                rows={4}
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                helperText="Explica por qué se rechaza esta solicitud"
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRejectDialogOpen(false)}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleRejectRequest}
+            disabled={loading}
+            startIcon={loading ? <CircularProgress size={16} /> : <Block />}
+          >
+            {loading ? 'Rechazando...' : 'Rechazar Solicitud'}
           </Button>
         </DialogActions>
       </Dialog>

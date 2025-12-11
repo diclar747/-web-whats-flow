@@ -152,6 +152,9 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
 
   // Audio notification
   const notificationSound = useRef<HTMLAudioElement | null>(null);
+  
+  // 🔴 BANDERA: Solo cargar chats UNA VEZ
+  const hasLoadedChats = useRef(false);
 
   useEffect(() => {
     // Crear elemento de audio para notificaciones
@@ -160,8 +163,13 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
   }, []);
 
   useEffect(() => {
-    if (sessionId) {
+    if (sessionId && !hasLoadedChats.current) {
+      console.log('🔄 [ChatModule] Cargando chats por PRIMERA VEZ');
       loadChatData();
+      hasLoadedChats.current = true; // Marcar como cargado
+    }
+    
+    if (sessionId) {
       setupRealtimeUpdates();
     }
 
@@ -200,9 +208,57 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     emit('join-session', { sessionId });
     console.log(`🔌 [ChatModule] Uniéndose a sala: session-${sessionId}`);
 
+    // 🔍 MONITOR: Detectar CUALQUIER cambio en la lista de chats
+    const handleChatUpdate = (data: any) => {
+      console.log('🎯 [MONITOR] 🔴 EVENTO chat-update RECIBIDO:', JSON.stringify(data, null, 2));
+      console.log(`🎯 [MONITOR] Chat siendo agregado/actualizado: ${data.id || data.chatJid}`);
+      
+      // 🔴 FILTRO: RECHAZAR tu propio número
+      const chatPhone = (data.id || data.chatJid)?.split('@')[0];
+      console.log(`🎯 [MONITOR] sessionId=${sessionId}, chatPhone=${chatPhone}`);
+      
+      // sessionId es solo el número (ej: 595985768793)
+      if (chatPhone === sessionId) {
+        console.log(`🚫 [MONITOR] RECHAZADO: ${chatPhone} es TU propio número (${sessionId}). NO agregando chat.`);
+        return;
+      }
+      
+      console.log(`✅ [MONITOR] Validación OK: ${chatPhone} ≠ ${sessionId}`);
+      
+      // Agregar el chat a la lista si no existe
+      setContacts(prev => {
+        const chatExists = prev.some(c => c.id === (data.id || data.chatJid));
+        console.log(`🎯 [MONITOR] Chat existe en lista: ${chatExists}`);
+        if (!chatExists) {
+          console.log(`🎯 [MONITOR] ⚠️ AGREGANDO NUEVO CHAT A LA LISTA:`, data);
+          const newContact: Contact = {
+            id: data.id || data.chatJid,
+            name: data.name || data.id?.split('@')[0] || 'Desconocido',
+            phone: (data.id || data.chatJid)?.split('@')[0] || '',
+            avatar: data.profilePicUrl || null,
+            isGroup: false,
+            lastMessage: data.lastMessage || '',
+            lastMessageIsFromMe: false,
+            timestamp: data.timestamp || new Date().toISOString(),
+            unreadCount: data.unreadCount || 0,
+            status: 'online' as 'online' | 'offline' | 'typing' | 'away',
+            labels: [],
+            priority: 'medium' as 'high' | 'medium' | 'low',
+            assignedAgent: undefined,
+            lastSeen: 'Ahora',
+            isArchived: false,
+            isBlocked: false
+          };
+          return [...prev, newContact];
+        }
+        return prev;
+      });
+    };
+
     // Escuchar nuevos mensajes en tiempo real
     const handleNewMessage = (data: any) => {
       console.log('📨 [ChatModule] Nuevo mensaje recibido:', data);
+      console.log(`📨 [MONITOR] De: ${data.from || data.sender_jid}, Para: ${data.chatJid || data.chat_jid}`);
       
       const chatJid = data.chatJid || data.chat_jid || data.to || data.from;
       const normalizedChatJid = chatJid?.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`;
@@ -282,8 +338,9 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     on('message', handleNewMessage);
     on('message-status-update', handleStatusUpdate);
     on('typing', handleTyping);
+    on('chat-update', handleChatUpdate);  // 🔍 NUEVO: Monitorear actualizaciones de chats en tiempo real
 
-    console.log('✅ [ChatModule] Listeners registrados correctamente (incluyendo message para tiempo real)');
+    console.log('✅ [ChatModule] Listeners registrados correctamente (incluyendo message y chat-update para tiempo real)');
   };
 
   const cleanupRealtimeUpdates = () => {
@@ -293,6 +350,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     off('message');
     off('message-status-update');
     off('typing');
+    off('chat-update');  // 🔍 NUEVO: Limpiar listener de chat-update
 
     // Salir de la sala
     if (sessionId) {
@@ -386,10 +444,21 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
         const contactCount = allContactsData.filter(c => !c.isGroup).length;
         console.log(`👥 [ChatModule] Grupos: ${groupCount}, Contactos: ${contactCount}`);
 
-        // FILTRAR GRUPOS: Solo mostrar contactos individuales (NO grupos)
-        // Los grupos se siguen descargando pero no se muestran en la UI
-        const contactsData = allContactsData.filter(c => !c.isGroup);
-        console.log(`📋 [ChatModule] Chats filtrados (sin grupos): ${contactsData.length}`);
+        // FILTRAR GRUPOS Y PROPIO NÚMERO
+        const contactsData = allContactsData.filter(c => {
+          // Rechazar grupos
+          if (c.isGroup) return false;
+          
+          // 🔴 RECHAZAR TU PROPIO NÚMERO
+          const chatPhone = c.phone || c.id?.split('@')[0];
+          if (chatPhone === sessionId) {
+            console.log(`🚫 [ChatModule] FILTRADO en loadChatData: ${chatPhone} es tu propio número`);
+            return false;
+          }
+          
+          return true;
+        });
+        console.log(`📋 [ChatModule] Chats filtrados (sin grupos ni propio número): ${contactsData.length}`);
         
         // 🔍 DEBUG: Mostrar los primeros chats después de filtrar
         if (contactsData.length > 0) {
@@ -635,6 +704,8 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
   };
 
   const handleRefresh = () => {
+    console.log('🔄 [ChatModule] Refresh MANUAL iniciado');
+    hasLoadedChats.current = false; // Permitir recarga manual
     loadChatData();
     if (activeContact) {
       loadContactMessages(activeContact.id, 'today'); // Refresh con filtro de hoy
