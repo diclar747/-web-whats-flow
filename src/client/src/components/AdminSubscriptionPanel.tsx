@@ -127,6 +127,8 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
   const [searchTerm, setSearchTerm] = useState('');
   const [blockDialogOpen, setBlockDialogOpen] = useState(false);
   const [userToBlock, setUserToBlock] = useState<User | null>(null);
+  const [approveDialogOpen, setApproveDialogOpen] = useState(false);
+  const [requestToApprove, setRequestToApprove] = useState<PlanRequest | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -478,16 +480,20 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
     }
   };
 
-  const handleApproveRequest = async (request: PlanRequest) => {
-    if (!window.confirm(`¿Aprobar solicitud de ${request.phone_number} para el plan ${request.plan_name}?`)) {
-      return;
-    }
+  const handleOpenApproveDialog = (request: PlanRequest) => {
+    setRequestToApprove(request);
+    setApproveDialogOpen(true);
+  };
+
+  const handleApproveRequest = async () => {
+    if (!requestToApprove) return;
 
     try {
       setLoading(true);
       setError(null);
+      setApproveDialogOpen(false);
 
-      const response = await fetch(`${getAPIBaseURL()}/api/plan-requests/${request.id}/approve`, {
+      const response = await fetch(`${getAPIBaseURL()}/api/plan-requests/${requestToApprove.id}/approve`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -510,6 +516,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
       setError('Error al aprobar solicitud');
     } finally {
       setLoading(false);
+      setRequestToApprove(null);
     }
   };
 
@@ -897,7 +904,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
                                 <IconButton
                                   size="small"
                                   color="success"
-                                  onClick={() => handleApproveRequest(request)}
+                                  onClick={() => handleOpenApproveDialog(request)}
                                 >
                                   <CheckCircle />
                                 </IconButton>
@@ -1224,6 +1231,100 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
             startIcon={loading ? <CircularProgress size={16} /> : <Block />}
           >
             {loading ? 'Rechazando...' : 'Rechazar Solicitud'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Diálogo de confirmación de aprobación */}
+      <Dialog
+        open={approveDialogOpen}
+        onClose={() => setApproveDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+            color: 'white',
+            borderRadius: 3,
+            border: '1px solid rgba(76, 175, 80, 0.3)'
+          }
+        }}
+      >
+        <DialogTitle sx={{
+          color: 'white',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
+        }}>
+          <CheckCircle sx={{ color: '#4caf50' }} />
+          Confirmar Aprobación
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 3 }}>
+            <Alert
+              severity="success"
+              sx={{
+                mb: 3,
+                bgcolor: 'rgba(76, 175, 80, 0.2)',
+                color: 'white',
+                border: '1px solid rgba(76, 175, 80, 0.4)',
+                '& .MuiAlert-icon': {
+                  color: '#4caf50'
+                }
+              }}
+            >
+              Esta acción activará el plan solicitado
+            </Alert>
+
+            <Box sx={{
+              p: 3,
+              bgcolor: 'rgba(255,255,255,0.05)',
+              borderRadius: 2,
+              border: '1px solid rgba(255,255,255,0.1)',
+              mb: 2
+            }}>
+              <Typography variant="body1" sx={{ color: 'white', mb: 2, fontSize: '1.1rem' }}>
+                ¿Aprobar solicitud de <strong>{requestToApprove?.phone_number}</strong> para el plan <strong>{requestToApprove?.plan_display_name || requestToApprove?.plan_name}</strong>?
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 1 }}>
+                • El plan será activado inmediatamente
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 1 }}>
+                • Duración: {requestToApprove?.duration_days} días
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                • Precio: Gs. {requestToApprove?.plan_price.toLocaleString()}
+              </Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(255,255,255,0.1)', p: 2.5, gap: 1 }}>
+          <Button
+            onClick={() => setApproveDialogOpen(false)}
+            sx={{
+              color: 'rgba(255,255,255,0.7)',
+              '&:hover': {
+                bgcolor: 'rgba(255,255,255,0.1)'
+              }
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="success"
+            onClick={handleApproveRequest}
+            disabled={loading}
+            startIcon={loading ? <CircularProgress size={16} /> : <CheckCircle />}
+            sx={{
+              background: 'linear-gradient(135deg, #4caf50 0%, #66bb6a 100%)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #388e3c 0%, #4caf50 100%)'
+              }
+            }}
+          >
+            {loading ? 'Aprobando...' : 'Sí, Aprobar'}
           </Button>
         </DialogActions>
       </Dialog>
