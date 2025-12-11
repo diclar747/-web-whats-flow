@@ -5255,12 +5255,18 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     case DisconnectReason.connectionLost:
                         // Problemas de red, intentar reconectar
                         console.log(`[${sessionId}] Conexión perdida, intentando reconectar...`);
+                        if (userPhoneNumber) {
+                            await deactivateUserSession(userPhoneNumber);
+                        }
                         setTimeout(() => createSession(sessionId, true), 3000);
                         break;
 
                     case DisconnectReason.timedOut:
                         // Timeout, reconectar
                         console.log(`[${sessionId}] Timeout de conexión, reconectando...`);
+                        if (userPhoneNumber) {
+                            await deactivateUserSession(userPhoneNumber);
+                        }
                         setTimeout(() => createSession(sessionId, true), 5000);
                         break;
 
@@ -5268,12 +5274,18 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         // WhatsApp requiere reinicio
                         console.log(`[${sessionId}] Reinicio requerido por WhatsApp`);
                         sessions.delete(sessionId);
+                        if (userPhoneNumber) {
+                            await deactivateUserSession(userPhoneNumber);
+                        }
                         setTimeout(() => createSession(sessionId, true), 2000);
                         break;
 
                     default:
                         // Otros casos, intentar reconectar
                         console.log(`[${sessionId}] Desconexión desconocida (código: ${statusCode}), intentando reconectar...`);
+                        if (userPhoneNumber) {
+                            await deactivateUserSession(userPhoneNumber);
+                        }
                         setTimeout(() => createSession(sessionId, true), 3000);
                         break;
                 }
