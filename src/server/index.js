@@ -1380,9 +1380,16 @@ async function getOrInsertContact(jid, name = null, notifyName = null, phoneNumb
     console.log(`[DIAGNÓSTICO-DB-WRITE] Phone Number: ${phoneNumber}`);
     console.log(`[DIAGNÓSTICO-DB-WRITE] -------------------------`);
 
-    // Validar que sea un contacto individual
-    if (!jid.includes('@s.whatsapp.net')) {
+    // Validar que sea un contacto individual (permitir @s.whatsapp.net Y @lid)
+    if (!jid.includes('@s.whatsapp.net') && !jid.includes('@lid')) {
         console.warn(`[DB-CONTACT-WARN] Attempted to save non-individual contact: ${jid}. Skipping.`);
+        return null;
+    }
+
+    // 🚫 NO guardar el propio número como contacto
+    const jidPhone = jid.split('@')[0];
+    if (phoneNumber && jidPhone === phoneNumber) {
+        console.warn(`[DB-CONTACT-WARN] Attempted to save own number as contact: ${jid}. Skipping.`);
         return null;
     }
 
@@ -1923,8 +1930,108 @@ async function saveMessageToDB(sessionId, msg) {
         } = msg;
 
         // Normalizar JIDs para eliminar sufijos de dispositivo/hilo
-        const chat_jid = normalizeJid(rawChatJid);
-        const sender_jid = normalizeJid(rawSenderJid);
+        let chat_jid = normalizeJid(rawChatJid);
+        let sender_jid = normalizeJid(rawSenderJid);
+
+        // 🚫 RECHAZAR MENSAJES LID - Pero primero intentar convertir usando contactos existentes
+        if (chat_jid.includes('@lid')) {
+            console.log(`[DB-MSG] 🔍 Mensaje LID detectado: ${chat_jid}, intentando convertir...`);
+            
+            // Buscar si existe este LID en contactos y encontrar el contacto real asociado
+            try {
+                // Buscar contacto LID
+                const [lidContact] = await connection.execute(
+                    'SELECT name, notify_name FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
+                    [chat_jid, phoneNumber]
+                );
+                
+                if (lidContact.length > 0) {
+                    const lidName = lidContact[0].name || lidContact[0].notify_name;
+                    console.log(`[DB-MSG] 📝 LID tiene nombre: ${lidName}`);
+                    
+                    // Buscar contacto normal con el mismo nombre
+                    const [realContact] = await connection.execute(
+                        `SELECT jid FROM contacts 
+                         WHERE (name = ? OR notify_name = ?) 
+                         AND jid LIKE '%@s.whatsapp.net' 
+                         AND session_id = ? 
+                         LIMIT 1`,
+                        [lidName, lidName, phoneNumber]
+                    );
+                    
+                    if (realContact.length > 0) {
+                        const oldJid = chat_jid;
+                        chat_jid = realContact[0].jid;
+                        sender_jid = realContact[0].jid;
+                        console.log(`[DB-MSG] ✅ LID convertido: ${oldJid} -> ${chat_jid}`);
+                    } else {
+                        console.log(`[DB-MSG] ❌ No se encontró contacto real para LID ${chat_jid}, rechazando`);
+                        return null;
+                    }
+                } else {
+                    console.log(`[DB-MSG] ❌ LID no existe en contactos, rechazando: ${chat_jid}`);
+                    return null;
+                }
+            } catch (err) {
+                console.error('[DB-MSG] Error convirtiendo LID:', err.message);
+                return null;
+            }
+        }
+
+        // 🆕 CONVERTIR LIDs A JIDs REALES
+        // Si el chat_jid es un LID, intentar encontrar el JID real del contacto
+        if (chat_jid.includes('@lid') && pool) {
+            try {
+                // PASO 1: Buscar en contactos del usuario actual por nombre
+                const [contactMatches] = await connection.execute(
+                    `SELECT c2.jid, c2.name 
+                     FROM contacts c1
+                     LEFT JOIN contacts c2 ON (c2.name = c1.name OR c2.notify_name = c1.notify_name)
+                       AND c2.session_id = c1.session_id
+                       AND c2.jid LIKE '%@s.whatsapp.net'
+                     WHERE c1.jid = ? AND c1.session_id = ?
+                     LIMIT 1`,
+                    [chat_jid, phoneNumber]
+                );
+                
+                if (contactMatches.length > 0 && contactMatches[0].jid) {
+                    const realJid = contactMatches[0].jid;
+                    console.log(`[LID-CONVERT] ✓ Convirtiendo LID ${chat_jid} -> ${realJid} (${contactMatches[0].name})`);
+                    chat_jid = realJid;
+                    
+                    // También convertir sender_jid si es el mismo LID
+                    if (sender_jid === rawChatJid) {
+                        sender_jid = realJid;
+                    }
+                } else {
+                    // PASO 2: Si no se encuentra en usuario actual, buscar en TODAS las sesiones
+                    const lidNumber = chat_jid.split('@')[0];
+                    console.log(`[LID-CONVERT] ⚠️ LID ${chat_jid} no encontrado localmente, buscando globalmente...`);
+                    
+                    // Buscar si algún otro usuario tiene este número en formato normal
+                    const [globalMatches] = await connection.execute(
+                        `SELECT jid FROM contacts 
+                         WHERE jid LIKE CONCAT(?, '@s.whatsapp.net')
+                         LIMIT 1`,
+                        [lidNumber]
+                    );
+                    
+                    if (globalMatches.length > 0) {
+                        const realJid = globalMatches[0].jid;
+                        console.log(`[LID-CONVERT] ✓ Encontrado globalmente: ${chat_jid} -> ${realJid}`);
+                        chat_jid = realJid;
+                        
+                        if (sender_jid === rawChatJid) {
+                            sender_jid = realJid;
+                        }
+                    } else {
+                        console.log(`[LID-CONVERT] ❌ No se pudo convertir LID ${chat_jid}, se guardará como está`);
+                    }
+                }
+            } catch (err) {
+                console.error('[LID-CONVERT] Error convirtiendo LID:', err.message);
+            }
+        }
 
         // 🚫 FILTRAR solo reacciones y mensajes completamente vacíos
         // Permitir mensajes con al menos text_content O media_url
@@ -1943,49 +2050,29 @@ async function saveMessageToDB(sessionId, msg) {
         let senderName = null;
         let senderAvatar = null;
 
-        if (from_me) {
-            // Para mensajes propios, obtener el nombre y avatar del usuario actual
-            try {
-                const [userRows] = await connection.execute(
-                    'SELECT name, avatar_url FROM users WHERE phone = ? LIMIT 1',
-                    [phoneNumber]
-                );
+        // Para TODOS los mensajes (enviados o recibidos), usar el nombre del contacto del chat
+        // LÓGICA: Si tienes el contacto guardado, usa tu nombre. Si no, usa el pushName (nombre de WhatsApp de esa persona)
+        try {
+            const [contactRows] = await connection.execute(
+                'SELECT name, notify_name, avatar_url FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
+                [chat_jid, phoneNumber]
+            );
 
-                if (userRows.length > 0) {
-                    const user = userRows[0];
-                    senderName = user.name || phoneNumber;
-                    senderAvatar = user.avatar_url;
-                    console.log(`[DB-MSG] 👤 Mensaje propio - Usuario: ${senderName}, avatar: ${senderAvatar ? 'Sí' : 'No'}`);
-                } else {
-                    senderName = phoneNumber;
-                    console.log(`[DB-MSG] ⚠️ Usuario no encontrado, usando número: ${phoneNumber}`);
-                }
-            } catch (err) {
-                console.error('[DB-MSG] Error obteniendo información del usuario:', err);
-                senderName = phoneNumber;
+            if (contactRows.length > 0) {
+                const contact = contactRows[0];
+                // Usar el nombre que TÚ le pusiste al contacto
+                senderName = contact.name || contact.notify_name || chat_jid.split('@')[0];
+                senderAvatar = contact.avatar_url;
+                console.log(`[DB-MSG] 👤 Contacto guardado - Nombre: ${senderName}`);
+            } else {
+                // No tienes este contacto guardado, usar el número como fallback
+                // (el pushName debería haberse guardado cuando se creó el contacto)
+                senderName = chat_jid.split('@')[0];
+                console.log(`[DB-MSG] ⚠️ Contacto no encontrado, usando número: ${senderName}`);
             }
-        } else if (finalSenderJid) {
-            // Para mensajes recibidos, obtener del contacto
-            try {
-                const [contactRows] = await connection.execute(
-                    'SELECT name, notify_name, avatar_url FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
-                    [finalSenderJid, phoneNumber]
-                );
-
-                if (contactRows.length > 0) {
-                    const contact = contactRows[0];
-                    senderName = contact.name || contact.notify_name || finalSenderJid.split('@')[0];
-                    senderAvatar = contact.avatar_url;
-                    console.log(`[DB-MSG] 👤 Información del remitente obtenida: ${senderName}, avatar: ${senderAvatar ? 'Sí' : 'No'}`);
-                } else {
-                    // Si no encuentra el contacto, usar el JID como nombre
-                    senderName = finalSenderJid.split('@')[0];
-                    console.log(`[DB-MSG] ⚠️ Contacto no encontrado para ${finalSenderJid}, usando JID como nombre`);
-                }
-            } catch (err) {
-                console.error('[DB-MSG] Error obteniendo información del remitente:', err);
-                senderName = finalSenderJid.split('@')[0];
-            }
+        } catch (err) {
+            console.error('[DB-MSG] Error obteniendo información del contacto:', err);
+            senderName = chat_jid.split('@')[0];
         }
 
         // Determinar el status correcto basándose en from_me
@@ -2066,7 +2153,7 @@ async function saveMessageToDB(sessionId, msg) {
                     phoneNumber,
                     chatName,
                     unreadIncrement,
-                    new Date(Math.floor(mysqlTimestamp.getTime())), // last_message_time
+                    mysqlTimestamp, // last_message_time (ya es string en formato MySQL)
                     (text_content || caption || message_type || 'Media').substring(0, 255), // last_message_content
                     chat_jid.includes('@g.us') ? 1 : 0 // is_group
                 ]
@@ -2162,12 +2249,13 @@ async function saveMessageToDB(sessionId, msg) {
             messageId: messageId.substring(0, 20),
             chat_jid: chat_jid.substring(0, 30),
             isLid: chat_jid.includes('@lid'),
+            isGroup: chat_jid.includes('@g.us'),
             from_me: from_me,
-            shouldEmit: !chat_jid.includes('@lid')
+            shouldEmit: !chat_jid.includes('@g.us') // Solo rechazar grupos, permitir LIDs individuales
         });
 
-        // 🔧 CORREGIDO: Emitir TODOS los mensajes (entrantes Y salientes desde teléfono)
-        if (!chat_jid.includes('@lid')) {
+        // 🔧 CORREGIDO: Emitir mensajes individuales (incluyendo LIDs), pero NO grupos
+        if (!chat_jid.includes('@g.us')) {
             console.log(`[${sessionId}] 🚀💾 EMITIENDO desde saveMessageToDB:`, messageId.substring(0, 20), from_me ? '(FROM_ME)' : '(ENTRANTE)');
             console.log(`[${sessionId}] 📡 Emitiendo a sala: session-${phoneNumber}`);
             io.to(`session-${phoneNumber}`).emit('message', {
@@ -2179,7 +2267,7 @@ async function saveMessageToDB(sessionId, msg) {
                 timestamp: new Date(timestamp).toISOString(),
                 type: message_type?.replace('Message', '').toLowerCase() || 'text',
                 isFromMe: Boolean(from_me),
-                isGroup: chat_jid.includes('@g.us'),
+                isGroup: false, // Ya filtramos grupos arriba
                 status: status
             });
             console.log(`[${sessionId}] ✅💾 Mensaje emitido desde BD`);
@@ -2188,15 +2276,20 @@ async function saveMessageToDB(sessionId, msg) {
             const chatJidPhone = chat_jid.split('@')[0];
             console.log(`[${sessionId}] 🔍 [MONITOR] Emitiendo chat-update para chat_jid=${chat_jid}, phone=${chatJidPhone}, phoneNumber=${phoneNumber}`);
             
-            io.to(`session-${phoneNumber}`).emit('chat-update', {
-                id: chat_jid,
-                lastMessage: text_content || 'Media',
-                timestamp: new Date(timestamp).toISOString(),
-                unreadCount: !from_me ? 1 : 0, // Incrementará en el frontend si no es enviado por mi
-                name: senderName || chat_jid.split('@')[0],
-                profilePicUrl: senderAvatar
-            });
-            console.log(`[${sessionId}] 📡 chat-update emitido para ${chat_jid}`);
+            // 🚫 NO emitir si el chat_jid es el propio número
+            if (chatJidPhone !== phoneNumber) {
+                io.to(`session-${phoneNumber}`).emit('chat-update', {
+                    id: chat_jid,
+                    lastMessage: text_content || 'Media',
+                    timestamp: new Date(timestamp).toISOString(),
+                    unreadCount: !from_me ? 1 : 0, // Incrementará en el frontend si no es enviado por mi
+                    name: senderName || chat_jid.split('@')[0],
+                    profilePicUrl: senderAvatar
+                });
+                console.log(`[${sessionId}] 📡 chat-update emitido para ${chat_jid}`);
+            } else {
+                console.log(`[${sessionId}] 🚫 chat-update NO emitido (propio número): ${chat_jid}`);
+            }
         }
         // ═══════════════════════════════════════════════════════════
 
@@ -3657,12 +3750,23 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                 m.from_me AS last_message_from_me,
                 m.status AS last_message_status,
                 c.is_group,
-                c.avatar_url
+                c.avatar_url,
+                -- Si es LID, intentar obtener el número real del contacto con el mismo nombre
+                CASE 
+                    WHEN m.chat_jid LIKE '%@lid' THEN (
+                        SELECT SUBSTRING_INDEX(c2.jid, '@', 1)
+                        FROM contacts c2
+                        WHERE c2.session_id = ?
+                          AND c2.jid LIKE '%@s.whatsapp.net'
+                          AND (c2.name = c.name OR c2.notify_name = c.notify_name)
+                        LIMIT 1
+                    )
+                    ELSE SUBSTRING_INDEX(m.chat_jid, '@', 1)
+                END AS phone_number
             FROM messages m
             LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = ?
             WHERE m.session_id = ?
               AND m.chat_jid NOT LIKE '%status@broadcast%'
-              AND m.chat_jid NOT LIKE '%@lid%'
               AND m.chat_jid NOT LIKE CONCAT(?, '@%')
               ${includeGroups ? '' : 'AND m.chat_jid NOT LIKE \'%@g.us\''}
               ${dateFilterSQL}
@@ -3672,6 +3776,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         
         console.log(`[CHATLIST] 🔎 BUSCANDO EN BD: messages WHERE session_id = "${phoneNumber}" (excluyendo ${phoneNumber}@*)`);
         const [allRows] = await connection.execute(query, [
+            phoneNumber, // phone_number para subquery de LID
             phoneNumber, // c.session_id = ?
             phoneNumber, // m.session_id = ? (SOLO phoneNumber)
             phoneNumber  // Parámetro para CONCAT en WHERE para excluir propio número
@@ -3723,7 +3828,8 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             .slice(0, limit)
             .map(row => {
                 const normalizedJid = normalizeJid(row.chat_jid);
-                const phoneOnly = normalizedJid.split('@')[0];
+                // Usar phone_number de la query (que resuelve LIDs) o extraer del JID
+                const phoneOnly = row.phone_number || normalizedJid.split('@')[0];
                 return {
                     id: normalizedJid,
                     name: row.contact_name || phoneOnly,
@@ -3733,7 +3839,8 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                     fromMe: !!row.last_message_from_me,
                     status: row.last_message_status || 'pending',
                     unreadCount: 0,
-                    avatar: row.avatar_url && row.avatar_url.trim() ? row.avatar_url : null
+                    avatar: row.avatar_url && row.avatar_url.trim() ? row.avatar_url : null,
+                    phoneNumber: phoneOnly // Agregar número de teléfono al objeto
                 };
             });
 
@@ -3761,10 +3868,37 @@ async function updateContactWithAvailableInfo(sock, jid, pushName, notifyName, p
         let contactName = pushName || notifyName || jid.split('@')[0];
         let contactNotifyName = notifyName || pushName || jid.split('@')[0];
 
+        // 🆕 ESPECIAL PARA LIDs: Buscar contacto real con el mismo pushName
+        if (jid.includes('@lid') && pushName && pushName.trim() !== '' && pool) {
+            try {
+                const connection = await pool.getConnection();
+                try {
+                    // Buscar contacto normal con el mismo nombre
+                    const [matches] = await connection.execute(
+                        `SELECT jid, name, notify_name FROM contacts 
+                         WHERE (name = ? OR notify_name = ?) 
+                         AND jid LIKE '%@s.whatsapp.net' 
+                         AND session_id = ?
+                         LIMIT 1`,
+                        [pushName, pushName, phoneNumber]
+                    );
+                    
+                    if (matches.length > 0) {
+                        const realContact = matches[0];
+                        contactName = realContact.name;
+                        contactNotifyName = realContact.notify_name;
+                        console.log(`[LID-RESOLVE] ✓ LID ${jid.split('@')[0]} vinculado con contacto real: ${contactName}`);
+                    }
+                } finally {
+                    connection.release();
+                }
+            } catch (err) {
+                console.error('[LID-RESOLVE] Error buscando contacto real:', err.message);
+            }
+        }
+
         // PRIORIDAD 2: Si pushName existe y NO es el número, guardarlo directamente
         if (pushName && pushName !== jid.split('@')[0] && pushName.trim() !== '') {
-            contactName = pushName;
-            contactNotifyName = pushName;
             console.log(`[PUSHNAME-SAVE] ✓ Guardando pushName para ${jid.split('@')[0]}: "${pushName}"`);
 
             // Guardar INMEDIATAMENTE sin buscar en otros lugares
@@ -4266,7 +4400,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             shouldIgnoreJid: jid => {
                 if (!jid) return true;
                 if (jid.includes('status@broadcast') || jid.includes('@broadcast')) return true;
-                if (jid.includes('@lid')) return true;
+                // ✅ Solo ignorar grupos, PERMITIR contactos LID individuales
+                if (jid.includes('@g.us')) return true;
                 return false;
             },
             linkPreviewImageThumbnailWidth: 192,
@@ -5389,22 +5524,26 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
             // Filtrar SOLO mensajes individuales (sin grupos, sin status)
             m.messages = m.messages.filter(msg => {
-                const jid = msg.key?.remoteJid;
+                // 🆕 PRIORIZAR remoteJidAlt si existe (contiene el JID real cuando remoteJid es LID)
+                let jid = msg.key?.remoteJidAlt || msg.key?.remoteJid;
+                
+                // Si aún así es LID y no hay alternativa, rechazar
+                if (jid && jid.includes('@lid') && !msg.key?.remoteJidAlt) {
+                    console.log(`[${sessionId}] 🚫 IGNORANDO mensaje LID sin alternativa: ${jid}`);
+                    return false;
+                }
+                
                 if (!jid) return false;
 
                 // Rechazar status/estados
                 if (jid.includes('@broadcast') || jid.includes('status@')) return false;
-
-                // Rechazar @lid (canales)
-                if (jid.includes('@lid')) return false;
 
                 // 🚫 RECHAZAR GRUPOS - Solo aceptar mensajes individuales
                 if (jid.includes('@g.us')) {
                     console.log(`[${sessionId}] 🚫 IGNORANDO mensaje de grupo: ${jid}`);
                     return false;
                 }
-
-                // Aceptar solo mensajes individuales (terminan en @s.whatsapp.net)
+                
                 return jid.includes('@s.whatsapp.net');
             });
 
@@ -5475,18 +5614,17 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     console.log(`[${sessionId}] ⚠️ Sin key o remoteJid`);
                     continue;
                 }
-                if (msg.key.remoteJid.includes('@lid')) {
-                    console.log(`[${sessionId}] 🚫 @lid ignorado`);
-                    continue;
-                }
-                // 🚫 IGNORAR GRUPOS COMPLETAMENTE
+                // 🚫 IGNORAR GRUPOS COMPLETAMENTE (incluyendo LIDs de grupos)
                 if (msg.key.remoteJid.includes('@g.us')) {
                     console.log(`[${sessionId}] 🚫 GRUPO ignorado en emisión: ${msg.key.remoteJid}`);
                     continue;
                 }
+                // ✅ PERMITIR LIDs de contactos individuales, pero seguir rechazando LIDs de grupos
+                // Los LIDs individuales ahora se procesan normalmente
 
                 const messageId = msg.key.id;
-                const rawSenderJid = msg.key.remoteJid;
+                // 🆕 USAR remoteJidAlt si existe (JID real cuando el principal es LID)
+                const rawSenderJid = msg.key.remoteJidAlt || msg.key.remoteJid;
                 const senderJid = normalizeJid(rawSenderJid); // Normalizar JID
                 const textContent = msg.message?.conversation ||
                     msg.message?.extendedTextMessage?.text ||
@@ -5534,17 +5672,21 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     });
 
                     // 🆕 OPTIMISTIC CHAT UPDATE: Actualizar lista inmediatamente
-                    io.to(`session-${phoneNumber}`).emit('chat-update', {
-                        id: senderJid,
-                        lastMessage: textContent,
-                        timestamp: new Date(msgTime).toISOString(),
-                        unreadCount: 1, // Asumimos 1 para update optimista
-                        name: senderJid.split('@')[0],
-                        profilePicUrl: null
-                    });
-                    console.log(`[${sessionId}] 🚀 chat-update OPTIMISTA emitido para ${senderJid}`);
-                    console.log(`[${sessionId}] 🚀 chat-update OPTIMISTA emitido para ${senderJid}`);
-                }
+                    // 🚫 NO emitir si el sender es el propio número
+                    const senderPhone = senderJid.split('@')[0];
+                    if (senderPhone !== phoneNumber) {
+                        io.to(`session-${phoneNumber}`).emit('chat-update', {
+                            id: senderJid,
+                            lastMessage: textContent,
+                            timestamp: new Date(msgTime).toISOString(),
+                            unreadCount: 1, // Asumimos 1 para update optimista
+                            name: senderJid.split('@')[0],
+                            profilePicUrl: null
+                        });
+                        console.log(`[${sessionId}] 🚀 chat-update OPTIMISTA emitido para ${senderJid}`);
+                    } else {
+                        console.log(`[${sessionId}] 🚫 chat-update NO emitido (propio número): ${senderJid}`);
+                    }                }
             }
             console.log(`[${sessionId}] 🏁 EMISIÓN COMPLETADA`);
             // ═══════════════════════════════════════════════════════════
@@ -5553,16 +5695,17 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             if (m.type === 'notify' || m.type === 'append' || m.type === 'prepend') {
                 console.log(`[${sessionId}] 💾 GUARDANDO ${m.messages.length} mensajes de tipo ${m.type}`);
                 for (const msg of m.messages) {
-                    const rawSenderJid = msg.key.remoteJid;
+                    // 🆕 USAR remoteJidAlt si existe (JID real cuando el principal es LID)
+                    const rawSenderJid = msg.key.remoteJidAlt || msg.key.remoteJid;
                     const senderJid = normalizeJid(rawSenderJid); // Normalizar JID
                     const participantJid = msg.key.participant;
                     const messageId = msg.key.id;
                     let pushName = msg.pushName; // Puede ser el nombre del contacto o el asunto del grupo
 
                     // 1. REACTIVADO - Guardar contactos automáticamente desde mensajes
-                    // SOLO para contactos individuales (@s.whatsapp.net), NO grupos
+                    // SOLO para contactos individuales (@s.whatsapp.net O @lid), NO grupos
                     const phoneNumber = await getUserPhoneNumber(sessionId);
-                    if (phoneNumber && senderJid && senderJid.includes('@s.whatsapp.net')) {
+                    if (phoneNumber && senderJid && (senderJid.includes('@s.whatsapp.net') || senderJid.includes('@lid'))) {
                         try {
                             // Usar la función especializada para actualizar contacto con la mejor información disponible
                             await updateContactWithAvailableInfo(sock, senderJid, pushName, pushName, phoneNumber);
@@ -5737,10 +5880,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         const ownJid = sessionInfo.sock?.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net';
                         const finalSenderJid = msg.key.fromMe ? ownJid : (participantJid || senderJid);
 
-                        // VALIDACIÓN: chat_jid NO debe ser @lid (JID de participante de grupo)
-                        // Si es @lid, ignorar mensaje porque está mal formado
-                        if (senderJid && senderJid.includes('@lid')) {
-                            console.warn(`[${sessionId}] ⚠️ Ignorando mensaje con chat_jid @lid (participante): ${senderJid}`);
+                        // VALIDACIÓN: Rechazar solo LIDs de GRUPOS (tienen participant)
+                        // Permitir LIDs de contactos individuales (sin participant)
+                        if (senderJid && senderJid.includes('@lid') && participantJid) {
+                            console.warn(`[${sessionId}] ⚠️ Ignorando mensaje de grupo con participante LID: ${senderJid}`);
                             continue;
                         }
 
@@ -6356,6 +6499,13 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 try {
                     const contactJid = contact.id;
                     if (!contactJid) continue;
+
+                    // 🚫 IGNORAR el propio número
+                    const contactPhone = contactJid.split('@')[0];
+                    if (contactPhone === phoneNumber) {
+                        console.log(`[${sessionId}] 🚫 Ignorando propio número en sync: ${contactJid}`);
+                        continue;
+                    }
 
                     if (contactJid.includes('@s.whatsapp.net')) {
                         // 🔥 MEJORA: Obtener MEJOR nombre disponible desde múltiples fuentes
