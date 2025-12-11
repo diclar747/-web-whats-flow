@@ -124,6 +124,9 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<PlanRequest | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [blockDialogOpen, setBlockDialogOpen] = useState(false);
+  const [userToBlock, setUserToBlock] = useState<User | null>(null);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -282,14 +285,18 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
     }
   };
 
-  const handleDeactivateSubscription = async (user: User) => {
-    if (!window.confirm(`¿Desactivar suscripción de ${user.name}?`)) {
-      return;
-    }
+  const handleOpenBlockDialog = (user: User) => {
+    setUserToBlock(user);
+    setBlockDialogOpen(true);
+  };
+
+  const handleDeactivateSubscription = async () => {
+    if (!userToBlock) return;
 
     try {
       setLoading(true);
       setError(null);
+      setBlockDialogOpen(false);
 
       const response = await fetch(`${getAPIBaseURL()}/api/subscriptions/deactivate?phone=${userPhone}`, {
         method: 'POST',
@@ -297,7 +304,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          userId: user.id
+          phone: userToBlock.phone
         })
       });
 
@@ -315,6 +322,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
       setError('Error al desactivar suscripción');
     } finally {
       setLoading(false);
+      setUserToBlock(null);
     }
   };
 
@@ -328,6 +336,17 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
       default: return 'default';
     }
   };
+
+  // Función para filtrar usuarios
+  const filteredUsers = users.filter(user => {
+    if (!searchTerm) return true;
+    const search = searchTerm.toLowerCase();
+    return (
+      user.name?.toLowerCase().includes(search) ||
+      user.phone?.toLowerCase().includes(search) ||
+      user.email?.toLowerCase().includes(search)
+    );
+  });
 
   const getPlanColor = (plan: string) => {
     switch (plan) {
@@ -610,6 +629,23 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
       {selectedTab === 0 && (
         <Card>
           <CardContent>
+            {/* Buscador */}
+            <Box sx={{ mb: 3 }}>
+              <TextField
+                fullWidth
+                placeholder="Buscar por usuario o número de teléfono..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                variant="outlined"
+                size="small"
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    bgcolor: 'background.paper'
+                  }
+                }}
+              />
+            </Box>
+
             <TableContainer>
               <Table>
                 <TableHead>
@@ -626,7 +662,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {users.map((user) => (
+                  {filteredUsers.map((user) => (
                     <TableRow key={user.id} hover>
                       <TableCell>
                         <Box>
@@ -715,7 +751,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
                               <IconButton
                                 size="small"
                                 color="error"
-                                onClick={() => handleDeactivateSubscription(user)}
+                                onClick={() => handleOpenBlockDialog(user)}
                               >
                                 <Block />
                               </IconButton>
@@ -1188,6 +1224,100 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
             startIcon={loading ? <CircularProgress size={16} /> : <Block />}
           >
             {loading ? 'Rechazando...' : 'Rechazar Solicitud'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Diálogo de confirmación de bloqueo */}
+      <Dialog
+        open={blockDialogOpen}
+        onClose={() => setBlockDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+            color: 'white',
+            borderRadius: 3,
+            border: '1px solid rgba(244, 67, 54, 0.3)'
+          }
+        }}
+      >
+        <DialogTitle sx={{
+          color: 'white',
+          borderBottom: '1px solid rgba(255,255,255,0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
+        }}>
+          <Block sx={{ color: '#f44336' }} />
+          Confirmar Desactivación
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 3 }}>
+            <Alert
+              severity="warning"
+              sx={{
+                mb: 3,
+                bgcolor: 'rgba(255, 152, 0, 0.2)',
+                color: 'white',
+                border: '1px solid rgba(255, 152, 0, 0.4)',
+                '& .MuiAlert-icon': {
+                  color: '#ff9800'
+                }
+              }}
+            >
+              Esta acción desactivará la suscripción del usuario
+            </Alert>
+
+            <Box sx={{
+              p: 3,
+              bgcolor: 'rgba(255,255,255,0.05)',
+              borderRadius: 2,
+              border: '1px solid rgba(255,255,255,0.1)',
+              mb: 2
+            }}>
+              <Typography variant="body1" sx={{ color: 'white', mb: 2, fontSize: '1.1rem' }}>
+                ¿Desactivar suscripción de <strong>{userToBlock?.phone}</strong>?
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                • El usuario perderá acceso al sistema
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                • No podrá iniciar sesión hasta reactivar su plan
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+                • Sus datos se mantendrán guardados
+              </Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid rgba(255,255,255,0.1)', p: 2.5, gap: 1 }}>
+          <Button
+            onClick={() => setBlockDialogOpen(false)}
+            sx={{
+              color: 'rgba(255,255,255,0.7)',
+              '&:hover': {
+                bgcolor: 'rgba(255,255,255,0.1)'
+              }
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDeactivateSubscription}
+            disabled={loading}
+            startIcon={loading ? <CircularProgress size={16} /> : <Block />}
+            sx={{
+              background: 'linear-gradient(135deg, #f44336 0%, #e91e63 100%)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #d32f2f 0%, #c2185b 100%)'
+              }
+            }}
+          >
+            {loading ? 'Desactivando...' : 'Sí, Desactivar'}
           </Button>
         </DialogActions>
       </Dialog>
