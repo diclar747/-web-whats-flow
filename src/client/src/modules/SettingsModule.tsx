@@ -1701,9 +1701,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       )}
 
 
-      {/* Tab 4: Mi Plan - ajustado de índice 5 a 4 */}
-      {selectedTab === 3 && !mySubscription && (
-        <PlanSelector userPhone={sessionId} />
+      {/* Tab 4: Mi Plan - mostrar siempre para permitir cambio de plan */}
+      {selectedTab === 3 && (
+        <PlanSelector userPhone={sessionId} currentSubscription={mySubscription} />
       )}
 
       {selectedTab === 3 && mySubscription && (

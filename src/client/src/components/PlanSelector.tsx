@@ -54,9 +54,10 @@ interface PlanRequest {
 
 interface PlanSelectorProps {
   userPhone: string;
+  currentSubscription?: any;
 }
 
-const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone }) => {
+const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone, currentSubscription }) => {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [myRequest, setMyRequest] = useState<PlanRequest | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,6 +66,7 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone }) => {
   const [success, setSuccess] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [successDialogOpen, setSuccessDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentInfo, setPaymentInfo] = useState<{ amount: number; alias: string; bank: string } | null>(null);
 
@@ -182,10 +184,13 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone }) => {
       {/* Header */}
       <Box sx={{ mb: 4, textAlign: 'center' }}>
         <Typography variant="h4" sx={{ fontWeight: 700, mb: 2 }}>
-          Selecciona tu Plan
+          {currentSubscription ? '✨ Cambiar de Plan' : 'Selecciona tu Plan'}
         </Typography>
         <Typography variant="body1" color="textSecondary">
-          Elige el plan que mejor se adapte a tus necesidades
+          {currentSubscription
+            ? 'Actualiza tu plan para acceder a más funcionalidades'
+            : 'Elige el plan que mejor se adapte a tus necesidades'
+          }
         </Typography>
       </Box>
 
