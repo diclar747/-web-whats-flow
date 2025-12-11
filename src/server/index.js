@@ -2442,35 +2442,45 @@ async function getOrCreateUserSession(sessionId, phoneNumber) {
             'CREATE TABLE IF NOT EXISTS user_sessions ('
             + 'id INT AUTO_INCREMENT PRIMARY KEY,'
             + 'session_id VARCHAR(255) NOT NULL,'
-            + 'phone_number VARCHAR(50) UNIQUE NOT NULL,'
+            + 'phone_number VARCHAR(50) NOT NULL,'
             + 'is_active BOOLEAN DEFAULT TRUE,'
+            + 'device_id VARCHAR(255),'
+            + 'session_token VARCHAR(500),'
             + 'last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
+            + 'last_connection_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
             + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
             + 'INDEX idx_session_id (session_id),'
-            + 'INDEX idx_phone_number (phone_number)'
+            + 'INDEX idx_phone_number (phone_number),'
+            + 'INDEX idx_phone_active (phone_number, is_active)'
             + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
         );
 
-        // Buscar sesión existente por número de teléfono
+        // Buscar sesión existente ACTIVA por número de teléfono
         const [existingSessions] = await connection.execute(
-            'SELECT id, session_id FROM user_sessions WHERE phone_number = ?',
+            'SELECT id, session_id FROM user_sessions WHERE phone_number = ? AND is_active = TRUE',
             [phoneNumber]
         );
 
         let userSessionId;
         if (existingSessions.length > 0) {
-            // Ya existe una sesión para este número de teléfono
+            // Ya existe una sesión activa para este número de teléfono
             userSessionId = existingSessions[0].id;
             // Actualizar con el nuevo session_id, device_id, session_token y marcar como activa
             const deviceId = sessionDeviceMap.get(sessionId) || null;
             const sessionToken = sessionTokenMap.get(sessionId)?.sessionToken || null;
             await connection.execute(
-                'UPDATE user_sessions SET session_id = ?, is_active = TRUE, device_id = ?, session_token = ?, last_activity = CURRENT_TIMESTAMP, last_connection_time = CURRENT_TIMESTAMP WHERE phone_number = ?',
-                [sessionId, deviceId, sessionToken, phoneNumber]
+                'UPDATE user_sessions SET session_id = ?, is_active = TRUE, device_id = ?, session_token = ?, last_activity = CURRENT_TIMESTAMP, last_connection_time = CURRENT_TIMESTAMP WHERE id = ?',
+                [sessionId, deviceId, sessionToken, userSessionId]
             );
             console.log(`[DB-USER] Sesión existente actualizada para ${phoneNumber}: user_session_id ${userSessionId}, deviceId: ${deviceId?.substring(0, 20)}...`);
         } else {
-            // Primera vez que este número inicia sesión, crear nuevo registro
+            // Deactivar cualquier sesión inactiva anterior para este número
+            await connection.execute(
+                'UPDATE user_sessions SET is_active = FALSE WHERE phone_number = ? AND is_active = TRUE',
+                [phoneNumber]
+            );
+            
+            // Primera vez o nueva sesión para este número, crear nuevo registro
             const deviceId = sessionDeviceMap.get(sessionId) || null;
             const sessionToken = sessionTokenMap.get(sessionId)?.sessionToken || null;
             const [result] = await connection.execute(
