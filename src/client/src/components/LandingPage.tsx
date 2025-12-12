@@ -75,6 +75,11 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
   // Sesión que este navegador inició (para evitar tomar sesiones ajenas)
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
 
+  // Sincronizar pendingSessionIdRef con pendingSessionId
+  useEffect(() => {
+    pendingSessionIdRef.current = pendingSessionId;
+    console.log('🔄 [LANDING] pendingSessionIdRef actualizado:', pendingSessionId);
+  }, [pendingSessionId]);
 
   // VERIFICAR SI YA HAY SESIÓN ACTIVA AL CARGAR + POLLING COMO RESPALDO
   useEffect(() => {
