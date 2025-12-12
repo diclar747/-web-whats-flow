@@ -2163,7 +2163,9 @@ async function saveMessageToDB(sessionId, msg) {
             console.error(`[DB-CHAT] ❌ Error updating chat ${chat_jid}:`, chatErr.message);
         }
 
-        // 🔥 SIMULAR ACTUALIZACIÓN DE ESTADO para mensajes enviados
+        // ✅ ACTUALIZACIÓN DE ESTADOS para mensajes enviados
+        // Solo simular 'sent' y 'delivered' - NUNCA 'read'
+        // El estado 'read' SOLO debe venir de WhatsApp cuando el destinatario realmente lee el mensaje
         if (from_me) {
             console.log(`[${sessionId}] 🕐 Programando auto-actualización de estados para mensaje: ${messageId.substring(0, 20)}`);
 
@@ -2208,25 +2210,8 @@ async function saveMessageToDB(sessionId, msg) {
                 }
             }, 5000);
 
-            // Después de 10 segundos, actualizar a 'read'
-            setTimeout(async () => {
-                try {
-                    const conn = await pool.getConnection();
-                    await conn.execute(
-                        'UPDATE messages SET status = ? WHERE id = ? AND session_id = ?',
-                        ['read', messageId, phoneNumber]
-                    );
-                    conn.release();
-                    console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> read`);
-
-                    io.to(`session-${phoneNumber}`).emit('message-status-update', {
-                        messageId, id: messageId, chatJid: chat_jid,
-                        status: 'read', sessionId, timestamp: new Date().toISOString()
-                    });
-                } catch (err) {
-                    console.error(`[${sessionId}] Error auto-updating status to read:`, err);
-                }
-            }, 10000);
+            // 🚫 ELIMINADO: setTimeout que marcaba como 'read' después de 10 segundos
+            // El estado 'read' SOLO viene de WhatsApp cuando el destinatario realmente lee el mensaje
         }
         console.log(`[DB-MSG-QUERY-RESULT] Result for messageId ${messageId}: affectedRows: ${result.affectedRows}, insertId: ${result.insertId !== undefined ? result.insertId : 'N/A (update)'}`);
 
@@ -6220,9 +6205,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     const messageId = update.key.id;
                     const chatJid = update.key.remoteJid;
                     const statusCode = update.update.status;
+                    const fromMe = update.key.fromMe;
                     let newStatus;
 
-                    console.log(`[${sessionId}] 🔔 Status update for message ${messageId}: code=${statusCode}`);
+                    console.log(`[${sessionId}] 🔔 Status update for message ${messageId}: code=${statusCode}, fromMe=${fromMe}`);
 
                     // Traducir el estado de Baileys a nuestro estado de DB
                     switch (statusCode) {
@@ -6239,6 +6225,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             newStatus = 'delivered';
                             break;
                         case 4: // READ_ACK (leído por el destinatario)
+                            // ✅ Eventos READ de WhatsApp SÍ son confiables
+                            // Cuando el destinatario lee tu mensaje, WhatsApp envía este evento
                             newStatus = 'read';
                             break;
                         case 5: // PLAYED_ACK (audio/video reproducido)
