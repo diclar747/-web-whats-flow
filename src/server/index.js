@@ -2076,12 +2076,16 @@ async function saveMessageToDB(sessionId, msg) {
         }
 
         // Determinar el status correcto basándose en from_me
+        // ✅ FIX: Solo usar status por defecto si NO se proporciona un status explícito
         let finalStatus;
-        if (from_me) {
-            // Para mensajes enviados, SIEMPRE empezar en 'pending' para que se auto-actualice
+        if (status && status !== 'sent') {
+            // Si ya hay un status definido (ej: 'read', 'delivered'), usarlo
+            finalStatus = status;
+        } else if (from_me) {
+            // Para mensajes enviados SIN status definido, empezar en 'pending' para que se auto-actualice
             finalStatus = 'pending';
         } else {
-            // Para mensajes recibidos, siempre es 'received'
+            // Para mensajes recibidos SIN status definido, siempre es 'received'
             finalStatus = 'received';
         }
 
@@ -3727,7 +3731,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         // La tabla messages usa session_id para almacenar el número de teléfono (datos históricos)
         // NO usar sessionId en la búsqueda porque causa mezcla de datos de múltiples usuarios
         const query = `
-            SELECT 
+            SELECT
                 m.chat_jid,
                 COALESCE(c.notify_name, c.name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) AS contact_name,
                 m.text_content AS last_message_text,
@@ -3736,8 +3740,16 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                 m.status AS last_message_status,
                 c.is_group,
                 c.avatar_url,
+                -- Contar mensajes no leídos (recibidos y con status != 'read')
+                (SELECT COUNT(*)
+                 FROM messages m2
+                 WHERE m2.chat_jid = m.chat_jid
+                   AND m2.session_id = m.session_id
+                   AND m2.from_me = 0
+                   AND (m2.status IS NULL OR m2.status != 'read')
+                ) AS unread_count,
                 -- Si es LID, intentar obtener el número real del contacto con el mismo nombre
-                CASE 
+                CASE
                     WHEN m.chat_jid LIKE '%@lid' THEN (
                         SELECT SUBSTRING_INDEX(c2.jid, '@', 1)
                         FROM contacts c2
@@ -3823,7 +3835,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                     timestamp: row.last_message_timestamp ? new Date(row.last_message_timestamp).toISOString() : new Date().toISOString(),
                     fromMe: !!row.last_message_from_me,
                     status: row.last_message_status || 'pending',
-                    unreadCount: 0,
+                    unreadCount: parseInt(row.unread_count) || 0,
                     avatar: row.avatar_url && row.avatar_url.trim() ? row.avatar_url : null,
                     phoneNumber: phoneOnly // Agregar número de teléfono al objeto
                 };

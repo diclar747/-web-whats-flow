@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getAPIBaseURL } from '../utils/socketConfig';
+import { useSocket } from '../context/SocketContext';
 import {
   Box,
   Grid,
@@ -207,6 +208,7 @@ interface CampaignHistory {
 }
 
 const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
+  const { socket, isConnected, on, off, emit } = useSocket();
   const [messages, setMessages] = useState<MessageHistory[]>([]);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
@@ -655,6 +657,37 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       setGroups([]);
     }
   };
+
+  // 📡 Socket.IO: Escuchar actualizaciones de estado en tiempo real
+  useEffect(() => {
+    if (!socket || !isConnected || !sessionId) return;
+
+    console.log('🔌 [HistoryModule] Configurando listeners Socket.IO');
+
+    // Unirse a la sala de la sesión
+    emit('join-session', { sessionId });
+
+    // Escuchar actualizaciones de estado de mensajes
+    const handleMessageStatusUpdate = (data: any) => {
+      console.log('📬 [HistoryModule] message-status-update recibido:', data);
+
+      // Actualizar el estado del mensaje en la lista
+      setMessages(prev => prev.map(msg =>
+        msg.id === data.messageId || msg.id === data.id
+          ? { ...msg, status: data.status }
+          : msg
+      ));
+    };
+
+    on('message-status-update', handleMessageStatusUpdate);
+
+    return () => {
+      off('message-status-update');
+      if (sessionId) {
+        emit('leave-session', { sessionId });
+      }
+    };
+  }, [socket, isConnected, sessionId, on, off, emit]);
 
   useEffect(() => {
     if (sessionId) {

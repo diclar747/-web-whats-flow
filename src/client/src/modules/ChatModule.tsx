@@ -300,6 +300,29 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
 
         // Scroll al final
         setTimeout(() => scrollToBottom(), 100);
+      } else {
+        // Mensaje de otro chat (no activo actualmente)
+        const isFromMe = data.isFromMe || data.from_me || false;
+
+        // Actualizar último mensaje y unreadCount solo si el mensaje NO es de mí
+        setContacts(prev => prev.map(c => {
+          if (c.id === normalizedChatJid || c.id === chatJid) {
+            return {
+              ...c,
+              lastMessage: data.message || data.text || data.text_content || '',
+              timestamp: data.timestamp || new Date().toISOString(),
+              lastMessageIsFromMe: isFromMe,
+              // Incrementar unreadCount solo si el mensaje NO es de mí
+              unreadCount: isFromMe ? c.unreadCount : (c.unreadCount || 0) + 1
+            };
+          }
+          return c;
+        }));
+
+        // Reproducir sonido si es un mensaje recibido
+        if (!isFromMe) {
+          playNotificationSound();
+        }
       }
     };
 
