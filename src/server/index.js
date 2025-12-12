@@ -7951,6 +7951,14 @@ app.post('/api/send/message', async (req, res) => {
         io.to(`session-${sessionId}`).emit('message', clientMessage);
         // NO emitir globalmente - solo a la sesión específica
 
+        // 🔄 Emitir evento para actualizar lista de chats en tiempo real
+        io.to(`session-${sessionId}`).emit('chat-list-update', {
+            action: 'new-message',
+            chatJid: jid,
+            timestamp: dbMessage.timestamp.toISOString()
+        });
+        console.log(`[${sessionId}] 📡 Evento chat-list-update emitido para ${jid}`);
+
         console.log(`[${sessionId}] Mensaje enviado a ${jid} y guardado en DB (pending): ${message}`);
         res.json({ success: true, messageId: sentResult.key.id, message: 'Mensaje enviado correctamente' });
 
@@ -8011,6 +8019,14 @@ app.post('/api/send-message', async (req, res) => {
             isFromMe: true,
             status: dbMessage.status
         });
+
+        // 🔄 Emitir evento para actualizar lista de chats en tiempo real
+        io.to(`session-${sessionId}`).emit('chat-list-update', {
+            action: 'new-message',
+            chatJid: jid,
+            timestamp: dbMessage.timestamp.toISOString()
+        });
+        console.log(`[${sessionId}] 📡 Evento chat-list-update emitido para ${jid}`);
 
         console.log(`[${sessionId}] ✅ Mensaje enviado desde chat rápido a ${jid}: ${message}`);
         res.json({ success: true, messageId: sentResult.key.id, message: 'Mensaje enviado correctamente' });

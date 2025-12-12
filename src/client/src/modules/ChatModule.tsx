@@ -334,13 +334,24 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
       }
     };
 
+    // 📡 NUEVO: Listener para actualización de lista de chats (campañas, nuevos mensajes)
+    const handleChatListUpdate = (data: any) => {
+      console.log('🔄 [ChatModule] chat-list-update recibido:', data);
+      console.log(`🔄 [ChatModule] Acción: ${data.action}, Chat: ${data.chatJid}`);
+
+      // Recargar la lista completa de chats
+      console.log('🔄 [ChatModule] Recargando lista de chats...');
+      loadChatData();
+    };
+
     // Registrar listeners
     on('message', handleNewMessage);
     on('message-status-update', handleStatusUpdate);
     on('typing', handleTyping);
     on('chat-update', handleChatUpdate);  // 🔍 NUEVO: Monitorear actualizaciones de chats en tiempo real
+    on('chat-list-update', handleChatListUpdate);  // 🔄 NUEVO: Recargar lista cuando se envían mensajes/campañas
 
-    console.log('✅ [ChatModule] Listeners registrados correctamente (incluyendo message y chat-update para tiempo real)');
+    console.log('✅ [ChatModule] Listeners registrados correctamente (incluyendo message, chat-update y chat-list-update para tiempo real)');
   };
 
   const cleanupRealtimeUpdates = () => {
@@ -351,6 +362,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     off('message-status-update');
     off('typing');
     off('chat-update');  // 🔍 NUEVO: Limpiar listener de chat-update
+    off('chat-list-update');  // 🔄 NUEVO: Limpiar listener de chat-list-update
 
     // Salir de la sala
     if (sessionId) {
