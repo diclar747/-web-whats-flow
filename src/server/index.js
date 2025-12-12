@@ -13846,17 +13846,43 @@ async function processCampaign(campaignId, sessionId) {
                             mediaPath = path.join(__dirname, '../../', mediaPath.replace(/^\//, ''));
                         }
 
+                        console.log(`[CAMPAIGN-PROCESSOR] 📎 Preparando archivo multimedia: ${mediaPath}`);
+                        console.log(`[CAMPAIGN-PROCESSOR] 📎 Tipo de archivo: ${campaign.message_media_type}`);
+
+                        // Verificar si el archivo existe
+                        if (!fs.existsSync(mediaPath)) {
+                            throw new Error(`Archivo no encontrado: ${mediaPath}`);
+                        }
+
+                        // Leer el archivo como buffer
+                        const mediaBuffer = fs.readFileSync(mediaPath);
+                        console.log(`[CAMPAIGN-PROCESSOR] ✅ Archivo leído: ${mediaBuffer.length} bytes`);
+
                         if (campaign.message_media_type.startsWith('image')) {
-                            messagePayload = { image: { url: mediaPath }, caption: messageText };
+                            messagePayload = { 
+                                image: mediaBuffer, 
+                                caption: messageText,
+                                mimetype: campaign.message_media_type
+                            };
                         } else if (campaign.message_media_type.startsWith('video')) {
-                            messagePayload = { video: { url: mediaPath }, caption: messageText };
+                            messagePayload = { 
+                                video: mediaBuffer, 
+                                caption: messageText,
+                                mimetype: campaign.message_media_type
+                            };
                         } else if (campaign.message_media_type.startsWith('audio')) {
-                            messagePayload = { audio: { url: mediaPath }, mimetype: campaign.message_media_type };
-                        } else {
-                            messagePayload = {
-                                document: { url: mediaPath },
+                            messagePayload = { 
+                                audio: mediaBuffer, 
                                 mimetype: campaign.message_media_type,
-                                fileName: path.basename(mediaPath)
+                                ptt: false // false = audio normal, true = nota de voz
+                            };
+                        } else {
+                            // Documento (PDF, DOCX, XLSX, etc.)
+                            messagePayload = {
+                                document: mediaBuffer,
+                                mimetype: campaign.message_media_type,
+                                fileName: path.basename(mediaPath),
+                                caption: messageText
                             };
                         }
                     } else {

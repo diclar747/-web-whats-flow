@@ -1122,8 +1122,8 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         const uploadResult = await uploadResponse.json();
 
         if (uploadResult.success) {
-          // Construir URL absoluta del archivo
-          mediaUrl = `${getAPIBaseURL()}${uploadResult.data.mediaUrl}`;
+          // Guardar solo la ruta relativa (el backend construirá la ruta absoluta)
+          mediaUrl = uploadResult.data.mediaUrl;
           mediaType = uploadResult.data.mediaType;
           console.log('✅ Archivo multimedia subido:', mediaUrl);
         } else {
