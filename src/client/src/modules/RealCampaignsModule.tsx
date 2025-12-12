@@ -3327,19 +3327,37 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         }}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: isDarkMode ? '#1e293b' : '#ffffff',
+            backgroundImage: 'none',
+            border: isDarkMode ? '1px solid rgba(148, 163, 184, 0.1)' : '1px solid rgba(0, 0, 0, 0.12)',
+          }
+        }}
       >
         <DialogTitle sx={{
           display: 'flex',
           alignItems: 'center',
           gap: 1,
-          bgcolor: '#ffebee',
-          color: '#c62828'
+          bgcolor: isDarkMode ? 'rgba(239, 68, 68, 0.1)' : '#ffebee',
+          color: isDarkMode ? '#ef4444' : '#c62828',
+          borderBottom: isDarkMode ? '1px solid rgba(148, 163, 184, 0.12)' : '1px solid rgba(0, 0, 0, 0.12)'
         }}>
           <ErrorIcon />
           Confirmar Eliminación de Campaña
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
-          <Alert severity="warning" sx={{ mb: 2 }}>
+          <Alert 
+            severity="warning" 
+            sx={{ 
+              mb: 2,
+              bgcolor: isDarkMode ? 'rgba(245, 158, 11, 0.1)' : undefined,
+              color: isDarkMode ? '#fbbf24' : undefined,
+              '& .MuiAlert-icon': {
+                color: isDarkMode ? '#f59e0b' : undefined
+              }
+            }}
+          >
             Esta acción eliminará la campaña permanentemente
           </Alert>
 
@@ -3348,7 +3366,12 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           </Typography>
 
           {campaignToDelete && (
-            <Card sx={{ mt: 2, bgcolor: '#f5f5f5' }}>
+            <Card sx={{ 
+              mt: 2, 
+              bgcolor: isDarkMode ? '#0f172a' : '#f5f5f5',
+              backgroundImage: 'none',
+              border: isDarkMode ? '1px solid rgba(148, 163, 184, 0.1)' : '1px solid rgba(0, 0, 0, 0.12)'
+            }}>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                   <Typography variant="h6" sx={{ fontSize: '1rem' }}>
