@@ -13799,13 +13799,14 @@ async function processCampaign(campaignId, sessionId) {
                             await new Promise(resolve => setTimeout(resolve, waitTime));
                         }
                     } else if (!campaign.use_random_timing && i > 0) {
-                        // Delay ALEATORIO de 1-2 minutos (60-120 segundos) por defecto
-                        const minDelay = 60 * 1000; // 1 minuto
-                        const maxDelay = 120 * 1000; // 2 minutos
+                        // Delay ALEATORIO: 5-10 segundos para campañas pequeñas (<=5 contactos), 1-2 minutos para grandes
+                        const isSmallCampaign = recipients.length <= 5;
+                        const minDelay = isSmallCampaign ? 5 * 1000 : 60 * 1000; // 5 segundos o 1 minuto
+                        const maxDelay = isSmallCampaign ? 10 * 1000 : 120 * 1000; // 10 segundos o 2 minutos
                         const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-                        const delayMinutes = (randomDelay / 1000 / 60).toFixed(2);
+                        const delaySeconds = (randomDelay / 1000).toFixed(2);
 
-                        console.log(`[CAMPAIGN-PROCESSOR] ⏱️  Esperando ${delayMinutes} minutos antes del siguiente mensaje...`);
+                        console.log(`[CAMPAIGN-PROCESSOR] ⏱️  Esperando ${delaySeconds} segundos antes del siguiente mensaje... ${isSmallCampaign ? '(campaña pequeña)' : '(campaña grande)'}`);
                         await new Promise(resolve => setTimeout(resolve, randomDelay));
                     }
 
@@ -13841,17 +13842,20 @@ async function processCampaign(campaignId, sessionId) {
                     let messagePayload;
                     if (campaign.message_media_url && campaign.message_media_type) {
                         let mediaPath = campaign.message_media_url;
-                        // Normalizar ruta
-                        if (!path.isAbsolute(mediaPath)) {
+                        // Normalizar ruta - considerar rutas que empiezan con /uploads/ como relativas
+                        if (!path.isAbsolute(mediaPath) || mediaPath.startsWith('/uploads/') || mediaPath.startsWith('/media/')) {
+                            // Quitar el / inicial si existe
                             mediaPath = path.join(__dirname, '../../', mediaPath.replace(/^\//, ''));
                         }
 
-                        console.log(`[CAMPAIGN-PROCESSOR] 📎 Preparando archivo multimedia: ${mediaPath}`);
+                        console.log(`[CAMPAIGN-PROCESSOR] 📎 Ruta original: ${campaign.message_media_url}`);
+                        console.log(`[CAMPAIGN-PROCESSOR] 📎 Ruta normalizada: ${mediaPath}`);
                         console.log(`[CAMPAIGN-PROCESSOR] 📎 Tipo de archivo: ${campaign.message_media_type}`);
+                        console.log(`[CAMPAIGN-PROCESSOR] 📎 __dirname: ${__dirname}`);
 
                         // Verificar si el archivo existe
                         if (!fs.existsSync(mediaPath)) {
-                            throw new Error(`Archivo no encontrado: ${mediaPath}`);
+                            throw new Error(`Archivo no encontrado. Ruta original: ${campaign.message_media_url}, Ruta construida: ${mediaPath}`);
                         }
 
                         // Leer el archivo como buffer

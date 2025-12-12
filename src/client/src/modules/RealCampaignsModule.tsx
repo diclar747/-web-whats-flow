@@ -2464,7 +2464,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                           <Close />
                         </IconButton>
                       </Box>
-                      <Paper sx={{ p: 2, bgcolor: '#f5f5f5' }}>
+                      <Paper sx={{ p: 2, bgcolor: (theme) => theme.palette.background.paper }}>
                         {mediaPreview ? (
                           <img
                             src={mediaPreview}

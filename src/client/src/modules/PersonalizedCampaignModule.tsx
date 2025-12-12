@@ -2025,7 +2025,7 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                 <Typography variant="subtitle2" gutterBottom>
                   Vista Previa:
                 </Typography>
-                <Paper sx={{ p: 2, bgcolor: 'grey.50' }}>
+                <Paper sx={{ p: 2, bgcolor: (theme) => theme.palette.background.paper }}>
                   <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
                     {templateForm.messageText
                       .replace(/{nombre}/g, 'Juan Pérez')

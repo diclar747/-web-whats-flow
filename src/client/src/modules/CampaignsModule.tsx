@@ -1196,7 +1196,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                     <Close />
                   </IconButton>
                 </Box>
-                <Paper sx={{ p: 2, bgcolor: '#f5f5f5' }}>
+                <Paper sx={{ p: 2, bgcolor: (theme) => theme.palette.background.paper }}>
                   {mediaPreview ? (
                     <img
                       src={mediaPreview}
@@ -1582,7 +1582,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
             )}
 
             {/* Resumen de selección */}
-            <Box sx={{ mt: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 2 }}>
+            <Box sx={{ mt: 3, p: 2, bgcolor: (theme) => theme.palette.background.paper, borderRadius: 2 }}>
               <Typography variant="subtitle2" gutterBottom>Resumen de Audiencia</Typography>
               {contactSelectionType === 'segments' && (
                 <Typography variant="body2">
@@ -1681,7 +1681,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                 <Card>
                   <CardContent>
                     <Typography variant="subtitle2" gutterBottom>Vista Previa del Mensaje</Typography>
-                    <Paper sx={{ p: 2, bgcolor: '#f5f5f5' }}>
+                    <Paper sx={{ p: 2, bgcolor: (theme) => theme.palette.background.paper }}>
                       <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
                         {newCampaign.message?.text || 'Sin mensaje'}
                       </Typography>
