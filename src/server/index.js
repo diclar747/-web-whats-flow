@@ -346,6 +346,10 @@ const sessions = new Map();
 let lastQRSession = null;
 const QR_EXPIRY_TIME = 2 * 60 * 1000; // 2 minutos
 
+// Mapa auxiliar para asociar las sesiones creadas con el número dueño de la suscripción
+// Esto permite aplicar límites de plan por cantidad de líneas conectadas
+const sessionOwnerMap = new Map();
+
 // Mapa para almacenar preferencias de sincronización por sesión
 const sessionSyncPreferences = new Map();
 
@@ -369,6 +373,86 @@ setInterval(() => {
 // Sistema de caché para Kanban
 const kanbanCache = new Map();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutos en milisegundos
+
+// Helpers de límites de plan (canales/sesiones permitidas)
+async function getMaxChannelsForOwner(ownerPhone) {
+    if (!ownerPhone) {
+        return { maxChannels: Infinity, source: 'missing-owner' };
+    }
+
+    if (!pool || memoryStorage.isMemoryMode) {
+        return { maxChannels: Infinity, source: 'memory-mode' };
+    }
+
+    let connection;
+    try {
+        connection = await pool.getConnection();
+
+        const [sessionRows] = await connection.execute(
+            'SELECT subscription_plan FROM user_sessions WHERE phone_number = ? AND subscription_plan IS NOT NULL LIMIT 1',
+            [ownerPhone]
+        );
+
+        const planName = sessionRows[0]?.subscription_plan;
+        if (planName) {
+            const [plans] = await connection.execute(
+                'SELECT max_channels, max_sessions FROM plans WHERE name = ? LIMIT 1',
+                [planName]
+            );
+
+            const plan = plans[0];
+            if (plan) {
+                const limit = plan.max_channels || plan.max_sessions;
+                const normalized = limit && Number(limit) > 0 ? Number(limit) : Infinity;
+                return { maxChannels: normalized, source: 'plans' };
+            }
+        }
+
+        return { maxChannels: Infinity, source: 'no-plan' };
+    } catch (err) {
+        console.error('[PLAN-LIMIT] Error obteniendo plan:', err);
+        return { maxChannels: Infinity, source: 'error' };
+    } finally {
+        if (connection) connection.release();
+    }
+}
+
+async function countActiveSessionsForOwner(ownerPhone) {
+    if (!ownerPhone) return 0;
+
+    let activeCount = 0;
+    for (const [sid, sessionData] of sessions.entries()) {
+        const mappedOwner = sessionOwnerMap.get(sid);
+        let phoneNumber = null;
+
+        if (!mappedOwner) {
+            try {
+                phoneNumber = await getUserPhoneNumber(sid);
+            } catch (err) {
+                console.warn(`[PLAN-LIMIT] No se pudo resolver phoneNumber para ${sid}:`, err.message);
+            }
+        }
+
+        const ownerMatches = mappedOwner ? mappedOwner === ownerPhone : phoneNumber === ownerPhone;
+        if (ownerMatches && sessionData?.isConnected) {
+            activeCount++;
+        }
+    }
+
+    return activeCount;
+}
+
+async function ensurePlanCapacity(ownerPhone) {
+    const { maxChannels } = await getMaxChannelsForOwner(ownerPhone);
+    if (!Number.isFinite(maxChannels)) {
+        return { allowed: true, maxChannels: Infinity, activeCount: 0 };
+    }
+
+    const activeCount = await countActiveSessionsForOwner(ownerPhone);
+    const allowed = activeCount < maxChannels;
+
+    return { allowed, maxChannels, activeCount };
+}
 
 // JWT Secret para autenticación de admin - DEBE estar en .env
 if (!process.env.JWT_SECRET) {
@@ -2552,21 +2636,32 @@ async function getOrCreateUserSession(sessionId, phoneNumber) {
             // Actualizar con el nuevo session_id, device_id, session_token y marcar como activa
             const deviceId = sessionDeviceMap.get(sessionId) || null;
             const sessionToken = sessionTokenMap.get(sessionId)?.sessionToken || null;
+            const ownerPhone = sessionOwnerMap.get(sessionId) || null;
+            
             await connection.execute(
-                'UPDATE user_sessions SET session_id = ?, is_active = TRUE, device_id = ?, session_token = ?, last_activity = CURRENT_TIMESTAMP, last_connection_time = CURRENT_TIMESTAMP WHERE id = ?',
-                [sessionId, deviceId, sessionToken, userSessionId]
+                'UPDATE user_sessions SET session_id = ?, is_active = TRUE, device_id = ?, session_token = ?, owner_phone_number = ?, last_activity = CURRENT_TIMESTAMP, last_connection_time = CURRENT_TIMESTAMP WHERE id = ?',
+                [sessionId, deviceId, sessionToken, ownerPhone, userSessionId]
             );
-            console.log(`[DB-USER] Sesión ${wasInactive ? '🔄 REACTIVADA' : '✅ actualizada'} para ${phoneNumber}: user_session_id ${userSessionId}, deviceId: ${deviceId?.substring(0, 20)}...`);
+            
+            const ownerLabel = ownerPhone ? ` (owner: ${ownerPhone})` : ' (principal)';
+            console.log(`[DB-USER] Sesión ${wasInactive ? '🔄 REACTIVADA' : '✅ actualizada'} para ${phoneNumber}${ownerLabel}: user_session_id ${userSessionId}`);
         } else {
             // Primera vez o nueva sesión para este número, crear nuevo registro
             const deviceId = sessionDeviceMap.get(sessionId) || null;
             const sessionToken = sessionTokenMap.get(sessionId)?.sessionToken || null;
+            const ownerPhone = sessionOwnerMap.get(sessionId) || null;
+            
             const [result] = await connection.execute(
-                'INSERT INTO user_sessions (session_id, phone_number, is_active, device_id, session_token, last_connection_time) VALUES (?, ?, TRUE, ?, ?, CURRENT_TIMESTAMP)',
-                [sessionId, phoneNumber, deviceId, sessionToken]
+                'INSERT INTO user_sessions (session_id, phone_number, owner_phone_number, is_active, device_id, session_token, last_connection_time) VALUES (?, ?, ?, TRUE, ?, ?, CURRENT_TIMESTAMP)',
+                [sessionId, phoneNumber, ownerPhone, deviceId, sessionToken]
             );
             userSessionId = result.insertId;
-            console.log(`[DB-USER] Nueva sesión creada para ${phoneNumber}: user_session_id ${userSessionId}, deviceId: ${deviceId?.substring(0, 20)}...`);
+            
+            if (ownerPhone) {
+                console.log(`[DB-USER] 🔗 Nueva sesión SECUNDARIA creada para ${phoneNumber} (owner: ${ownerPhone}): user_session_id ${userSessionId}`);
+            } else {
+                console.log(`[DB-USER] 👑 Nueva sesión PRINCIPAL creada para ${phoneNumber}: user_session_id ${userSessionId}`);
+            }
         }
 
         console.log(`[DB-USER] Sesión de usuario registrada: ${sessionId} -> ${phoneNumber} (user_session_id: ${userSessionId})`);
@@ -7235,6 +7330,7 @@ console.log('[REMINDERS] Sistema de recordatorios automáticos iniciado (verific
 app.get('/api/qr-status', async (req, res) => {
     const format = req.query.format || 'json';
     const deviceId = req.query.deviceId || req.headers['x-device-id']; // Require device ID for QR-based sessions
+    const ownerPhone = req.query.ownerPhone || req.query.phone || null;
     let sessionId = req.query.sessionId;
 
     // Si no hay deviceId, no permitimos el acceso para sesiones QR
@@ -7250,6 +7346,24 @@ app.get('/api/qr-status', async (req, res) => {
     if (!sessionId) {
         sessionId = crypto.randomBytes(8).toString('hex');
         console.log(`[QR] 🆕 Generando nueva sesión: ${sessionId}`);
+    }
+
+    // Asociar sesión con dueño para límites de plan
+    if (ownerPhone) {
+        sessionOwnerMap.set(sessionId, ownerPhone);
+    }
+
+    // Validar capacidad del plan antes de generar un nuevo QR
+    if (ownerPhone) {
+        const capacity = await ensurePlanCapacity(ownerPhone);
+        if (!capacity.allowed) {
+            return res.status(403).json({
+                success: false,
+                error: `Alcanzaste el límite de líneas permitidas (${capacity.maxChannels}). Cierra una sesión para continuar.`,
+                maxChannels: capacity.maxChannels,
+                activeSessions: capacity.activeCount
+            });
+        }
     }
 
     console.log(`[${sessionId}] Solicitando QR (formato: ${format})`);
@@ -7396,6 +7510,87 @@ app.get('/api/qr-status', async (req, res) => {
     }
 });
 
+// Forzar regeneración de nuevo QR (para el botón "Actualizar QR")
+app.post('/api/qr-refresh', async (req, res) => {
+    const deviceId = req.body.deviceId || req.query.deviceId;
+    const ownerPhone = req.body.ownerPhone || req.query.ownerPhone;
+
+    if (!deviceId) {
+        return res.status(400).json({
+            success: false,
+            error: 'Device ID es requerido'
+        });
+    }
+
+    console.log(`[QR-REFRESH] 🔄 Forzando regeneración de QR para dispositivo: ${deviceId}`);
+
+    // Limpiar QR anterior para forzar que se genere uno nuevo
+    lastQRSession = null;
+
+    // Generar nueva sesión
+    const newSessionId = crypto.randomBytes(8).toString('hex');
+    console.log(`[QR-REFRESH] 🆕 Nueva sesión generada: ${newSessionId}`);
+
+    // Asociar con propietario si se proporciona
+    if (ownerPhone) {
+        sessionOwnerMap.set(newSessionId, ownerPhone);
+    }
+
+    // Validar capacidad del plan
+    if (ownerPhone) {
+        const capacity = await ensurePlanCapacity(ownerPhone);
+        if (!capacity.allowed) {
+            return res.status(403).json({
+                success: false,
+                error: `Alcanzaste el límite de líneas permitidas (${capacity.maxChannels}). Cierra una sesión para continuar.`,
+                maxChannels: capacity.maxChannels,
+                activeSessions: capacity.activeCount
+            });
+        }
+    }
+
+    // Crear nueva sesión
+    try {
+        const newSession = await createSession(newSessionId, true);
+        
+        if (!newSession) {
+            throw new Error('Error creando sesión de WhatsApp');
+        }
+
+        // Esperar a que se genere el QR (igual que en /api/qr-status)
+        let attempts = 0;
+        while (!newSession.qr && attempts < 10) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            attempts++;
+        }
+        
+        if (newSession.qr) {
+            const qrDataUrl = await QRCode.toDataURL(newSession.qr, {
+                width: 300,
+                margin: 1,
+                errorCorrectionLevel: 'H'
+            });
+
+            console.log(`[QR-REFRESH] ✅ Nuevo QR generado exitosamente`);
+
+            return res.json({
+                success: true,
+                sessionId: newSessionId,
+                qrDataUrl,
+                timestamp: new Date().toISOString()
+            });
+        } else {
+            throw new Error('No se pudo generar QR después de esperar');
+        }
+    } catch (error) {
+        console.error(`[QR-REFRESH] ❌ Error:`, error);
+        return res.status(500).json({
+            success: false,
+            error: 'Error al regenerar QR: ' + error.message
+        });
+    }
+});
+
 // Obtener todas las sesiones activas
 app.get('/api/sessions/active', async (req, res) => {
     try {
@@ -7407,21 +7602,32 @@ app.get('/api/sessions/active', async (req, res) => {
         for (const [sessionId, sessionData] of sessions.entries()) {
             if (sessionData.isConnected) {
                 const phoneNumber = await getUserPhoneNumber(sessionId);
+                const ownerPhone = sessionOwnerMap.get(sessionId) || null;
+                const avatar = sessionData.user?.imgUrl || null;
+                
                 activeSessions.push({
                     sessionId: sessionId,
                     phoneNumber: phoneNumber,
+                    ownerPhone: ownerPhone,
+                    isPrimary: ownerPhone === null,
                     isConnected: true,
+                    avatar: avatar,
                     timestamp: new Date().toISOString()
                 });
             }
         }
 
         console.log(`[SESSIONS-ACTIVE] ✅ Encontradas ${activeSessions.length} sesiones activas`);
+        const primaryCount = activeSessions.filter(s => s.isPrimary).length;
+        const secondaryCount = activeSessions.length - primaryCount;
+        console.log(`[SESSIONS-ACTIVE]   📊 ${primaryCount} principales, ${secondaryCount} secundarias`);
 
         res.json({
             success: true,
             sessions: activeSessions,
-            count: activeSessions.length
+            count: activeSessions.length,
+            primaryCount,
+            secondaryCount
         });
     } catch (error) {
         console.error('[SESSIONS-ACTIVE] ❌ Error:', error);
@@ -7678,8 +7884,22 @@ app.post('/api/create-session', async (req, res) => {
     // ⚡ OPTIMIZACIÓN: Por defecto FALSE - Solo sincronizar si es la primera vez
     let syncHistory = req.body.syncHistory !== undefined ? req.body.syncHistory : false;
     const deviceId = req.body.deviceId; // ID único del dispositivo/navegador
+    const ownerPhone = req.body.ownerPhone || req.body.phone || null;
 
     console.log(`[SESSION] 🔄 Solicitud de sesión con deviceId: ${deviceId?.substring(0, 20)}...`);
+
+    // Validar capacidad del plan antes de crear una nueva sesión
+    if (ownerPhone) {
+        const capacity = await ensurePlanCapacity(ownerPhone);
+        if (!capacity.allowed) {
+            return res.status(403).json({
+                success: false,
+                error: `Alcanzaste el límite de líneas permitidas (${capacity.maxChannels}). Cierra una sesión antes de crear otra.`,
+                maxChannels: capacity.maxChannels,
+                activeSessions: capacity.activeCount
+            });
+        }
+    }
 
     // PRIMERO: Verificar si ya existe una sesión activa para este dispositivo
     if (deviceId && pool) {
@@ -7699,6 +7919,10 @@ app.post('/api/create-session', async (req, res) => {
                     // Verificar si la sesión de WhatsApp sigue activa
                     const whatsappSession = activeSessions.get(existingSessionId);
                     if (whatsappSession && whatsappSession.isConnected) {
+                        if (ownerPhone) {
+                            sessionOwnerMap.set(existingSessionId, ownerPhone);
+                        }
+
                         console.log(`[SESSION] ♻️ Reutilizando sesión existente: ${existingSessionId}`);
                         return res.json({
                             success: true,
@@ -7726,6 +7950,10 @@ app.post('/api/create-session', async (req, res) => {
     // Si no existe sesión activa, crear una nueva
     const sessionId = req.body.sessionId || crypto.randomBytes(8).toString('hex');
     console.log(`[SESSION] 🆕 Creando nueva sesión: ${sessionId}`);
+
+    if (ownerPhone) {
+        sessionOwnerMap.set(sessionId, ownerPhone);
+    }
 
     // ⚡ SMART SYNC: Auto-detectar si es primera vez (BD vacía) y activar sync automáticamente
     if (!syncHistory && pool) {
@@ -7786,6 +8014,52 @@ app.post('/api/create-session', async (req, res) => {
             error: 'Error al crear sesión',
             details: error.message
         });
+    }
+});
+
+// Desconectar sesión de WhatsApp y liberar el slot del plan
+app.post('/api/sessions/:sessionId/disconnect', async (req, res) => {
+    const { sessionId } = req.params;
+    const ownerPhone = req.body?.ownerPhone || req.query.ownerPhone || null;
+
+    try {
+        const session = sessions.get(sessionId);
+        let phoneNumber = null;
+
+        if (session) {
+            try {
+                phoneNumber = await getUserPhoneNumber(sessionId);
+            } catch (err) {
+                console.warn(`[SESSION-DISCONNECT] No se pudo resolver phoneNumber para ${sessionId}:`, err.message);
+            }
+
+            try {
+                if (session.sock?.logout) {
+                    await session.sock.logout();
+                }
+            } catch (err) {
+                console.warn(`[SESSION-DISCONNECT] Error al cerrar sesión en WhatsApp ${sessionId}:`, err.message);
+            }
+
+            sessions.delete(sessionId);
+        }
+
+        sessionOwnerMap.delete(sessionId);
+
+        if (phoneNumber) {
+            await deactivateUserSession(phoneNumber);
+        }
+
+        return res.json({
+            success: true,
+            message: 'Sesión desconectada',
+            sessionId,
+            phoneNumber: phoneNumber || null,
+            ownerPhone: ownerPhone || null
+        });
+    } catch (error) {
+        console.error('[SESSION-DISCONNECT] Error:', error);
+        return res.status(500).json({ success: false, error: 'No se pudo desconectar la sesión' });
     }
 });
 
@@ -10605,9 +10879,17 @@ app.get('/api/local-groups/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
 
     try {
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(400).json({
+                success: false,
+                error: 'No se pudo obtener el número de teléfono para esta sesión'
+            });
+        }
+
         const connection = await pool.getConnection();
         try {
-            console.log(`[API-LOCAL-GROUPS] Cargando grupos para sesión: ${sessionId}`);
+            console.log(`[API-LOCAL-GROUPS] Cargando grupos para phone: ${phoneNumber}`);
             const [segments] = await connection.execute(`
                 SELECT
                     s.id,
@@ -10621,7 +10903,7 @@ app.get('/api/local-groups/:sessionId', async (req, res) => {
                 WHERE s.session_id = ? AND s.is_system = 0
                 GROUP BY s.id
                 ORDER BY s.name ASC
-            `, [sessionId]); // USAR sessionId DIRECTAMENTE
+            `, [phoneNumber]);
 
             console.log(`[API-LOCAL-GROUPS] Encontrados ${segments.length} grupos`);
 
@@ -14551,38 +14833,21 @@ app.post('/api/campaigns/send/:sessionId', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            console.log(`[CAMPAIGNS] 🔍 Buscando campaña ID: ${campaignId} para phone: ${phoneNumber}`);
+            console.log(`[CAMPAIGNS] 🔍 Buscando campaña ID: ${campaignId}`);
 
-            // Obtener campaña y destinatarios - Buscar por phone_number O session_id (compatibilidad)
+            // Obtener campaña por ID (sin filtrar por phone_number ya que puede ser creada por sesión principal)
             const [campaigns] = await connection.execute(
-                'SELECT * FROM campaigns WHERE id = ? AND (phone_number = ? OR session_id = ?)',
-                [campaignId, phoneNumber, phoneNumber]
+                'SELECT * FROM campaigns WHERE id = ?',
+                [campaignId]
             );
 
             console.log(`[CAMPAIGNS] 📊 Campañas encontradas: ${campaigns.length}`);
 
             if (campaigns.length === 0) {
-                // Intentar buscar solo por ID para debug
-                const [allCampaigns] = await connection.execute(
-                    'SELECT id, session_id, name, status FROM campaigns WHERE id = ?',
-                    [campaignId]
-                );
-
-                console.log(`[CAMPAIGNS] ⚠️ Campaña con ID ${campaignId}:`, allCampaigns.length > 0 ? allCampaigns[0] : 'No existe');
-
                 return res.status(404).json({
                     success: false,
                     error: 'Campaña no encontrada',
-                    debug: {
-                        campaignId,
-                        phoneNumber,
-                        campaignExists: allCampaigns.length > 0,
-                        campaignData: allCampaigns.length > 0 ? {
-                            id: allCampaigns[0].id,
-                            session_id: allCampaigns[0].session_id,
-                            name: allCampaigns[0].name
-                        } : null
-                    }
+                    debug: { campaignId }
                 });
             }
 

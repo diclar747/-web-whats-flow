@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import AdminSubscriptionPanel from '../components/AdminSubscriptionPanel';
 import APIRestSettings from '../components/APIRestSettings';
@@ -18,6 +18,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  DialogContentText,
   Paper,
   FormControl,
   InputLabel,
@@ -177,6 +178,7 @@ import {
   Psychology,
   SmartToy,
   Api,
+  QrCode,
   Extension,
   Plugin,
   IntegrationInstructions,
@@ -427,6 +429,13 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
   const [deleteUserDialog, setDeleteUserDialog] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserAccount | null>(null);
 
+  const [waSessions, setWaSessions] = useState<Array<{ sessionId: string; phoneNumber: string | null; ownerPhone?: string | null; isPrimary?: boolean; isConnected: boolean }>>([]);
+  const [waLoading, setWaLoading] = useState(false);
+  const [waError, setWaError] = useState('');
+  const [qrState, setQrState] = useState<{ sessionId: string; qrDataUrl: string; isLoading: boolean }>({ sessionId: '', qrDataUrl: '', isLoading: false });
+  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [deviceId, setDeviceId] = useState('');
+
   // Estados para formulario de usuario
   const [userForm, setUserForm] = useState({
     name: '',
@@ -462,6 +471,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     { id: 'analytics', name: 'Analytics', icon: '📈', description: 'Estadísticas y reportes' },
     { id: 'settings', name: 'Configuración', icon: '⚙️', description: 'Ajustes del sistema' }
   ];
+
+  const planMaxChannels = mySubscription?.plan_details?.max_channels ?? mySubscription?.plan_details?.max_sessions ?? Infinity;
+  const normalizedMaxChannels = planMaxChannels && planMaxChannels > 0 ? planMaxChannels : Infinity;
 
   useEffect(() => {
     // Force admin/superadmin for specific number immediately
@@ -783,6 +795,172 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       setLoading(false);
     }
   };
+
+  const stopQrPolling = () => {
+    if (qrPollRef.current) {
+      clearInterval(qrPollRef.current);
+      qrPollRef.current = null;
+    }
+  };
+
+  const fetchActiveSessions = async () => {
+    setWaLoading(true);
+    setWaError('');
+
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active`);
+      const data = await response.json();
+
+      if (data.success) {
+        setWaSessions(data.sessions || []);
+      } else {
+        setWaError(data.error || 'No se pudieron cargar las sesiones activas');
+      }
+    } catch (error) {
+      console.error('[WHATSAPP] Error cargando sesiones activas:', error);
+      setWaError('No se pudieron cargar las sesiones activas');
+    } finally {
+      setWaLoading(false);
+    }
+  };
+
+  const pollSessionStatus = (targetSessionId: string) => {
+    if (!targetSessionId) return;
+    stopQrPolling();
+
+    qrPollRef.current = setInterval(async () => {
+      try {
+        const resp = await fetch(`${getAPIBaseURL()}/api/session/${targetSessionId}/status?deviceId=${encodeURIComponent(deviceId)}`);
+        const data = await resp.json();
+
+        if (data.success && data.isConnected) {
+          stopQrPolling();
+          setQrState({ sessionId: '', qrDataUrl: '', isLoading: false });
+          setSnackbar({ open: true, message: `Sesión ${data.phoneNumber || targetSessionId} conectada`, severity: 'success' });
+          fetchActiveSessions();
+        }
+      } catch (err) {
+        console.warn('[WHATSAPP] Error al verificar estado de sesión:', err);
+      }
+    }, 2000);
+  };
+
+  const startQrFlow = async () => {
+    const ensuredDeviceId = deviceId || localStorage.getItem('whatsflow_device_id') || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    if (!deviceId) {
+      setDeviceId(ensuredDeviceId);
+      localStorage.setItem('whatsflow_device_id', ensuredDeviceId);
+    }
+
+    setWaError('');
+    setQrState({ sessionId: '', qrDataUrl: '', isLoading: true });
+
+    try {
+      // Usar /api/qr-refresh para forzar regeneración de QR
+      const response = await fetch(`${getAPIBaseURL()}/api/qr-refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceId: ensuredDeviceId,
+          ownerPhone: sessionId
+        })
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'No se pudo generar el código QR');
+      }
+
+      setQrState({
+        sessionId: data.sessionId,
+        qrDataUrl: data.qrDataUrl || '',
+        isLoading: false
+      });
+
+      if (data.sessionId) {
+        pollSessionStatus(data.sessionId);
+      }
+    } catch (error: any) {
+      console.error('[WHATSAPP] Error iniciando QR:', error);
+      setWaError(error?.message || 'No se pudo iniciar la conexión');
+      setQrState({ sessionId: '', qrDataUrl: '', isLoading: false });
+      stopQrPolling();
+    }
+  };
+
+  const disconnectSession = async (targetSessionId: string) => {
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/sessions/${targetSessionId}/disconnect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ownerPhone: sessionId })
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'No se pudo desconectar la sesión');
+      }
+
+      setSnackbar({ open: true, message: 'Sesión desconectada', severity: 'success' });
+      fetchActiveSessions();
+    } catch (error: any) {
+      console.error('[WHATSAPP] Error desconectando sesión:', error);
+      setWaError(error?.message || 'No se pudo desconectar la sesión');
+    }
+  };
+
+  // Diálogo de confirmación para desconexión
+  const [disconnectDialog, setDisconnectDialog] = useState<{ open: boolean; targetSessionId: string; isPrimary: boolean; hasSecondaries: boolean }>({ open: false, targetSessionId: '', isPrimary: false, hasSecondaries: false });
+
+  const openDisconnectDialog = (targetSessionId: string) => {
+    const targetSession = waSessions.find((s: any) => s.sessionId === targetSessionId);
+    const isPrimary = targetSession?.isPrimary || targetSessionId === sessionId;
+    const hasSecondaries = waSessions.filter((s: any) => s.ownerPhone === targetSession?.phoneNumber).length > 0;
+    
+    setDisconnectDialog({ open: true, targetSessionId, isPrimary, hasSecondaries });
+  };
+
+  const closeDisconnectDialog = () => {
+    setDisconnectDialog({ open: false, targetSessionId: '', isPrimary: false, hasSecondaries: false });
+  };
+
+  const confirmDisconnect = async () => {
+    const { targetSessionId, isPrimary } = disconnectDialog;
+    closeDisconnectDialog();
+    await disconnectSession(targetSessionId);
+
+    if (isPrimary) {
+      setSnackbar({ open: true, message: 'Se desconectó la línea principal. El sistema puede cerrar sesión.', severity: 'warning' });
+      try {
+        const resp = await fetch(`${getAPIBaseURL()}/api/logout-session`, { method: 'POST' });
+        await resp.json().catch(() => {});
+      } catch (e) {
+        // Ignorar si no existe endpoint
+      }
+    }
+  };
+
+  useEffect(() => {
+    let storedDeviceId = localStorage.getItem('whatsflow_device_id');
+    if (!storedDeviceId) {
+      storedDeviceId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem('whatsflow_device_id', storedDeviceId);
+    }
+    setDeviceId(storedDeviceId);
+
+    return () => {
+      stopQrPolling();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedTab === 2) {
+      fetchActiveSessions();
+    }
+  }, [selectedTab]);
 
   // ============== FUNCIONES CRUD DE USUARIOS ==============
 
@@ -1681,24 +1859,215 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       {/* Tab 3: WhatsApp - Configuración Avanzada */}
       {selectedTab === 2 && (
         <Grid container spacing={3}>
+          <Grid item xs={12} md={4}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>📡 Estado de WhatsApp</Typography>
+                <Stack spacing={1}>
+                  <Typography variant="body2" color="textSecondary">Límites del plan</Typography>
+                  <Typography variant="h5" sx={{ fontWeight: 700 }}>
+                    {Number.isFinite(normalizedMaxChannels)
+                      ? `${waSessions.length}/${normalizedMaxChannels} líneas`
+                      : `${waSessions.length} / Ilimitado`}
+                  </Typography>
+                  {Number.isFinite(normalizedMaxChannels) && (
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(100, (waSessions.length / (normalizedMaxChannels || 1)) * 100)}
+                      sx={{ height: 8, borderRadius: 1 }}
+                    />
+                  )}
+                  <Alert severity={Number.isFinite(normalizedMaxChannels) && waSessions.length >= normalizedMaxChannels ? 'warning' : 'info'}>
+                    {Number.isFinite(normalizedMaxChannels)
+                      ? `${Math.max(0, normalizedMaxChannels - waSessions.length)} slots disponibles`
+                      : 'Slots ilimitados'}
+                  </Alert>
+
+                  {waError && (
+                    <Alert severity="error" onClose={() => setWaError('')}>
+                      {waError}
+                    </Alert>
+                  )}
+
+                  <Button
+                    variant="contained"
+                    startIcon={<QrCode />}
+                    onClick={startQrFlow}
+                    disabled={qrState.isLoading || (Number.isFinite(normalizedMaxChannels) && waSessions.length >= normalizedMaxChannels)}
+                  >
+                    Conectar por QR
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<Refresh />}
+                    onClick={fetchActiveSessions}
+                    disabled={waLoading}
+                  >
+                    Actualizar estado
+                  </Button>
+                </Stack>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid item xs={12} md={8}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>Escanear QR</Typography>
+                {qrState.isLoading && <LinearProgress sx={{ mb: 2 }} />}
+
+                {qrState.qrDataUrl ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: 280 }}>
+                    <Paper elevation={3} sx={{ p: 2, textAlign: 'center' }}>
+                      <img src={qrState.qrDataUrl} alt="QR de WhatsApp" style={{ width: 240, height: 240 }} />
+                      <Typography variant="caption" display="block" sx={{ mt: 1 }}>
+                        Session ID: {qrState.sessionId}
+                      </Typography>
+                    </Paper>
+                    <Button
+                      variant="outlined"
+                      startIcon={<Refresh />}
+                      onClick={startQrFlow}
+                      sx={{ mt: 2 }}
+                      disabled={qrState.isLoading}
+                    >
+                      Actualizar QR
+                    </Button>
+                  </Box>
+                ) : (
+                  <Box sx={{ minHeight: 180, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Typography variant="body2" color="textSecondary" align="center">
+                      Presiona "Conectar por QR" para generar un código y vincular una nueva línea.
+                    </Typography>
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+          </Grid>
+
           <Grid item xs={12}>
             <Card>
               <CardContent>
-                <Typography variant="h6" gutterBottom>📱 Configuración Avanzada de WhatsApp</Typography>
-                <Typography variant="body2" sx={{ color: '#64748b', mb: 3 }}>
-                  Gestiona la configuración avanzada de tu conexión de WhatsApp.
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="h6">Líneas conectadas</Typography>
+                  {waLoading && <LinearProgress sx={{ width: 200 }} />}
+                </Box>
 
-                <Alert severity="info">
-                  <Typography variant="body2">
-                    Las configuraciones avanzadas de WhatsApp se encuentran en la pestaña <strong>General</strong>.
-                  </Typography>
-                </Alert>
+                {!waLoading && waSessions.length === 0 && (
+                  <Alert severity="info">No hay sesiones activas.</Alert>
+                )}
+
+                <List>
+                  {waSessions.map((session: any) => {
+                    // Solo la sesión que coincide con el sessionId del módulo es principal
+                    const isPrimary = session.sessionId === sessionId;
+                    const iconBg = isPrimary ? 'primary.main' : 'success.main';
+                    
+                    return (
+                      <ListItem key={session.sessionId} divider>
+                        <ListItemAvatar>
+                          <Avatar 
+                            src={session.avatar || undefined}
+                            sx={{ bgcolor: !session.avatar ? iconBg : undefined }}
+                          >
+                            {!session.avatar && <Phone />}
+                          </Avatar>
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={
+                            <Box>
+                              <Typography component="span" variant="subtitle1">
+                                {session.phoneNumber || session.sessionId}
+                              </Typography>
+                              {isPrimary && (
+                                <Chip 
+                                  label="👑 Principal" 
+                                  color="primary" 
+                                  size="small" 
+                                  sx={{ ml: 1 }}
+                                />
+                              )}
+                              {!isPrimary && session.ownerPhone && (
+                                <Chip 
+                                  label="Secundaria" 
+                                  color="success" 
+                                  variant="outlined" 
+                                  size="small" 
+                                  sx={{ ml: 1 }}
+                                />
+                              )}
+                            </Box>
+                          }
+                          secondary={
+                            <>
+                              {session.isConnected ? '🟢 Conectado' : '🔴 Desconectado'}
+                              {!isPrimary && session.ownerPhone && (
+                                <Typography component="span" variant="caption" display="block" color="text.secondary">
+                                  Relacionada con: {session.ownerPhone}
+                                </Typography>
+                              )}
+                            </>
+                          }
+                        />
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            onClick={() => openDisconnectDialog(session.sessionId)}
+                            startIcon={isPrimary ? <Delete /> : undefined}
+                          >
+                            Desconectar
+                          </Button>
+                        </Stack>
+                      </ListItem>
+                    );
+                  })}
+                </List>
               </CardContent>
             </Card>
           </Grid>
         </Grid>
       )}
+
+      {/* Diálogo de confirmación de desconexión */}
+      <Dialog open={disconnectDialog.open} onClose={closeDisconnectDialog}>
+        <DialogTitle>
+          {disconnectDialog.isPrimary ? '⚠️ Desconectar línea principal' : 'Confirmar desconexión'}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {disconnectDialog.isPrimary ? (
+              <>
+                <strong>Esta es la línea principal</strong> con la que iniciaste sesión en el sistema.
+                <br /><br />
+                Si desconectas esta línea:
+                <ul style={{ marginTop: '8px', marginBottom: '8px' }}>
+                  <li>Cerrarás tu sesión actual en el panel</li>
+                  <li>El sistema puede cerrarse completamente</li>
+                  <li>Perderás acceso hasta que vuelvas a conectar esta línea</li>
+                  {disconnectDialog.hasSecondaries && (
+                    <li><strong>Las líneas secundarias asociadas también pueden verse afectadas</strong></li>
+                  )}
+                </ul>
+                ¿Estás seguro de continuar?
+              </>
+            ) : (
+              <>
+                Esta es una línea secundaria utilizada para campañas.
+                <br /><br />
+                ¿Seguro que deseas desconectarla? Podrás reconectarla más adelante escaneando un QR.
+              </>
+            )}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDisconnectDialog}>Cancelar</Button>
+          <Button onClick={confirmDisconnect} color="error" variant="contained">
+            {disconnectDialog.isPrimary ? 'Sí, desconectar y cerrar sesión' : 'Desconectar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
 
       {/* Tab 4: Mi Plan */}

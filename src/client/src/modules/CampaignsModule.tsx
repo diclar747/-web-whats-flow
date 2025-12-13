@@ -32,6 +32,7 @@ import {
   StepContent,
   FormControl,
   InputLabel,
+  FormHelperText,
   Select,
   Switch,
   FormControlLabel,
@@ -200,6 +201,10 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [senderSessions, setSenderSessions] = useState<Array<{ sessionId: string; phoneNumber?: string }>>([]);
+  const [senderSessionIds, setSenderSessionIds] = useState<string[]>([sessionId]);
+  const [senderLoading, setSenderLoading] = useState(false);
+  const [senderError, setSenderError] = useState('');
 
   // Estados para gestión de segmentos
   const [showCreateSegmentDialog, setShowCreateSegmentDialog] = useState(false);
@@ -236,6 +241,10 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
   useEffect(() => {
     loadCampaignsData();
+  }, [sessionId]);
+
+  useEffect(() => {
+    loadSenderSessions();
   }, [sessionId]);
 
   // Función para cargar contactos desde la API con paginación
@@ -700,6 +709,36 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
     }
   };
 
+  const loadSenderSessions = async () => {
+    setSenderLoading(true);
+    setSenderError('');
+
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active`);
+      const data = await response.json();
+
+      if (data.success) {
+        const mapped = (data.sessions || []).map((s: any) => ({
+          sessionId: s.sessionId,
+          phoneNumber: s.phoneNumber
+        }));
+
+        setSenderSessions(mapped);
+
+        if (mapped.length > 0 && !senderSessionIds.some(id => mapped.some((s: { sessionId: string; phoneNumber?: string }) => s.sessionId === id))) {
+          setSenderSessionIds([mapped[0].sessionId]);
+        }
+      } else {
+        setSenderError(data.error || 'No se pudieron cargar las sesiones activas');
+      }
+    } catch (error) {
+      console.error('❌ Error cargando sesiones activas:', error);
+      setSenderError('No se pudieron cargar las sesiones activas');
+    } finally {
+      setSenderLoading(false);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'running': return '#4caf50';
@@ -746,6 +785,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
   });
 
   const handleCreateCampaign = () => {
+    loadSenderSessions();
     setShowCreateDialog(true);
     setActiveStep(0);
     setNewCampaign({
@@ -764,6 +804,14 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
     try {
       setLoading(true);
 
+      const activeSessionIds = senderSessionIds.length > 0 ? senderSessionIds : [sessionId];
+
+      if (activeSessionIds.length === 0) {
+        alert('Selecciona la línea de envío antes de crear la campaña.');
+        setLoading(false);
+        return;
+      }
+
       // Si hay archivo multimedia, subirlo primero
       let mediaUrl = null;
       let mediaType = null;
@@ -772,7 +820,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
         console.log('📤 Subiendo archivo multimedia...');
         const formData = new FormData();
         formData.append('file', selectedMedia);
-        formData.append('sessionId', sessionId);
+        formData.append('sessionId', activeSessionIds[0]);
 
         const uploadResponse = await fetch(`${getAPIBaseURL()}/api/campaigns/upload-media`, {
           method: 'POST',
@@ -830,6 +878,22 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
       console.log(`📤 Recipients a enviar: ${recipients.length}`, recipients);
 
+      // Dividir recipients entre las líneas seleccionadas
+      const recipientsPerSession: { [sessionId: string]: any[] } = {};
+      if (activeSessionIds.length === 1) {
+        // Una sola línea, enviar todos
+        recipientsPerSession[activeSessionIds[0]] = recipients;
+      } else {
+        // Múltiples líneas, dividir equitativamente
+        const recipientsPerLine = Math.ceil(recipients.length / activeSessionIds.length);
+        activeSessionIds.forEach((sid, index) => {
+          const start = index * recipientsPerLine;
+          const end = start + recipientsPerLine;
+          recipientsPerSession[sid] = recipients.slice(start, end);
+        });
+        console.log(`📊 Dividiendo ${recipients.length} contactos entre ${activeSessionIds.length} líneas (~${recipientsPerLine} por línea)`);
+      }
+
       // Construir objeto de campaña completo
       const campaignData = {
         ...newCampaign,
@@ -838,7 +902,8 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
         contactSelectionType,
         selectedContacts,
         selectedKanbanBoards,
-        recipients,
+        recipients: recipientsPerSession,
+        sessionIds: activeSessionIds,
         kanbanContacts: kanbanContacts.map(c => ({
           phone: c.jid || c.phone,
           name: c.name || c.jid?.split('@')[0]
@@ -849,13 +914,13 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
       console.log('📤 Enviando campaña al backend:', campaignData);
 
-      const response = await fetch('${getAPIBaseURL()}/api/campaigns/create', {
+      const response = await fetch(`${getAPIBaseURL()}/api/campaigns/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          sessionId,
+          sessionIds: activeSessionIds,
           campaign: campaignData
         })
       });
@@ -874,7 +939,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
               headers: {
                 'Content-Type': 'application/json',
               },
-              body: JSON.stringify({ sessionId })
+              body: JSON.stringify({ sessionIds: activeSessionIds })
             });
 
             const startResult = await startResponse.json();
@@ -1021,6 +1086,55 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
               onChange={(e) => setNewCampaign(prev => ({ ...prev, name: e.target.value }))}
               sx={{ mb: 2 }}
             />
+            {!senderLoading && senderSessions.length === 0 && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                No encontramos líneas conectadas. Presiona &quot;Actualizar sesiones&quot; o ve a Configuración &gt; WhatsApp para conectar una línea.
+              </Alert>
+            )}
+            <FormControl fullWidth sx={{ mb: 2 }}>
+              <InputLabel id="sender-session-label">Línea de envío</InputLabel>
+              <Select
+                multiple
+                labelId="sender-session-label"
+                value={senderSessionIds}
+                label="Línea de envío"
+                onChange={(e) => setSenderSessionIds(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
+                renderValue={(selected) => {
+                  const selectedNames = selected.map(id => {
+                    const session = senderSessions.find(s => s.sessionId === id);
+                    return session?.phoneNumber || id;
+                  }).join(', ');
+                  return `${selected.length} línea(s): ${selectedNames}`;
+                }}
+              >
+                {(senderSessions.length > 0 ? senderSessions : [{ sessionId: sessionId }]).map((s) => (
+                  <MenuItem key={s.sessionId} value={s.sessionId}>
+                    <Checkbox checked={senderSessionIds.indexOf(s.sessionId) > -1} />
+                    <ListItemText primary={s.phoneNumber || s.sessionId} />
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>
+                Selecciona una o varias líneas. Los envíos se dividirán equitativamente entre ellas.
+              </FormHelperText>
+            </FormControl>
+            <Stack direction="row" spacing={1} sx={{ mb: 2, alignItems: 'center' }}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<Refresh />}
+                onClick={loadSenderSessions}
+                disabled={senderLoading}
+              >
+                Actualizar sesiones
+              </Button>
+              <Chip
+                label={`Sesiones activas: ${senderSessions.length}`}
+                size="small"
+                color="primary"
+              />
+              {senderError && <Alert severity="error" sx={{ flex: 1 }}>{senderError}</Alert>}
+            </Stack>
             <TextField
               fullWidth
               label="Descripción"

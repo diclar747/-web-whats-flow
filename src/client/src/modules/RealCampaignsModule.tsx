@@ -231,6 +231,12 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const [campaignToDelete, setCampaignToDelete] = useState<CampaignData | null>(null);
   const [contactSearchTerm, setContactSearchTerm] = useState('');
 
+  // Estados para sesiones de envío (líneas conectadas)
+  const [senderSessions, setSenderSessions] = useState<Array<{ sessionId: string; phoneNumber?: string }>>([]);
+  const [senderSessionId, setSenderSessionId] = useState<string>(sessionId);
+  const [senderLoading, setSenderLoading] = useState(false);
+  const [senderError, setSenderError] = useState('');
+
   const [newCampaign, setNewCampaign] = useState<Partial<CampaignData>>({
     name: '',
     type: 'direct',
@@ -268,6 +274,10 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const loadCampaigns = useCallback(async () => {
     try {
       setLoading(true);
+      
+      // Cargar solo campañas del sessionId principal del usuario (no de otras líneas de otros usuarios)
+      console.log(`📋 Cargando campañas del usuario actual: ${sessionId}`);
+      
       const response = await fetch(`${getAPIBaseURL()}/api/campaigns/${sessionId}`);
       const data = await response.json();
 
@@ -279,9 +289,9 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           type: c.scheduled_at ? 'scheduled' : 'direct',
           status: c.status,
           message: { text: c.message_template },
-          mediaUrl: null, // TODO: Recuperar media si es necesario
+          mediaUrl: null,
           mediaType: null,
-          contacts: Array(c.total_recipients).fill({}), // Placeholder para conteo
+          contacts: Array(c.total_recipients).fill({}),
           scheduledAt: c.scheduled_at,
           completedAt: c.completed_at,
           progress: {
@@ -299,10 +309,10 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           }
         }));
         setCampaigns(mappedCampaigns);
+        console.log(`✅ ${mappedCampaigns.length} campañas cargadas`);
       }
     } catch (error) {
       console.error('Error cargando campañas:', error);
-      // Fallback a localStorage si falla la API
       const savedCampaigns = localStorage.getItem(`campaigns_${sessionId}`);
       if (savedCampaigns) {
         setCampaigns(JSON.parse(savedCampaigns));
@@ -354,6 +364,36 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       console.error('Error cargando plantillas:', error);
     }
   }, [sessionId]);
+
+  const loadSenderSessions = async () => {
+    setSenderLoading(true);
+    setSenderError('');
+
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active`);
+      const data = await response.json();
+
+      if (data.success) {
+        const mapped = (data.sessions || []).map((s: any) => ({
+          sessionId: s.sessionId,
+          phoneNumber: s.phoneNumber
+        }));
+
+        setSenderSessions(mapped);
+
+        if (mapped.length > 0 && !mapped.some((s: { sessionId: string; phoneNumber?: string }) => s.sessionId === senderSessionId)) {
+          setSenderSessionId(mapped[0].sessionId);
+        }
+      } else {
+        setSenderError(data.error || 'No se pudieron cargar las sesiones activas');
+      }
+    } catch (error) {
+      console.error('❌ Error cargando sesiones activas:', error);
+      setSenderError('No se pudieron cargar las sesiones activas');
+    } finally {
+      setSenderLoading(false);
+    }
+  };
 
   // Crear plantilla
   const createTemplate = async () => {
@@ -554,6 +594,11 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   useEffect(() => {
     loadCampaigns();
   }, [loadCampaigns]);
+
+  // Cargar sesiones activas de envío
+  useEffect(() => {
+    loadSenderSessions();
+  }, [sessionId]);
 
   // Restaurar campañas programadas solo una vez al cargar
   useEffect(() => {
@@ -1102,6 +1147,13 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       return;
     }
 
+    const activeSessionId = senderSessionId || sessionId;
+
+    if (!activeSessionId) {
+      setError('Selecciona la línea de envío antes de crear la campaña.');
+      return;
+    }
+
     try {
       setLoading(true);
       let mediaUrl = null;
@@ -1112,7 +1164,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         console.log('📤 Subiendo archivo multimedia...');
         const formData = new FormData();
         formData.append('file', selectedMedia);
-        formData.append('sessionId', sessionId);
+        formData.append('sessionId', activeSessionId);
 
         const uploadResponse = await fetch(`${getAPIBaseURL()}/api/campaigns/upload-media`, {
           method: 'POST',
@@ -1142,14 +1194,20 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         return `${phone}@s.whatsapp.net`;
       };
 
+      // Crear campaña con todos los contactos usando la sesión principal del usuario
+      // pero indicando desde qué línea se debe enviar (senderSessionId)
+      console.log(`📤 Creando campaña con ${newCampaign.contacts?.length || 0} contactos`);
+      console.log(`   Sesión del usuario: ${sessionId}`);
+      console.log(`   Línea de envío: ${activeSessionId}`);
+      
       const campaignPayload = {
-        sessionId,
+        sessionId: sessionId,  // Siempre usar la sesión principal del usuario
         campaign: {
           name: newCampaign.name,
           messageTemplate: newCampaign.message?.text || '',
           mediaUrl,
           mediaType,
-          recipients: newCampaign.contacts.map(c => ({
+          recipients: (newCampaign.contacts || []).map(c => ({
             jid: normalizeJid(c.phone),
             name: c.name
           })),
@@ -1158,7 +1216,8 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           randomTimingTimeSpanMinutes: newCampaign.flowConfig?.timeSpanMinutes || null,
           useIdFlow: newCampaign.useIdFlow || false,
           idFlowSize: 32,
-          scheduledAt: newCampaign.scheduledAt ? new Date(newCampaign.scheduledAt).toISOString() : null
+          scheduledAt: newCampaign.scheduledAt ? new Date(newCampaign.scheduledAt).toISOString() : null,
+          senderSessionId: activeSessionId  // Pasar la línea de envío seleccionada
         }
       };
 
@@ -1183,7 +1242,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       const campaignStatus = isScheduled ? 'scheduled' : 'draft';
 
       const campaign: CampaignData = {
-        id: campaignId.toString(), // Usar ID de la base de datos
+        id: campaignId?.toString() || 'temp', // Usar ID de la base de datos
         name: newCampaign.name,
         type: campaignType,
         status: campaignStatus,
@@ -1252,6 +1311,9 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     const campaign = campaigns.find(c => c.id === campaignId);
     if (!campaign) return;
 
+    // Usar la línea seleccionada o el sessionId del prop
+    const activeSessionId = senderSessionId || sessionId;
+
     try {
       setLoading(true);
 
@@ -1262,7 +1324,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
         if (scheduledDate <= now) {
           // Si la fecha ya pasó, ejecutar inmediatamente
-          const response = await fetch(`${getAPIBaseURL()}/api/campaigns/send/${encodeURIComponent(sessionId)}`, {
+          const response = await fetch(`${getAPIBaseURL()}/api/campaigns/send/${encodeURIComponent(activeSessionId)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ campaignId })
@@ -1309,7 +1371,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       }
       else {
         // Campaña DIRECTA: Ejecutar inmediatamente
-        const response = await fetch(`${getAPIBaseURL()}/api/campaigns/send/${encodeURIComponent(sessionId)}`, {
+        const response = await fetch(`${getAPIBaseURL()}/api/campaigns/send/${encodeURIComponent(activeSessionId)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ campaignId })
@@ -1952,6 +2014,43 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                     onChange={(e) => setNewCampaign(prev => ({ ...prev, name: e.target.value }))}
                     required
                   />
+                  {!senderLoading && senderSessions.length === 0 && (
+                    <Alert severity="warning">
+                      No encontramos líneas conectadas. Presiona &quot;Actualizar sesiones&quot; o ve a Configuración &gt; WhatsApp para conectar una línea.
+                    </Alert>
+                  )}
+                  <FormControl fullWidth>
+                    <InputLabel id="sender-session-label">Línea de envío</InputLabel>
+                    <Select
+                      labelId="sender-session-label"
+                      value={senderSessionId}
+                      label="Línea de envío"
+                      onChange={(e) => setSenderSessionId(e.target.value as string)}
+                    >
+                      {(senderSessions.length > 0 ? senderSessions : [{ sessionId: sessionId }]).map((s) => (
+                        <MenuItem key={s.sessionId} value={s.sessionId}>
+                          {s.phoneNumber || s.sessionId}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Stack direction="row" spacing={1} sx={{ mb: 2, alignItems: 'center' }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<Refresh />}
+                      onClick={loadSenderSessions}
+                      disabled={senderLoading}
+                    >
+                      Actualizar sesiones
+                    </Button>
+                    <Chip
+                      label={`Sesiones activas: ${senderSessions.length}`}
+                      size="small"
+                      color="primary"
+                    />
+                    {senderError && <Alert severity="error" sx={{ flex: 1 }}>{senderError}</Alert>}
+                  </Stack>
                   <FormControl fullWidth>
                     <InputLabel>Tipo de Campaña</InputLabel>
                     <Select
