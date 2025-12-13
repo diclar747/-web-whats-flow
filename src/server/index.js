@@ -21879,6 +21879,133 @@ server.listen(PORT, '0.0.0.0', async () => {
     }
 });
 
+// ============= ANALYTICS DASHBOARD ENDPOINT =============
+app.get('/api/analytics/dashboard', async (req, res) => {
+    const { sessionId } = req.query;
+
+    if (!pool || !sessionId) {
+        return res.json({
+            success: true,
+            data: {
+                messages: 0,
+                deliveryRate: 0,
+                readRate: 0,
+                campaigns: 0,
+                agents: 0,
+                chatbots: 0,
+                kanbans: 0,
+                messagesFailed: 0,
+                failureRate: 0,
+                connections: 0
+            }
+        });
+    }
+
+    try {
+        const connection = await pool.getConnection();
+        try {
+            // Get all session IDs for this user
+            const sessionIds = await getAllSessionIds(sessionId);
+            if (!sessionIds || sessionIds.length === 0) {
+                return res.json({
+                    success: true,
+                    data: {
+                        messages: 0,
+                        deliveryRate: 0,
+                        readRate: 0,
+                        campaigns: 0,
+                        agents: 0,
+                        chatbots: 0,
+                        kanbans: 0,
+                        messagesFailed: 0,
+                        failureRate: 0,
+                        connections: 0
+                    }
+                });
+            }
+
+            const placeholders = sessionIds.map(() => '?').join(',');
+
+            // Messages stats
+            const [messageStats] = await connection.execute(
+                `SELECT
+                    COUNT(*) as total,
+                    SUM(CASE WHEN from_me = 1 THEN 1 ELSE 0 END) as sent,
+                    SUM(CASE WHEN from_me = 0 THEN 1 ELSE 0 END) as received,
+                    SUM(CASE WHEN from_me = 1 AND status = 'delivered' THEN 1 ELSE 0 END) as delivered,
+                    SUM(CASE WHEN from_me = 1 AND status = 'read' THEN 1 ELSE 0 END) as read_count,
+                    SUM(CASE WHEN from_me = 1 AND status = 'failed' THEN 1 ELSE 0 END) as failed
+                FROM messages
+                WHERE session_id IN (${placeholders}) OR phone_number IN (${placeholders})`,
+                [...sessionIds, ...sessionIds]
+            );
+
+            const ms = messageStats[0] || {};
+            const totalSent = ms.sent || 0;
+            const delivered = ms.delivered || 0;
+            const read = ms.read_count || 0;
+            const failed = ms.failed || 0;
+
+            const deliveryRate = totalSent > 0 ? ((delivered / totalSent) * 100) : 0;
+            const readRate = totalSent > 0 ? ((read / totalSent) * 100) : 0;
+            const failureRate = totalSent > 0 ? ((failed / totalSent) * 100) : 2;
+
+            // Active campaigns
+            const [campaigns] = await connection.execute(
+                `SELECT COUNT(*) as total FROM campaigns WHERE (status = 'active' OR status = 'running' OR status = 'sending') AND session_id IN (${placeholders})`,
+                sessionIds
+            );
+
+            // Active agents
+            const adminPhone = await getUserPhoneNumber(sessionId);
+            const [agents] = await connection.execute(
+                `SELECT COUNT(*) as total FROM users WHERE status = 'active' AND role IN ('agent', 'supervisor') AND admin_phone = ?`,
+                [adminPhone]
+            );
+
+            // Chatbots
+            const [chatbots] = await connection.execute(
+                `SELECT COUNT(DISTINCT cs.session_id) as total FROM chatbot_settings cs
+                 INNER JOIN chatbot_flows cf ON cs.session_id = cf.session_id
+                 WHERE cs.enabled = 1 AND cf.is_active = 1 AND cs.session_id IN (${placeholders})`,
+                sessionIds
+            );
+
+            // Kanbans
+            const [kanbans] = await connection.execute(
+                `SELECT COUNT(*) as total FROM kanban_boards WHERE session_id IN (${placeholders})`,
+                sessionIds
+            );
+
+            // Active connections (user_sessions)
+            const [connections] = await connection.execute(
+                `SELECT COUNT(*) as total FROM user_sessions WHERE is_active = 1`
+            );
+
+            res.json({
+                success: true,
+                data: {
+                    messages: ms.total || 0,
+                    deliveryRate: parseFloat(deliveryRate.toFixed(1)),
+                    readRate: parseFloat(readRate.toFixed(1)),
+                    campaigns: campaigns[0]?.total || 0,
+                    agents: agents[0]?.total || 0,
+                    chatbots: chatbots[0]?.total || 0,
+                    kanbans: kanbans[0]?.total || 0,
+                    messagesFailed: failed,
+                    failureRate: parseFloat(failureRate.toFixed(1)),
+                    connections: connections[0]?.total || 0
+                }
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ANALYTICS] Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // ============= SCHEDULER DE CAMPAÑAS (INTERNAL) =============
 /* 
    El scheduler "Standalone" ha sido eliminado para evitar conflictos.

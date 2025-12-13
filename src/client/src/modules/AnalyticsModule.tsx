@@ -74,7 +74,7 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
 
       // Load all analytics data in parallel
       const [dashRes, msgRes, campRes, kanRes, agentRes, botRes] = await Promise.allSettled([
-        fetch(`/api/analytics/dashboard?${params}`),
+        fetch(`/api/analytics/dashboard?sessionId=${sessionId}`),
         fetch(`/api/analytics/messages?${params}`),
         fetch(`/api/analytics/campaigns?${params}`),
         fetch(`/api/analytics/kanban?${params}`),
@@ -151,14 +151,15 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
   // ============= TAB 0: GENERAL DASHBOARD =============
   const GeneralDashboard = () => {
     const kpis = [
-      { label: 'Total Mensajes', value: formatNumber(msgs.total || dash.messages || 0), icon: <Message />, color: CHART_COLORS.primary, trend: '+12%' },
-      { label: 'Tasa Entrega', value: formatPercentage(msgs.deliveryRate || 98), icon: <CheckCircle />, color: CHART_COLORS.success, trend: '+2%' },
-      { label: 'Tasa Lectura', value: formatPercentage(msgs.readRate || 85), icon: <Visibility />, color: CHART_COLORS.info, trend: '+5%' },
-      { label: 'Campañas Activas', value: formatNumber(camps.active || dash.campaigns || 0), icon: <Campaign />, color: CHART_COLORS.warning, trend: '3 nuevas' },
-      { label: 'Agentes Online', value: formatNumber(agents.online || dash.agents || 0), icon: <People />, color: CHART_COLORS.success, trend: `de ${agents.total || 0}` },
-      { label: 'Chatbots Activos', value: formatNumber(bots.active || dash.chatbots || 0), icon: <SmartToy />, color: CHART_COLORS.purple, trend: '100% uptime' },
-      { label: 'Tableros Kanban', value: formatNumber(kanban.boards || dash.kanbans || 0), icon: <ViewKanban />, color: CHART_COLORS.info, trend: `${kanban.contacts || 0} contactos` },
-      { label: 'Mensajes Fallidos', value: formatNumber(msgs.failed || 0), icon: <ErrorIcon />, color: CHART_COLORS.error, trend: formatPercentage(msgs.failureRate || 2) }
+      { label: 'Total Mensajes', value: formatNumber(dashboardData?.messages || msgs.total || dash.messages || 0), icon: <Message />, color: CHART_COLORS.primary, trend: '+12%' },
+      { label: 'Tasa Entrega', value: formatPercentage(dashboardData?.deliveryRate || msgs.deliveryRate || 98), icon: <CheckCircle />, color: CHART_COLORS.success, trend: '+2%' },
+      { label: 'Tasa Lectura', value: formatPercentage(dashboardData?.readRate || msgs.readRate || 85), icon: <Visibility />, color: CHART_COLORS.info, trend: '+5%' },
+      { label: 'Campañas Activas', value: formatNumber(dashboardData?.campaigns || camps.active || dash.campaigns || 0), icon: <Campaign />, color: CHART_COLORS.warning, trend: '3 nuevas' },
+      { label: 'Agentes Online', value: formatNumber(dashboardData?.agents || agents.online || dash.agents || 0), icon: <People />, color: CHART_COLORS.success, trend: `de ${agents.total || 0}` },
+      { label: 'Chatbots Activos', value: formatNumber(dashboardData?.chatbots || bots.active || dash.chatbots || 0), icon: <SmartToy />, color: CHART_COLORS.purple, trend: '100% uptime' },
+      { label: 'Tableros Kanban', value: formatNumber(dashboardData?.kanbans || kanban.boards || dash.kanbans || 0), icon: <ViewKanban />, color: CHART_COLORS.info, trend: `${kanban.contacts || 0} contactos` },
+      { label: 'Conexiones Activas', value: formatNumber(dashboardData?.connections || 0), icon: <Badge />, color: CHART_COLORS.info, trend: 'Tiempo real' },
+      { label: 'Mensajes Fallidos', value: formatNumber(dashboardData?.messagesFailed || msgs.failed || 0), icon: <ErrorIcon />, color: CHART_COLORS.error, trend: formatPercentage(dashboardData?.failureRate || msgs.failureRate || 2) }
     ];
 
     // Mock timeline data
