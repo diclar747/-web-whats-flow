@@ -2121,11 +2121,32 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                             helperText={`Todos los ${newCampaign.contacts?.length || 0} mensajes se distribuirán aleatoriamente en este tiempo`}
                           />
 
+                          <TextField
+                            fullWidth
+                            label="Cantidad de mensajes"
+                            type="number"
+                            value={newCampaign.flowConfig?.messagesCount || (newCampaign.contacts?.length || 0) || 1}
+                            onChange={(e) => setNewCampaign(prev => ({
+                              ...prev,
+                              flowConfig: {
+                                messagesCount: Math.max(1, parseInt(e.target.value) || 1),
+                                timeSpanMinutes: prev.flowConfig?.timeSpanMinutes || 1
+                              }
+                            }))}
+                            inputProps={{ min: 1 }}
+                            helperText={`Se programarán ${newCampaign.flowConfig?.messagesCount || (newCampaign.contacts?.length || 0) || 1} envíos en ${newCampaign.flowConfig?.timeSpanMinutes || 1} minuto(s)`}
+                          />
+
                           <Alert severity="success" sx={{ mt: 1 }}>
                             <Typography variant="body2">
                               📊 <strong>Configuración actual:</strong><br />
-                              Enviaré <strong>{newCampaign.flowConfig?.messagesCount || 5} mensajes</strong> distribuidos aleatoriamente <strong>EN {newCampaign.flowConfig?.timeSpanMinutes || 1} minuto(s)</strong>.<br />
-                              Tiempo promedio entre mensajes: ~{Math.round((newCampaign.flowConfig?.timeSpanMinutes || 1) * 60 / (newCampaign.flowConfig?.messagesCount || 5))} segundos.
+                              Enviaré <strong>{newCampaign.flowConfig?.messagesCount || (newCampaign.contacts?.length || 0) || 1} mensajes</strong> distribuidos aleatoriamente <strong>EN {newCampaign.flowConfig?.timeSpanMinutes || 1} minuto(s)</strong>.<br />
+                              Tiempo promedio entre mensajes: ~{(() => {
+                                const minutes = newCampaign.flowConfig?.timeSpanMinutes || 1;
+                                const count = newCampaign.flowConfig?.messagesCount || (newCampaign.contacts?.length || 0) || 1;
+                                return Math.max(1, Math.round((minutes * 60) / count));
+                              })()} segundos.<br />
+                              Nota: los intervalos serán aleatorios y no iguales.
                             </Typography>
                           </Alert>
                         </Stack>
@@ -2732,6 +2753,17 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                       {selectedCampaignDetails.campaign.message_template}
                     </Typography>
                   </Box>
+
+                  {selectedCampaignDetails.recipients?.[0]?.sender_phone && (
+                    <Box sx={{ mt: 2, p: 2, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: 2 }}>
+                      <Typography variant="subtitle2" sx={{ color: 'rgba(255,255,255,0.8)', mb: 1 }}>
+                        📱 Enviado desde
+                      </Typography>
+                      <Typography variant="body1" sx={{ color: 'white', fontWeight: 600 }}>
+                        {selectedCampaignDetails.recipients[0].sender_phone}
+                      </Typography>
+                    </Box>
+                  )}
                 </CardContent>
               </Card>
 

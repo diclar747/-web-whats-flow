@@ -14076,13 +14076,19 @@ async function processCampaign(campaignId, sessionId) {
 
         // Configurar tiempos de envío aleatorios si es necesario
         let sendTimes = [];
+        let maxMessagesToSend = recipients.length;
         if (campaign.use_random_timing && campaign.random_timing_msg_count > 0) {
             const totalTimeMs = (campaign.random_timing_time_span_minutes || 1) * 60 * 1000;
             const msgCount = Math.min(recipients.length, campaign.random_timing_msg_count);
+            maxMessagesToSend = msgCount;
 
-            // Generar tiempos aleatorios
+            // Generar tiempos aleatorios no iguales usando muestreo estratificado
+            const slot = totalTimeMs / msgCount;
             for (let i = 0; i < msgCount; i++) {
-                sendTimes.push(Math.random() * totalTimeMs);
+                const start = i * slot;
+                const end = (i + 1) * slot;
+                const t = start + Math.random() * (end - start);
+                sendTimes.push(t);
             }
             sendTimes.sort((a, b) => a - b);
         }
@@ -14096,7 +14102,7 @@ async function processCampaign(campaignId, sessionId) {
             // Marcar campaña como en ejecución
             runningCampaigns.set(campaignId, { shouldStop: false });
 
-            for (let i = 0; i < recipients.length; i++) {
+            for (let i = 0; i < Math.min(recipients.length, maxMessagesToSend); i++) {
                 // Verificar si la campaña debe detenerse
                 const campaignControl = runningCampaigns.get(campaignId);
                 if (campaignControl && campaignControl.shouldStop) {
@@ -14135,12 +14141,15 @@ async function processCampaign(campaignId, sessionId) {
                     // Preparar mensaje
                     let messageText = campaign.message_template;
 
-                    // Obtener nombre del contacto para reemplazo de variables
-                    const [contactData] = await connection.execute(
-                        'SELECT name FROM contacts WHERE jid = ?',
-                        [recipient.contact_jid]
-                    );
-                    const contactName = contactData.length > 0 ? contactData[0].name : '';
+                    // Obtener nombre del contacto: primero de campaign_recipients (lista manual), luego de contacts (sistema)
+                    let contactName = recipient.name || ''; // Nombre de la lista manual
+                    if (!contactName) {
+                        const [contactData] = await connection.execute(
+                            'SELECT name FROM contacts WHERE jid = ?',
+                            [recipient.contact_jid]
+                        );
+                        contactName = contactData.length > 0 ? contactData[0].name : '';
+                    }
 
                     // Reemplazar variables en el mensaje
                     if (contactName) {
@@ -14607,9 +14616,11 @@ app.post('/api/campaigns/create', async (req, res) => {
                 const recipientValues = uniqueJids.map(jid => {
                     // Encontrar el primer recipient con este JID para obtener el nombre
                     const recipient = campaign.recipients.find(r => (r.jid || r.id) === jid);
+                    const recipientName = recipient?.name || '';
                     return [
                         campaignId,
                         jid,
+                        recipientName,
                         'pending',
                         null,
                         null
@@ -14618,7 +14629,7 @@ app.post('/api/campaigns/create', async (req, res) => {
 
                 // Usar INSERT IGNORE para evitar errores si ya existe (por si acaso)
                 await connection.query(
-                    `INSERT IGNORE INTO campaign_recipients (campaign_id, contact_jid, status, message_id, error_message)
+                    `INSERT IGNORE INTO campaign_recipients (campaign_id, contact_jid, name, status, message_id, error_message)
                      VALUES ?`,
                     [recipientValues]
                 );
@@ -15024,23 +15035,30 @@ app.post('/api/campaigns/:id/start', async (req, res) => {
             // Enviar mensajes en background
             (async () => {
                 let sendTimes = [];
+                let maxMessagesToSend = recipients.length;
                 if (campaign.use_random_timing && campaign.random_timing_msg_count > 0) {
-                    const totalTimeMs = campaign.random_timing_time_span_minutes * 60 * 1000;
+                    const totalTimeMs = (campaign.random_timing_time_span_minutes || 1) * 60 * 1000;
                     const msgCount = Math.min(recipients.length, campaign.random_timing_msg_count);
+                    maxMessagesToSend = msgCount;
 
                     console.log(`[CAMPAIGN-${id}] 🎲 Configurando envíos aleatorios:`);
                     console.log(`[CAMPAIGN-${id}]    - Total de mensajes: ${msgCount}`);
                     console.log(`[CAMPAIGN-${id}]    - Distribuir en: ${campaign.random_timing_time_span_minutes} minutos`);
 
+                    // Generar tiempos aleatorios no iguales (estratificados por slots)
+                    const slot = totalTimeMs / msgCount;
                     for (let i = 0; i < msgCount; i++) {
-                        sendTimes.push(Math.random() * totalTimeMs);
+                        const start = i * slot;
+                        const end = (i + 1) * slot;
+                        const t = start + Math.random() * (end - start);
+                        sendTimes.push(t);
                     }
                     sendTimes.sort((a, b) => a - b);
                 }
 
                 const startTime = Date.now();
 
-                for (let i = 0; i < recipients.length; i++) {
+                for (let i = 0; i < Math.min(recipients.length, maxMessagesToSend); i++) {
                     const recipient = recipients[i];
 
                     try {
@@ -15511,7 +15529,10 @@ app.get('/api/campaigns/:sessionId/:campaignId', async (req, res) => {
             const shouldFilter = filterStatus && allowedStatuses.includes(String(filterStatus));
 
             const recipientsQuery = `
-                SELECT cr.*, c.name as contact_name
+                SELECT 
+                    cr.*, 
+                    COALESCE(cr.name, c.name, '') as contact_name,
+                    camp.phone_number as sender_phone
                 FROM campaign_recipients cr
                 INNER JOIN campaigns camp ON camp.id = cr.campaign_id AND camp.session_id = ?
                 LEFT JOIN contacts c ON cr.contact_jid = c.jid AND c.session_id = camp.session_id
