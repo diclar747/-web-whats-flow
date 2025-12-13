@@ -15505,13 +15505,25 @@ app.get('/api/campaigns/:sessionId/:campaignId', async (req, res) => {
                 });
             }
 
-            const [recipients] = await connection.execute(
-                `SELECT cr.*, c.name as contact_name
-                 FROM campaign_recipients cr
-                 LEFT JOIN contacts c ON cr.contact_jid = c.jid
-                 WHERE cr.campaign_id = ?`,
-                [campaignId]
-            );
+            // Opcional: filtrar por estado de destinatarios (?status=pending|sent|failed|delivered|read)
+            const { status: filterStatus } = req.query;
+            const allowedStatuses = ['pending', 'sent', 'failed', 'delivered', 'read'];
+            const shouldFilter = filterStatus && allowedStatuses.includes(String(filterStatus));
+
+            const recipientsQuery = `
+                SELECT cr.*, c.name as contact_name
+                FROM campaign_recipients cr
+                INNER JOIN campaigns camp ON camp.id = cr.campaign_id AND camp.session_id = ?
+                LEFT JOIN contacts c ON cr.contact_jid = c.jid AND c.session_id = camp.session_id
+                WHERE cr.campaign_id = ? ${shouldFilter ? 'AND cr.status = ?' : ''}
+                ORDER BY cr.id ASC
+            `;
+
+            const recipientsParams = shouldFilter
+                ? [phoneNumber, campaignId, filterStatus]
+                : [phoneNumber, campaignId];
+
+            const [recipients] = await connection.execute(recipientsQuery, recipientsParams);
 
             res.json({
                 success: true,
