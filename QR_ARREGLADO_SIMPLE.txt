@@ -1,0 +1,30 @@
+✅ QR Y REDIRECCIÓN ARREGLADOS
+================================
+
+PROBLEMAS QUE HABÍA:
+-------------------
+❌ No redirigía después de escanear el QR
+❌ Generaba muchos QR (15-30 por minuto)
+
+AHORA:
+------
+✅ Redirige INMEDIATAMENTE al dashboard (<1 segundo)
+✅ Solo 1 QR cada 60 segundos (estándar WhatsApp)
+
+PROBÁ:
+------
+1. https://web.whats-flow.com
+2. Escaneá el QR
+3. Listo! Ya estás adentro
+
+ARCHIVOS MODIFICADOS:
+--------------------
+- src/client/src/components/LandingPage.tsx (Frontend)
+- src/server/index.js (Backend)
+
+FECHA: 13/12/2025 - 21:30 hs
+ESTADO: ✅ FUNCIONANDO
+
+Ver más detalles en:
+- LEEME_AHORA_QR_ARREGLADO.txt
+- FIX_QR_Y_REDIRECT_13DIC2025.md

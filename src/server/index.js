@@ -356,6 +356,10 @@ const sessions = new Map();
 let lastQRSession = null;
 const QR_EXPIRY_TIME = 2 * 60 * 1000; // 2 minutos
 
+// Sistema de throttle para generación de QR (evita generar muchos QR seguidos)
+const qrThrottleMap = new Map(); // sessionId -> último timestamp de QR emitido
+const QR_THROTTLE_TIME = 60 * 1000; // 60 segundos entre QRs
+
 // Mapa auxiliar para asociar las sesiones creadas con el número dueño de la suscripción
 // Esto permite aplicar límites de plan por cantidad de líneas conectadas
 const sessionOwnerMap = new Map();
@@ -3128,6 +3132,12 @@ async function downloadAllAvatars(sessionId, sock) {
         return;
     }
 
+    // Verificar que el socket esté disponible y conectado
+    if (!sock || !sock.user) {
+        console.log(`[${sessionId}] ⚠️ Socket no disponible o no conectado, saltando descarga de avatares`);
+        return;
+    }
+
     const connection = await pool.getConnection();
     try {
         // Obtener el número de teléfono del usuario
@@ -3137,16 +3147,20 @@ async function downloadAllAvatars(sessionId, sock) {
             return;
         }
 
-        // Obtener TODOS los contactos individuales sin avatar
+        // LIMITAR a máximo 500 avatares por sesión para evitar sobrecarga
+        const MAX_AVATARS = 500;
+
+        // Obtener contactos sin avatar (limitado)
         const [contacts] = await connection.execute(
-            'SELECT jid, name FROM contacts WHERE session_id = ? AND jid LIKE "%@s.whatsapp.net" AND (avatar_url IS NULL OR avatar_url = "")',
-            [phoneNumber]
+            'SELECT jid, name FROM contacts WHERE session_id = ? AND jid LIKE "%@s.whatsapp.net" AND (avatar_url IS NULL OR avatar_url = "") LIMIT ?',
+            [phoneNumber, MAX_AVATARS]
         );
 
-        // Obtener TODOS los grupos sin avatar
+        // Obtener grupos sin avatar (limitado)
+        const remainingLimit = MAX_AVATARS - contacts.length;
         const [groups] = await connection.execute(
-            'SELECT jid, name FROM contact_groups WHERE session_id = ? AND (avatar_url IS NULL OR avatar_url = "")',
-            [phoneNumber]
+            'SELECT jid, name FROM contact_groups WHERE session_id = ? AND (avatar_url IS NULL OR avatar_url = "") LIMIT ?',
+            [phoneNumber, Math.max(remainingLimit, 0)]
         );
 
         const totalToDownload = contacts.length + groups.length;
@@ -3159,10 +3173,19 @@ async function downloadAllAvatars(sessionId, sock) {
 
         let downloadedCount = 0;
         let errorCount = 0;
+        let consecutiveErrors = 0; // Contador de errores consecutivos
 
         // Descargar avatares de contactos individuales en lotes pequeños
-        const BATCH_SIZE = 10; // Reducido aún más para evitar sobrecarga
+        const BATCH_SIZE = 10;
+        const MAX_CONSECUTIVE_ERRORS = 30; // Detener si fallan 30 seguidas
+
         for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
+            // Verificar si hay demasiados errores consecutivos (conexión caída)
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                console.log(`[${sessionId}] ⚠️ Demasiados errores consecutivos (${consecutiveErrors}), deteniendo descarga de avatares`);
+                break;
+            }
+
             const batch = contacts.slice(i, i + BATCH_SIZE);
             console.log(`[${sessionId}] 🖼️ Procesando lote ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(contacts.length / BATCH_SIZE)} de contactos...`);
 
@@ -3176,6 +3199,7 @@ async function downloadAllAvatars(sessionId, sock) {
                             [profilePicUrl, contact.jid, phoneNumber]
                         );
                         downloadedCount++;
+                        consecutiveErrors = 0; // Reset contador de errores consecutivos
                     } else {
                         const previewUrl = await safeGetProfilePicture(sock, contact.jid, 'preview');
                         if (previewUrl) {
@@ -3184,10 +3208,11 @@ async function downloadAllAvatars(sessionId, sock) {
                                 [previewUrl, contact.jid, phoneNumber]
                             );
                             downloadedCount++;
+                            consecutiveErrors = 0; // Reset contador
                         }
                     }
 
-                    if (downloadedCount % 50 === 0) {
+                    if (downloadedCount % 50 === 0 && downloadedCount > 0) {
                         console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados (${Math.round(downloadedCount / totalToDownload * 100)}%)...`);
                     }
 
@@ -3195,6 +3220,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     await new Promise(resolve => setTimeout(resolve, 200));
                 } catch (err) {
                     errorCount++;
+                    consecutiveErrors++;
                     if (errorCount <= 10) {
                         console.error(`[${sessionId}] ❌ Error descargando avatar de contacto ${contact.jid}:`, err.message);
                     }
@@ -3207,6 +3233,12 @@ async function downloadAllAvatars(sessionId, sock) {
 
         // Descargar avatares de grupos en lotes pequeños
         for (let i = 0; i < groups.length; i += BATCH_SIZE) {
+            // Verificar si hay demasiados errores consecutivos (conexión caída)
+            if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                console.log(`[${sessionId}] ⚠️ Demasiados errores consecutivos (${consecutiveErrors}), deteniendo descarga de avatares`);
+                break;
+            }
+
             const batch = groups.slice(i, i + BATCH_SIZE);
             console.log(`[${sessionId}] 🖼️ Procesando lote ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(groups.length / BATCH_SIZE)} de grupos...`);
 
@@ -3220,6 +3252,7 @@ async function downloadAllAvatars(sessionId, sock) {
                             [profilePicUrl, group.jid, phoneNumber]
                         );
                         downloadedCount++;
+                        consecutiveErrors = 0; // Reset contador
                     } else {
                         const previewUrl = await safeGetProfilePicture(sock, group.jid, 'preview');
                         if (previewUrl) {
@@ -3228,10 +3261,11 @@ async function downloadAllAvatars(sessionId, sock) {
                                 [previewUrl, group.jid, phoneNumber]
                             );
                             downloadedCount++;
+                            consecutiveErrors = 0; // Reset contador
                         }
                     }
 
-                    if (downloadedCount % 50 === 0) {
+                    if (downloadedCount % 50 === 0 && downloadedCount > 0) {
                         console.log(`[${sessionId}] 🖼️ Progreso: ${downloadedCount}/${totalToDownload} avatares descargados (${Math.round(downloadedCount / totalToDownload * 100)}%)...`);
                     }
 
@@ -3240,6 +3274,7 @@ async function downloadAllAvatars(sessionId, sock) {
 
                 } catch (err) {
                     errorCount++;
+                    consecutiveErrors++;
                     if (errorCount <= 10) {
                         console.error(`[${sessionId}] ❌ Error descargando avatar de grupo ${group.jid}:`, err.message);
                     }
@@ -3250,7 +3285,7 @@ async function downloadAllAvatars(sessionId, sock) {
             await new Promise(resolve => setTimeout(resolve, 2000));
         }
 
-        console.log(`[${sessionId}] ✅ Descarga de avatares completada: ${downloadedCount} exitosos, ${errorCount} errores`);
+        console.log(`[${sessionId}] ✅ Descarga de avatares completada: ${downloadedCount} exitosos, ${errorCount} errores (detenida por errores: ${consecutiveErrors >= MAX_CONSECUTIVE_ERRORS})`);
 
         // Actualizar los chats después de descargar avatares
         const updatedChats = await loadChatListFromDB(sessionId);
@@ -4533,7 +4568,18 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     session: sessionInfo,
                     createdAt: Date.now()
                 };
-                console.log(`[${sessionId}] Nuevo código QR generado`);
+                
+                // THROTTLE: Solo emitir QR si han pasado al menos 60 segundos desde el último
+                const lastQRTime = qrThrottleMap.get(sessionId) || 0;
+                const timeSinceLastQR = Date.now() - lastQRTime;
+                
+                if (timeSinceLastQR < QR_THROTTLE_TIME) {
+                    console.log(`[${sessionId}] ⏸️  QR generado pero no emitido (throttle activo - ${Math.round((QR_THROTTLE_TIME - timeSinceLastQR) / 1000)}s restantes)`);
+                    return;
+                }
+                
+                console.log(`[${sessionId}] ✅ Nuevo código QR generado y listo para emitir`);
+                qrThrottleMap.set(sessionId, Date.now());
 
                 // Convertir QR a Data URL
                 QRCode.toDataURL(qr, {
@@ -4555,7 +4601,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     // Emitir a sala de sesión específica (para clientes unidos a la sala)
                     io.to(`session-${sessionId}`).emit('qr-code', qrData);
 
-                    console.log(`[${sessionId}] QR emitido globalmente, a sesión específica y a sala session-${sessionId}`);
+                    console.log(`[${sessionId}] 📱 QR emitido (próximo QR en ${QR_THROTTLE_TIME / 1000}s)`);
                     console.log(`[${sessionId}] Clientes conectados: ${io.engine.clientsCount}`);
                 }).catch(err => {
                     console.error(`[${sessionId}] Error generando QR DataURL:`, err);
@@ -4565,6 +4611,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             if (connection === 'open') {
                 sessionInfo.isConnected = true;
                 sessionInfo.qr = null;
+                
+                // Limpiar throttle de QR al conectarse exitosamente
+                qrThrottleMap.delete(sessionId);
+                
                 console.log(`[${sessionId}] ¡WhatsApp conectado exitosamente!`);
 
                 // Log detallado para debugging
@@ -4707,7 +4757,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                                 // Buscar sessionId anterior en user_sessions para migrar chat_assignments
                                 const [oldSessions] = await pool.query(
-                                    'SELECT session_id FROM user_sessions WHERE phone_number = ? AND session_id != ? ORDER BY connected_at DESC LIMIT 1',
+                                    'SELECT session_id FROM user_sessions WHERE phone_number = ? AND session_id != ? ORDER BY created_at DESC LIMIT 1',
                                     [userPhoneNumber, sessionId]
                                 );
                                 const oldSessionId = oldSessions.length > 0 ? oldSessions[0].session_id : null;
@@ -5376,6 +5426,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 const reason = lastDisconnect?.error?.output?.payload?.error || 'unknown';
 
                 console.log(`[${sessionId}] Conexión cerrada - Código: ${statusCode}, Razón: ${reason}`);
+
+                // Limpiar throttle de QR
+                qrThrottleMap.delete(sessionId);
 
                 // Limpiar polling de mensajes propios
                 if (sessionInfo.ownMessagePolling) {
@@ -21881,6 +21934,7 @@ server.listen(PORT, '0.0.0.0', async () => {
 
 // ============= ANALYTICS DASHBOARD ENDPOINT =============
 app.get('/api/analytics/dashboard', async (req, res) => {
+    console.log('[ANALYTICS-DASHBOARD-ENDPOINT] 🚀 NUEVA VERSIÓN EJECUTADA - sessionId:', req.query.sessionId);
     const { sessionId } = req.query;
 
     if (!pool || !sessionId) {

@@ -81,7 +81,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
     console.log('🔄 [LANDING] pendingSessionIdRef actualizado:', pendingSessionId);
   }, [pendingSessionId]);
 
-  // VERIFICAR SI YA HAY SESIÓN ACTIVA AL CARGAR + POLLING COMO RESPALDO
+  // VERIFICAR SI YA HAY SESIÓN ACTIVA AL CARGAR
   useEffect(() => {
     const checkExistingSession = async () => {
       const savedSession = sessionStorage.getItem('whatsflow_session');
@@ -147,114 +147,46 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
     };
 
     checkExistingSession();
+  }, [isConnected, navigate, onQRSuccess]);
 
-    // POLLING agresivo: verificar is_active en DB cada 2 segundos
-    const intervalCheck = setInterval(async () => {
-      if (isConnected) {
-        clearInterval(intervalCheck);
-        return;
-      }
-
-      try {
-        const currentDeviceId = sessionStorage.getItem('whatsflow_device_id') || '';
-        const savedToken = sessionStorage.getItem('whatsflow_token') || '';
-
-        // 1. Primero intentar con pendingSessionId si existe
-        if (pendingSessionId) {
-          const response = await fetch(`${getAPIBaseURL()}/api/session/${pendingSessionId}/status`, {
-            headers: {
-              'x-device-id': currentDeviceId,
-              'x-session-token': savedToken
-            }
-          });
-          const data = await response.json();
-
-          console.log('[LANDING-POLLING-PENDING] Respuesta:', data);
-
-          if (data.success && data.isConnected) {
-            console.log('✅ [LANDING-POLLING] Sesión conectada detectada!');
-            const finalSessionId = data.phoneNumber || data.sessionId || pendingSessionId;
-            console.log('📱 [LANDING-POLLING] Guardando sessionId:', finalSessionId);
-
-            setIsConnected(true);
-            setSessionId(finalSessionId);
-            setShowQRModal(false);
-            setLoading(false);
-            sessionStorage.setItem('whatsflow_session', finalSessionId);
-
-            onQRSuccess(finalSessionId);
-            navigate('/dashboard', { replace: true });
-            clearInterval(intervalCheck);
-            return;
-          }
-        }
-
-        // 2. Si no hay pendingSessionId o no se encontró, buscar por deviceId
-        // Esto detectará la sesión que acaba de conectarse incluso si no conocemos su ID
-        const checkResponse = await fetch(`${getAPIBaseURL()}/api/session/check-by-device`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-device-id': currentDeviceId
-          },
-          body: JSON.stringify({ deviceId: currentDeviceId })
-        });
-
-        if (checkResponse.ok) {
-          const checkData = await checkResponse.json();
-          console.log('[LANDING-POLLING-DEVICE] Respuesta:', checkData);
-
-          if (checkData.success && checkData.isConnected) {
-            console.log('✅ [LANDING-POLLING-DEVICE] Sesión activa encontrada por deviceId!');
-            const finalSessionId = checkData.phoneNumber || checkData.sessionId;
-
-            setIsConnected(true);
-            setSessionId(finalSessionId);
-            setShowQRModal(false);
-            setLoading(false);
-            sessionStorage.setItem('whatsflow_session', finalSessionId);
-
-            onQRSuccess(finalSessionId);
-            navigate('/dashboard', { replace: true });
-            clearInterval(intervalCheck);
-          }
-        }
-      } catch (e) {
-        console.error('[LANDING-POLLING] Error:', e);
-      }
-    }, 2000);
-
-    return () => clearInterval(intervalCheck);
-  }, [isConnected, pendingSessionId, navigate, onQRSuccess]);
-
-  // POLLING ELIMINADO POR SEGURIDAD
-  // El polling anterior buscaba cualquier sesión activa (de cualquier usuario)
-  // Ahora la conexión se detecta solo via Socket.IO cuando EL USUARIO escanea su propio QR
-  // useEffect para escuchar eventos de Socket.IO ya maneja la conexión correctamente
-
-  // VERIFICACIÓN: Solo permitir conexión de la sesión iniciada por este navegador
+  // VERIFICACIÓN: Polling solo para la sesión pendiente (cada 3 segundos - más suave)
   useEffect(() => {
     let check: ReturnType<typeof setInterval> | undefined;
     if (!isConnected && showQRModal && pendingSessionId) {
+      console.log('[LANDING] 🔄 Iniciando polling de verificación cada 3 segundos');
       check = setInterval(async () => {
         try {
           const response = await fetch(`${getAPIBaseURL()}/api/session/${pendingSessionId}/status`);
           const data = await response.json();
+          console.log('[LANDING-POLLING] Estado de sesión:', data);
+          
           if (data.success && data.isConnected) {
             const finalSessionId = data.phoneNumber || pendingSessionId;
+            console.log('✅ [LANDING-POLLING] ¡Sesión conectada! Redirigiendo a dashboard...');
+            
             setIsConnected(true);
             setSessionId(finalSessionId);
             setShowQRModal(false);
             setLoading(false);
             sessionStorage.setItem('whatsflow_session', finalSessionId);
-            onQRSuccess(finalSessionId);
+            
             if (check) clearInterval(check);
+            
+            onQRSuccess(finalSessionId);
+            navigate('/dashboard', { replace: true });
           }
-        } catch { }
-      }, 1500);
+        } catch (err) {
+          console.error('[LANDING-POLLING] Error:', err);
+        }
+      }, 3000); // Cada 3 segundos - menos agresivo
     }
-    return () => { if (check) clearInterval(check); };
-  }, [isConnected, showQRModal, pendingSessionId, onQRSuccess]);
+    return () => { 
+      if (check) {
+        console.log('[LANDING] Deteniendo polling');
+        clearInterval(check);
+      }
+    };
+  }, [isConnected, showQRModal, pendingSessionId, onQRSuccess, navigate]);
 
   // Socket setup
   useEffect(() => {
@@ -276,8 +208,12 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
     // Evento GLOBAL de conexión exitosa (filtrado por pendingSessionId)
     newSocket.on('connection-update', (data: any) => {
       const currentPendingSessionId = pendingSessionIdRef.current;
-      console.log('🔥 [LANDING] Conexión exitosa detectada:', data);
-      console.log('🔥 [LANDING] Status:', data.status, 'SessionId:', data.sessionId, 'PhoneNumber:', data.phoneNumber);
+      console.log('🔥 [LANDING] Evento connection-update recibido:', {
+        status: data.status,
+        sessionId: data.sessionId,
+        phoneNumber: data.phoneNumber,
+        oldSessionId: data.oldSessionId
+      });
       console.log('🔥 [LANDING] PendingSessionId actual (ref):', currentPendingSessionId);
 
       // Solo aceptar si corresponde a la sesión que ESTE navegador inició
@@ -288,19 +224,17 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
       console.log('🔥 [LANDING] ¿Es nuestra sesión?:', isOurSession);
 
       if (data.status === 'connected' && (data.sessionId || data.phoneNumber)) {
-        // Si no hay pendingSessionId pero el evento contiene phoneNumber o sessionId que coincide con deviceId, también aceptar
-        // Para evitar ignorar conexiones válidas, permitimos si el usuario está en la página de landing (showQRModal true)
         if (currentPendingSessionId && isOurSession) {
-          // USAR EL NÚMERO DE TELÉFONO si está disponible, sino usar sessionId
           const finalSessionId = data.phoneNumber || data.sessionId;
-          console.log(`📱 [LANDING] Guardando sesión: ${finalSessionId}`);
+          console.log(`✅ [LANDING] ¡CONEXIÓN EXITOSA! SessionId: ${finalSessionId}`);
 
           setIsConnected(true);
           setSessionId(finalSessionId);
           setShowQRModal(false);
           setLoading(false);
+          sessionStorage.setItem('whatsflow_session', finalSessionId);
 
-          // Limpiar cualquier información de sesión previa de otros usuarios
+          // Limpiar sesiones previas
           sessionStorage.removeItem('token');
           sessionStorage.removeItem('whatsflow_token');
           sessionStorage.removeItem('userRole');
@@ -308,40 +242,44 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           sessionStorage.removeItem('userName');
           sessionStorage.removeItem('userEmail');
 
-          console.log('📱 [LANDING] Llamando onQRSuccess con:', finalSessionId);
+          console.log('📱 [LANDING] Llamando onQRSuccess y navegando al dashboard...');
           onQRSuccess(finalSessionId);
-
-          // Redirigir al dashboard INMEDIATAMENTE - SIN TIMEOUT
-          console.log('✅ [LANDING] Redirigiendo al dashboard AHORA...');
-          navigate('/dashboard', { replace: true });
-          console.log('🚀 [LANDING] Navegación ejecutada');
+          
+          // Redirigir al dashboard INMEDIATAMENTE
+          setTimeout(() => {
+            navigate('/dashboard', { replace: true });
+            console.log('🚀 [LANDING] Navegación ejecutada');
+          }, 100);
         } else if (!currentPendingSessionId && showQRModal && !sessionId) {
           const finalSessionId = data.phoneNumber || data.sessionId;
+          console.log(`✅ [LANDING] Conexión sin pendingSessionId previo: ${finalSessionId}`);
+          
           setIsConnected(true);
           setSessionId(finalSessionId);
           setShowQRModal(false);
           setLoading(false);
+          sessionStorage.setItem('whatsflow_session', finalSessionId);
+          
           onQRSuccess(finalSessionId);
-          navigate('/dashboard', { replace: true });
+          setTimeout(() => {
+            navigate('/dashboard', { replace: true });
+          }, 100);
         } else {
-          console.log('🛡️ [LANDING] Ignorando evento de conexión ajeno (pendingSessionId:', currentPendingSessionId, ')');
+          console.log('🛡️ [LANDING] Ignorando evento - no es nuestra sesión');
         }
       } else if (data.status === 'disconnected') {
-        console.log('📱 WhatsApp desconectado, redirigiendo al inicio...');
+        console.log('📱 [LANDING] WhatsApp desconectado');
         setIsConnected(false);
         setSessionId(null);
         setQrDataUrl(null);
-        // Limpiar localStorage
         localStorage.removeItem('whatsflow_session');
         localStorage.removeItem('whatsflow_user_type');
-        // Limpiar cualquier información de usuario también en desconexión
         sessionStorage.removeItem('token');
         sessionStorage.removeItem('whatsflow_token');
         sessionStorage.removeItem('userRole');
         sessionStorage.removeItem('userId');
         sessionStorage.removeItem('userName');
         sessionStorage.removeItem('userEmail');
-        // La redirección se manejará automáticamente por el App.tsx
       }
     });
 
@@ -359,39 +297,54 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
     // Evento específico de WhatsApp conectado (filtrado por pendingSessionId)
     newSocket.on('whatsapp-connected', (data: any) => {
       const currentPendingSessionId = pendingSessionIdRef.current;
-      console.log('✅ [LANDING] WhatsApp conectado exitosamente:', data);
-      console.log('✅ [LANDING] SessionId:', data.sessionId, 'PhoneNumber:', data.phoneNumber);
+      console.log('✅ [LANDING] Evento whatsapp-connected recibido:', {
+        sessionId: data.sessionId,
+        phoneNumber: data.phoneNumber
+      });
 
       // Solo aceptar si corresponde a la sesión que ESTE navegador inició
       if (!currentPendingSessionId || (data.sessionId !== currentPendingSessionId)) {
-        console.log('⏭️ [LANDING] Ignorando whatsapp-connected de otra sesión (pendingSessionId:', currentPendingSessionId, ')');
+        console.log('⏭️ [LANDING] Ignorando - no es nuestra sesión');
         return;
       }
 
-      // USAR EL NÚMERO DE TELÉFONO si está disponible, sino usar sessionId
       const finalSessionId = data.phoneNumber || data.sessionId;
-      console.log(`📱 [LANDING] Guardando sesión (whatsapp-connected): ${finalSessionId}`);
+      console.log(`✅ [LANDING] ¡WHATSAPP CONECTADO! SessionId: ${finalSessionId}`);
 
       setIsConnected(true);
       setSessionId(finalSessionId);
       setShowQRModal(false);
       setLoading(false);
+      sessionStorage.setItem('whatsflow_session', finalSessionId);
 
-      console.log('📱 [LANDING] Llamando onQRSuccess con:', finalSessionId);
+      console.log('📱 [LANDING] Llamando onQRSuccess y navegando al dashboard...');
       onQRSuccess(finalSessionId);
 
-      // Redirigir al dashboard INMEDIATAMENTE - SIN TIMEOUT
-      console.log('✅ [LANDING] Redirigiendo al dashboard AHORA (whatsapp-connected)...');
-      navigate('/dashboard', { replace: true });
-      console.log('🚀 [LANDING] Navegación ejecutada (whatsapp-connected)');
+      setTimeout(() => {
+        navigate('/dashboard', { replace: true });
+        console.log('🚀 [LANDING] Navegación ejecutada');
+      }, 100);
     });
 
     // Evento de QR generado
     newSocket.on('qr-code', (data: any) => {
-      console.log('📱 QR Code recibido:', data);
-      if (data.qrDataUrl) {
-        setQrDataUrl(data.qrDataUrl);
-        setLoading(false);
+      console.log('📱 [LANDING] QR Code recibido:', {
+        sessionId: data.sessionId,
+        timestamp: data.timestamp,
+        expiresIn: data.expiresIn
+      });
+      
+      const currentPendingSessionId = pendingSessionIdRef.current;
+      
+      // Solo aceptar QR si es de nuestra sesión o si no hay sesión pendiente aún
+      if (!currentPendingSessionId || data.sessionId === currentPendingSessionId) {
+        if (data.qrDataUrl) {
+          console.log('✅ [LANDING] Mostrando QR Code');
+          setQrDataUrl(data.qrDataUrl);
+          setLoading(false);
+        }
+      } else {
+        console.log('⏭️ [LANDING] Ignorando QR - no es de nuestra sesión');
       }
     });
 
