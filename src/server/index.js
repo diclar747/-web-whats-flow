@@ -309,6 +309,16 @@ app.use('/api/*', (req, res, next) => {
 
 console.log('[SECURITY] ⚠️ Middleware de sesión única DESACTIVADO temporalmente para evitar bloqueos');
 
+// 🛡️ Rate limiters específicos por ruta (estabilidad sin romper módulos)
+// Autenticación: limitar intentos de login/logout/verify
+app.use('/api/auth', authLimiter);
+// Envío de mensajes: limitar velocidad de envío (texto y media)
+app.use(['/api/messages/send', '/api/messages/send-media'], apiMessageLimiter);
+// QR: limitar solicitudes de estado y regeneración
+app.use(['/api/qr-status', '/api/qr-refresh'], qrLimiter);
+// Webhooks: limitar eventos entrantes
+app.use('/api/subscriptions/webhook', webhookLimiter);
+
 // Health check endpoint (sin rate limit)
 app.get('/health', (req, res) => {
     const uptime = process.uptime();
