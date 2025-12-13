@@ -315,10 +315,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           console.log('✅ [LANDING] Redirigiendo al dashboard AHORA...');
           navigate('/dashboard', { replace: true });
           console.log('🚀 [LANDING] Navegación ejecutada');
+        } else if (!currentPendingSessionId && showQRModal && !sessionId) {
+          const finalSessionId = data.phoneNumber || data.sessionId;
+          setIsConnected(true);
+          setSessionId(finalSessionId);
+          setShowQRModal(false);
+          setLoading(false);
+          onQRSuccess(finalSessionId);
+          navigate('/dashboard', { replace: true });
         } else {
-          // Si no tenemos pendingSessionId pero el evento es de conexión, podríamos aceptarlo si estamos en modal
-          // Esto puede ocurrir si pendingSessionId se perdió pero el socket aún está escuchando
-          // Por seguridad, ignoramos pero logueamos
           console.log('🛡️ [LANDING] Ignorando evento de conexión ajeno (pendingSessionId:', currentPendingSessionId, ')');
         }
       } else if (data.status === 'disconnected') {
@@ -337,6 +342,17 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
         sessionStorage.removeItem('userName');
         sessionStorage.removeItem('userEmail');
         // La redirección se manejará automáticamente por el App.tsx
+      }
+    });
+
+    // Redirección alternativa: si llega token por Socket.IO, guardar y navegar
+    newSocket.on('auth_token', (data: any) => {
+      if (data?.token) {
+        try {
+          localStorage.setItem('token', data.token);
+          sessionStorage.setItem('token', data.token);
+        } catch {}
+        navigate('/dashboard', { replace: true });
       }
     });
 
