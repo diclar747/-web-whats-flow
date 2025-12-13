@@ -18,6 +18,7 @@
     "@types/uuid": "^10.0.0",
     "@types/xlsx": "^0.0.35",
     "ajv": "^6.12.6",
+    "axios": "^1.13.2",
     "date-fns": "^2.30.0",
     "dayjs": "^1.11.19",
     "emoji-picker-react": "^4.15.1",

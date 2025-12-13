@@ -6194,6 +6194,36 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                 let menuText = response.content + '\n\n';
                                                 response.options.forEach((opt, idx) => {
                                                     menuText += `${idx + 1}. ${opt.text}\n`;
+
+                                                    // Emitir eventos específicos para asegurar compatibilidad con clientes que separan recibidos/enviados
+                                                    try {
+                                                        const specificPayload = {
+                                                            id: messageId,
+                                                            sessionId: phoneNumber,
+                                                            chatJid: chat_jid,
+                                                            message: text_content || 'Media',
+                                                            type: message_type?.replace('Message', '').toLowerCase() || 'text',
+                                                            isFromMe: Boolean(from_me),
+                                                            timestamp: mysqlTimestamp,
+                                                            status: status,
+                                                            mediaUrl: media_url || null,
+                                                            mediaMimeType: media_mime_type || null,
+                                                            caption: caption || null,
+                                                            fileName: file_name || null,
+                                                            fileSize: file_size || null,
+                                                            senderJid: finalSenderJid,
+                                                            senderName: senderName || null,
+                                                            senderAvatar: senderAvatar || null
+                                                        };
+
+                                                        if (from_me) {
+                                                            io.to(`session-${phoneNumber}`).emit('message:sent', specificPayload);
+                                                        } else {
+                                                            io.to(`session-${phoneNumber}`).emit('message:received', specificPayload);
+                                                        }
+                                                    } catch (emitErr) {
+                                                        console.warn(`[DB-MSG] ⚠️ Error emitiendo eventos específicos de mensaje:`, emitErr.message);
+                                                    }
                                                 });
                                                 const sentMsg = await sock.sendMessage(senderJid, { text: menuText });
                                                 console.log(`[CHATBOT] ✅ Menú enviado con ${response.options.length} opciones`);
