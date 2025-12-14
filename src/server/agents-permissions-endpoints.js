@@ -50,14 +50,15 @@ module.exports = function (app, pool) {
                     name,
                     email,
                     phone,
+                    avatar_url,
                     status,
                     COALESCE(agent_status, 'offline') as agent_status,
                     last_activity,
                     COALESCE(max_concurrent_chats, 5) as max_concurrent_chats,
                     (
-                        SELECT COUNT(*) 
-                        FROM chat_assignments ca 
-                        WHERE ca.user_id = users.id 
+                        SELECT COUNT(*)
+                        FROM chat_assignments ca
+                        WHERE ca.user_id = users.id
                         AND ca.status = 'active'
                     ) as active_chats_count,
                     created_at,
@@ -98,13 +99,15 @@ module.exports = function (app, pool) {
                 return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            const { name, email, password, phone, permissions, sessionId: userSessionId } = req.body;
+            const { name, email, password, phone, avatar_url, sendWhatsApp, permissions, sessionId: userSessionId } = req.body;
 
             console.log('🔍 [AGENT-CREATE] Campos extraídos:', {
                 name: name || 'MISSING',
                 email: email || 'MISSING',
                 password: password ? 'PROVIDED' : 'NOT PROVIDED',
                 phone: phone || 'NOT PROVIDED',
+                avatar_url: avatar_url || 'NOT PROVIDED',
+                sendWhatsApp: sendWhatsApp ? 'YES' : 'NO',
                 sessionId: userSessionId || 'NOT PROVIDED'
             });
 
@@ -242,8 +245,8 @@ module.exports = function (app, pool) {
                     name, email, phone, password, role,
                     status, agent_status, max_concurrent_chats, admin_phone,
                     created_at, updated_at,
-                    department, category, session_id
-                ) VALUES (?, ?, ?, ?, 'agent', 'active', 'offline', ?, ?, NOW(), NOW(), ?, ?, ?)
+                    department, category, session_id, avatar_url
+                ) VALUES (?, ?, ?, ?, 'agent', 'active', 'offline', ?, ?, NOW(), NOW(), ?, ?, ?, ?)
             `, [
                     name,
                     email,
@@ -253,7 +256,8 @@ module.exports = function (app, pool) {
                     adminPhone,
                     null, // department
                     null, // category
-                    userSessionId || null // session_id - Asegurar que sea null si undefined
+                    userSessionId || null, // session_id - Asegurar que sea null si undefined
+                    avatar_url || null // avatar_url
                 ]);
 
                 const agentId = result.insertId;
@@ -261,10 +265,61 @@ module.exports = function (app, pool) {
                 await connection.commit();
 
                 console.log(`✅ Agente creado: ${email}`);
+
+                // Enviar credenciales por WhatsApp si se solicita
+                if (sendWhatsApp && phone) {
+                    try {
+                        console.log(`📱 [AGENT-CREATE] Enviando credenciales por WhatsApp a: ${phone}`);
+
+                        // Obtener el socket de WhatsApp del admin
+                        const sessions = global.sessions || new Map();
+                        let sock = null;
+
+                        // Buscar socket activo del admin
+                        for (const [sessionId, sessionData] of sessions.entries()) {
+                            if (sessionData.sock && sessionData.phoneNumber === adminPhone) {
+                                sock = sessionData.sock;
+                                break;
+                            }
+                        }
+
+                        if (sock) {
+                            // Formatear número para WhatsApp
+                            const whatsappNumber = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`;
+
+                            // Mensaje con credenciales elegante
+                            const message = `🎉 *¡Bienvenido al equipo ${name}!*\n\n` +
+                                `Has sido registrado como agente en nuestro sistema de WhatsFlow.\n\n` +
+                                `📧 *Tus credenciales de acceso:*\n` +
+                                `━━━━━━━━━━━━━━━━━━━━━\n` +
+                                `👤 *Usuario:* ${email}\n` +
+                                `🔐 *Contraseña:* ${finalPassword}\n` +
+                                `━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                                `🌐 *Accede al panel de agentes aquí:*\n` +
+                                `https://web.whats-flow.com/agent/login\n\n` +
+                                `⚠️ *Importante:*\n` +
+                                `• Guarda esta información de forma segura\n` +
+                                `• Se recomienda cambiar la contraseña después del primer inicio de sesión\n` +
+                                `• No compartas tus credenciales con nadie\n\n` +
+                                `💡 *¿Necesitas ayuda?*\n` +
+                                `Contacta a tu administrador si tienes problemas para acceder.\n\n` +
+                                `¡Éxitos! 🚀`;
+
+                            await sock.sendMessage(whatsappNumber, { text: message });
+                            console.log(`✅ [AGENT-CREATE] Credenciales enviadas por WhatsApp a ${phone}`);
+                        } else {
+                            console.log(`⚠️ [AGENT-CREATE] No se encontró socket activo del admin para enviar WhatsApp`);
+                        }
+                    } catch (whatsappError) {
+                        console.error(`❌ [AGENT-CREATE] Error enviando WhatsApp:`, whatsappError.message);
+                        // No fallar la creación si el WhatsApp no se envía
+                    }
+                }
+
                 res.json({
                     success: true,
                     agentId,
-                    message: 'Agente creado exitosamente'
+                    message: 'Agente creado exitosamente' + (sendWhatsApp && phone ? ' y credenciales enviadas por WhatsApp' : '')
                 });
             } catch (error) {
                 await connection.rollback();

@@ -1204,9 +1204,11 @@ module.exports = function (app, pool) {
                         m.status,
                         m.quoted_message_id,
                         c.name as contact_name,
-                        c.avatar_url as contact_avatar
+                        c.avatar_url as contact_avatar,
+                        u.name as sender_name
                     FROM messages m
                     LEFT JOIN contacts c ON m.sender_jid = c.jid AND c.session_id = ?
+                    LEFT JOIN users u ON m.user_id = u.id
                     WHERE m.session_id = ? AND m.chat_jid = ?
                 `;
 

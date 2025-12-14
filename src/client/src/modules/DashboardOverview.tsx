@@ -140,21 +140,11 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
   const [topAgents, setTopAgents] = useState<TopAgent[]>([]);
   const [chatbotAnalytics, setChatbotAnalytics] = useState<ChatbotAnalytics[]>([]);
   const [loading, setLoading] = useState(true);
-  const [realTimeUpdates, setRealTimeUpdates] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
   useEffect(() => {
     loadDashboardData();
-
-    // Actualización en tiempo real cada 30 segundos
-    const interval = setInterval(() => {
-      if (realTimeUpdates) {
-        loadDashboardData();
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [sessionId, realTimeUpdates]);
+  }, [sessionId]);
 
   const loadDashboardData = async () => {
     try {
@@ -597,15 +587,6 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
           </Typography>
         </Box>
         <Stack direction="row" spacing={2}>
-          <Chip
-            icon={realTimeUpdates ? <SignalWifi4Bar /> : <ErrorIcon />}
-            label={realTimeUpdates ? "Tiempo Real" : "Sin conexión"}
-            sx={{
-              bgcolor: realTimeUpdates ? '#4caf50' : '#f44336',
-              color: 'white',
-              fontWeight: 600
-            }}
-          />
           <Button
             startIcon={<Refresh />}
             variant="contained"

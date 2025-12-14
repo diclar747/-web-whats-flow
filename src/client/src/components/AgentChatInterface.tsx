@@ -540,12 +540,12 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
                 boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)'
               }}
             >
-              {/* Nombre del remitente (solo para mensajes entrantes) */}
-              {!msg.from_me && msg.sender_name && (
+              {/* Nombre del remitente (PARA TODOS LOS MENSAJES) */}
+              {msg.sender_name && (
                 <Typography
                   variant="caption"
                   sx={{
-                    color: '#00a884',
+                    color: msg.from_me ? '#006b54' : '#00a884',
                     fontWeight: 600,
                     display: 'block',
                     mb: 0.5

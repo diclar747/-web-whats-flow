@@ -504,11 +504,17 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
       </Card>
 
       {/* Diálogo de transferencia de chat */}
-      <Dialog 
-        open={transferDialogOpen} 
-        onClose={() => setTransferDialogOpen(false)} 
-        maxWidth="sm" 
+      <Dialog
+        open={transferDialogOpen}
+        onClose={() => setTransferDialogOpen(false)}
+        maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: '#1e2a38',
+            backgroundImage: 'none'
+          }
+        }}
       >
         <DialogTitle>
           🔄 Transferir Chat
@@ -519,7 +525,7 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
               <Typography variant="subtitle2" gutterBottom>
                 Chat a transferir:
               </Typography>
-              <Typography variant="body2" sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1 }}>
+              <Typography variant="body2" sx={{ bgcolor: 'rgba(255, 255, 255, 0.05)', p: 2, borderRadius: 1, border: '1px solid rgba(255, 255, 255, 0.1)' }}>
                 {selectedChat.contact_name} ({selectedChat.contact_phone})
               </Typography>
             </Box>

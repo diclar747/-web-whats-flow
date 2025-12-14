@@ -25,13 +25,17 @@ import {
   Send as SendIcon,
   AttachFile as AttachFileIcon,
   EmojiEmotions as EmojiIcon,
-  MoreVert as MoreIcon
+  MoreVert as MoreIcon,
+  Description as DocumentIcon,
+  GetApp as DownloadIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import EmojiPicker from 'emoji-picker-react';
+import { useTransferNotifications } from '../hooks/useTransferNotifications';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface AgentChat {
   id: string;
@@ -55,6 +59,10 @@ interface Message {
   media_url?: string;
   sender_name?: string;
   sender_avatar?: string;
+  agent_id?: number;
+  agent_name?: string;
+  file_name?: string;
+  mime_type?: string;
 }
 
 const AgentDashboard: React.FC = () => {
@@ -62,6 +70,7 @@ const AgentDashboard: React.FC = () => {
   const { socket, isConnected, on, off } = useSocket();
 
   // Estados
+  const [agentId, setAgentId] = useState<number | null>(null);
   const [chats, setChats] = useState<AgentChat[]>([]);
   const [selectedChat, setSelectedChat] = useState<AgentChat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -70,10 +79,12 @@ const AgentDashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [agentId, setAgentId] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
+
+  // Hook para notificaciones de transferencia
+  useTransferNotifications(socket, agentId || undefined);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -284,7 +295,12 @@ const AgentDashboard: React.FC = () => {
           timestamp: data.timestamp || new Date().toISOString(),
           status: data.status || 'received',
           sender_name: data.sender_name,
-          sender_avatar: data.sender_avatar
+          sender_avatar: data.sender_avatar,
+          agent_id: data.agent_id,
+          agent_name: data.agent_name,
+          media_url: data.media_url,
+          file_name: data.file_name,
+          mime_type: data.mime_type
         };
         setMessages(prev => {
           // Evitar duplicados
@@ -307,7 +323,12 @@ const AgentDashboard: React.FC = () => {
           timestamp: data.timestamp || new Date().toISOString(),
           status: data.status || 'received',
           sender_name: data.sender_name,
-          sender_avatar: data.sender_avatar
+          sender_avatar: data.sender_avatar,
+          agent_id: data.agent_id,
+          agent_name: data.agent_name,
+          media_url: data.media_url,
+          file_name: data.file_name,
+          mime_type: data.mime_type
         };
         setMessages(prev => {
           // Evitar duplicados
@@ -663,10 +684,22 @@ const AgentDashboard: React.FC = () => {
                     key={msg.id}
                     sx={{
                       display: 'flex',
-                      justifyContent: msg.from_me ? 'flex-end' : 'flex-start',
+                      flexDirection: 'column',
+                      alignItems: msg.from_me ? 'flex-end' : 'flex-start',
                       mb: 1
                     }}
                   >
+                    {/* Mostrar nombre del remitente */}
+                    {msg.from_me && msg.agent_name && (
+                      <Typography variant="caption" sx={{ fontSize: 10, color: '#667781', mb: 0.5, px: 1 }}>
+                        {msg.agent_name}
+                      </Typography>
+                    )}
+                    {!msg.from_me && msg.sender_name && (
+                      <Typography variant="caption" sx={{ fontSize: 10, color: '#667781', mb: 0.5, px: 1 }}>
+                        {msg.sender_name}
+                      </Typography>
+                    )}
                     <Paper
                       sx={{
                         maxWidth: '65%',
@@ -676,9 +709,42 @@ const AgentDashboard: React.FC = () => {
                         boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)'
                       }}
                     >
-                      <Typography variant="body2" sx={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
-                        {msg.text_content}
-                      </Typography>
+                      {/* Renderizar multimedia si existe */}
+                      {msg.media_url && (
+                        <Box sx={{ mb: msg.text_content ? 1 : 0 }}>
+                          {msg.message_type === 'image' || msg.mime_type?.startsWith('image/') ? (
+                            <img
+                              src={msg.media_url}
+                              alt="Imagen"
+                              style={{ maxWidth: '100%', borderRadius: '8px', cursor: 'pointer' }}
+                              onClick={() => window.open(msg.media_url, '_blank')}
+                            />
+                          ) : msg.message_type === 'video' || msg.mime_type?.startsWith('video/') ? (
+                            <video
+                              src={msg.media_url}
+                              controls
+                              style={{ maxWidth: '100%', borderRadius: '8px' }}
+                            />
+                          ) : msg.message_type === 'audio' || msg.mime_type?.startsWith('audio/') ? (
+                            <audio src={msg.media_url} controls style={{ width: '100%' }} />
+                          ) : (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: '#f0f0f0', borderRadius: '8px' }}>
+                              <DocumentIcon sx={{ color: '#667781' }} />
+                              <Typography variant="body2" sx={{ flexGrow: 1 }}>
+                                {msg.file_name || 'Documento'}
+                              </Typography>
+                              <IconButton size="small" onClick={() => window.open(msg.media_url, '_blank')}>
+                                <DownloadIcon fontSize="small" />
+                              </IconButton>
+                            </Box>
+                          )}
+                        </Box>
+                      )}
+                      {msg.text_content && (
+                        <Typography variant="body2" sx={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
+                          {msg.text_content}
+                        </Typography>
+                      )}
                       <Typography variant="caption" sx={{ fontSize: 11, color: '#667781', float: 'right', mt: 0.5 }}>
                         {formatTime(msg.timestamp)}
                       </Typography>

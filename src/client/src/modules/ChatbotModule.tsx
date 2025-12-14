@@ -505,6 +505,7 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
         <Tabs value={selectedTab} onChange={(_, val) => setSelectedTab(val)}>
           <Tab label="Flujos" icon={<SmartToy/>} iconPosition="start"/>
           <Tab label="Analytics" icon={<Analytics/>} iconPosition="start"/>
+          <Tab label="Conexiones" icon={<CheckCircle/>} iconPosition="start"/>
           <Tab label="Configuración" icon={<Settings/>} iconPosition="start"/>
         </Tabs>
       </Paper>

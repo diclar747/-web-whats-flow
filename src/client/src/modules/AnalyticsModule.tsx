@@ -63,23 +63,24 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
   const [kanbanData, setKanbanData] = useState<any>(null);
   const [agentsData, setAgentsData] = useState<any>(null);
   const [chatbotsData, setChatbotsData] = useState<any>(null);
+  const [connectionsData, setConnectionsData] = useState<any>(null);
 
   const loadAllData = async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const baseURL = getAPIBaseURL();
       const params = `sessionId=${sessionId}&startDate=${startDate.format('YYYY-MM-DD')}&endDate=${endDate.format('YYYY-MM-DD')}`;
 
       // Load all analytics data in parallel
-      const [dashRes, msgRes, campRes, kanRes, agentRes, botRes] = await Promise.allSettled([
+      const [dashRes, msgRes, campRes, kanRes, agentRes, botRes, connRes] = await Promise.allSettled([
         fetch(`/api/analytics/dashboard?sessionId=${sessionId}`),
         fetch(`/api/analytics/messages?${params}`),
         fetch(`/api/analytics/campaigns?${params}`),
         fetch(`/api/analytics/kanban?${params}`),
         fetch(`/api/analytics/agents?${params}`),
-        fetch(`/api/analytics/chatbots?${params}`)
+        fetch(`/api/analytics/chatbots?${params}`),
+        fetch(`/api/session/${sessionId}/status`)
       ]);
 
       // Process dashboard data
@@ -125,6 +126,12 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
         setChatbotsData(json.data || json);
       }
 
+      // Process connections data
+      if (connRes.status === 'fulfilled' && connRes.value.ok) {
+        const json = await connRes.value.json();
+        setConnectionsData(json);
+      }
+
     } catch (err: any) {
       console.error('Error loading analytics:', err);
       setError(err.message);
@@ -147,19 +154,33 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
   const kanban = kanbanData || {};
   const agents = agentsData || {};
   const bots = chatbotsData || {};
+  const connections = connectionsData || {};
 
   // ============= TAB 0: GENERAL DASHBOARD =============
   const GeneralDashboard = () => {
+    // Extraer datos reales de manera segura
+    const totalMessages = dash.messages?.total || dash.messages || 0;
+    const deliveryRate = dash.kpis?.delivery_rate || 0;
+    const readRate = dash.kpis?.read_rate || 0;
+    const activeCampaigns = dash.campaigns?.active || 0;
+    const onlineAgents = dash.agents?.online || 0;
+    const totalAgents = dash.agents?.total || 0;
+    const activeChatbots = dash.chatbots || 0;
+    const kanbanBoards = dash.kanbans || 0;
+    const activeConnections = dash.activeLines || 1;
+    const failedMessages = dash.messages?.failed || 0;
+    const failureRate = dash.kpis?.failure_rate || 0;
+
     const kpis = [
-      { label: 'Total Mensajes', value: formatNumber(dashboardData?.messages || msgs.total || dash.messages || 0), icon: <Message />, color: CHART_COLORS.primary, trend: '+12%' },
-      { label: 'Tasa Entrega', value: formatPercentage(dashboardData?.deliveryRate || msgs.deliveryRate || 98), icon: <CheckCircle />, color: CHART_COLORS.success, trend: '+2%' },
-      { label: 'Tasa Lectura', value: formatPercentage(dashboardData?.readRate || msgs.readRate || 85), icon: <Visibility />, color: CHART_COLORS.info, trend: '+5%' },
-      { label: 'Campañas Activas', value: formatNumber(dashboardData?.campaigns || camps.active || dash.campaigns || 0), icon: <Campaign />, color: CHART_COLORS.warning, trend: '3 nuevas' },
-      { label: 'Agentes Online', value: formatNumber(dashboardData?.agents || agents.online || dash.agents || 0), icon: <People />, color: CHART_COLORS.success, trend: `de ${agents.total || 0}` },
-      { label: 'Chatbots Activos', value: formatNumber(dashboardData?.chatbots || bots.active || dash.chatbots || 0), icon: <SmartToy />, color: CHART_COLORS.purple, trend: '100% uptime' },
-      { label: 'Tableros Kanban', value: formatNumber(dashboardData?.kanbans || kanban.boards || dash.kanbans || 0), icon: <ViewKanban />, color: CHART_COLORS.info, trend: `${kanban.contacts || 0} contactos` },
-      { label: 'Conexiones Activas', value: formatNumber(dashboardData?.connections || 0), icon: <Badge />, color: CHART_COLORS.info, trend: 'Tiempo real' },
-      { label: 'Mensajes Fallidos', value: formatNumber(dashboardData?.messagesFailed || msgs.failed || 0), icon: <ErrorIcon />, color: CHART_COLORS.error, trend: formatPercentage(dashboardData?.failureRate || msgs.failureRate || 2) }
+      { label: 'Total Mensajes', value: formatNumber(totalMessages), icon: <Message />, color: CHART_COLORS.primary, trend: `${formatNumber(dash.messages?.sent || 0)} enviados` },
+      { label: 'Tasa Entrega', value: formatPercentage(deliveryRate), icon: <CheckCircle />, color: CHART_COLORS.success, trend: `${formatNumber(dash.messages?.delivered || 0)} entregados` },
+      { label: 'Tasa Lectura', value: formatPercentage(readRate), icon: <Visibility />, color: CHART_COLORS.info, trend: `${formatNumber(dash.messages?.read || 0)} leídos` },
+      { label: 'Campañas Activas', value: formatNumber(activeCampaigns), icon: <Campaign />, color: CHART_COLORS.warning, trend: `${formatNumber(dash.campaigns?.total || 0)} total` },
+      { label: 'Agentes Online', value: formatNumber(onlineAgents), icon: <People />, color: CHART_COLORS.success, trend: `de ${formatNumber(totalAgents)} total` },
+      { label: 'Chatbots Activos', value: formatNumber(activeChatbots), icon: <SmartToy />, color: CHART_COLORS.purple, trend: 'Sistema activo' },
+      { label: 'Tableros Kanban', value: formatNumber(kanbanBoards), icon: <ViewKanban />, color: CHART_COLORS.info, trend: `${formatNumber(dash.kanban?.contacts || 0)} contactos` },
+      { label: 'Conexiones Activas', value: formatNumber(activeConnections), icon: <Badge />, color: CHART_COLORS.info, trend: 'WhatsApp conectado' },
+      { label: 'Mensajes Fallidos', value: formatNumber(failedMessages), icon: <ErrorIcon />, color: CHART_COLORS.error, trend: `${formatPercentage(failureRate)} tasa fallo` }
     ];
 
     // Mock timeline data
@@ -661,18 +682,15 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
 
   // ============= TAB 5: CHATBOTS ANALYTICS =============
   const ChatbotsAnalytics = () => {
-    const botsList = bots.list || [
-      { id: 1, name: 'Bot Ventas', status: 'active', interactions: 1250, successRate: 94.5, avgTime: 0.8, deliveryRate: 99.2 },
-      { id: 2, name: 'Bot Soporte', status: 'active', interactions: 850, successRate: 91.2, avgTime: 1.2, deliveryRate: 98.8 },
-      { id: 3, name: 'Bot Bienvenida', status: 'paused', interactions: 2100, successRate: 97.8, avgTime: 0.5, deliveryRate: 99.5 }
-    ];
+    const botsList = bots.list || [];
+    const hasBots = botsList.length > 0;
 
-    const performanceData = botsList.map((bot: any) => ({
+    const performanceData = hasBots ? botsList.map((bot: any) => ({
       name: bot.name,
       interacciones: bot.interactions,
       exito: (bot.interactions * bot.successRate / 100),
       fallos: (bot.interactions * (100 - bot.successRate) / 100)
-    }));
+    })) : [];
 
     return (
       <Box>
@@ -748,7 +766,7 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {botsList.map((bot: any) => (
+                    {hasBots ? botsList.map((bot: any) => (
                       <TableRow key={bot.id}>
                         <TableCell sx={{ color: 'white' }}>{bot.name}</TableCell>
                         <TableCell>
@@ -765,10 +783,158 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
                         <TableCell sx={{ color: 'white' }} align="right">{formatPercentage(bot.successRate)}</TableCell>
                         <TableCell sx={{ color: 'white' }} align="right">{formatTime(bot.avgTime)}</TableCell>
                       </TableRow>
-                    ))}
+                    )) : (
+                      <TableRow>
+                        <TableCell colSpan={5} sx={{ color: '#94a3b8', textAlign: 'center', py: 3 }}>
+                          No hay chatbots configurados
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </TableContainer>
+            </Paper>
+          </Grid>
+        </Grid>
+      </Box>
+    );
+  };
+
+  // ============= TAB 6: CONNECTIONS ANALYTICS =============
+  const ConnectionsAnalytics = () => {
+    const isConnected = connections.success && connections.isConnected;
+    const phoneNumber = connections.phoneNumber || 'No disponible';
+    const connectionTime = connections.connectionTime || 'N/A';
+
+    // Obtener estadísticas de mensajes por conexión
+    const sentMessages = dash.messages?.sent || 0;
+    const receivedMessages = dash.messages?.received || 0;
+    const totalMessages = dash.messages?.total || 0;
+    const deliveredMessages = dash.messages?.delivered || 0;
+    const readMessages = dash.messages?.read || 0;
+    const failedMessages = dash.messages?.failed || 0;
+
+    const connectionStats = [
+      { label: 'Estado de Conexión', value: isConnected ? 'Conectado' : 'Desconectado', icon: <CheckCircle />, color: isConnected ? CHART_COLORS.success : CHART_COLORS.error },
+      { label: 'Número WhatsApp', value: phoneNumber, icon: <Message />, color: CHART_COLORS.info },
+      { label: 'Mensajes Enviados', value: formatNumber(sentMessages), icon: <Send />, color: CHART_COLORS.primary },
+      { label: 'Mensajes Recibidos', value: formatNumber(receivedMessages), icon: <Inbox />, color: CHART_COLORS.info },
+      { label: 'Total Mensajes', value: formatNumber(totalMessages), icon: <Message />, color: CHART_COLORS.warning },
+      { label: 'Tasa Entrega', value: formatPercentage(dash.kpis?.delivery_rate || 0), icon: <DoneAll />, color: CHART_COLORS.success }
+    ];
+
+    const messageDistribution = [
+      { name: 'Enviados', value: sentMessages, color: CHART_COLORS.primary },
+      { name: 'Recibidos', value: receivedMessages, color: CHART_COLORS.info },
+      { name: 'Entregados', value: deliveredMessages, color: CHART_COLORS.success },
+      { name: 'Leídos', value: readMessages, color: '#9c27b0' },
+      { name: 'Fallidos', value: failedMessages, color: CHART_COLORS.error }
+    ];
+
+    return (
+      <Box>
+        {/* Connection Status Alert */}
+        <Alert
+          severity={isConnected ? 'success' : 'error'}
+          sx={{ mb: 3, bgcolor: isConnected ? 'rgba(37,211,102,0.1)' : 'rgba(239,68,68,0.1)', color: isConnected ? '#25d366' : '#ef4444' }}
+        >
+          <Typography variant="h6" fontWeight="bold">
+            {isConnected ? '✅ Conexión WhatsApp Activa' : '❌ Conexión WhatsApp Inactiva'}
+          </Typography>
+          <Typography variant="body2">
+            {isConnected
+              ? `Conectado como: ${phoneNumber} | Tiempo de conexión: ${connectionTime}`
+              : 'No hay una sesión de WhatsApp activa. Escanea el código QR para conectar.'}
+          </Typography>
+        </Alert>
+
+        {/* Connection Stats Grid */}
+        <Grid container spacing={2} mb={3}>
+          {connectionStats.map((stat, idx) => (
+            <Grid item xs={12} sm={6} md={4} key={idx}>
+              <Card sx={{ bgcolor: '#1e293b', color: 'white', height: '100%' }}>
+                <CardContent>
+                  <Stack direction="row" spacing={2} alignItems="center">
+                    <Box sx={{ color: stat.color, fontSize: 40 }}>{stat.icon}</Box>
+                    <Box flex={1}>
+                      <Typography variant="caption" color="#94a3b8">{stat.label}</Typography>
+                      <Typography variant="h6" fontWeight="bold" sx={{ wordBreak: 'break-all' }}>{stat.value}</Typography>
+                    </Box>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+
+        {/* Charts */}
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 3, bgcolor: '#1e293b', color: 'white' }}>
+              <Typography variant="h6" mb={2}>Distribución de Mensajes</Typography>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie data={messageDistribution} cx="50%" cy="50%" outerRadius={100} dataKey="value" label>
+                    {messageDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip contentStyle={{ backgroundColor: '#0f172a', border: 'none' }} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 3, bgcolor: '#1e293b', color: 'white' }}>
+              <Typography variant="h6" mb={2}>Análisis de Actividad</Typography>
+              <Stack spacing={3}>
+                <Box>
+                  <Stack direction="row" justifyContent="space-between" mb={1}>
+                    <Typography variant="body2">Mensajes Enviados</Typography>
+                    <Typography variant="body2" fontWeight="bold">{formatNumber(sentMessages)}</Typography>
+                  </Stack>
+                  <LinearProgress
+                    variant="determinate"
+                    value={totalMessages > 0 ? (sentMessages / totalMessages) * 100 : 0}
+                    sx={{ bgcolor: '#334155', '& .MuiLinearProgress-bar': { bgcolor: CHART_COLORS.primary } }}
+                  />
+                </Box>
+                <Box>
+                  <Stack direction="row" justifyContent="space-between" mb={1}>
+                    <Typography variant="body2">Mensajes Recibidos</Typography>
+                    <Typography variant="body2" fontWeight="bold">{formatNumber(receivedMessages)}</Typography>
+                  </Stack>
+                  <LinearProgress
+                    variant="determinate"
+                    value={totalMessages > 0 ? (receivedMessages / totalMessages) * 100 : 0}
+                    sx={{ bgcolor: '#334155', '& .MuiLinearProgress-bar': { bgcolor: CHART_COLORS.info } }}
+                  />
+                </Box>
+                <Box>
+                  <Stack direction="row" justifyContent="space-between" mb={1}>
+                    <Typography variant="body2">Mensajes Entregados</Typography>
+                    <Typography variant="body2" fontWeight="bold">{formatNumber(deliveredMessages)}</Typography>
+                  </Stack>
+                  <LinearProgress
+                    variant="determinate"
+                    value={sentMessages > 0 ? (deliveredMessages / sentMessages) * 100 : 0}
+                    sx={{ bgcolor: '#334155', '& .MuiLinearProgress-bar': { bgcolor: CHART_COLORS.success } }}
+                  />
+                </Box>
+                <Box>
+                  <Stack direction="row" justifyContent="space-between" mb={1}>
+                    <Typography variant="body2">Mensajes Leídos</Typography>
+                    <Typography variant="body2" fontWeight="bold">{formatNumber(readMessages)}</Typography>
+                  </Stack>
+                  <LinearProgress
+                    variant="determinate"
+                    value={sentMessages > 0 ? (readMessages / sentMessages) * 100 : 0}
+                    sx={{ bgcolor: '#334155', '& .MuiLinearProgress-bar': { bgcolor: '#9c27b0' } }}
+                  />
+                </Box>
+              </Stack>
             </Paper>
           </Grid>
         </Grid>
@@ -825,6 +991,7 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
             <Tab label="Kanban" sx={{ color: '#94a3b8', '&.Mui-selected': { color: 'white' } }} />
             <Tab label="Agentes" sx={{ color: '#94a3b8', '&.Mui-selected': { color: 'white' } }} />
             <Tab label="Chatbots" sx={{ color: '#94a3b8', '&.Mui-selected': { color: 'white' } }} />
+            <Tab label="Conexiones" sx={{ color: '#94a3b8', '&.Mui-selected': { color: 'white' } }} />
           </Tabs>
         </Box>
 
@@ -835,6 +1002,7 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
         {activeTab === 3 && <KanbanAnalytics />}
         {activeTab === 4 && <AgentsAnalytics />}
         {activeTab === 5 && <ChatbotsAnalytics />}
+        {activeTab === 6 && <ConnectionsAnalytics />}
       </Box>
     </LocalizationProvider>
   );

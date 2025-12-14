@@ -166,8 +166,8 @@ const AppContent: React.FC<{
                 <p>Cargando sesión...</p>
               </div>
             ) : (
-              // Redirigir a login si no hay ni sessionId ni user agent
-              <Navigate to="/login" replace />
+              // Redirigir a inicio (landing con QR) si no hay ni sessionId ni user agent
+              <Navigate to="/" replace />
             );
           })()
         } />
@@ -786,6 +786,9 @@ const App: React.FC = () => {
       sessionStorage.setItem(key, value);
       localStorage.setItem(key, value);
     });
+
+    console.log('✅ [APP] Sesión guardada, datos listos para redirección');
+    // La navegación la maneja LandingPage.tsx, pero confirmamos que el estado está listo
 
     console.log('✅ [APP] SessionId, SessionToken y Device ID guardados (sesión única)');
     console.log('📊 [APP] Datos guardados:');

@@ -382,6 +382,26 @@ const ImprovedChatList: React.FC<ImprovedChatListProps> = ({
       const messageChatJid = data.chatJid || data.chat_jid || data.from;
       if (!messageChatJid) return;
 
+      // 🔔 Reproducir sonido de notificación si no es del usuario
+      if (!data.isFromMe && !data.from_me) {
+        try {
+          const notificationSound = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2e77eeXUQwOUKnh7K9lGQY4kNf0zHksBCR3x/DdkEAKFF607+uoVhQKRp/f8r9sIQUrgtDy2Yo2CBxnvPXnl1EMDlCq4uusYhkGOI/Y88p6KwQkd8nv3Y9AChRfu+/rp1gTCkmg4PGwayEFK4LR8tmKNggcZ7z156FSCw5QqeHrrWIZBjiP2fPLeSoEJHfJ8N+OQQoUXr3u66hYEwpKod/xsGohBSuC0fLZizUIHGe+9eehUQsOUKrh7KxiGAY4j9r0yHksAyR4yPDej0EKFFz/');
+          notificationSound.volume = 0.3;
+          notificationSound.play().catch(e => console.log('No se pudo reproducir sonido:', e));
+        } catch (e) {
+          // Silently fail if audio doesn't work
+        }
+
+        // 🔔 Mostrar notificación del navegador si está disponible
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Nuevo mensaje', {
+            body: `${data.contactName || 'Contacto'}: ${(data.message || data.text || '').substring(0, 50)}`,
+            icon: '/whatsapp-icon.png',
+            tag: messageChatJid
+          });
+        }
+      }
+
       // Actualizar la lista de chats
       setChats(prev => {
         // Buscar el chat existente

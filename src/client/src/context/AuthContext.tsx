@@ -57,16 +57,39 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           return; // NO verificar token, esperar Socket.IO
         }
 
-        // 🔒 MODIFICACIÓN: No limpiar localStorage para permitir persistencia
-        // const localStorageKeys = ['token', 'whatsflow_token', 'userRole', 'userName', 'userId', 'whatsflow_session', 'sessionToken'];
-        // localStorageKeys.forEach(key => localStorage.removeItem(key));
         console.log('🔄 AuthContext: Verificando sesión (soporte persistente habilitado)');
 
-        // Buscar en sessionStorage O localStorage
-        const token = sessionStorage.getItem('whatsflow_token') || sessionStorage.getItem('token') || localStorage.getItem('whatsflow_token') || localStorage.getItem('token');
+        // 🔄 RESTAURAR sesión desde localStorage si no existe en sessionStorage
+        let token = sessionStorage.getItem('token') || sessionStorage.getItem('whatsflow_token');
+
+        if (!token) {
+          // Intentar restaurar desde backup de localStorage
+          const backupToken = localStorage.getItem('agent_token_backup');
+          const backupUserId = localStorage.getItem('agent_userId_backup');
+          const backupUserName = localStorage.getItem('agent_userName_backup');
+          const backupUserRole = localStorage.getItem('agent_userRole_backup');
+
+          if (backupToken && backupUserId) {
+            console.log('💾 Restaurando sesión desde localStorage backup...');
+            sessionStorage.setItem('token', backupToken);
+            sessionStorage.setItem('userId', backupUserId);
+            sessionStorage.setItem('userName', backupUserName || '');
+            sessionStorage.setItem('userRole', backupUserRole || 'agent');
+
+            // Regenerar deviceId si no existe
+            let deviceId = sessionStorage.getItem('device_id');
+            if (!deviceId) {
+              deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+              sessionStorage.setItem('device_id', deviceId);
+            }
+
+            token = backupToken;
+            console.log('✅ Sesión restaurada desde backup');
+          }
+        }
 
         if (token) {
-          console.log('🔍 Token encontrado en sessionStorage, verificando...');
+          console.log('🔍 Token encontrado, verificando...');
           const deviceId = sessionStorage.getItem('device_id');
           const sessionToken = sessionStorage.getItem('sessionToken');
 
@@ -81,24 +104,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (response.ok) {
             const userData = await response.json();
             setUser(userData.user);
-            console.log('✅ Sesión restaurada correctamente');
+            console.log('✅ Sesión verificada correctamente:', userData.user.email);
           } else {
-            // No limpiar sesión inmediatamente, puede ser problema temporal
-            console.log('⚠️ Token no verificado, pero manteniendo para re-login');
-            // Solo limpiar si el error es 401 (no autorizado), no 403 (forbidden/dispositivo diferente)
+            // Solo limpiar si el error es 401 (no autorizado)
             if (response.status === 401) {
               console.log('❌ Token expirado/inválido (401), limpiando sesión');
               sessionStorage.clear();
+              // Limpiar también backups de localStorage
+              localStorage.removeItem('agent_token_backup');
+              localStorage.removeItem('agent_userId_backup');
+              localStorage.removeItem('agent_userName_backup');
+              localStorage.removeItem('agent_userRole_backup');
             } else {
               console.log('⚠️ Error ' + response.status + ', manteniendo sesión para re-autenticación');
             }
           }
         } else {
-          console.log('ℹ️ No se encontró token - nueva sesión requerida (debe autenticarse)');
+          console.log('ℹ️ No se encontró token - nueva sesión requerida');
         }
       } catch (error) {
         console.error('Error verificando autenticación:', error);
-        // NO limpiar sesión en caso de error de red
         console.log('⚠️ Error de red, manteniendo sesión');
       } finally {
         setIsLoading(false);

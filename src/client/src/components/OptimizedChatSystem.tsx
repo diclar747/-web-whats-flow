@@ -1086,7 +1086,9 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
-            m: 0
+            m: 0,
+            bgcolor: '#1e2a38',
+            backgroundImage: 'none'
           }
         }}
       >
@@ -1149,7 +1151,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
           )}
 
           {selectedChat && (
-            <Paper sx={{ mt: 2, p: 2, bgcolor: 'grey.100' }}>
+            <Paper sx={{ mt: 2, p: 2, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
               <Typography variant="caption" color="textSecondary">
                 Chat a transferir:
               </Typography>

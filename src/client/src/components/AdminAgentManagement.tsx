@@ -30,7 +30,8 @@ import {
   Tooltip,
   Badge,
   Tab,
-  Tabs
+  Tabs,
+  Autocomplete
 } from '@mui/material';
 import {
   PersonAdd as PersonAddIcon,
@@ -60,6 +61,14 @@ interface Agent {
   total_assigned: number;
   completed_today: number;
   is_online?: boolean;
+  phone?: string;
+  avatar_url?: string;
+}
+
+interface Contact {
+  jid: string;
+  name: string;
+  avatar_url?: string;
 }
 
 interface UnassignedChat {
@@ -99,13 +108,20 @@ const AdminAgentManagement: React.FC = () => {
   const [newAgentEmail, setNewAgentEmail] = useState('');
   const [newAgentPassword, setNewAgentPassword] = useState('');
   const [newAgentPhone, setNewAgentPhone] = useState('');
+  const [newAgentAvatar, setNewAgentAvatar] = useState('');
   const [creatingAgent, setCreatingAgent] = useState(false);
+
+  // Contacts autocomplete
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [loadingContacts, setLoadingContacts] = useState(false);
 
   const apiUrl = getAPIBaseURL();
   const token = sessionStorage.getItem('token') || '';
 
   useEffect(() => {
     loadData();
+    loadContacts();
     const interval = setInterval(loadData, 30000); // Refresh cada 30 segundos
     return () => clearInterval(interval);
   }, [sessionId]);
@@ -164,6 +180,31 @@ const AdminAgentManagement: React.FC = () => {
       }
     } catch (err) {
       console.error('Error loading unassigned chats:', err);
+    }
+  };
+
+  const loadContacts = async () => {
+    try {
+      setLoadingContacts(true);
+      const adminSessionId = sessionStorage.getItem('whatsflow_session') || sessionId;
+      const response = await fetch(`${apiUrl}/api/contacts?sessionId=${adminSessionId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Error cargando contactos');
+
+      const data = await response.json();
+      if (data.success && data.contacts) {
+        // Filtrar solo contactos individuales (no grupos)
+        const individualContacts = data.contacts.filter((c: any) => c.jid && c.jid.endsWith('@s.whatsapp.net'));
+        setContacts(individualContacts);
+      }
+    } catch (err) {
+      console.error('Error loading contacts:', err);
+    } finally {
+      setLoadingContacts(false);
     }
   };
 
@@ -269,19 +310,23 @@ const AdminAgentManagement: React.FC = () => {
           email: newAgentEmail,
           password: newAgentPassword,
           phone: newAgentPhone,
-          sessionId: adminSessionId
+          avatar_url: newAgentAvatar,
+          sessionId: adminSessionId,
+          sendWhatsApp: true  // Enviar credenciales por WhatsApp
         })
       });
 
       const data = await response.json();
 
       if (data.success) {
-        alert('Agente creado exitosamente');
+        alert('✅ Agente creado exitosamente. Se enviaron las credenciales por WhatsApp.');
         setCreateDialogOpen(false);
         setNewAgentName('');
         setNewAgentEmail('');
         setNewAgentPassword('');
         setNewAgentPhone('');
+        setNewAgentAvatar('');
+        setSelectedContact(null);
         loadData();
       } else {
         alert(`Error creando agente: ${data.error}`);
@@ -417,6 +462,7 @@ const AdminAgentManagement: React.FC = () => {
             <TableHead>
               <TableRow>
                 <TableCell>Agente</TableCell>
+                <TableCell>Teléfono</TableCell>
                 <TableCell>Departamento</TableCell>
                 <TableCell align="center">Estado</TableCell>
                 <TableCell align="center">Chats Activos</TableCell>
@@ -431,8 +477,15 @@ const AdminAgentManagement: React.FC = () => {
                 <TableRow key={agent.id}>
                   <TableCell>
                     <Box display="flex" alignItems="center" gap={2}>
-                      <Avatar sx={{ bgcolor: getLoadColor(agent.active_chats) }}>
-                        {agent.name.charAt(0)}
+                      <Avatar
+                        src={agent.avatar_url}
+                        sx={{
+                          bgcolor: agent.avatar_url ? 'transparent' : getLoadColor(agent.active_chats),
+                          width: 45,
+                          height: 45
+                        }}
+                      >
+                        {!agent.avatar_url && agent.name.charAt(0)}
                       </Avatar>
                       <Box>
                         <Typography fontWeight="bold">{agent.name}</Typography>
@@ -441,6 +494,12 @@ const AdminAgentManagement: React.FC = () => {
                         </Typography>
                       </Box>
                     </Box>
+                  </TableCell>
+
+                  <TableCell>
+                    <Typography variant="body2">
+                      {agent.phone || '-'}
+                    </Typography>
                   </TableCell>
 
                   <TableCell>
@@ -721,16 +780,85 @@ const AdminAgentManagement: React.FC = () => {
 
       {/* Create Agent Dialog */}
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Crear Nuevo Agente</DialogTitle>
+        <DialogTitle>
+          <Box display="flex" alignItems="center" gap={1}>
+            <PersonAddIcon />
+            <Typography variant="h6">Crear Nuevo Agente</Typography>
+          </Box>
+        </DialogTitle>
         <DialogContent>
-          <Box display="flex" flexDirection="column" gap={2} mt={1}>
+          <Box display="flex" flexDirection="column" gap={2} mt={2}>
+            <Alert severity="info">
+              💡 Busca el contacto para autocompletar nombre, teléfono y avatar
+            </Alert>
+
+            {/* Búsqueda de Contactos */}
+            <Autocomplete
+              options={contacts}
+              getOptionLabel={(option) => option.name || option.jid}
+              value={selectedContact}
+              loading={loadingContacts}
+              onChange={(event, newValue) => {
+                setSelectedContact(newValue);
+                if (newValue) {
+                  setNewAgentName(newValue.name || '');
+                  // Extraer número de teléfono del JID
+                  const phone = newValue.jid.split('@')[0];
+                  setNewAgentPhone(phone);
+                  setNewAgentAvatar(newValue.avatar_url || '');
+                }
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="🔍 Buscar Contacto"
+                  placeholder="Escribe el nombre del contacto..."
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {loadingContacts ? <CircularProgress color="inherit" size={20} /> : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+              renderOption={(props, option) => (
+                <Box component="li" {...props} display="flex" alignItems="center" gap={2}>
+                  <Avatar src={option.avatar_url} sx={{ width: 32, height: 32 }}>
+                    {option.name?.charAt(0) || '?'}
+                  </Avatar>
+                  <Box>
+                    <Typography variant="body2">{option.name || 'Sin nombre'}</Typography>
+                    <Typography variant="caption" color="textSecondary">
+                      {option.jid.split('@')[0]}
+                    </Typography>
+                  </Box>
+                </Box>
+              )}
+              noOptionsText="No se encontraron contactos"
+            />
+
             <TextField
               label="Nombre Completo"
               fullWidth
               value={newAgentName}
               onChange={(e) => setNewAgentName(e.target.value)}
               required
+              helperText="El nombre del agente"
             />
+
+            <TextField
+              label="Teléfono"
+              fullWidth
+              value={newAgentPhone}
+              onChange={(e) => setNewAgentPhone(e.target.value)}
+              placeholder="595981234567"
+              helperText="Número de WhatsApp para enviar credenciales"
+              required
+            />
+
             <TextField
               label="Correo Electrónico"
               fullWidth
@@ -738,14 +866,9 @@ const AdminAgentManagement: React.FC = () => {
               value={newAgentEmail}
               onChange={(e) => setNewAgentEmail(e.target.value)}
               required
+              helperText="Email para iniciar sesión"
             />
-            <TextField
-              label="Teléfono (Opcional)"
-              fullWidth
-              value={newAgentPhone}
-              onChange={(e) => setNewAgentPhone(e.target.value)}
-              placeholder="Ej: 5959..."
-            />
+
             <TextField
               label="Contraseña"
               fullWidth
@@ -753,17 +876,45 @@ const AdminAgentManagement: React.FC = () => {
               value={newAgentPassword}
               onChange={(e) => setNewAgentPassword(e.target.value)}
               required
+              helperText="Contraseña temporal (se recomienda cambiarla después)"
             />
+
+            {newAgentAvatar && (
+              <Box display="flex" alignItems="center" gap={2} p={2} bgcolor="#f5f5f5" borderRadius={1}>
+                <Avatar src={newAgentAvatar} sx={{ width: 50, height: 50 }} />
+                <Typography variant="caption" color="textSecondary">
+                  ✅ Avatar del contacto cargado
+                </Typography>
+              </Box>
+            )}
+
+            {newAgentPhone && (
+              <Alert severity="success">
+                📱 Las credenciales se enviarán automáticamente al WhatsApp: <strong>{newAgentPhone}</strong>
+              </Alert>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateDialogOpen(false)}>Cancelar</Button>
+          <Button onClick={() => {
+            setCreateDialogOpen(false);
+            setSelectedContact(null);
+            setNewAgentName('');
+            setNewAgentEmail('');
+            setNewAgentPassword('');
+            setNewAgentPhone('');
+            setNewAgentAvatar('');
+          }}>
+            Cancelar
+          </Button>
           <Button
             onClick={handleCreateAgent}
             variant="contained"
-            disabled={creatingAgent || !newAgentName || !newAgentEmail || !newAgentPassword}
+            disabled={creatingAgent || !newAgentName || !newAgentEmail || !newAgentPassword || !newAgentPhone}
+            startIcon={creatingAgent ? <CircularProgress size={20} /> : <PersonAddIcon />}
+            sx={{ bgcolor: '#25d366', '&:hover': { bgcolor: '#1da851' } }}
           >
-            {creatingAgent ? <CircularProgress size={24} /> : 'Crear Agente'}
+            {creatingAgent ? 'Creando...' : 'Crear y Enviar Credenciales'}
           </Button>
         </DialogActions>
       </Dialog>
