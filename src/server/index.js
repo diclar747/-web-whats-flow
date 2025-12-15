@@ -7945,28 +7945,93 @@ app.get('/api/sessions/active', async (req, res) => {
     try {
         console.log('[SESSIONS-ACTIVE] 📋 Listando sesiones activas...');
 
+        // ✅ IMPORTANTE: Determinar el usuario autenticado para filtrar sus sesiones
+        let userPhone = null;
+        const { sessionId: requestSessionId } = req.query;
+
+        // Opción 1: Obtener phone desde sessionId (query param)
+        if (requestSessionId) {
+            const cleanSessionId = requestSessionId.replace(/\D/g, '');
+            if (cleanSessionId.length >= 7 && cleanSessionId === requestSessionId) {
+                userPhone = requestSessionId;
+                console.log(`[SESSIONS-ACTIVE] 📞 Usando sessionId como userPhone: ${userPhone}`);
+            } else {
+                // Si sessionId es un hash, buscar phone_number en user_sessions
+                if (pool) {
+                    const connection = await pool.getConnection();
+                    try {
+                        const [sessions] = await connection.execute(
+                            'SELECT phone_number FROM user_sessions WHERE session_id = ? AND is_active = TRUE LIMIT 1',
+                            [requestSessionId]
+                        );
+                        if (sessions.length > 0) {
+                            userPhone = sessions[0].phone_number;
+                            console.log(`[SESSIONS-ACTIVE] 📞 Phone encontrado desde session_id: ${userPhone}`);
+                        }
+                    } finally {
+                        connection.release();
+                    }
+                }
+            }
+        }
+
+        // Opción 2: Intentar desde JWT token
+        if (!userPhone && req.headers.authorization) {
+            try {
+                const token = req.headers.authorization.split(' ')[1];
+                const jwt = require('jsonwebtoken');
+                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                if (decoded.phone) {
+                    userPhone = decoded.phone;
+                    console.log(`[SESSIONS-ACTIVE] 📞 Phone desde JWT: ${userPhone}`);
+                }
+            } catch (jwtErr) {
+                console.log(`[SESSIONS-ACTIVE] ⚠️ JWT inválido o no presente`);
+            }
+        }
+
+        // ✅ Si no hay userPhone, no devolver sesiones (por seguridad)
+        if (!userPhone) {
+            console.log(`[SESSIONS-ACTIVE] ⚠️ No se pudo determinar userPhone. No se devolverán sesiones.`);
+            return res.json({
+                success: true,
+                sessions: [],
+                count: 0,
+                primaryCount: 0,
+                secondaryCount: 0
+            });
+        }
+
         const activeSessions = [];
 
-        // Recorrer todas las sesiones en memoria
+        // ✅ Recorrer sesiones en memoria y FILTRAR por usuario
         for (const [sessionId, sessionData] of sessions.entries()) {
             if (sessionData.isConnected) {
                 const phoneNumber = await getUserPhoneNumber(sessionId);
                 const ownerPhone = sessionOwnerMap.get(sessionId) || null;
-                const avatar = sessionData.user?.imgUrl || null;
-                
-                activeSessions.push({
-                    sessionId: sessionId,
-                    phoneNumber: phoneNumber,
-                    ownerPhone: ownerPhone,
-                    isPrimary: ownerPhone === null,
-                    isConnected: true,
-                    avatar: avatar,
-                    timestamp: new Date().toISOString()
-                });
+
+                // ✅ FILTRO CRÍTICO: Solo incluir sesiones del usuario autenticado
+                // - Sesiones principales donde phoneNumber = userPhone
+                // - Sesiones secundarias donde ownerPhone = userPhone
+                const belongsToUser = (phoneNumber === userPhone) || (ownerPhone === userPhone);
+
+                if (belongsToUser) {
+                    const avatar = sessionData.user?.imgUrl || null;
+
+                    activeSessions.push({
+                        sessionId: sessionId,
+                        phoneNumber: phoneNumber,
+                        ownerPhone: ownerPhone,
+                        isPrimary: ownerPhone === null,
+                        isConnected: true,
+                        avatar: avatar,
+                        timestamp: new Date().toISOString()
+                    });
+                }
             }
         }
 
-        console.log(`[SESSIONS-ACTIVE] ✅ Encontradas ${activeSessions.length} sesiones activas`);
+        console.log(`[SESSIONS-ACTIVE] ✅ Encontradas ${activeSessions.length} sesiones activas para usuario ${userPhone}`);
         const primaryCount = activeSessions.filter(s => s.isPrimary).length;
         const secondaryCount = activeSessions.length - primaryCount;
         console.log(`[SESSIONS-ACTIVE]   📊 ${primaryCount} principales, ${secondaryCount} secundarias`);
