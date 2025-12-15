@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Box, Tabs, Tab, Typography, Paper } from '@mui/material';
 import PlansManager from './PlansManager';
 import ClientsManager from './ClientsManager';
+import AdminChatMonitor from './AdminChatMonitor';
 
 const AdminPanel: React.FC = () => {
     const [tabIndex, setTabIndex] = useState(0);
@@ -26,12 +27,14 @@ const AdminPanel: React.FC = () => {
                 >
                     <Tab label="Gestión de Clientes" />
                     <Tab label="Planes y Precios" />
+                    <Tab label="Monitoreo de Chats" />
                 </Tabs>
             </Paper>
 
             <Box sx={{ mt: 2 }}>
                 {tabIndex === 0 && <ClientsManager />}
                 {tabIndex === 1 && <PlansManager />}
+                {tabIndex === 2 && <AdminChatMonitor />}
             </Box>
         </Box>
     );

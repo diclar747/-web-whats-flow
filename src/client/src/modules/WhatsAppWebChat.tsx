@@ -75,6 +75,7 @@ import {
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import KanbanSelectorModal from '../components/KanbanSelectorModal';
 import CustomSnackbar from '../components/CustomSnackbar';
+import StatusList from '../components/StatusList';
 
 interface WhatsAppWebChatProps {
   sessionId: string;
@@ -1327,6 +1328,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
           <Tabs
             value={filterTab}
             onChange={(e, newValue) => setFilterTab(newValue)}
+            variant="scrollable"
+            scrollButtons="auto"
             sx={{
               minHeight: 40,
               bgcolor: colors.sidebar,
@@ -1334,7 +1337,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 minHeight: 40,
                 textTransform: 'none',
                 color: colors.textSecondary,
-                fontSize: '0.9rem'
+                fontSize: '0.9rem',
+                minWidth: 100
               },
               '& .Mui-selected': {
                 color: colors.primary
@@ -1348,10 +1352,16 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
             <Tab label={`Enviados (${chatStats.sent})`} />
             <Tab label={`Recibidos (${chatStats.received})`} />
             <Tab label={`Sin leer (${chatStats.pending})`} />
+            <Tab label={`Estados`} />
           </Tabs>
         )}
 
         {/* Lista de chats - Mostrar solo avatares si está colapsado */}
+        {filterTab === 4 ? (
+          <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
+            <StatusList sessionId={sessionId} />
+          </Box>
+        ) : (
         <List
           sx={{ flex: 1, overflow: 'auto', p: 0 }}
           onScroll={(e) => {
@@ -1410,6 +1420,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
           )}
 
         </List>
+        )}
       </Box>
 
       {/* ============ ÁREA DE CHAT ============ */}

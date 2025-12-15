@@ -77,6 +77,7 @@ import { es } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import EmojiPicker from 'emoji-picker-react';
+import StatusList from '../components/StatusList';
 
 // ==================== INTERFACES ====================
 
@@ -184,6 +185,7 @@ const AgentDashboardPro: React.FC = () => {
 
   // Estado para minimizar/maximizar lista de chats (por defecto minimizado)
   const [chatListMinimized, setChatListMinimized] = useState(true);
+  const [leftPanelView, setLeftPanelView] = useState<'chats' | 'statuses'>('chats');
 
   // Nuevo: Estado para modo oscuro/claro - FORZADO A CLARO
   const [darkMode, setDarkMode] = useState<boolean>(false); // Siempre modo claro
@@ -1972,7 +1974,7 @@ const AgentDashboardPro: React.FC = () => {
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: chatListMinimized ? 0 : 1.5 }}>
               {!chatListMinimized && (
                 <Typography variant="h6" sx={{ fontWeight: 600, color: currentTheme.text.primary }}>
-                  Mis Chats Asignados
+                  {leftPanelView === 'chats' ? 'Mis Chats Asignados' : 'Estados de WhatsApp'}
                 </Typography>
               )}
               <Tooltip title={chatListMinimized ? "Expandir" : "Minimizar"}>
@@ -2003,6 +2005,22 @@ const AgentDashboardPro: React.FC = () => {
                     }}
                   >
                     Sincronizar
+                  </Button>
+                </Tooltip>
+                <Tooltip title={leftPanelView === 'chats' ? 'Ver Estados' : 'Ver Chats'}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setLeftPanelView(leftPanelView === 'chats' ? 'statuses' : 'chats')}
+                    sx={{
+                      borderColor: '#00a884',
+                      color: '#00a884',
+                      '&:hover': { borderColor: '#008c6d', bgcolor: 'rgba(0,168,132,0.04)' },
+                      textTransform: 'none',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    {leftPanelView === 'chats' ? 'Estados' : 'Chats'}
                   </Button>
                 </Tooltip>
 
@@ -2116,7 +2134,7 @@ const AgentDashboardPro: React.FC = () => {
             </Box>
           )}
 
-          {/* Lista de chats */}
+          {leftPanelView === 'chats' ? (
           <List sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
             {filteredChats.length === 0 ? (
               !chatListMinimized && (
@@ -2296,6 +2314,11 @@ const AgentDashboardPro: React.FC = () => {
               ))
             )}
           </List>
+          ) : (
+            <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
+              {sessionId && <StatusList sessionId={sessionId} />}
+            </Box>
+          )}
         </Box>
 
         {/* ==================== PANEL DERECHO: CHAT SELECCIONADO ==================== */}

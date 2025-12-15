@@ -358,7 +358,7 @@ const QR_EXPIRY_TIME = 2 * 60 * 1000; // 2 minutos
 
 // Sistema de throttle para generación de QR (evita generar muchos QR seguidos)
 const qrThrottleMap = new Map(); // sessionId -> último timestamp de QR emitido
-const QR_THROTTLE_TIME = 60 * 1000; // 60 segundos entre QRs
+const QR_THROTTLE_TIME = 12 * 1000;
 
 // Mapa auxiliar para asociar las sesiones creadas con el número dueño de la suscripción
 // Esto permite aplicar límites de plan por cantidad de líneas conectadas
@@ -1208,6 +1208,87 @@ async function createTables() {
             + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
         );
         console.log('[DB-TABLES] Table \'users\' ensured.');
+
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS whatsapp_statuses ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'phone_number VARCHAR(50) NOT NULL,'
+            + 'text_content TEXT,'
+            + 'media_url VARCHAR(1024),'
+            + 'media_type ENUM(\'text\',\'image\',\'video\') DEFAULT \'text\','
+            + 'background_color VARCHAR(20),'
+            + 'font_style VARCHAR(50),'
+            + 'status ENUM(\'draft\',\'scheduled\',\'published\',\'failed\',\'expired\') DEFAULT \'draft\','
+            + 'views_count INT DEFAULT 0,'
+            + 'error_message TEXT,'
+            + 'published_at DATETIME NULL,'
+            + 'expires_at DATETIME NULL,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'INDEX idx_phone (phone_number),'
+            + 'INDEX idx_status (status),'
+            + 'INDEX idx_published_at (published_at)'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS media_url VARCHAR(1024)');
+        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS media_type ENUM(\"text\",\"image\",\"video\") DEFAULT \"text\"');
+        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS background_color VARCHAR(20)');
+        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS font_style VARCHAR(50)');
+        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS views_count INT DEFAULT 0');
+        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS error_message TEXT');
+        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS published_at DATETIME NULL');
+        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS expires_at DATETIME NULL');
+        await connection.query('ALTER TABLE whatsapp_statuses MODIFY COLUMN status VARCHAR(50) DEFAULT \"draft\"');
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS status_schedules ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'session_id VARCHAR(50) NOT NULL,'
+            + 'name VARCHAR(255) NOT NULL,'
+            + 'interval_minutes INT DEFAULT 60,'
+            + 'rotation_days INT DEFAULT 30,'
+            + 'is_active BOOLEAN DEFAULT TRUE,'
+            + 'current_index INT DEFAULT 0,'
+            + 'next_publish_at DATETIME NULL,'
+            + 'total_published INT DEFAULT 0,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'INDEX idx_session (session_id),'
+            + 'INDEX idx_active (is_active),'
+            + 'INDEX idx_next_publish (next_publish_at)'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS status_schedule_items ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'schedule_id INT NOT NULL,'
+            + 'status_id INT NOT NULL,'
+            + 'order_index INT DEFAULT 0,'
+            + 'times_published INT DEFAULT 0,'
+            + 'last_published_at DATETIME NULL,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'FOREIGN KEY (schedule_id) REFERENCES status_schedules(id) ON DELETE CASCADE,'
+            + 'FOREIGN KEY (status_id) REFERENCES whatsapp_statuses(id) ON DELETE CASCADE,'
+            + 'INDEX idx_schedule (schedule_id),'
+            + 'INDEX idx_status_item (status_id)'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS contact_statuses ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'session_id VARCHAR(50) NOT NULL,'
+            + 'message_id VARCHAR(255) UNIQUE,'
+            + 'contact_jid VARCHAR(255) NOT NULL,'
+            + 'contact_name VARCHAR(255),'
+            + 'avatar_url VARCHAR(1024),'
+            + 'text_content TEXT,'
+            + 'media_type ENUM(\'text\',\'image\',\'video\') DEFAULT \'text\','
+            + 'media_url VARCHAR(1024),'
+            + 'published_at DATETIME,'
+            + 'expires_at DATETIME NULL,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'INDEX idx_session (session_id),'
+            + 'INDEX idx_contact (contact_jid),'
+            + 'INDEX idx_published (published_at)'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
 
         console.log('[DB-TABLES] All tables ensured successfully.');
 
@@ -5670,11 +5751,149 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             const groupMessages = m.messages.filter(msg => msg.key?.remoteJid?.includes('@g.us'));
             const statusMessages = m.messages.filter(msg => msg.key?.remoteJid?.includes('@broadcast') || msg.key?.remoteJid?.includes('status@'));
 
+            // ═══════════════════════════════════════════════════════════
+            // PROCESAR ESTADOS DE WHATSAPP (STATUS BROADCAST)
+            // ═══════════════════════════════════════════════════════════
             if (statusMessages.length > 0) {
-                console.log(`[${sessionId}] 🚫 BLOQUEADO: ${statusMessages.length} ESTADOS/STATUS DE WHATSAPP - NO SE DESCARGAN NI SINCRONIZAN`);
-                statusMessages.forEach(msg => {
-                    console.log(`[${sessionId}] 🚫 Status ignorado de: ${msg.key?.remoteJid}`);
-                });
+                console.log(`[${sessionId}] 📊 DETECTADOS: ${statusMessages.length} ESTADOS DE WHATSAPP`);
+
+                for (const statusMsg of statusMessages) {
+                    try {
+                        // El participant es el JID del contacto que publicó el estado
+                        const rawContactJid = statusMsg.key?.participant || statusMsg.key?.remoteJid;
+                        const contactJid = normalizeJid(rawContactJid);
+                        if (!contactJid) {
+                            console.log(`[${sessionId}] ⚠️ Estado sin participant, ignorando`);
+                            continue;
+                        }
+
+                        const selfJid = phoneNumber ? `${phoneNumber}@s.whatsapp.net` : null;
+                        const isSelfStatus = selfJid ? normalizeJid(contactJid) === normalizeJid(selfJid) : false;
+
+                        console.log(`[${sessionId}] 💾 Procesando estado de: ${contactJid}${isSelfStatus ? ' (propio)' : ''}`);
+
+                        // Obtener información del mensaje
+                        const messageId = statusMsg.key?.id || `${contactJid}-${Date.now()}`;
+                        const timestamp = statusMsg.messageTimestamp ? Number(statusMsg.messageTimestamp) * 1000 : Date.now();
+
+                        // Determinar tipo de estado y contenido
+                        let mediaType = 'text';
+                        let textContent = null;
+                        let mediaUrl = null;
+
+                        if (statusMsg.message?.conversation) {
+                            mediaType = 'text';
+                            textContent = statusMsg.message.conversation;
+                        } else if (statusMsg.message?.extendedTextMessage?.text) {
+                            mediaType = 'text';
+                            textContent = statusMsg.message.extendedTextMessage.text;
+                        } else if (statusMsg.message?.imageMessage) {
+                            mediaType = 'image';
+                            textContent = statusMsg.message.imageMessage.caption || null;
+
+                            try {
+                                const buffer = await downloadMediaMessage(statusMsg, 'buffer', {});
+                                if (buffer) {
+                                    const ext = statusMsg.message.imageMessage.mimetype?.split('/')?.[1]?.split(';')?.[0]?.trim() || 'jpg';
+                                    const filename = `status-image-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
+                                    const mediaDir = path.join(__dirname, '../../media/statuses');
+                                    await fs.promises.mkdir(mediaDir, { recursive: true });
+                                    const filepath = path.join(mediaDir, filename);
+                                    await fs.promises.writeFile(filepath, buffer);
+                                    mediaUrl = `/media/statuses/${filename}`;
+                                    console.log(`[${sessionId}] 📸 Estado con imagen guardado en ${mediaUrl}`);
+                                }
+                            } catch (err) {
+                                console.error(`[${sessionId}] ❌ Error descargando imagen de estado:`, err.message);
+                                mediaUrl = null;
+                            }
+                        } else if (statusMsg.message?.videoMessage) {
+                            mediaType = 'video';
+                            textContent = statusMsg.message.videoMessage.caption || null;
+
+                            try {
+                                const buffer = await downloadMediaMessage(statusMsg, 'buffer', {});
+                                if (buffer) {
+                                    const ext = statusMsg.message.videoMessage.mimetype?.split('/')?.[1]?.split(';')?.[0]?.trim() || 'mp4';
+                                    const filename = `status-video-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
+                                    const mediaDir = path.join(__dirname, '../../media/statuses');
+                                    await fs.promises.mkdir(mediaDir, { recursive: true });
+                                    const filepath = path.join(mediaDir, filename);
+                                    await fs.promises.writeFile(filepath, buffer);
+                                    mediaUrl = `/media/statuses/${filename}`;
+                                    console.log(`[${sessionId}] 🎥 Estado con video guardado en ${mediaUrl}`);
+                                }
+                            } catch (err) {
+                                console.error(`[${sessionId}] ❌ Error descargando video de estado:`, err.message);
+                                mediaUrl = null;
+                            }
+                        }
+
+                        // Guardar en la base de datos
+                        const connection = await pool.getConnection();
+                        try {
+                            // Obtener nombre y avatar del contacto
+                            const [contactData] = await connection.execute(
+                                `SELECT name, notify_name, avatar_url FROM contacts
+                                 WHERE jid = ? AND session_id = ? LIMIT 1`,
+                                [contactJid, phoneNumber || sessionId]
+                            );
+
+                            const contactName = contactData.length > 0
+                                ? (contactData[0].name || contactData[0].notify_name || contactJid.split('@')[0])
+                                : (statusMsg.pushName || contactJid.split('@')[0]);
+                            const avatarUrl = contactData.length > 0 ? contactData[0].avatar_url : null;
+
+                            // Los estados expiran después de 24 horas
+                            const publishedAt = new Date(timestamp);
+                            const expiresAt = new Date(timestamp + 24 * 60 * 60 * 1000);
+
+                            // Insertar o actualizar el estado
+                            await connection.execute(
+                                `INSERT INTO contact_statuses
+                                 (session_id, message_id, contact_jid, contact_name, avatar_url,
+                                  text_content, media_type, media_url, published_at, expires_at)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                 ON DUPLICATE KEY UPDATE
+                                 contact_name = VALUES(contact_name),
+                                 avatar_url = VALUES(avatar_url),
+                                 text_content = VALUES(text_content),
+                                 media_type = VALUES(media_type),
+                                 media_url = VALUES(media_url)`,
+                                [
+                                    phoneNumber || sessionId,
+                                    messageId,
+                                    contactJid,
+                                    isSelfStatus ? 'Yo' : contactName,
+                                    avatarUrl,
+                                    textContent,
+                                    mediaType,
+                                    mediaUrl,
+                                    publishedAt,
+                                    expiresAt
+                                ]
+                            );
+
+                            console.log(`[${sessionId}] ✅ Estado guardado: ${contactName} - ${mediaType} - ${textContent?.substring(0, 30) || '(media)'}`);
+
+                            // Emitir evento Socket.IO para actualizar frontend en tiempo real
+                            io.to(`session-${sessionId}`).emit('new-status', {
+                                jid: contactJid,
+                                name: contactName,
+                                type: mediaType,
+                                content: textContent,
+                                mediaUrl: mediaUrl,
+                                timestamp: timestamp
+                            });
+
+                        } finally {
+                            connection.release();
+                        }
+
+                    } catch (error) {
+                        console.error(`[${sessionId}] ❌ Error procesando estado:`, error.message);
+                    }
+                }
             }
 
             // Filtrar SOLO mensajes individuales (sin grupos, sin status)
@@ -5913,7 +6132,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                         const filename = `image-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
                                         fileName = filename;
                                         const filepath = path.join(__dirname, '../../media', filename);
-                                        fs.writeFileSync(filepath, buffer);
+                                        fs.promises.writeFile(filepath, buffer);
                                         mediaUrl = `/media/${filename}`;
                                         fileSize = buffer.length; // Tamaño real del archivo descargado
                                         console.log(`[${sessionId}] 📸 Imagen guardada: ${mediaUrl} (${fileSize} bytes)`);
@@ -5942,7 +6161,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                         const filename = `video-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
                                         fileName = filename;
                                         const filepath = path.join(__dirname, '../../media', filename);
-                                        fs.writeFileSync(filepath, buffer);
+                                        fs.promises.writeFile(filepath, buffer);
                                         mediaUrl = `/media/${filename}`;
                                         fileSize = buffer.length;
                                         console.log(`[${sessionId}] 🎥 Video guardado: ${mediaUrl} (${fileSize} bytes)`);
@@ -5968,7 +6187,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                         const ext = mediaMimeType?.split('/')[1]?.split(';')[0]?.trim() || 'ogg';
                                         const filename = `audio-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
                                         const filepath = path.join(__dirname, '../../media', filename);
-                                        fs.writeFileSync(filepath, buffer);
+                                        fs.promises.writeFile(filepath, buffer);
                                         mediaUrl = `/media/${filename}`;
                                         console.log(`[${sessionId}] 🔊 Audio guardado: ${mediaUrl}`);
                                     }
@@ -5990,7 +6209,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                     const ext = fileName?.split('.').pop() || 'pdf';
                                     const savedFilename = `doc-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
                                     const filepath = path.join(__dirname, '../../media', savedFilename);
-                                    fs.writeFileSync(filepath, buffer);
+                                    fs.promises.writeFile(filepath, buffer);
                                     mediaUrl = `/media/${savedFilename}`;
                                     fileSize = buffer.length;
                                     console.log(`[${sessionId}] 📄 Documento guardado: ${mediaUrl} (${fileName}, ${fileSize} bytes)`);
@@ -18284,7 +18503,7 @@ app.post('/api/agent/accept-transfer', async (req, res) => {
             const chatName = chatInfo[0]?.chat_name || chatJid.split('@')[0];
 
             // Emitir eventos Socket.IO
-            io.emit(`agent - ${agentId} -transfer - accepted`, {
+            io.to(`agent-${agentId}`).emit(`agent-${agentId}-transfer-accepted`, {
                 chatJid,
                 sessionId: targetSessionId,
                 status: 'active',
@@ -18386,7 +18605,7 @@ app.post('/api/agent/reject-transfer', async (req, res) => {
             const chatName = chatInfo[0]?.chat_name || chatJid.split('@')[0];
 
             // Emitir eventos Socket.IO
-            io.emit(`agent - ${agentId} -transfer - rejected`, {
+            io.to(`agent-${agentId}`).emit(`agent-${agentId}-transfer-rejected`, {
                 chatJid,
                 sessionId: targetSessionId,
                 rejectedAt: new Date().toISOString()
@@ -18491,7 +18710,7 @@ app.post('/api/agent/close-conversation', async (req, res) => {
             );
 
             // Emitir evento Socket.IO para notificar al agente y admin
-            io.emit(`agent - ${agentId} -conversation - closed`, {
+            io.to(`agent-${agentId}`).emit(`agent-${agentId}-conversation-closed`, {
                 chatJid,
                 sessionId,
                 closedAt: new Date().toISOString()
@@ -18697,8 +18916,7 @@ VALUES(?, ?, ?, ?, 'pending', ?)`,
                 [chatJid, phoneNumber, userId, assignedBy || null, notes || null]
             );
 
-            // Emitir evento Socket.IO al agente
-            io.emit(`agent - ${userId} -assignment`, {
+            io.to(`agent-${userId}`).emit(`agent-${userId}-assignment`, {
                 assignmentId: result.insertId,
                 chatJid,
                 sessionId: phoneNumber,
@@ -18759,11 +18977,16 @@ app.post('/api/chat-assignments/accept', async (req, res) => {
                 [assignmentId]
             );
 
-            // Emitir evento Socket.IO
-            io.emit(`assignment - ${assignmentId} -accepted`, {
+            io.to(`agent-${userId}`).emit(`agent-${userId}-assignment-accepted`, {
                 assignmentId,
                 userId,
                 acceptedAt: new Date().toISOString()
+            });
+            io.emit('chat-assignment-changed', {
+                agentId: userId,
+                chatJid: assignments[0]?.chat_jid,
+                sessionId: assignments[0]?.session_id,
+                status: 'active'
             });
 
             res.json({
@@ -19712,6 +19935,151 @@ app.delete('/api/appointment-categories/:id', async (req, res) => {
     } catch (error) {
         console.error('[CATEGORIES] Error eliminando categoría:', error);
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 🔥 Obtener estados de WhatsApp de contactos
+app.get('/api/whatsapp/statuses/:sessionId', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        console.log(`[STATUSES-API] 📱 Solicitando estados de contactos para session: ${sessionId}`);
+
+        // Obtener el socket de Baileys (permitir fallback por número)
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        const sessionKey = sessions.has(sessionId)
+            ? sessionId
+            : (phoneNumber && sessions.has(phoneNumber) ? phoneNumber : null);
+        const sock = sessionKey ? sessions.get(sessionKey)?.sock : null;
+
+        if (!sock) {
+            console.log(`[STATUSES-API] ⚠️ No se encontró sock activo para ${sessionId} (phone=${phoneNumber || 'n/a'}). Continuando solo con datos en BD.`);
+        }
+
+        try {
+            const connection = await pool.getConnection();
+            const contactStatuses = [];
+            const selfStatuses = [];
+            const baseUrl = `${req.protocol}://${req.get('host')}`;
+            const normalizedSelfJid = phoneNumber ? normalizeJid(`${phoneNumber}@s.whatsapp.net`) : null;
+
+            try {
+                // Obtener estados de contactos desde la base de datos
+                // Solo obtener estados que no hayan expirado (últimas 24 horas)
+                                const [statuses] = await connection.execute(
+                                        `SELECT
+                                                contact_jid,
+                                                contact_name,
+                                                avatar_url,
+                                                message_id,
+                                                text_content,
+                                                media_type,
+                                                media_url,
+                                                UNIX_TIMESTAMP(published_at) * 1000 as timestamp
+                                         FROM contact_statuses
+                                         WHERE session_id = ?
+                                             AND (expires_at IS NULL OR expires_at > NOW())
+                                         ORDER BY contact_jid, published_at DESC`,
+                                        [phoneNumber || sessionId]
+                                );
+
+                console.log(`[STATUSES-API] 📊 ${statuses.length} estados encontrados en base de datos`);
+
+                // Agrupar estados por contacto
+                const statusesByContact = {};
+                for (const status of statuses) {
+                    const jid = normalizeJid(status.contact_jid);
+                    const isSelf = normalizedSelfJid && jid === normalizedSelfJid;
+
+                    // Estados propios -> pestaña "Mis estados"
+                    if (isSelf) {
+                        const publishedAt = status.timestamp ? new Date(status.timestamp).toISOString() : new Date().toISOString();
+
+                        selfStatuses.push({
+                            id: status.message_id,
+                            text_content: status.text_content,
+                            media_url: status.media_url,
+                            media_type: status.media_type,
+                            status: 'published',
+                            created_at: publishedAt,
+                            published_at: publishedAt,
+                            timestamp: status.timestamp
+                        });
+                        continue;
+                    }
+
+                    if (!statusesByContact[jid]) {
+                        statusesByContact[jid] = {
+                            jid: jid,
+                            name: status.contact_name || jid.split('@')[0],
+                            phone: jid.split('@')[0],
+                            avatar: status.avatar_url || null,
+                            statuses: [],
+                            unreadCount: 0
+                        };
+                    }
+
+                    const mediaPath = status.media_url || null;
+                    const fullMediaUrl = mediaPath
+                        ? (mediaPath.startsWith('http') ? mediaPath : `${baseUrl}${mediaPath}`)
+                        : null;
+
+                    statusesByContact[jid].statuses.push({
+                        id: status.message_id,
+                        type: status.media_type,
+                        url: fullMediaUrl,
+                        caption: status.text_content,
+                        timestamp: status.timestamp
+                    });
+
+                    statusesByContact[jid].unreadCount = statusesByContact[jid].statuses.length;
+                }
+
+                // Convertir a array
+                for (const jid in statusesByContact) {
+                    contactStatuses.push(statusesByContact[jid]);
+                }
+
+                // Ordenar por timestamp más reciente
+                contactStatuses.sort((a, b) => {
+                    const timeA = a.statuses[0]?.timestamp || 0;
+                    const timeB = b.statuses[0]?.timestamp || 0;
+                    return timeB - timeA;
+                });
+
+                // Ordenar estados propios por fecha
+                selfStatuses.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+                console.log(`[STATUSES-API] ✅ ${contactStatuses.length} contactos con estados activos, ${selfStatuses.length} estados propios`);
+
+            } finally {
+                connection.release();
+            }
+
+            res.json({
+                success: true,
+                statuses: contactStatuses,
+                selfStatuses,
+                message: contactStatuses.length === 0
+                    ? 'No hay estados disponibles'
+                    : `${contactStatuses.length} contactos con estados`
+            });
+
+        } catch (error) {
+            console.error('[STATUSES-API] ❌ Error:', error);
+            res.json({
+                success: false,
+                error: error.message,
+                statuses: []
+            });
+        }
+
+    } catch (error) {
+        console.error('[STATUSES-API] ❌ Error general:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error al obtener estados',
+            statuses: []
+        });
     }
 });
 

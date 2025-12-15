@@ -747,36 +747,6 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             return prev;
           }
 
-          // Verificar contra session.sessionId, userId (prop), y el propio mensaje (fromMe + chatJid match)
-          const currentSessionId = session?.sessionId || userId;
-          const currentPhone = String(currentSessionId || '').split(':')[0]?.split('@')[0];
-
-          // 🛡️ FILTRO MEJORADO: Normalizar números igual que en carga inicial
-          const chatNumber = mappedMessage.chatJid.split('@')[0].split(':')[0];
-
-          // Comparar números normalizados
-          if (currentPhone && chatNumber === currentPhone) {
-            console.log('[REAL-TIME] 🚫 Ignorando chat propio (número exacto):', chatNumber, 'vs', currentPhone);
-            return prev;
-          }
-
-          // Verificar variaciones comunes
-          if (currentPhone && (
-            mappedMessage.chatJid === currentPhone ||
-            mappedMessage.chatJid === `${currentPhone}@s.whatsapp.net` ||
-            mappedMessage.chatJid === `${currentPhone}@c.us` ||
-            mappedMessage.chatJid.startsWith(currentPhone + ':')
-          )) {
-            console.log('[REAL-TIME] 🚫 Ignorando chat propio (variación):', mappedMessage.chatJid);
-            return prev;
-          }
-
-          // Si el mensaje es "fromMe" y el chatJid coincide con el sender, es un chat propio
-          if (mappedMessage.isFromMe && mappedMessage.chatJid.includes(mappedMessage.from?.split(':')[0].split('@')[0])) {
-            console.log('[REAL-TIME] 🚫 Ignorando chat propio (fromMe match):', mappedMessage.chatJid);
-            return prev;
-          }
-
           const newChat: WhatsAppChat = {
             id: mappedMessage.chatJid,
             name: mappedMessage.from?.split('@')[0] || chatPhone || 'Desconocido',

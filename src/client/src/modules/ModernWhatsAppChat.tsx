@@ -35,7 +35,7 @@ import {
 } from '@mui/icons-material';
 
 const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
-  const { isDarkMode } = useTheme();
+  const { isDarkMode = true } = useTheme(); // 🌙 Tema oscuro por defecto
 
   // Estados locales - deben estar ANTES de cualquier hook condicional
   const [newMessage, setNewMessage] = useState('');

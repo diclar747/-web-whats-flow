@@ -63,6 +63,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
   onBack
 }) => {
   const { socket, isConnected, on, off } = useSocket();
+  const [isDarkMode] = React.useState(true); // 🌙 Tema oscuro por defecto
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -114,6 +115,10 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
     if (!socket || !isConnected || !chatId) return;
 
     console.log(`[AGENT-CHAT] Socket conectado para chat ${chatId}`);
+
+    // 🔥 Unirse a la sala del chat específico para recibir actualizaciones en tiempo real
+    socket.emit('join-chat', { sessionId, chatJid: chatId });
+    console.log(`[AGENT-CHAT] Unido a sala: chat-${sessionId}-${chatId}`);
 
     // Evento de nuevo mensaje
     const handleNewMessage = (data: any) => {
@@ -193,15 +198,21 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
     // Suscribirse a eventos
     on('message', handleNewMessage);
     on('message:received', handleNewMessage);
+    on('message:sent', handleNewMessage); // 🔥 Escuchar mensajes enviados por otros agentes/admin
     on('message-status-update', handleMessageStatusUpdate);
 
     // Cleanup
     return () => {
+      // Salir de la sala del chat
+      socket.emit('leave-chat', { sessionId, chatJid: chatId });
+      console.log(`[AGENT-CHAT] Salió de sala: chat-${sessionId}-${chatId}`);
+
       off('message');
       off('message:received');
+      off('message:sent');
       off('message-status-update');
     };
-  }, [socket, isConnected, chatId, on, off]);
+  }, [socket, isConnected, chatId, sessionId, on, off]);
 
   // Enviar mensaje
   const handleSendMessage = async () => {
@@ -456,8 +467,22 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
     );
   }
 
+  // 🎨 Colores del tema
+  const colors = {
+    background: isDarkMode ? '#0b141a' : '#f0f2f5',
+    paper: isDarkMode ? '#111b21' : '#fff',
+    header: isDarkMode ? '#202c33' : '#00a884',
+    chatBg: isDarkMode ? '#0b141a' : '#efeae2',
+    myMessage: isDarkMode ? '#005c4b' : '#d9fdd3',
+    theirMessage: isDarkMode ? '#202c33' : '#ffffff',
+    text: isDarkMode ? '#e9edef' : '#111b21',
+    textSecondary: isDarkMode ? '#8696a0' : '#667781',
+    inputBg: isDarkMode ? '#2a3942' : '#f0f2f5',
+    divider: isDarkMode ? '#2a3942' : '#e9edef'
+  };
+
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: '#f0f2f5' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: colors.background }}>
       {/* Header estilo WhatsApp */}
       <Paper
         elevation={1}
@@ -465,7 +490,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
           display: 'flex',
           alignItems: 'center',
           p: 2,
-          bgcolor: '#00a884',
+          bgcolor: colors.header,
           color: 'white',
           borderRadius: 0
         }}
@@ -518,8 +543,10 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
           flexGrow: 1,
           overflowY: 'auto',
           p: 2,
-          backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpattern id=\'pattern\' x=\'0\' y=\'0\' width=\'20\' height=\'20\' patternUnits=\'userSpaceOnUse\'%3E%3Ccircle cx=\'2\' cy=\'2\' r=\'1\' fill=\'%23d9d9d9\' opacity=\'0.3\'/%3E%3C/pattern%3E%3Crect x=\'0\' y=\'0\' width=\'100%25\' height=\'100%25\' fill=\'url(%23pattern)\'/%3E%3C/svg%3E")',
-          bgcolor: '#efeae2'
+          backgroundImage: isDarkMode
+            ? 'none'
+            : 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpattern id=\'pattern\' x=\'0\' y=\'0\' width=\'20\' height=\'20\' patternUnits=\'userSpaceOnUse\'%3E%3Ccircle cx=\'2\' cy=\'2\' r=\'1\' fill=\'%23d9d9d9\' opacity=\'0.3\'/%3E%3C/pattern%3E%3Crect x=\'0\' y=\'0\' width=\'100%25\' height=\'100%25\' fill=\'url(%23pattern)\'/%3E%3C/svg%3E")',
+          bgcolor: colors.chatBg
         }}
       >
         {messages.map((msg) => (
@@ -535,9 +562,9 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
               sx={{
                 maxWidth: '65%',
                 p: 1.5,
-                bgcolor: msg.from_me ? '#d9fdd3' : 'white',
+                bgcolor: msg.from_me ? colors.myMessage : colors.theirMessage,
                 borderRadius: msg.from_me ? '8px 0px 8px 8px' : '0px 8px 8px 8px',
-                boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)'
+                boxShadow: isDarkMode ? '0 1px 2px rgba(0,0,0,0.3)' : '0 1px 0.5px rgba(0,0,0,0.13)'
               }}
             >
               {/* Nombre del remitente (PARA TODOS LOS MENSAJES) */}
@@ -545,7 +572,9 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
                 <Typography
                   variant="caption"
                   sx={{
-                    color: msg.from_me ? '#006b54' : '#00a884',
+                    color: msg.from_me
+                      ? (isDarkMode ? '#25d366' : '#006b54')
+                      : (isDarkMode ? '#00a884' : '#00a884'),
                     fontWeight: 600,
                     display: 'block',
                     mb: 0.5
@@ -566,7 +595,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
                   sx={{
                     wordBreak: 'break-word',
                     whiteSpace: 'pre-wrap',
-                    color: '#111b21'
+                    color: colors.text
                   }}
                 >
                   {msg.text_content}
@@ -574,7 +603,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
               )}
 
               <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                <Typography variant="caption" sx={{ fontSize: 11, color: '#667781' }}>
+                <Typography variant="caption" sx={{ fontSize: 11, color: colors.textSecondary }}>
                   {formatMessageTime(msg.timestamp)}
                 </Typography>
                 {msg.from_me && getStatusIcon(msg.status)}
@@ -593,7 +622,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
           display: 'flex',
           gap: 1,
           alignItems: 'flex-end',
-          bgcolor: '#f0f2f5',
+          bgcolor: colors.inputBg,
           borderRadius: 0
         }}
       >
@@ -609,7 +638,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
           <IconButton
             size="small"
             onClick={() => fileInputRef.current?.click()}
-            sx={{ color: '#54656f' }}
+            sx={{ color: colors.textSecondary }}
           >
             <AttachFileIcon />
           </IconButton>
@@ -643,7 +672,8 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
             sx={{
               '& .MuiOutlinedInput-root': {
                 borderRadius: '20px',
-                bgcolor: 'white',
+                bgcolor: isDarkMode ? colors.paper : 'white',
+                color: colors.text,
                 '& fieldset': {
                   borderColor: 'transparent'
                 },
@@ -662,7 +692,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
           <IconButton
             size="small"
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-            sx={{ color: '#54656f' }}
+            sx={{ color: colors.textSecondary }}
           >
             <EmojiIcon />
           </IconButton>
