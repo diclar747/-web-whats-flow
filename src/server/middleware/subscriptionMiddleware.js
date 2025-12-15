@@ -33,7 +33,7 @@ const checkSubscription = async (req, res, next) => {
         UPDATE users 
         SET subscription_status = 'expired'
         WHERE id = ? 
-        AND subscription_status = 'active' 
+        AND (subscription_status = 'active' OR subscription_status = 'trial')
         AND subscription_end_date IS NOT NULL
         AND subscription_end_date < NOW()
       `, [userId]);

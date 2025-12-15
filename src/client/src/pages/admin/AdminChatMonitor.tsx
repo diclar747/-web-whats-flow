@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Paper, Typography, List, ListItem, ListItemText, ListItemAvatar, Avatar, Chip, Divider, TextField, Tabs, Tab, Badge } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import { useSocket } from '../../context/SocketContext';
 import { formatDistanceToNow } from 'date-fns';
 import { es } from 'date-fns/locale';
 import StatusList from '../../components/StatusList';
+import { getAPIBaseURL } from '../../utils/socketConfig';
 
 interface ChatItem {
   id: string;
@@ -38,8 +40,27 @@ const AdminChatMonitor: React.FC = () => {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'all' | 'sent' | 'received' | 'statuses'>('all');
   const sessionId = (typeof window !== 'undefined' ? (sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session')) : '') || '';
+  const [unreadByChat, setUnreadByChat] = useState<Record<string, number>>({});
+
+  const refreshUnreadCounts = async () => {
+    try {
+      if (!sessionId) return;
+      const res = await fetch(`${getAPIBaseURL()}/api/chats/${sessionId}?includeGroups=false`);
+      const data = await res.json();
+      if (data?.success && Array.isArray(data.chats)) {
+        const map: Record<string, number> = {};
+        for (const c of data.chats) {
+          map[c.id] = typeof c.unreadCount === 'number' ? c.unreadCount : 0;
+        }
+        setUnreadByChat(map);
+      }
+    } catch (_e) {
+      // silencioso
+    }
+  };
 
   useEffect(() => {
+    refreshUnreadCounts();
     const handler = (data: any) => {
       const payload: Message = {
         id: data.id?.toString() || `${Date.now()}`,
@@ -63,6 +84,7 @@ const AdminChatMonitor: React.FC = () => {
         if (prev.some(m => m.id === payload.id)) return prev;
         return [payload, ...prev].slice(0, 5000);
       });
+      refreshUnreadCounts();
     };
 
     const handlerReceived = (data: any) => handler({ ...data, status: 'received', from_me: false, isFromMe: false });
@@ -147,13 +169,13 @@ const AdminChatMonitor: React.FC = () => {
         name: msg.contactName || id?.split('@')[0],
         avatar: msg.avatar || null,
         lastMessage: text.substring(0, 80),
-        unreadCount: (existing?.unreadCount || 0) + (!msg.from_me ? 1 : 0),
+        unreadCount: unreadByChat[id] || 0,
         updatedAt: msg.timestamp
       };
       map.set(id, { ...(existing || {}), ...updated });
     }
     return Array.from(map.values()).sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
-  }, [messages]);
+  }, [messages, unreadByChat]);
 
   const filteredMessages = useMemo(() => {
     return messages.filter(m => {
@@ -173,13 +195,33 @@ const AdminChatMonitor: React.FC = () => {
         <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>
           Chats en tiempo real {isConnected ? '· Conectado' : '· Desconectado'}
         </Typography>
-        <Paper variant="outlined">
+        <Paper
+          variant="outlined"
+          sx={theme => ({
+            bgcolor: theme.palette.background.paper,
+            borderColor: theme.palette.divider
+          })}
+        >
           <List dense>
             {chats.map(chat => (
               <React.Fragment key={chat.id}>
                 <ListItem>
                   <ListItemAvatar>
-                    <Badge color="primary" badgeContent={chat.unreadCount || 0} max={99}>
+                    <Badge
+                      color="primary"
+                      badgeContent={chat.unreadCount || 0}
+                      max={99}
+                      invisible={!chat.unreadCount || chat.unreadCount === 0}
+                      sx={{
+                        '& .MuiBadge-badge': {
+                          backgroundColor: '#25d366',
+                          color: 'white',
+                          minWidth: 20,
+                          height: 20,
+                          fontWeight: 700
+                        }
+                      }}
+                    >
                       <Avatar src={chat.avatar || undefined}>{(chat.name || chat.id)?.[0]}</Avatar>
                     </Badge>
                   </ListItemAvatar>
@@ -207,6 +249,17 @@ const AdminChatMonitor: React.FC = () => {
             onChange={(_, i) => setTab((['all', 'sent', 'received', 'statuses'] as any)[i])}
             variant="scrollable"
             scrollButtons="auto"
+            sx={theme => ({
+              '& .MuiTab-root': {
+                color: theme.palette.text.secondary
+              },
+              '& .MuiTab-root.Mui-selected': {
+                color: theme.palette.primary.light
+              },
+              '& .MuiTabs-indicator': {
+                backgroundColor: theme.palette.primary.main
+              }
+            })}
           >
             <Tab label="Todos" />
             <Tab label="Enviados" />
@@ -221,7 +274,15 @@ const AdminChatMonitor: React.FC = () => {
             sx={{ ml: 'auto', width: 360 }}
           />
         </Box>
-        <Paper variant="outlined" sx={{ p: 2, minHeight: 520 }}>
+        <Paper
+          variant="outlined"
+          sx={theme => ({
+            p: 2,
+            minHeight: 520,
+            bgcolor: theme.palette.background.paper,
+            borderColor: theme.palette.divider
+          })}
+        >
           {tab === 'statuses' ? (
             <Box sx={{ minHeight: 480 }}>
               {sessionId ? (
@@ -247,9 +308,28 @@ const AdminChatMonitor: React.FC = () => {
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                               <Typography sx={{ fontWeight: 'bold' }}>{m.contactName || m.chatJid}</Typography>
                               {m.from_me || m.isFromMe ? (
-                                <Chip size="small" color="success" label={m.agent_name ? `Agente: ${m.agent_name}` : 'Agente'} />
+                                <Chip
+                                  size="small"
+                                  color="success"
+                                  label={m.agent_name ? `Agente: ${m.agent_name}` : 'Agente'}
+                                  sx={theme => ({
+                                    bgcolor: alpha(theme.palette.success.main, 0.2),
+                                    color: theme.palette.success.light,
+                                    border: '1px solid',
+                                    borderColor: alpha(theme.palette.success.main, 0.4)
+                                  })}
+                                />
                               ) : (
-                                <Chip size="small" label="Cliente" />
+                                <Chip
+                                  size="small"
+                                  label="Cliente"
+                                  sx={theme => ({
+                                    bgcolor: alpha(theme.palette.info.main, 0.18),
+                                    color: theme.palette.text.secondary,
+                                    border: '1px solid',
+                                    borderColor: theme.palette.divider
+                                  })}
+                                />
                               )}
                               <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
                                 {formatDistanceToNow(new Date(m.timestamp), { locale: es })} atrás

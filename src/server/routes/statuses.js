@@ -368,7 +368,27 @@ module.exports = (app, io) => {
                 return res.status(500).json({ success: false, error: 'Sistema de sesiones no disponible' });
             }
 
-            const session = sessions.get(sessionId);
+            // Intentar obtener la sesión por sessionId y por phone_number como fallback
+            let sessionKey = sessionId;
+            let session = sessions.get(sessionKey);
+            if (!session) {
+                try {
+                    const [rows] = await getPool().query(
+                        'SELECT phone_number FROM user_sessions WHERE phone_number = ? OR session_id = ? LIMIT 1',
+                        [sessionId, sessionId]
+                    );
+                    if (rows.length > 0 && rows[0].phone_number) {
+                        const phoneNumber = rows[0].phone_number;
+                        console.log(`ℹ️ [PUBLISH-ENDPOINT] Fallback por phoneNumber: ${phoneNumber}`);
+                        if (sessions.has(phoneNumber)) {
+                            sessionKey = phoneNumber;
+                            session = sessions.get(phoneNumber);
+                        }
+                    }
+                } catch (mapErr) {
+                    console.warn(`⚠️ [PUBLISH-ENDPOINT] Error buscando mapeo phone_number/session_id:`, mapErr.message);
+                }
+            }
             console.log(`📊 [PUBLISH-ENDPOINT] Sesión encontrada:`, session ? 'SÍ' : 'NO');
             console.log(`📊 [PUBLISH-ENDPOINT] Sock disponible:`, session?.sock ? 'SÍ' : 'NO');
             console.log(`📊 [PUBLISH-ENDPOINT] isConnected:`, session?.isConnected);
@@ -391,7 +411,8 @@ module.exports = (app, io) => {
                 // Estado con imagen o video
                 const path = require('path');
                 const fs = require('fs');
-                const mediaPath = path.join(__dirname, '..', 'public', status.media_url);
+                const safeRelative = (status.media_url || '').replace(/^\//, '');
+                const mediaPath = path.join(__dirname, 'public', safeRelative);
 
                 if (!fs.existsSync(mediaPath)) {
                     return res.status(404).json({
@@ -419,6 +440,7 @@ module.exports = (app, io) => {
             console.log(`📱 [DEBUG] Intentando publicar estado ${id} para sesión ${sessionId}`);
 
 
+            let messageResult = null;
             try {
                 // PASO 1: Inicializar el chat status@broadcast (recomendación de Baileys)
                 console.log(`📱 [DEBUG] Inicializando chat status@broadcast...`);
@@ -447,9 +469,10 @@ module.exports = (app, io) => {
 
                 // PASO 3: Enviar estado y capturar respuesta completa
                 const result = await sock.sendMessage('status@broadcast', messageContent);
+                messageResult = result;
 
                 // PASO 4: Logging detallado de la respuesta
-                console.log(`✅ [DEBUG] Resultado Baileys completo:`, JSON.stringify(result, null, 2));
+                console.log(`✅ [DEBUG] Resultado Baileys completo:`, JSON.stringify(result || {}, null, 2));
 
                 if (result && result.key && result.key.id) {
                     console.log(`✅ [DEBUG] MessageID recibido: ${result.key.id}`);
@@ -457,8 +480,17 @@ module.exports = (app, io) => {
                     console.log(`✅ [DEBUG] Status: ${result.status || 'N/A'}`);
                 } else {
                     console.log(`⚠️ [DEBUG] Respuesta sin messageID - posible bloqueo de WhatsApp`);
+                    throw new Error('WhatsApp no confirmó publicación del estado');
                 }
 
+                if (!result || !result.key || !result.key.id) {
+                    console.log(`❌ [DEBUG] Publicación no confirmada por Baileys (sin messageID)`);
+                    return res.status(502).json({
+                        success: false,
+                        error: 'Publicación no confirmada por WhatsApp (sin messageID)',
+                        result
+                    });
+                }
                 console.log(`✅ Estado publicado exitosamente en WhatsApp`);
             } catch (baileysError) {
                 console.error(`❌ [DEBUG] Error Baileys sendMessage:`, baileysError);
@@ -480,7 +512,9 @@ module.exports = (app, io) => {
                 success: true,
                 message: 'Estado publicado exitosamente en WhatsApp',
                 publishedAt,
-                expiresAt
+                expiresAt,
+                messageId: messageResult && messageResult.key ? messageResult.key.id : null,
+                remoteJid: messageResult && messageResult.key ? messageResult.key.remoteJid : 'status@broadcast'
             });
         } catch (error) {
             console.error('❌ Error publicando estado:', error);

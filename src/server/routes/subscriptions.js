@@ -365,7 +365,7 @@ router.get('/my-subscription', async (req, res) => {
         UPDATE users 
         SET subscription_status = 'expired'
         WHERE phone = ? 
-        AND subscription_status = 'active' 
+        AND (subscription_status = 'active' OR subscription_status = 'trial')
         AND subscription_end_date IS NOT NULL
         AND subscription_end_date < NOW()
       `, [phone]);

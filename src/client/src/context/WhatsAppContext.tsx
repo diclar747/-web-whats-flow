@@ -369,7 +369,6 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
               lastMessageFromMe: chat.fromMe !== undefined ? chat.fromMe : undefined, // Mapear campo del servidor
               timestamp: chat.timestamp || new Date().toISOString(),
               isOnline: !chat.isGroup && !chat.id.includes('@g.us'),
-              // Reiniciar contadores de no leídos al cargar para evitar badges fantasma
               unreadCount: 0,
               avatar: chat.avatar || null,
               lastSeen: chat.lastSeen || null,
@@ -746,6 +745,15 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             console.log('[REAL-TIME] 🚫 Ignorando chat LID:', mappedMessage.chatJid);
             return prev;
           }
+          const currentPhone = String(session?.sessionId || '').split(':')[0]?.split('@')[0];
+          if (currentPhone && (chatPhone === currentPhone ||
+            mappedMessage.chatJid === currentPhone ||
+            mappedMessage.chatJid === `${currentPhone}@s.whatsapp.net` ||
+            mappedMessage.chatJid === `${currentPhone}@c.us` ||
+            mappedMessage.chatJid.startsWith(currentPhone + ':'))) {
+            console.log('[REAL-TIME] 🚫 Ignorando chat propio en creación:', mappedMessage.chatJid);
+            return prev;
+          }
 
           const newChat: WhatsAppChat = {
             id: mappedMessage.chatJid,
@@ -795,7 +803,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             ...prev[chatIndex],
             lastMessage: data.lastMessage,
             timestamp: data.timestamp,
-            unreadCount: (prev[chatIndex].unreadCount || 0) + (data.unreadCount || 0),
+            unreadCount: prev[chatIndex].unreadCount || 0,
             // Opcionalmente actualizar nombre/foto si vienen
             ...(data.name ? { name: data.name } : {}),
             ...(data.profilePicUrl ? { avatar: data.profilePicUrl } : {})
@@ -814,7 +822,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             lastMessage: data.lastMessage,
             timestamp: data.timestamp,
             isOnline: !data.id.includes('@g.us'),
-            unreadCount: data.unreadCount || 0,
+            unreadCount: 0,
             avatar: data.profilePicUrl,
             status: 'delivered'
           };

@@ -29,6 +29,7 @@ import {
   Stack,
   Alert
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
   WhatsApp,
   Message,
@@ -627,7 +628,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                   right: 0,
                   width: '100px',
                   height: '100px',
-                  background: 'rgba(255,255,255,0.1)',
+                  background: 'rgba(255,255,255,0.08)',
                   borderRadius: '50%',
                   transform: 'translate(50%, -50%)'
                 }
@@ -682,7 +683,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
       <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12}>
           <Card elevation={3} sx={{ borderRadius: 4, p: 3 }}>
-            <Typography variant="h5" sx={{ fontWeight: 600, mb: 3, color: '#1e293b' }}>
+            <Typography variant="h5" sx={{ fontWeight: 600, mb: 3 }}>
               Resumen de Actividad Diaria
             </Typography>
             <Grid container spacing={3}>
@@ -701,7 +702,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                     <Typography variant="h4" sx={{ fontWeight: 700, color: stat.color }}>
                       {stat.value.toLocaleString()}
                     </Typography>
-                    <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>
+                    <Typography variant="body2" sx={{ mb: 1 }}>
                       {stat.label}
                     </Typography>
                     <LinearProgress
@@ -710,11 +711,11 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                       sx={{
                         height: 8,
                         borderRadius: 4,
-                        bgcolor: `${stat.color}20`,
+                        bgcolor: theme => alpha(stat.color as any, 0.15),
                         '& .MuiLinearProgress-bar': { bgcolor: stat.color }
                       }}
                     />
-                    <Typography variant="caption" sx={{ color: '#94a3b8', mt: 0.5 }}>
+                    <Typography variant="caption" sx={{ mt: 0.5 }}>
                       {Math.round((stat.value / stat.total) * 100)}% de {stat.total.toLocaleString()}
                     </Typography>
                   </Box>
@@ -732,7 +733,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
             <CardContent sx={{ p: 0 }}>
               <Box sx={{
                 p: 3,
-                borderBottom: '1px solid #f1f5f9',
+                borderBottom: '1px solid rgba(255,255,255,0.12)',
                 background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
               }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -824,7 +825,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                                     fontWeight: 600
                                   }}
                                 />
-                                <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                   Última actividad: {chatbot.lastActivity}
                                 </Typography>
                               </Box>
@@ -833,7 +834,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                               <Typography variant="h4" sx={{ fontWeight: 700, color: chatbot.color }}>
                                 {chatbot.totalInteractions}
                               </Typography>
-                              <Typography variant="caption" sx={{ color: '#64748b' }}>
+                              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                                 Interacciones
                               </Typography>
                             </Box>
@@ -842,53 +843,89 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                           {/* Métricas de Rendimiento */}
                           <Grid container spacing={2} sx={{ mb: 3 }}>
                             <Grid item xs={6} md={3}>
-                              <Paper sx={{ p: 2, bgcolor: '#f0f9ff', borderRadius: 2, textAlign: 'center' }}>
+                              <Paper
+                                sx={theme => ({
+                                  p: 2,
+                                  borderRadius: 2,
+                                  textAlign: 'center',
+                                  bgcolor: alpha(theme.palette.info.main, 0.12),
+                                  border: '1px solid',
+                                  borderColor: alpha(theme.palette.info.main, 0.24)
+                                })}
+                              >
                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
                                   <DoneAll sx={{ color: '#2196f3', mr: 0.5, fontSize: 20 }} />
                                   <Typography variant="h6" sx={{ fontWeight: 700, color: '#2196f3' }}>
                                     {chatbot.deliveryRate}%
                                   </Typography>
                                 </Box>
-                                <Typography variant="caption" sx={{ color: '#64748b' }}>
+                                <Typography variant="caption">
                                   Tasa de Entrega
                                 </Typography>
                               </Paper>
                             </Grid>
                             <Grid item xs={6} md={3}>
-                              <Paper sx={{ p: 2, bgcolor: '#f0fdf4', borderRadius: 2, textAlign: 'center' }}>
+                              <Paper
+                                sx={theme => ({
+                                  p: 2,
+                                  borderRadius: 2,
+                                  textAlign: 'center',
+                                  bgcolor: alpha(theme.palette.success.main, 0.12),
+                                  border: '1px solid',
+                                  borderColor: alpha(theme.palette.success.main, 0.24)
+                                })}
+                              >
                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
                                   <Reply sx={{ color: '#4caf50', mr: 0.5, fontSize: 20 }} />
                                   <Typography variant="h6" sx={{ fontWeight: 700, color: '#4caf50' }}>
                                     {chatbot.responseRate}%
                                   </Typography>
                                 </Box>
-                                <Typography variant="caption" sx={{ color: '#64748b' }}>
+                                <Typography variant="caption">
                                   Tasa de Respuesta
                                 </Typography>
                               </Paper>
                             </Grid>
                             <Grid item xs={6} md={3}>
-                              <Paper sx={{ p: 2, bgcolor: '#fef3e6', borderRadius: 2, textAlign: 'center' }}>
+                              <Paper
+                                sx={theme => ({
+                                  p: 2,
+                                  borderRadius: 2,
+                                  textAlign: 'center',
+                                  bgcolor: alpha(theme.palette.warning.main, 0.12),
+                                  border: '1px solid',
+                                  borderColor: alpha(theme.palette.warning.main, 0.24)
+                                })}
+                              >
                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
                                   <AccessTime sx={{ color: '#ff9800', mr: 0.5, fontSize: 20 }} />
                                   <Typography variant="h6" sx={{ fontWeight: 700, color: '#ff9800' }}>
                                     {chatbot.avgResponseTime}
                                   </Typography>
                                 </Box>
-                                <Typography variant="caption" sx={{ color: '#64748b' }}>
+                                <Typography variant="caption">
                                   Tiempo Promedio
                                 </Typography>
                               </Paper>
                             </Grid>
                             <Grid item xs={6} md={3}>
-                              <Paper sx={{ p: 2, bgcolor: '#fef2f2', borderRadius: 2, textAlign: 'center' }}>
+                              <Paper
+                                sx={theme => ({
+                                  p: 2,
+                                  borderRadius: 2,
+                                  textAlign: 'center',
+                                  bgcolor: alpha(theme.palette.error.main, 0.12),
+                                  border: '1px solid',
+                                  borderColor: alpha(theme.palette.error.main, 0.24)
+                                })}
+                              >
                                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 1 }}>
                                   <ErrorIcon sx={{ color: '#f44336', mr: 0.5, fontSize: 20 }} />
                                   <Typography variant="h6" sx={{ fontWeight: 700, color: '#f44336' }}>
                                     {chatbot.failedResponses}
                                   </Typography>
                                 </Box>
-                                <Typography variant="caption" sx={{ color: '#64748b' }}>
+                                <Typography variant="caption">
                                   Fallos
                                 </Typography>
                               </Paper>
@@ -920,10 +957,10 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                           {/* Barra de Progreso de Éxito */}
                           <Box sx={{ mt: 2 }}>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                              <Typography variant="caption" sx={{ fontWeight: 600 }}>
                                 Respuestas exitosas
                               </Typography>
-                              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                              <Typography variant="caption" sx={{ fontWeight: 600 }}>
                                 {chatbot.successfulResponses} / {chatbot.totalInteractions}
                               </Typography>
                             </Box>
@@ -933,7 +970,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                               sx={{
                                 height: 8,
                                 borderRadius: 4,
-                                bgcolor: `${chatbot.color}20`,
+                                bgcolor: theme => alpha(chatbot.color as any, 0.18),
                                 '& .MuiLinearProgress-bar': {
                                   bgcolor: chatbot.color,
                                   borderRadius: 4
@@ -957,7 +994,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
             {/* Top Agents */}
             <Card elevation={3} sx={{ borderRadius: 4 }}>
               <CardContent sx={{ p: 3 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: '#1e293b' }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
                   🏆 Top Agentes Hoy
                 </Typography>
 
@@ -968,8 +1005,8 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                     mb: 2,
                     p: 2,
                     borderRadius: 2,
-                    bgcolor: index === 0 ? '#f0f9ff' : 'transparent',
-                    border: index === 0 ? '1px solid #0284c7' : 'none'
+                    bgcolor: theme => index === 0 ? alpha(theme.palette.info.main, 0.08) : 'transparent',
+                    border: index === 0 ? theme => `1px solid ${alpha(theme.palette.info.main, 0.25)}` : 'none'
                   }}>
                     <Badge
                       overlap="circular"
@@ -980,7 +1017,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                           height: 12,
                           borderRadius: '50%',
                           bgcolor: getAgentStatusColor(agent.status),
-                          border: '2px solid white'
+                          border: theme => `2px solid ${theme.palette.background.paper}`
                         }} />
                       }
                     >
@@ -992,7 +1029,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                       <Typography sx={{ fontWeight: 600, fontSize: '0.9rem' }}>
                         {agent.name}
                       </Typography>
-                      <Typography variant="caption" sx={{ color: '#64748b' }}>
+                      <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                         {agent.messages} mensajes • {agent.responseTime} promedio
                       </Typography>
                       <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
@@ -1005,7 +1042,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                           size="small"
                           sx={{
                             ml: 1,
-                            bgcolor: `${getAgentStatusColor(agent.status)}20`,
+                            bgcolor: theme => alpha(getAgentStatusColor(agent.status) as any, 0.15),
                             color: getAgentStatusColor(agent.status),
                             fontSize: '0.7rem'
                           }}
@@ -1023,7 +1060,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
             {/* Estado del Sistema Avanzado */}
             <Card elevation={3} sx={{ borderRadius: 4 }}>
               <CardContent sx={{ p: 3 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, color: '#1e293b' }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
                   🛡️ Estado del Sistema
                 </Typography>
 
@@ -1034,10 +1071,15 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                         <SignalCellularAlt sx={{ fontSize: 16, mr: 1, color: '#4caf50' }} />
                         WhatsApp API
                       </Typography>
-                      <Chip label="ACTIVO" size="small" sx={{ bgcolor: '#e8f5e8', color: '#2e7d32' }} />
+                      <Chip label="ACTIVO" size="small" sx={theme => ({
+                        bgcolor: alpha(theme.palette.success.main, 0.15),
+                        color: theme.palette.success.light,
+                        border: '1px solid',
+                        borderColor: alpha(theme.palette.success.main, 0.3)
+                      })} />
                     </Box>
                     <LinearProgress value={100} variant="determinate" sx={{ height: 6, borderRadius: 3 }} />
-                    <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                       Latencia: 45ms • Uptime: 99.9%
                     </Typography>
                   </Box>
@@ -1048,10 +1090,15 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                         <BatteryFull sx={{ fontSize: 16, mr: 1, color: '#4caf50' }} />
                         Servidores
                       </Typography>
-                      <Chip label="ÓPTIMO" size="small" sx={{ bgcolor: '#e8f5e8', color: '#2e7d32' }} />
+                      <Chip label="ÓPTIMO" size="small" sx={theme => ({
+                        bgcolor: alpha(theme.palette.success.main, 0.15),
+                        color: theme.palette.success.light,
+                        border: '1px solid',
+                        borderColor: alpha(theme.palette.success.main, 0.3)
+                      })} />
                     </Box>
                     <LinearProgress value={85} variant="determinate" sx={{ height: 6, borderRadius: 3 }} />
-                    <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                       CPU: 35% • RAM: 68% • Almacenamiento: 45%
                     </Typography>
                   </Box>
@@ -1062,10 +1109,15 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                         <CloudDone sx={{ fontSize: 16, mr: 1, color: '#2196f3' }} />
                         Base de Datos
                       </Typography>
-                      <Chip label="SINCRONIZADO" size="small" sx={{ bgcolor: '#e3f2fd', color: '#1976d2' }} />
+                      <Chip label="SINCRONIZADO" size="small" sx={theme => ({
+                        bgcolor: alpha(theme.palette.info.main, 0.15),
+                        color: theme.palette.info.light,
+                        border: '1px solid',
+                        borderColor: alpha(theme.palette.info.main, 0.3)
+                      })} />
                     </Box>
                     <LinearProgress value={92} variant="determinate" sx={{ height: 6, borderRadius: 3 }} />
-                    <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                       Última copia: hace 15 min • Conexiones: 47/100
                     </Typography>
                   </Box>

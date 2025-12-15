@@ -518,7 +518,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
                       WebkitTextFillColor: 'transparent'
                     }}
                   >
-                    Plataforma Empresarial de WhatsApp
+                    La plataforma WhatsApp que su empresa necesita
                   </Typography>
 
                   <Typography
@@ -530,7 +530,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
                       fontWeight: 400
                     }}
                   >
-                    Gestiona conversaciones, automatiza respuestas, y escala tu negocio con la plataforma más completa para WhatsApp Business.
+                    Automatice, mida y escale conversaciones de negocio con IA, campañas y reportes. Unifique equipos y canales en una sola plataforma.
                   </Typography>
 
                   <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -575,7 +575,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
               </Grid>
 
               {/* Right Side - QR Code */}
-              <Grid item xs={12} md={6}>
+              <Grid item xs={12} md={6} id="qr-block">
                 <Card
                   sx={{
                     background: 'rgba(30, 41, 59, 0.6)',
@@ -647,6 +647,335 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
                   </Box>
                 </Card>
               </Grid>
+            </Grid>
+          </Container>
+        </Box>
+
+        {/* Testimonios / Confianza */}
+        <Box
+          sx={{
+            bgcolor: '#1e293b',
+            py: 10,
+            borderTop: '1px solid rgba(255,255,255,0.06)'
+          }}
+        >
+          <Container maxWidth="lg">
+            <Box sx={{ textAlign: 'center', mb: 8 }}>
+              <Typography variant="h3" sx={{ fontWeight: 700, color: 'white', mb: 2 }}>
+                Confianza y resultados
+              </Typography>
+              <Typography variant="h6" sx={{ color: '#94a3b8' }}>
+                Equipos comerciales y de soporte ya optimizan su WhatsApp con WhatsFlow
+              </Typography>
+            </Box>
+            <Grid container spacing={3}>
+              {[
+                '“Automatizamos respuestas y redujimos tiempos de atención en un 45%.”',
+                '“Las campañas programadas nos duplicaron los leads calificados.”',
+                '“El reporte por estados nos permitió mejorar el embudo de ventas.”'
+              ].map((quote, i) => (
+                <Grid item xs={12} md={4} key={i}>
+                  <Card
+                    sx={{
+                      height: '100%',
+                      bgcolor: '#0f172a',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 3,
+                      p: 3
+                    }}
+                  >
+                    <Typography variant="body1" sx={{ color: '#cbd5e1' }}>
+                      {quote}
+                    </Typography>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Container>
+        </Box>
+
+        {/* CTA final */}
+        <Box
+          sx={{
+            bgcolor: '#0f172a',
+            py: 10,
+            borderTop: '1px solid rgba(255,255,255,0.06)'
+          }}
+        >
+          <Container maxWidth="lg">
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="h4" sx={{ color: 'white', fontWeight: 800, mb: 2 }}>
+                Conecte su WhatsApp ahora
+              </Typography>
+              <Typography variant="h6" sx={{ color: '#94a3b8', mb: 4 }}>
+                Escanee el QR y empiece a automatizar, medir y vender más
+              </Typography>
+              <Button
+                variant="contained"
+                size="large"
+                onClick={() => document.getElementById('qr-block')?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                sx={{
+                  bgcolor: '#6366f1',
+                  borderRadius: 3,
+                  px: 4,
+                  py: 1.5,
+                  '&:hover': { bgcolor: '#4f46e5' }
+                }}
+              >
+                Conectar con QR
+              </Button>
+            </Box>
+          </Container>
+        </Box>
+
+        {/* Integraciones y API REST */}
+        <Box
+          sx={{
+            bgcolor: '#1e293b',
+            py: 10,
+            borderTop: '1px solid rgba(255,255,255,0.06)'
+          }}
+        >
+          <Container maxWidth="lg">
+            <Box sx={{ textAlign: 'center', mb: 8 }}>
+              <Typography variant="h3" sx={{ fontWeight: 700, color: 'white', mb: 2 }}>
+                Integraciones y API REST
+              </Typography>
+              <Typography variant="h6" sx={{ color: '#94a3b8' }}>
+                Conecte sus sistemas con una API simple y segura
+              </Typography>
+            </Box>
+            <Grid container spacing={4} alignItems="center">
+              <Grid item xs={12} md={6}>
+                <Box sx={{ borderRadius: 3, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <img src="/api-rest.svg" alt="API REST" style={{ width: '100%', height: 260, objectFit: 'cover' }} loading="lazy" />
+                </Box>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Typography variant="h6" sx={{ color: 'white', fontWeight: 700, mb: 2 }}>
+                  Casos de uso
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {[
+                    'Sincronizar contactos y etiquetas con su CRM',
+                    'Disparar campañas transaccionales desde su ERP',
+                    'Recibir webhooks de eventos (entregas, respuestas, cambios de estado)'
+                  ].map((t, i) => (
+                    <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <CheckCircle sx={{ color: '#10b981' }} />
+                      <Typography variant="body1" sx={{ color: '#cbd5e1' }}>{t}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Grid>
+            </Grid>
+          </Container>
+        </Box>
+
+        {/* Cómo funciona */}
+        <Box
+          sx={{
+            bgcolor: '#0f172a',
+            py: 10,
+            borderTop: '1px solid rgba(255,255,255,0.06)'
+          }}
+        >
+          <Container maxWidth="lg">
+            <Box sx={{ textAlign: 'center', mb: 8 }}>
+              <Typography variant="h3" sx={{ fontWeight: 700, color: 'white', mb: 2 }}>
+                Cómo funciona
+              </Typography>
+              <Typography variant="h6" sx={{ color: '#94a3b8' }}>
+                Conecte con QR y gestione todo desde un solo lugar
+              </Typography>
+            </Box>
+            <Grid container spacing={3}>
+              {[
+                { step: '1', title: 'Generar QR', desc: 'Cree una sesión y obtenga el código.' },
+                { step: '2', title: 'Escanear', desc: 'Use WhatsApp → Dispositivos vinculados.' },
+                { step: '3', title: 'Conectar', desc: 'El sistema detecta la conexión automáticamente.' },
+                { step: '4', title: 'Gestionar', desc: 'Campañas, IA, calendarios y CRM.' },
+                { step: '5', title: 'Medir', desc: 'Reportes por estado y embudos.' }
+              ].map((s, i) => (
+                <Grid item xs={12} sm={6} md={2.4 as any} key={i}>
+                  <Card
+                    sx={{
+                      height: '100%',
+                      bgcolor: '#0f172a',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 3,
+                      p: 3,
+                      textAlign: 'center'
+                    }}
+                  >
+                    <Box sx={{ fontSize: 28, fontWeight: 800, color: '#6366f1', mb: 1 }}>{s.step}</Box>
+                    <Typography variant="subtitle1" sx={{ color: 'white', fontWeight: 700 }}>
+                      {s.title}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                      {s.desc}
+                    </Typography>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Container>
+        </Box>
+
+        {/* Detalle de módulos */}
+        <Box
+          sx={{
+            bgcolor: '#1e293b',
+            py: 10,
+            borderTop: '1px solid rgba(255,255,255,0.06)'
+          }}
+        >
+          <Container maxWidth="lg">
+            <Box sx={{ textAlign: 'center', mb: 8 }}>
+              <Typography variant="h3" sx={{ fontWeight: 700, color: 'white', mb: 2 }}>
+                Detalle de módulos
+              </Typography>
+              <Typography variant="h6" sx={{ color: '#94a3b8' }}>
+                Vea cómo cada módulo potencia su operación
+              </Typography>
+            </Box>
+            {[
+              { img: '/campaigns.svg', title: 'Campañas masivas y programadas', bullets: ['Segmentación por etiquetas', 'Plantillas reutilizables', 'Calendario de envíos y reintentos'] },
+              { img: '/chatbot-ia.svg', title: 'Chatbot con IA', bullets: ['Respuestas contextuales', 'Flujos guiados', 'Transferencia a agente'] },
+              { img: '/calendario.svg', title: 'Calendarios inteligentes', bullets: ['Reservas automáticas', 'Recordatorios y confirmaciones', 'Reprogramaciones por chat'] },
+              { img: '/historial.svg', title: 'Historial y análisis', bullets: ['Conversación unificada', 'Búsqueda avanzada', 'Etiquetado y notas'] },
+              { img: '/reportes.svg', title: 'Reportes por estado', bullets: ['Métricas SLA', 'Embudos de conversión', 'Exportaciones'] },
+              { img: '/api-rest.svg', title: 'API REST', bullets: ['Integración ERP/CRM', 'Webhooks', 'Mensajería transaccional'] },
+              { img: '/multi-conexiones.svg', title: 'Múltiples conexiones', bullets: ['Sesiones paralelas', 'Equipos multi-agente', 'Aislamiento por dispositivo'] },
+              { img: '/seguimiento.svg', title: 'Seguimiento de leads', bullets: ['Kanban visual', 'Automatizaciones', 'Alertas de etapa'] }
+            ].map((d, i) => (
+              <Grid container spacing={4} alignItems="center" sx={{ mb: 6 }} key={i}>
+                <Grid item xs={12} md={6} order={{ xs: 2, md: i % 2 === 0 ? 1 : 2 }}>
+                  <Typography variant="h5" sx={{ color: 'white', fontWeight: 700, mb: 2 }}>
+                    {d.title}
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    {d.bullets.map((b, bi) => (
+                      <Box key={bi} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <CheckCircle sx={{ color: '#10b981' }} />
+                        <Typography variant="body1" sx={{ color: '#cbd5e1' }}>{b}</Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                </Grid>
+                <Grid item xs={12} md={6} order={{ xs: 1, md: i % 2 === 0 ? 2 : 1 }}>
+                  <Box sx={{ borderRadius: 3, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <img src={d.img} alt={d.title} style={{ width: '100%', height: 260, objectFit: 'cover' }} loading="lazy" />
+                  </Box>
+                </Grid>
+              </Grid>
+            ))}
+          </Container>
+        </Box>
+
+        {/* Módulos del sistema (con imágenes) */}
+        <Box
+          sx={{
+            bgcolor: '#0f172a',
+            py: 10,
+            borderTop: '1px solid rgba(255,255,255,0.06)'
+          }}
+        >
+          <Container maxWidth="lg">
+            <Box sx={{ textAlign: 'center', mb: 8 }}>
+              <Typography variant="h3" sx={{ fontWeight: 700, color: 'white', mb: 2 }}>
+                Módulos del sistema
+              </Typography>
+              <Typography variant="h6" sx={{ color: '#94a3b8' }}>
+                Funcionalidades clave para campañas, automatización y análisis
+              </Typography>
+            </Box>
+            <Grid container spacing={3}>
+              {[
+                { img: '/campaigns.svg', title: 'Campañas', desc: 'Envíos masivos, segmentación y plantillas.' },
+                { img: '/chatbot-ia.svg', title: 'Chatbot con IA', desc: 'Respuestas contextuales y handoff a agente.' },
+                { img: '/calendario.svg', title: 'Calendarios inteligentes', desc: 'Reservas, recordatorios y reprogramaciones.' },
+                { img: '/historial.svg', title: 'Historial y análisis', desc: 'Conversaciones centralizadas y búsqueda avanzada.' },
+                { img: '/reportes.svg', title: 'Reportes por estados', desc: 'Embudos y métricas de conversión.' },
+                { img: '/api-rest.svg', title: 'API REST', desc: 'Integración con ERP/CRM y webhooks.' },
+                { img: '/multi-conexiones.svg', title: 'Múltiples conexiones', desc: 'Varias sesiones y equipos paralelos.' },
+                { img: '/seguimiento.svg', title: 'Seguimiento de leads', desc: 'Kanban de contactos y etapas.' }
+              ].map((m, i) => (
+                <Grid item xs={12} sm={6} md={3} key={i}>
+                  <Card
+                    sx={{
+                      height: '100%',
+                      bgcolor: '#0f172a',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 3,
+                      p: 3,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2
+                    }}
+                  >
+                    <Box sx={{ borderRadius: 2, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <img src={m.img} alt={m.title} style={{ width: '100%', height: 120, objectFit: 'cover' }} loading="lazy" />
+                    </Box>
+                    <Typography variant="h6" sx={{ fontWeight: 600, color: 'white' }}>
+                      {m.title}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                      {m.desc}
+                    </Typography>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          </Container>
+        </Box>
+
+        {/* Beneficios - Por qué WhatsFlow */}
+        <Box
+          sx={{
+            bgcolor: '#0f172a',
+            py: 8,
+            borderTop: '1px solid rgba(255,255,255,0.05)'
+          }}
+        >
+          <Container maxWidth="lg">
+            <Box sx={{ textAlign: 'center', mb: 6 }}>
+              <Typography
+                variant="h3"
+                sx={{ fontWeight: 700, color: 'white', mb: 2 }}
+              >
+                ¿Por qué WhatsFlow?
+              </Typography>
+              <Typography variant="h6" sx={{ color: '#94a3b8', fontWeight: 400 }}>
+                Este sistema no puede faltar en su empresa: conecte, automatice y venda más.
+              </Typography>
+            </Box>
+            <Grid container spacing={3}>
+              {[
+                { title: 'Automatización con IA', desc: 'Chatbots contextuales que reducen tiempos de respuesta y mejoran la experiencia.' },
+                { title: 'Escalabilidad', desc: 'Múltiples agentes y conexiones para equipos que crecen sin fricciones.' },
+                { title: 'Medición y reportes', desc: 'Métricas por estado y embudos para optimizar decisiones.' },
+                { title: 'Integraciones', desc: 'API REST para conectar con ERP/CRM y sistemas internos.' }
+              ].map((item, idx) => (
+                <Grid item xs={12} sm={6} md={3} key={idx}>
+                  <Card
+                    sx={{
+                      height: '100%',
+                      bgcolor: '#0f172a',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 3,
+                      p: 3
+                    }}
+                  >
+                    <Typography variant="h6" sx={{ color: 'white', mb: 1, fontWeight: 600 }}>
+                      {item.title}
+                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                      {item.desc}
+                    </Typography>
+                  </Card>
+                </Grid>
+              ))}
             </Grid>
           </Container>
         </Box>

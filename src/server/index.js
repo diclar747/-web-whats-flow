@@ -2356,18 +2356,21 @@ async function saveMessageToDB(sessionId, msg) {
             setTimeout(async () => {
                 try {
                     const conn = await pool.getConnection();
-                    await conn.execute(
-                        'UPDATE messages SET status = ? WHERE id = ? AND session_id = ?',
-                        ['sent', messageId, phoneNumber]
+                    const [result] = await conn.execute(
+                        "UPDATE messages SET status = 'sent' WHERE id = ? AND session_id = ? AND (status IS NULL OR status = 'pending')",
+                        [messageId, phoneNumber]
                     );
                     conn.release();
-                    console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> sent`);
-
-                    // Emitir actualización de estado
-                    io.to(`session-${phoneNumber}`).emit('message-status-update', {
-                        messageId, id: messageId, chatJid: chat_jid,
-                        status: 'sent', sessionId, timestamp: new Date().toISOString()
-                    });
+                    if (result && result.affectedRows > 0) {
+                        console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> sent`);
+                        // Emitir actualización de estado SOLO si hubo cambio real
+                        io.to(`session-${phoneNumber}`).emit('message-status-update', {
+                            messageId, id: messageId, chatJid: chat_jid,
+                            status: 'sent', sessionId, timestamp: new Date().toISOString()
+                        });
+                    } else {
+                        console.log(`[${sessionId}] ⏭️ Status 'sent' no aplicado (estado actual ya superior o distinto) para ${messageId.substring(0, 20)}`);
+                    }
                 } catch (err) {
                     console.error(`[${sessionId}] Error auto-updating status to sent:`, err);
                 }
@@ -2377,17 +2380,20 @@ async function saveMessageToDB(sessionId, msg) {
             setTimeout(async () => {
                 try {
                     const conn = await pool.getConnection();
-                    await conn.execute(
-                        'UPDATE messages SET status = ? WHERE id = ? AND session_id = ?',
-                        ['delivered', messageId, phoneNumber]
+                    const [result] = await conn.execute(
+                        "UPDATE messages SET status = 'delivered' WHERE id = ? AND session_id = ? AND (status IS NULL OR status IN ('pending','sent'))",
+                        [messageId, phoneNumber]
                     );
                     conn.release();
-                    console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> delivered`);
-
-                    io.to(`session-${phoneNumber}`).emit('message-status-update', {
-                        messageId, id: messageId, chatJid: chat_jid,
-                        status: 'delivered', sessionId, timestamp: new Date().toISOString()
-                    });
+                    if (result && result.affectedRows > 0) {
+                        console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> delivered`);
+                        io.to(`session-${phoneNumber}`).emit('message-status-update', {
+                            messageId, id: messageId, chatJid: chat_jid,
+                            status: 'delivered', sessionId, timestamp: new Date().toISOString()
+                        });
+                    } else {
+                        console.log(`[${sessionId}] ⏭️ Status 'delivered' no aplicado (estado actual ya superior, p.ej. 'read') para ${messageId.substring(0, 20)}`);
+                    }
                 } catch (err) {
                     console.error(`[${sessionId}] Error auto-updating status to delivered:`, err);
                 }
@@ -4596,16 +4602,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             browser: ['WhatsFlow', 'Chrome', '120.0.0'],
             syncFullHistory: syncHistory,
             shouldSyncHistoryMessage: (msg) => {
-                if (msg?.key?.remoteJid?.includes('status@broadcast') || msg?.key?.remoteJid?.includes('@broadcast')) {
-                    return false;
-                }
                 return syncHistory;
             },
             fireInitQueries: syncHistory,
             getMessage: async (key) => {
-                if (key.remoteJid?.includes('status@broadcast') || key.remoteJid?.includes('@broadcast')) {
-                    return undefined;
-                }
                 return { conversation: 'Message not available' };
             },
             keepAliveIntervalMs: 30000,
@@ -4617,8 +4617,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             maxMsgRetryCount: 5,
             shouldIgnoreJid: jid => {
                 if (!jid) return true;
-                if (jid.includes('status@broadcast') || jid.includes('@broadcast')) return true;
-                // ✅ Solo ignorar grupos, PERMITIR contactos LID individuales
+                // ✅ Solo ignorar grupos, PERMITIR Status y contactos LID individuales
                 if (jid.includes('@g.us')) return true;
                 return false;
             },
@@ -16139,6 +16138,40 @@ app.post('/api/auth/login', async (req, res) => {
             // No enviar password en la respuesta
             delete user.password;
 
+            // Asignar período de prueba de 24h si el usuario no tiene plan activo
+            try {
+                const [subRows] = await connection.execute(
+                    'SELECT subscription_status, subscription_plan, subscription_start_date, subscription_end_date FROM users WHERE id = ?',
+                    [user.id]
+                );
+                const sub = subRows[0] || {};
+                const hasActivePlan = sub.subscription_status === 'active';
+                const hasTrial = sub.subscription_status === 'trial';
+                const trialExpired = hasTrial && sub.subscription_end_date && new Date(sub.subscription_end_date) < new Date();
+                const neverHadTrial = !sub.subscription_start_date;
+                if ((user.role === 'agent' || user.role === 'supervisor') && !hasActivePlan && !hasTrial && neverHadTrial) {
+                    await connection.execute(
+                        `UPDATE users SET 
+                            subscription_status = 'trial',
+                            subscription_plan = COALESCE(subscription_plan, 'free'),
+                            subscription_start_date = NOW(),
+                            subscription_end_date = DATE_ADD(NOW(), INTERVAL 1 DAY),
+                            subscription_days = 1
+                         WHERE id = ?`,
+                        [user.id]
+                    );
+                    console.log(`[SUBSCRIPTION] ✅ Trial de 24h asignado al usuario ID ${user.id}`);
+                } else if (hasTrial && trialExpired) {
+                    await connection.execute(
+                        `UPDATE users SET subscription_status = 'expired' WHERE id = ?`,
+                        [user.id]
+                    );
+                    console.log(`[SUBSCRIPTION] ⏰ Trial expirado marcado como 'expired' para usuario ID ${user.id}`);
+                }
+            } catch (e) {
+                console.warn('[SUBSCRIPTION] ⚠️ No se pudo evaluar/crear trial en login:', e?.message || e);
+            }
+
             // Crear sesión única por dispositivo usando el nuevo sistema
             // IMPORTANTE: Esto cerrará automáticamente cualquier sesión previa del mismo usuario
             const sessionToken = createUniqueSession(user.id, deviceId, email, user.role, io);
@@ -19953,6 +19986,125 @@ app.get('/api/whatsapp/statuses/:sessionId', async (req, res) => {
 
         if (!sock) {
             console.log(`[STATUSES-API] ⚠️ No se encontró sock activo para ${sessionId} (phone=${phoneNumber || 'n/a'}). Continuando solo con datos en BD.`);
+        } else {
+            // Intentar obtener estados de WhatsApp directamente
+            try {
+                console.log(`[STATUSES-API] 🔍 Intentando obtener estados de status@broadcast...`);
+                const statusJid = 'status@broadcast';
+                
+                // Intentar obtener mensajes de estado
+                const statusMessages = await sock.fetchStatusMessages?.() || [];
+                console.log(`[STATUSES-API] 📥 Obtenidos ${statusMessages.length} estados desde WhatsApp`);
+                
+                // Procesar cada estado recibido
+                for (const statusMsg of statusMessages) {
+                    try {
+                        const rawContactJid = statusMsg.key?.participant || statusMsg.key?.remoteJid;
+                        const contactJid = normalizeJid(rawContactJid);
+                        if (!contactJid) continue;
+                        const selfJid = phoneNumber ? `${phoneNumber}@s.whatsapp.net` : null;
+                        const isSelfStatus = selfJid ? normalizeJid(contactJid) === normalizeJid(selfJid) : false;
+                        const messageId = statusMsg.key?.id || `${contactJid}-${Date.now()}`;
+                        const timestamp = statusMsg.messageTimestamp ? Number(statusMsg.messageTimestamp) * 1000 : Date.now();
+                        let mediaType = 'text';
+                        let textContent = null;
+                        let mediaUrl = null;
+                        if (statusMsg.message?.conversation) {
+                            mediaType = 'text';
+                            textContent = statusMsg.message.conversation;
+                        } else if (statusMsg.message?.extendedTextMessage?.text) {
+                            mediaType = 'text';
+                            textContent = statusMsg.message.extendedTextMessage.text;
+                        } else if (statusMsg.message?.imageMessage) {
+                            mediaType = 'image';
+                            textContent = statusMsg.message.imageMessage.caption || null;
+                            try {
+                                const buffer = await downloadMediaMessage(statusMsg, 'buffer', {});
+                                if (buffer) {
+                                    const ext = statusMsg.message.imageMessage.mimetype?.split('/')?.[1]?.split(';')?.[0]?.trim() || 'jpg';
+                                    const filename = `status-image-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
+                                    const mediaDir = path.join(__dirname, '../../media/statuses');
+                                    await fs.promises.mkdir(mediaDir, { recursive: true });
+                                    const filepath = path.join(mediaDir, filename);
+                                    await fs.promises.writeFile(filepath, buffer);
+                                    mediaUrl = `/media/statuses/${filename}`;
+                                }
+                            } catch {
+                                mediaUrl = null;
+                            }
+                        } else if (statusMsg.message?.videoMessage) {
+                            mediaType = 'video';
+                            textContent = statusMsg.message.videoMessage.caption || null;
+                            try {
+                                const buffer = await downloadMediaMessage(statusMsg, 'buffer', {});
+                                if (buffer) {
+                                    const ext = statusMsg.message.videoMessage.mimetype?.split('/')?.[1]?.split(';')?.[0]?.trim() || 'mp4';
+                                    const filename = `status-video-${Date.now()}-${messageId.substring(0, 8)}.${ext}`;
+                                    const mediaDir = path.join(__dirname, '../../media/statuses');
+                                    await fs.promises.mkdir(mediaDir, { recursive: true });
+                                    const filepath = path.join(mediaDir, filename);
+                                    await fs.promises.writeFile(filepath, buffer);
+                                    mediaUrl = `/media/statuses/${filename}`;
+                                }
+                            } catch {
+                                mediaUrl = null;
+                            }
+                        }
+                        const connection = await pool.getConnection();
+                        try {
+                            const [contactData] = await connection.execute(
+                                `SELECT name, notify_name, avatar_url FROM contacts
+                                 WHERE jid = ? AND session_id = ? LIMIT 1`,
+                                [contactJid, phoneNumber || sessionId]
+                            );
+                            const contactName = contactData.length > 0
+                                ? (contactData[0].name || contactData[0].notify_name || contactJid.split('@')[0])
+                                : (statusMsg.pushName || contactJid.split('@')[0]);
+                            const avatarUrl = contactData.length > 0 ? contactData[0].avatar_url : null;
+                            const publishedAt = new Date(timestamp);
+                            const expiresAt = new Date(timestamp + 24 * 60 * 60 * 1000);
+                            await connection.execute(
+                                `INSERT INTO contact_statuses
+                                 (session_id, message_id, contact_jid, contact_name, avatar_url,
+                                  text_content, media_type, media_url, published_at, expires_at)
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                 ON DUPLICATE KEY UPDATE
+                                 contact_name = VALUES(contact_name),
+                                 avatar_url = VALUES(avatar_url),
+                                 text_content = VALUES(text_content),
+                                 media_type = VALUES(media_type),
+                                 media_url = VALUES(media_url)`,
+                                [
+                                    phoneNumber || sessionId,
+                                    messageId,
+                                    contactJid,
+                                    isSelfStatus ? 'Yo' : contactName,
+                                    avatarUrl,
+                                    textContent,
+                                    mediaType,
+                                    mediaUrl,
+                                    publishedAt,
+                                    expiresAt
+                                ]
+                            );
+                            io.to(`session-${sessionId}`).emit('new-status', {
+                                jid: contactJid,
+                                name: contactName,
+                                type: mediaType,
+                                content: textContent,
+                                mediaUrl: mediaUrl,
+                                timestamp: timestamp
+                            });
+                        } finally {
+                            connection.release();
+                        }
+                    } catch (err) {
+                        console.error(`[STATUSES-API] Error procesando estado:`, err.message);
+                    }
+                }
+            } catch (statusErr) {
+                console.log(`[STATUSES-API] ℹ️ No se pudieron obtener estados directamente:`, statusErr.message);
+            }
         }
 
         try {
@@ -19982,7 +20134,7 @@ app.get('/api/whatsapp/statuses/:sessionId', async (req, res) => {
                                         [phoneNumber || sessionId]
                                 );
 
-                console.log(`[STATUSES-API] 📊 ${statuses.length} estados encontrados en base de datos`);
+                console.log(`[STATUSES-API] 📊 ${statuses.length} estados encontrados en base de datos para session ${phoneNumber || sessionId}`);
 
                 // Agrupar estados por contacto
                 const statusesByContact = {};
@@ -20049,7 +20201,7 @@ app.get('/api/whatsapp/statuses/:sessionId', async (req, res) => {
                 // Ordenar estados propios por fecha
                 selfStatuses.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-                console.log(`[STATUSES-API] ✅ ${contactStatuses.length} contactos con estados activos, ${selfStatuses.length} estados propios`);
+                console.log(`[STATUSES-API] ✅ RESPUESTA FINAL: ${contactStatuses.length} contactos con estados activos, ${selfStatuses.length} estados propios para session ${sessionId}`);
 
             } finally {
                 connection.release();

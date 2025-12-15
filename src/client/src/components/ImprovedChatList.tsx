@@ -638,9 +638,20 @@ const ImprovedChatList: React.FC<ImprovedChatListProps> = ({
       </Menu>
 
       {/* Transfer Dialog */}
-      <Dialog open={transferDialogOpen} onClose={() => setTransferDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Transferir chat a agente</DialogTitle>
-        <DialogContent>
+      <Dialog
+        open={transferDialogOpen}
+        onClose={() => setTransferDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: theme => ({
+            bgcolor: theme.palette.background.paper,
+            backgroundImage: 'none'
+          })
+        }}
+      >
+        <DialogTitle sx={{ color: 'text.primary' }}>Transferir chat a agente</DialogTitle>
+        <DialogContent sx={{ color: 'text.primary' }}>
           {selectedChatForTransfer && (
             <Box mb={2} mt={1}>
               <Typography variant="body2" color="textSecondary">
@@ -685,6 +696,11 @@ const ImprovedChatList: React.FC<ImprovedChatListProps> = ({
             value={transferReason}
             onChange={(e) => setTransferReason(e.target.value)}
             placeholder="Ej: Especialización en el tema..."
+            sx={theme => ({
+              '& .MuiOutlinedInput-root': {
+                bgcolor: `${theme.palette.background.default}AA`
+              }
+            })}
           />
 
           <Alert severity="info" sx={{ mt: 2 }}>
@@ -700,7 +716,19 @@ const ImprovedChatList: React.FC<ImprovedChatListProps> = ({
       </Dialog>
 
       {/* Transfer Request Dialog */}
-      <Dialog open={requestDialogOpen} onClose={() => { }} maxWidth="sm" fullWidth disableEscapeKeyDown>
+      <Dialog
+        open={requestDialogOpen}
+        onClose={() => { }}
+        maxWidth="sm"
+        fullWidth
+        disableEscapeKeyDown
+        PaperProps={{
+          sx: theme => ({
+            bgcolor: theme.palette.background.paper,
+            backgroundImage: 'none'
+          })
+        }}
+      >
         <DialogTitle>
           <Box display="flex" alignItems="center" gap={1}>
             <TransferIcon color="primary" />
@@ -718,7 +746,7 @@ const ImprovedChatList: React.FC<ImprovedChatListProps> = ({
               </Typography>
 
               {currentRequest.reason && (
-                <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                <Box sx={theme => ({ mt: 2, p: 2, bgcolor: `${theme.palette.background.default}AA`, borderRadius: 1 })}>
                   <Typography variant="caption" color="textSecondary">
                     Razón:
                   </Typography>

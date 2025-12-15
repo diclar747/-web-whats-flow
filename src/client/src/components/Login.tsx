@@ -121,21 +121,34 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         // Llamar al callback con los datos de usuario Y sessionId
         onLoginSuccess(data.user, data.token, data.sessionId);
 
-        // SEGURIDAD: Ya no buscamos sesiones activas de otros usuarios
-        // Cada usuario debe tener su propio sessionId vinculado a su cuenta
+        // Verificar estado de suscripción y redirigir a Mi Plan si corresponde
+        try {
+          const phone = data.user?.phone;
+          if (phone) {
+            const subResp = await fetch(`${getAPIBaseURL()}/api/subscriptions/my-subscription?phone=${encodeURIComponent(phone)}`);
+            const subData = await subResp.json();
+            const subscription = subData?.subscription || null;
+            const status = subscription?.subscription_status || 'inactive';
+            const daysRemaining = subscription?.days_remaining ?? 0;
+            const mustGoToPlan = !subscription || status === 'expired' || status === 'inactive' || (status === 'trial' && daysRemaining <= 0);
+            if (mustGoToPlan) {
+              sessionStorage.setItem('openPlanTab', 'true');
+              navigate('/dashboard/settings?tab=plan');
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn('[LOGIN] No se pudo verificar suscripción, continuando al dashboard:', e);
+        }
+
+        // Fallback: Redirigir según el rol del usuario
         const finalSessionId = data.sessionId || sessionStorage.getItem('whatsflow_session');
-
-        // Redirigir según el rol del usuario
         const userRole = data.user?.role;
-
         if (userRole === 'agent' || userRole === 'supervisor') {
-          console.log('✅ Navegando al dashboard de agente');
-          navigate('/dashboard');  // El mismo /dashboard mostrará AgentDashboard según el rol
+          navigate('/dashboard');
         } else if (finalSessionId) {
-          console.log('✅ Navegando al dashboard con sessionId:', finalSessionId);
           navigate('/dashboard');
         } else {
-          console.log('⚠️ Login exitoso pero sin sessionId - Usuario debe escanear QR');
           navigate('/dashboard');
         }
       } else {

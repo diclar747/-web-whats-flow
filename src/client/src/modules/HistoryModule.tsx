@@ -414,9 +414,9 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
 
         const cacheTime = parsedData.timestamp;
         const now = Date.now();
-        const fiveMinutes = 5 * 60 * 1000; // 5 minutos en milisegundos (corregido)
+        const ttl = 60 * 1000;
 
-        if (now - cacheTime < fiveMinutes) {
+        if (now - cacheTime < ttl) {
           setMessages(parsedData.messages);
           setConversations(parsedData.conversations);
           setLoading(false);
@@ -677,6 +677,27 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           ? { ...msg, status: data.status }
           : msg
       ));
+
+      const cacheKey = `history_${sessionId}`;
+      const cachedData = localStorage.getItem(cacheKey);
+      if (cachedData) {
+        try {
+          const parsed = JSON.parse(cachedData);
+          if (parsed && Array.isArray(parsed.messages)) {
+            const updatedMessages = parsed.messages.map((msg: any) =>
+              msg.id === data.messageId || msg.id === data.id
+                ? { ...msg, status: data.status }
+                : msg
+            );
+            const updatedCache = {
+              ...parsed,
+              messages: updatedMessages,
+              timestamp: Date.now()
+            };
+            localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
+          }
+        } catch {}
+      }
     };
 
     on('message-status-update', handleMessageStatusUpdate);

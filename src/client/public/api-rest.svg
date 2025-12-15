@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#0f172a"/>
+  <rect x="24" y="24" width="592" height="312" rx="16" fill="#1e293b" stroke="rgba(255,255,255,0.15)" />
+  <rect x="60" y="70" width="520" height="40" rx="10" fill="#334155"/>
+  <rect x="60" y="130" width="520" height="170" rx="12" fill="#0f172a" stroke="#334155"/>
+  <rect x="80" y="150" width="200" height="120" rx="12" fill="#6366f1" opacity="0.25"/>
+  <rect x="260" y="160" width="50" height="20" rx="6" fill="#334155"/>
+  <rect x="320" y="150" width="200" height="120" rx="12" fill="#22c55e" opacity="0.25"/>
+  <path d="M260 170 L300 170" stroke="#64748b" stroke-width="2"/>
+  <path d="M300 170 L294 166 M300 170 L294 174" stroke="#64748b" stroke-width="2"/>
+  <text x="40" y="310" fill="#e2e8f0" font-size="22" font-family="Inter, Segoe UI, sans-serif" font-weight="700">API REST</text>
+</svg>

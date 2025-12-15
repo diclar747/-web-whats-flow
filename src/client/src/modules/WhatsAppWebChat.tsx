@@ -1113,6 +1113,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     const filtered = chats.filter(chat => {
       const chatName = chat.name || chat.id.split('@')[0] || 'Desconocido';
 
+      // Excluir mi propio contacto
+      const myNumber = normalizePhoneNumber(String(sessionId || '').split('@')[0].split(':')[0]);
+      const chatNumber = normalizePhoneNumber(chat.id.split('@')[0]);
+      if (myNumber && chatNumber && myNumber === chatNumber) {
+        return false;
+      }
+
       // Filtrar status broadcasts
       if (chatName === 'status' || chat.id.includes('status@broadcast')) {
         return false;

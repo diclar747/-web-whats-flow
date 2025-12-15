@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import AdminSubscriptionPanel from '../components/AdminSubscriptionPanel';
 import APIRestSettings from '../components/APIRestSettings';
@@ -398,6 +399,7 @@ interface BillingInfo {
 }
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) => {
+  const location = useLocation();
   const [selectedTab, setSelectedTab] = useState(0);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<UserAccount[]>([]);
@@ -485,6 +487,16 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     loadSettingsData();
   }, [sessionId]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tabParam = params.get('tab');
+    const openPlanFlag = sessionStorage.getItem('openPlanTab') === 'true';
+    if (tabParam === 'plan' || openPlanFlag) {
+      setSelectedTab(3);
+      sessionStorage.removeItem('openPlanTab');
+    }
+  }, [location.search]);
+
   // 📱 Función para cargar contactos de WhatsApp
   const loadWhatsAppContacts = async () => {
     const currentSessionId = localStorage.getItem('sessionId') || sessionStorage.getItem('sessionId');
@@ -522,10 +534,16 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
           if (subData.subscription) {
             setIsAdmin(subData.subscription.is_admin || sessionId?.includes('595994854167'));
             setIsSuperAdmin(subData.subscription.is_super_admin || sessionId?.includes('595994854167'));
+            const status = subData.subscription.subscription_status;
+            const daysRemaining = subData.subscription.days_remaining ?? 0;
+            if (status === 'expired' || status === 'inactive' || (status === 'trial' && daysRemaining <= 0)) {
+              setSelectedTab(3);
+            }
           } else {
             // Sin suscripción, verificar si es super admin por teléfono
             setIsAdmin(sessionId?.includes('595994854167') || false);
             setIsSuperAdmin(sessionId?.includes('595994854167') || false);
+            setSelectedTab(3);
           }
         }
       } catch (error) {

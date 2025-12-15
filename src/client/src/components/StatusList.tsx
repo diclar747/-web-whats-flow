@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Box, List, ListItem, ListItemAvatar, Avatar, ListItemText, Typography, Dialog, DialogTitle, DialogContent, IconButton, CircularProgress, Tabs, Tab, Divider } from '@mui/material';
+import { Box, List, ListItem, ListItemAvatar, Avatar, ListItemText, Typography, Dialog, DialogTitle, DialogContent, IconButton, CircularProgress, Tabs, Tab, Divider, Button, TextField, FormControl, InputLabel, Select, MenuItem, Stack, DialogActions, Checkbox, FormControlLabel } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { getAPIBaseURL } from '../utils/socketConfig';
+import { useSocket } from '../context/SocketContext';
 
 interface StatusItem {
   id: string;
@@ -36,6 +37,15 @@ export default function StatusList({ sessionId }: { sessionId: string }) {
   const [viewer, setViewer] = useState<StatusItem | null>(null);
   const [contactViewer, setContactViewer] = useState<{ contact: ContactStatus; statusIndex: number } | null>(null);
   const [tabValue, setTabValue] = useState(1); // 0: Mis estados, 1: Estados de contactos
+  const { on, off } = useSocket();
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [publishAfterCreate, setPublishAfterCreate] = useState(true);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [intervalMinutes, setIntervalMinutes] = useState(60);
+  const [mediaType, setMediaType] = useState<'text' | 'image' | 'video'>('text');
+  const [textContent, setTextContent] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const resolveMediaUrl = (url?: string | null) => {
     if (!url) return null;
@@ -126,16 +136,7 @@ export default function StatusList({ sessionId }: { sessionId: string }) {
           created_at: s.created_at,
           published_at: s.published_at
         }));
-        const drafts: StatusItem[] = (data.statuses || []).filter((s: any) => s.status !== 'published').map((s: any) => ({
-          id: s.id?.toString() || Math.random().toString(),
-          text_content: s.text_content,
-          media_url: s.media_url,
-          media_type: s.media_type,
-          status: s.status,
-          created_at: s.created_at,
-          published_at: s.published_at
-        }));
-        const all = [...published, ...drafts].sort((a, b) => {
+        const all = [...published].sort((a, b) => {
           const ta = new Date(a.published_at || a.created_at).getTime();
           const tb = new Date(b.published_at || b.created_at).getTime();
           return tb - ta;
@@ -158,6 +159,52 @@ export default function StatusList({ sessionId }: { sessionId: string }) {
       loadContactStatuses();
     }
   }, [sessionId, tabValue]);
+
+  useEffect(() => {
+    const handler = (data: any) => {
+      const jid = String(data.jid || '');
+      const name = String(data.name || jid.split('@')[0]);
+      const url = data.mediaUrl ? (String(data.mediaUrl).startsWith('http') ? String(data.mediaUrl) : `${getAPIBaseURL()}${String(data.mediaUrl)}`) : undefined;
+      const type = (data.type === 'image' || data.type === 'video') ? data.type : 'text';
+      const caption = data.content || undefined;
+      const timestamp = Number(data.timestamp || Date.now());
+
+      setContactStatuses(prev => {
+        const existing = prev.find(c => c.jid === jid);
+        if (!existing) {
+          return [
+            {
+              jid,
+              name,
+              phone: jid.split('@')[0],
+              avatar: null,
+              statuses: [{ id: `${jid}-${timestamp}`, type, url, caption, timestamp }],
+              unreadCount: 1
+            },
+            ...prev
+          ].sort((a, b) => (b.statuses[0]?.timestamp || 0) - (a.statuses[0]?.timestamp || 0));
+        }
+        const updated = prev.map(c => {
+          if (c.jid !== jid) return c;
+          const nextStatuses = [
+            { id: `${jid}-${timestamp}`, type, url, caption, timestamp },
+            ...c.statuses
+          ].slice(0, 30);
+          return {
+            ...c,
+            statuses: nextStatuses,
+            unreadCount: nextStatuses.length
+          };
+        });
+        return updated.sort((a, b) => (b.statuses[0]?.timestamp || 0) - (a.statuses[0]?.timestamp || 0));
+      });
+    };
+
+    on('new-status', handler);
+    return () => {
+      off('new-status');
+    };
+  }, [on, off]);
 
   const formatTime = (timestamp: number) => {
     const now = Date.now();
@@ -199,6 +246,16 @@ export default function StatusList({ sessionId }: { sessionId: string }) {
           >
             <RefreshIcon />
           </IconButton>
+          {tabValue === 0 && (
+            <Button
+              variant="contained"
+              size="small"
+              onClick={() => setCreateOpen(true)}
+              sx={{ ml: 1, bgcolor: '#00a884', '&:hover': { bgcolor: '#019873' } }}
+            >
+              Nuevo estado
+            </Button>
+          )}
         </Box>
       </Box>
 
@@ -578,6 +635,146 @@ export default function StatusList({ sessionId }: { sessionId: string }) {
             </Box>
           </Box>
         )}
+      </Dialog>
+
+      {/* Crear y publicar estado */}
+      <Dialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#202c33' } }}
+      >
+        <DialogTitle sx={{ color: '#e9edef' }}>
+          Crear estado
+          <IconButton onClick={() => setCreateOpen(false)} sx={{ position: 'absolute', right: 8, top: 8, color: '#8696a0' }}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2}>
+            <FormControl fullWidth>
+              <InputLabel sx={{ color: '#8696a0' }}>Tipo</InputLabel>
+              <Select
+                value={mediaType}
+                label="Tipo"
+                onChange={(e) => {
+                  const val = e.target.value as 'text' | 'image' | 'video';
+                  setMediaType(val);
+                  setSelectedFile(null);
+                }}
+                sx={{ color: '#e9edef' }}
+              >
+                <MenuItem value="text">Texto</MenuItem>
+                <MenuItem value="image">Imagen</MenuItem>
+                <MenuItem value="video">Video</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              label="Texto"
+              multiline
+              rows={4}
+              value={textContent}
+              onChange={(e) => setTextContent(e.target.value)}
+              sx={{
+                '& .MuiInputBase-input': { color: '#e9edef' },
+                '& .MuiInputLabel-root': { color: '#8696a0' }
+              }}
+              fullWidth
+            />
+            {(mediaType === 'image' || mediaType === 'video') && (
+              <Button component="label" variant="outlined" sx={{ color: '#e9edef', borderColor: '#2a3942' }}>
+                {selectedFile ? selectedFile.name : `Seleccionar ${mediaType}`}
+                <input
+                  type="file"
+                  hidden
+                  accept={mediaType === 'image' ? 'image/*' : 'video/*'}
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                />
+              </Button>
+            )}
+            <FormControlLabel
+              control={<Checkbox checked={publishAfterCreate} onChange={e => setPublishAfterCreate(e.target.checked)} />}
+              label="Publicar inmediatamente"
+              sx={{ color: '#e9edef' }}
+            />
+            <FormControlLabel
+              control={<Checkbox checked={scheduleEnabled} onChange={e => setScheduleEnabled(e.target.checked)} />}
+              label="Programar publicación"
+              sx={{ color: '#e9edef' }}
+            />
+            {scheduleEnabled && (
+              <TextField
+                type="number"
+                label="Intervalo (minutos)"
+                value={intervalMinutes}
+                onChange={e => setIntervalMinutes(parseInt(e.target.value) || 60)}
+                sx={{
+                  '& .MuiInputBase-input': { color: '#e9edef' },
+                  '& .MuiInputLabel-root': { color: '#8696a0' }
+                }}
+                fullWidth
+              />
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCreateOpen(false)} sx={{ color: '#e9edef' }}>Cancelar</Button>
+          <Button
+            variant="contained"
+            disabled={createLoading || (!textContent && !selectedFile)}
+            onClick={async () => {
+              try {
+                setCreateLoading(true);
+                const fd = new FormData();
+                fd.append('sessionId', sessionId);
+                fd.append('textContent', textContent);
+                fd.append('backgroundColor', '#075E54');
+                fd.append('fontStyle', 'default');
+                if (selectedFile) fd.append('mediaFile', selectedFile);
+                const res = await fetch(`${getAPIBaseURL()}/api/statuses/create`, {
+                  method: 'POST',
+                  body: fd
+                });
+                const data = await res.json();
+                if (data.success && data.statusId) {
+                  if (scheduleEnabled) {
+                    await fetch(`${getAPIBaseURL()}/api/statuses/schedule/create`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        sessionId,
+                        name: 'Programación rápida',
+                        statusIds: [data.statusId],
+                        intervalMinutes,
+                        rotationDays: 30
+                      })
+                    });
+                    await loadMyStatuses();
+                  } else if (publishAfterCreate) {
+                    await fetch(`${getAPIBaseURL()}/api/statuses/publish/${data.statusId}`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ sessionId })
+                    });
+                    await loadMyStatuses();
+                  }
+                  setCreateOpen(false);
+                  setTextContent('');
+                  setSelectedFile(null);
+                  setScheduleEnabled(false);
+                }
+              } catch (err) {
+                console.error('[STATUS-LIST] Error creando/publicando estado:', err);
+              } finally {
+                setCreateLoading(false);
+              }
+            }}
+            sx={{ bgcolor: '#00a884', '&:hover': { bgcolor: '#019873' } }}
+          >
+            {createLoading ? 'Publicando…' : (publishAfterCreate ? 'Crear y publicar' : 'Crear')}
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );
