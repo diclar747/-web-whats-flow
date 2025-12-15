@@ -834,27 +834,80 @@ module.exports = function (app, pool) {
             const connection = await pool.getConnection();
 
             try {
-                // Obtener todos los agentes para mostrar su estado real
-                const [agents] = await connection.execute(`
-                SELECT
-                    id as userId,
-                    name as userName,
-                    email,
-                    phone,
-                    role,
-                    agent_status as status,
-                    last_activity as lastActivity
-                FROM users
-                WHERE role IN ('agent', 'supervisor', 'admin')
-                ORDER BY 
-                    CASE 
-                        WHEN agent_status = 'online' THEN 1
-                        WHEN agent_status = 'available' THEN 2
-                        WHEN agent_status = 'busy' THEN 3
-                        ELSE 4 
-                    END,
-                    name ASC
-            `);
+                // ✅ IMPORTANTE: Filtrar agentes según el usuario autenticado
+                let adminPhone = null;
+                const { sessionId } = req.query;
+
+                // Opción 1: Obtener admin_phone desde sessionId
+                if (sessionId) {
+                    const cleanSessionId = sessionId.replace(/\D/g, '');
+                    if (cleanSessionId.length >= 7 && cleanSessionId === sessionId) {
+                        adminPhone = sessionId;
+                    } else {
+                        const [sessions] = await connection.execute(
+                            'SELECT phone_number FROM user_sessions WHERE session_id = ? AND is_active = TRUE LIMIT 1',
+                            [sessionId]
+                        );
+                        if (sessions.length > 0) {
+                            adminPhone = sessions[0].phone_number;
+                        }
+                    }
+                }
+
+                // Opción 2: Intentar desde JWT token
+                if (!adminPhone && req.headers.authorization) {
+                    try {
+                        const token = req.headers.authorization.split(' ')[1];
+                        const jwt = require('jsonwebtoken');
+                        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                        if (decoded.phone) {
+                            adminPhone = decoded.phone;
+                        }
+                    } catch (jwtErr) {
+                        console.log(`[AGENTS-ONLINE] ⚠️ JWT inválido o no presente`);
+                    }
+                }
+
+                // ✅ Construir query con filtro
+                let query = `
+                    SELECT
+                        id as userId,
+                        name as userName,
+                        email,
+                        phone,
+                        role,
+                        agent_status as status,
+                        last_activity as lastActivity
+                    FROM users
+                    WHERE role IN ('agent', 'supervisor', 'admin')
+                `;
+                let params = [];
+
+                // ✅ FILTRO CRÍTICO: Solo mostrar agentes del admin autenticado
+                if (adminPhone) {
+                    query += ` AND admin_phone = ?`;
+                    params.push(adminPhone);
+                    console.log(`[AGENTS-ONLINE] 🔍 Filtrando agentes para admin: ${adminPhone}`);
+                } else {
+                    // Si no hay adminPhone, NO devolver ningún agente
+                    console.log(`[AGENTS-ONLINE] ⚠️ No se pudo determinar adminPhone. No se devolverán agentes.`);
+                    return res.json({ success: true, agents: [], total: 0 });
+                }
+
+                query += `
+                    ORDER BY
+                        CASE
+                            WHEN agent_status = 'online' THEN 1
+                            WHEN agent_status = 'available' THEN 2
+                            WHEN agent_status = 'busy' THEN 3
+                            ELSE 4
+                        END,
+                        name ASC
+                `;
+
+                const [agents] = await connection.execute(query, params);
+
+                console.log(`[AGENTS-ONLINE] ✅ ${agents.length} agentes encontrados para admin ${adminPhone}`);
 
                 res.json({
                     success: true,
@@ -865,7 +918,7 @@ module.exports = function (app, pool) {
                 connection.release();
             }
         } catch (error) {
-            console.error('Error obteniendo agentes:', error);
+            console.error('[AGENTS-ONLINE] ❌ Error obteniendo agentes:', error);
             res.status(500).json({ success: false, error: 'Error obteniendo lista de agentes' });
         }
     });

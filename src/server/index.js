@@ -2702,14 +2702,35 @@ async function getOrCreateUserSession(sessionId, phoneNumber) {
         return null;
     }
 
+    // ✅ VALIDACIÓN: Asegurar que phoneNumber sea un número válido, no un sessionId
+    if (!phoneNumber || typeof phoneNumber !== 'string' || phoneNumber.length === 0) {
+        console.error(`[DB-USER] ❌ phoneNumber inválido (vacío): ${phoneNumber}`);
+        return null;
+    }
+
+    // ✅ VALIDACIÓN: Verificar que phoneNumber solo contenga dígitos
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+    if (cleanPhone.length < 7 || cleanPhone !== phoneNumber) {
+        console.error(`[DB-USER] ❌ phoneNumber inválido (no es solo dígitos o muy corto): "${phoneNumber}" (limpio: "${cleanPhone}")`);
+        return null;
+    }
+
+    // ✅ VALIDACIÓN: Evitar que se use sessionId como phoneNumber
+    if (phoneNumber === sessionId) {
+        console.error(`[DB-USER] ❌ PREVENCIÓN: phoneNumber es igual a sessionId. Esto es un error. phoneNumber="${phoneNumber}", sessionId="${sessionId}"`);
+        return null;
+    }
+
     const connection = await pool.getConnection();
     try {
-        // Crear tabla de sesiones de usuario si no existe
+        // Crear tabla de sesiones de usuario si no existe (con campos name y avatar_url)
         await connection.query(
             'CREATE TABLE IF NOT EXISTS user_sessions ('
             + 'id INT AUTO_INCREMENT PRIMARY KEY,'
             + 'session_id VARCHAR(255) NOT NULL,'
             + 'phone_number VARCHAR(50) NOT NULL,'
+            + 'name VARCHAR(255) NULL,'
+            + 'avatar_url TEXT NULL,'
             + 'is_active BOOLEAN DEFAULT TRUE,'
             + 'device_id VARCHAR(255),'
             + 'session_token VARCHAR(500),'
@@ -2721,6 +2742,23 @@ async function getOrCreateUserSession(sessionId, phoneNumber) {
             + 'INDEX idx_phone_active (phone_number, is_active)'
             + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
         );
+
+        // Obtener datos del usuario desde la tabla users (si existe)
+        let userName = null;
+        let userAvatarUrl = null;
+        try {
+            const [userData] = await connection.execute(
+                'SELECT name, avatar_url FROM users WHERE phone = ? LIMIT 1',
+                [phoneNumber]
+            );
+            if (userData.length > 0) {
+                userName = userData[0].name;
+                userAvatarUrl = userData[0].avatar_url;
+                console.log(`[DB-USER] ✅ Datos de usuario encontrados: ${userName}`);
+            }
+        } catch (err) {
+            console.log(`[DB-USER] ⚠️ No se pudieron obtener datos de usuario desde tabla users:`, err.message);
+        }
 
         // Buscar sesión existente por número de teléfono (activa o inactiva)
         const [existingSessions] = await connection.execute(
@@ -2734,16 +2772,16 @@ async function getOrCreateUserSession(sessionId, phoneNumber) {
             userSessionId = existingSessions[0].id;
             const wasInactive = !existingSessions[0].is_active;
 
-            // Actualizar con el nuevo session_id, device_id, session_token y marcar como activa
+            // Actualizar con el nuevo session_id, device_id, session_token, name, avatar_url y marcar como activa
             const deviceId = sessionDeviceMap.get(sessionId) || null;
             const sessionToken = sessionTokenMap.get(sessionId)?.sessionToken || null;
             const ownerPhone = sessionOwnerMap.get(sessionId) || null;
-            
+
             await connection.execute(
-                'UPDATE user_sessions SET session_id = ?, is_active = TRUE, device_id = ?, session_token = ?, owner_phone_number = ?, last_activity = CURRENT_TIMESTAMP, last_connection_time = CURRENT_TIMESTAMP WHERE id = ?',
-                [sessionId, deviceId, sessionToken, ownerPhone, userSessionId]
+                'UPDATE user_sessions SET session_id = ?, is_active = TRUE, device_id = ?, session_token = ?, owner_phone_number = ?, name = ?, avatar_url = ?, last_activity = CURRENT_TIMESTAMP, last_connection_time = CURRENT_TIMESTAMP WHERE id = ?',
+                [sessionId, deviceId, sessionToken, ownerPhone, userName, userAvatarUrl, userSessionId]
             );
-            
+
             const ownerLabel = ownerPhone ? ` (owner: ${ownerPhone})` : ' (principal)';
             console.log(`[DB-USER] Sesión ${wasInactive ? '🔄 REACTIVADA' : '✅ actualizada'} para ${phoneNumber}${ownerLabel}: user_session_id ${userSessionId}`);
         } else {
@@ -2751,13 +2789,13 @@ async function getOrCreateUserSession(sessionId, phoneNumber) {
             const deviceId = sessionDeviceMap.get(sessionId) || null;
             const sessionToken = sessionTokenMap.get(sessionId)?.sessionToken || null;
             const ownerPhone = sessionOwnerMap.get(sessionId) || null;
-            
+
             const [result] = await connection.execute(
-                'INSERT INTO user_sessions (session_id, phone_number, owner_phone_number, is_active, device_id, session_token, last_connection_time) VALUES (?, ?, ?, TRUE, ?, ?, CURRENT_TIMESTAMP)',
-                [sessionId, phoneNumber, ownerPhone, deviceId, sessionToken]
+                'INSERT INTO user_sessions (session_id, phone_number, name, avatar_url, owner_phone_number, is_active, device_id, session_token, last_connection_time) VALUES (?, ?, ?, ?, ?, TRUE, ?, ?, CURRENT_TIMESTAMP)',
+                [sessionId, phoneNumber, userName, userAvatarUrl, ownerPhone, deviceId, sessionToken]
             );
             userSessionId = result.insertId;
-            
+
             if (ownerPhone) {
                 console.log(`[DB-USER] 🔗 Nueva sesión SECUNDARIA creada para ${phoneNumber} (owner: ${ownerPhone}): user_session_id ${userSessionId}`);
             } else {
@@ -17777,11 +17815,60 @@ app.get('/api/agents/available', async (req, res) => {
         const { sessionId } = req.query;
         const connection = await pool.getConnection();
         try {
-            // Obtener usuarios activos (agentes y supervisores) de la tabla users
+            // ✅ IMPORTANTE: Filtrar agentes según el usuario autenticado
+            let adminPhone = null;
+
+            // Opción 1: Obtener admin_phone desde sessionId (si es phone_number)
+            if (sessionId) {
+                // Verificar si sessionId es un número de teléfono válido
+                const cleanSessionId = sessionId.replace(/\D/g, '');
+                if (cleanSessionId.length >= 7 && cleanSessionId === sessionId) {
+                    adminPhone = sessionId;
+                    console.log(`[AGENTS-AVAILABLE] 📞 Usando sessionId como adminPhone: ${adminPhone}`);
+                } else {
+                    // Si sessionId no es un phone, buscar el phone_number asociado
+                    const [sessions] = await connection.execute(
+                        'SELECT phone_number FROM user_sessions WHERE session_id = ? AND is_active = TRUE LIMIT 1',
+                        [sessionId]
+                    );
+                    if (sessions.length > 0) {
+                        adminPhone = sessions[0].phone_number;
+                        console.log(`[AGENTS-AVAILABLE] 📞 Phone encontrado desde session_id: ${adminPhone}`);
+                    }
+                }
+            }
+
+            // Opción 2: Intentar desde JWT token (si está presente)
+            if (!adminPhone && req.headers.authorization) {
+                try {
+                    const token = req.headers.authorization.split(' ')[1];
+                    const jwt = require('jsonwebtoken');
+                    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                    if (decoded.phone) {
+                        adminPhone = decoded.phone;
+                        console.log(`[AGENTS-AVAILABLE] 📞 Phone desde JWT: ${adminPhone}`);
+                    }
+                } catch (jwtErr) {
+                    console.log(`[AGENTS-AVAILABLE] ⚠️ JWT inválido o no presente`);
+                }
+            }
+
+            // ✅ Construir query con filtro por admin_phone
             let query = `SELECT id, name, email, phone, role, status, avatar_url, last_login as last_activity, agent_status
                          FROM users
                          WHERE status = 'active' AND role IN ('agent', 'supervisor')`;
             let params = [];
+
+            // ✅ FILTRO CRÍTICO: Solo mostrar agentes del admin autenticado
+            if (adminPhone) {
+                query += ` AND admin_phone = ?`;
+                params.push(adminPhone);
+                console.log(`[AGENTS-AVAILABLE] 🔍 Filtrando agentes para admin: ${adminPhone}`);
+            } else {
+                // Si no hay adminPhone, NO devolver ningún agente (por seguridad)
+                console.log(`[AGENTS-AVAILABLE] ⚠️ No se pudo determinar adminPhone. No se devolverán agentes.`);
+                return res.json({ success: true, agents: [] });
+            }
 
             query += ` ORDER BY role DESC, name ASC`;
 
@@ -17799,14 +17886,14 @@ app.get('/api/agents/available', async (req, res) => {
                 last_activity: user.last_activity
             }));
 
-            console.log(`[AGENTS] Usuarios disponibles encontrados: ${agents.length}`, sessionId ? `para sesión ${sessionId}` : 'todas las sesiones');
+            console.log(`[AGENTS-AVAILABLE] ✅ ${agents.length} agentes encontrados para admin ${adminPhone}`);
 
             res.json({ success: true, agents });
         } finally {
             connection.release();
         }
     } catch (error) {
-        console.error('[AGENTS] Error listing available agents:', error);
+        console.error('[AGENTS-AVAILABLE] ❌ Error listing available agents:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
