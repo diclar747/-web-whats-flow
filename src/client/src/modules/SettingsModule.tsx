@@ -826,7 +826,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     setWaError('');
 
     try {
-      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active`);
+      // ✅ Enviar sessionId para filtrar sesiones del usuario autenticado
+      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active?sessionId=${encodeURIComponent(sessionId)}`);
       const data = await response.json();
 
       if (data.success) {
