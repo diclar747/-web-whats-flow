@@ -287,23 +287,39 @@ module.exports = function (app, pool) {
                             // Formatear número para WhatsApp
                             const whatsappNumber = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`;
 
-                            // Mensaje con credenciales elegante
-                            const message = `🎉 *¡Bienvenido al equipo ${name}!*\n\n` +
-                                `Has sido registrado como agente en nuestro sistema de WhatsFlow.\n\n` +
-                                `📧 *Tus credenciales de acceso:*\n` +
-                                `━━━━━━━━━━━━━━━━━━━━━\n` +
-                                `👤 *Usuario:* ${email}\n` +
-                                `🔐 *Contraseña:* ${finalPassword}\n` +
-                                `━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                                `🌐 *Accede al panel de agentes aquí:*\n` +
-                                `https://web.whats-flow.com/agent/login\n\n` +
-                                `⚠️ *Importante:*\n` +
-                                `• Guarda esta información de forma segura\n` +
-                                `• Se recomienda cambiar la contraseña después del primer inicio de sesión\n` +
-                                `• No compartas tus credenciales con nadie\n\n` +
+                            // Mensaje con credenciales elegante y profesional
+                            const message = `🎉 *¡Bienvenido/a al equipo, ${name}!* 🎉\n\n` +
+                                `✨ Has sido registrado/a como *AGENTE* en nuestro sistema WhatsFlow ✨\n\n` +
+                                `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+                                `🔐 *TUS CREDENCIALES DE ACCESO*\n` +
+                                `━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                                `👤 *Usuario:*\n` +
+                                `   ${email}\n\n` +
+                                `🔑 *Contraseña:*\n` +
+                                `   ${finalPassword}\n\n` +
+                                `🌐 *URL de Acceso:*\n` +
+                                `   https://web.whats-flow.com/login\n\n` +
+                                `━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+                                `📋 *INSTRUCCIONES DE ACCESO:*\n\n` +
+                                `1️⃣ Ingresa al link de arriba\n` +
+                                `2️⃣ Usa tu email como usuario\n` +
+                                `3️⃣ Ingresa la contraseña proporcionada\n` +
+                                `4️⃣ ¡Listo! Ya puedes gestionar tus chats\n\n` +
+                                `⚠️ *MUY IMPORTANTE:*\n\n` +
+                                `✅ Guarda estas credenciales en un lugar seguro\n` +
+                                `✅ Te recomendamos cambiar tu contraseña después del primer acceso\n` +
+                                `✅ NUNCA compartas tus credenciales con nadie\n` +
+                                `✅ Si olvidas tu contraseña, contacta al administrador\n\n` +
+                                `💼 *Como agente podrás:*\n` +
+                                `• Gestionar chats asignados\n` +
+                                `• Responder a clientes en tiempo real\n` +
+                                `• Ver historial de conversaciones\n` +
+                                `• Marcar chats como resueltos\n` +
+                                `• Y mucho más...\n\n` +
                                 `💡 *¿Necesitas ayuda?*\n` +
-                                `Contacta a tu administrador si tienes problemas para acceder.\n\n` +
-                                `¡Éxitos! 🚀`;
+                                `Contacta a tu administrador si tienes alguna duda o problema para acceder al sistema.\n\n` +
+                                `¡Bienvenido/a al equipo! Juntos haremos un excelente trabajo 💪\n\n` +
+                                `🚀 *WhatsFlow - Gestión Inteligente de WhatsApp*`;
 
                             await sock.sendMessage(whatsappNumber, { text: message });
                             console.log(`✅ [AGENT-CREATE] Credenciales enviadas por WhatsApp a ${phone}`);

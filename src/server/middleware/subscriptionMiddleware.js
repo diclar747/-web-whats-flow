@@ -81,21 +81,58 @@ const checkSubscription = async (req, res, next) => {
 // Middleware para verificar si el usuario es administrador
 const checkAdmin = async (req, res, next) => {
   try {
-    // Bug fix: cuando se envía userId del usuario objetivo (no admin) en el body para activar su plan,
-    // el middleware lo tomaba como identidad del solicitante y rechazaba con 403.
-    // Si viene un phone en query/body que coincide con el patrón de admin, usamos ese como identidad de admin
-    // y NO el userId del cuerpo (que es targetUserId).
+    // ✅ CORREGIDO: Obtener el usuario que hace la petición desde headers/auth, NO desde body/query
+    // El phone/userId en body/query es el OBJETIVO (a quien asignar plan), NO el solicitante
     const incomingBodyUserId = req.body?.userId;
-    const phone = req.user?.phone || req.body?.phone || req.query?.phone;
+    
+    // Prioridad para identificar al solicitante:
+    // 1. req.user (ya autenticado)
+    // 2. Authorization header (JWT)
+    // 3. sessionId en header
+    let phone = req.user?.phone;
     let userId = req.user?.id;
-
-    // Solo tomar userId del body si no hay teléfono admin explícito
-    if (!userId && !phone) {
-      userId = incomingBodyUserId;
+    
+    // Si no hay req.user, intentar desde headers de autenticación
+    if (!phone && !userId) {
+      // Buscar en headers Authorization
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        try {
+          const jwt = require('jsonwebtoken');
+          const token = authHeader.split(' ')[1];
+          const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+          phone = decoded.phone;
+          userId = decoded.id;
+          console.log('[checkAdmin] Usuario identificado desde JWT:', phone);
+        } catch (jwtErr) {
+          console.log('[checkAdmin] JWT inválido:', jwtErr.message);
+        }
+      }
+      
+      // Si tampoco hay JWT, buscar sessionId en headers
+      if (!phone && !userId) {
+        const sessionId = req.headers['x-session-id'] || req.headers['sessionid'];
+        if (sessionId) {
+          // Solo si es un teléfono (números)
+          if (/^\d+$/.test(sessionId)) {
+            phone = sessionId;
+            console.log('[checkAdmin] Usuario identificado desde sessionId header:', phone);
+          }
+        }
+      }
     }
 
-    console.log('[checkAdmin] raw incomingBodyUserId:', incomingBodyUserId, 'effective userId used for admin check:', userId, 'phone:', phone);
+    // ⚠️ IMPORTANTE: NO tomar phone/userId del body/query, esos son el OBJETIVO
+    console.log('[checkAdmin] Usuario solicitante:', { userId, phone });
 
+    // ✅ Verificación directa de super admin por número
+    const adminPhonePattern = '595994854167';
+    if (phone && phone.startsWith(adminPhonePattern)) {
+      console.log('[checkAdmin] ✅ Super Admin detectado directamente por teléfono:', phone);
+      req.user = { ...req.user, is_admin: true, is_super_admin: true, phone: phone };
+      return next();
+    }
+    
     if (!userId && !phone) {
       return res.status(401).json({ success: false, error: 'Usuario no autenticado' });
     }
@@ -111,7 +148,6 @@ const checkAdmin = async (req, res, next) => {
     const connection = await pool.getConnection();
 
     try {
-      const adminPhonePattern = '595994854167';
       let user = null;
 
       // Primero buscar en user_sessions si tenemos un teléfono

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#0f172a"/>
+  <rect x="24" y="24" width="592" height="312" rx="16" fill="#1e293b" stroke="rgba(255,255,255,0.15)" />
+  <circle cx="140" cy="180" r="28" fill="#6366f1"/>
+  <circle cx="320" cy="120" r="28" fill="#22c55e"/>
+  <circle cx="500" cy="200" r="28" fill="#f59e0b"/>
+  <path d="M140 180 C180 160, 260 140, 320 120" stroke="#64748b" stroke-width="2"/>
+  <path d="M320 120 C380 150, 440 180, 500 200" stroke="#64748b" stroke-width="2"/>
+  <text x="40" y="310" fill="#e2e8f0" font-size="22" font-family="Inter, Segoe UI, sans-serif" font-weight="700">Múltiples conexiones</text>
+</svg>

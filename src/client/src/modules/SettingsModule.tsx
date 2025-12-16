@@ -431,7 +431,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
   const [deleteUserDialog, setDeleteUserDialog] = useState(false);
   const [userToDelete, setUserToDelete] = useState<UserAccount | null>(null);
 
-  const [waSessions, setWaSessions] = useState<Array<{ sessionId: string; phoneNumber: string | null; ownerPhone?: string | null; isPrimary?: boolean; isConnected: boolean }>>([]);
+  const [waSessions, setWaSessions] = useState<Array<{ sessionId: string; phoneNumber: string | null; ownerPhone?: string | null; isPrimary?: boolean; isConnected: boolean; name?: string; avatar?: string; hasAuth?: boolean }>>([]);
   const [waLoading, setWaLoading] = useState(false);
   const [waError, setWaError] = useState('');
   const [qrState, setQrState] = useState<{ sessionId: string; qrDataUrl: string; isLoading: boolean }>({ sessionId: '', qrDataUrl: '', isLoading: false });
@@ -962,6 +962,32 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     }
   };
 
+  const handleReconnectSession = async (targetSessionId: string) => {
+    try {
+      setSnackbar({ open: true, message: 'Reconectando sesión...', severity: 'info' });
+      
+      const response = await fetch(`${getAPIBaseURL()}/api/reconnect-session`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ sessionId: targetSessionId })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSnackbar({ open: true, message: 'Sesión reconectada exitosamente', severity: 'success' });
+        fetchActiveSessions();
+      } else {
+        setSnackbar({ open: true, message: data.error || 'Error al reconectar sesión', severity: 'error' });
+      }
+    } catch (error) {
+      console.error('[RECONNECT] Error:', error);
+      setSnackbar({ open: true, message: 'Error al reconectar sesión', severity: 'error' });
+    }
+  };
+
   useEffect(() => {
     let storedDeviceId = localStorage.getItem('whatsflow_device_id');
     if (!storedDeviceId) {
@@ -976,10 +1002,11 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
   }, []);
 
   useEffect(() => {
-    if (selectedTab === 2) {
+    if (selectedTab === 2 && sessionId) {
+      console.log('[SETTINGS] Tab WhatsApp activa, cargando sesiones para:', sessionId);
       fetchActiveSessions();
     }
-  }, [selectedTab]);
+  }, [selectedTab, sessionId]);
 
   // ============== FUNCIONES CRUD DE USUARIOS ==============
 
@@ -1996,7 +2023,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
                           primary={
                             <Box>
                               <Typography component="span" variant="subtitle1">
-                                {session.phoneNumber || session.sessionId}
+                                {session.name || session.phoneNumber || session.sessionId}
                               </Typography>
                               {isPrimary && (
                                 <Chip 
@@ -2019,6 +2046,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
                           }
                           secondary={
                             <>
+                              <Typography component="span" variant="body2" display="block">
+                                {session.phoneNumber || session.sessionId}
+                              </Typography>
                               {session.isConnected ? '🟢 Conectado' : '🔴 Desconectado'}
                               {!isPrimary && session.ownerPhone && (
                                 <Typography component="span" variant="caption" display="block" color="text.secondary">
@@ -2029,14 +2059,25 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
                           }
                         />
                         <Stack direction="row" spacing={1} alignItems="center">
+                          {!session.isConnected && session.hasAuth && (
+                            <Button
+                              size="small"
+                              color="success"
+                              variant="contained"
+                              onClick={() => handleReconnectSession(session.sessionId)}
+                              startIcon={<Refresh />}
+                            >
+                              Reconectar
+                            </Button>
+                          )}
                           <Button
                             size="small"
                             color="error"
                             variant="outlined"
                             onClick={() => openDisconnectDialog(session.sessionId)}
-                            startIcon={isPrimary ? <Delete /> : undefined}
+                            startIcon={<Delete />}
                           >
-                            Desconectar
+                            {session.isConnected ? 'Desconectar' : 'Eliminar'}
                           </Button>
                         </Stack>
                       </ListItem>

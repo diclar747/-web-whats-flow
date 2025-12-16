@@ -2364,7 +2364,7 @@ async function saveMessageToDB(sessionId, msg) {
                     if (result && result.affectedRows > 0) {
                         console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> sent`);
                         // Emitir actualización de estado SOLO si hubo cambio real
-                        io.to(`session-${sessionId}`).emit('message-status-update', {
+                        io.to(`session-${phoneNumber}`).emit('message-status-update', {
                             messageId, id: messageId, chatJid: chat_jid,
                             status: 'sent', sessionId, timestamp: new Date().toISOString()
                         });
@@ -2387,7 +2387,7 @@ async function saveMessageToDB(sessionId, msg) {
                     conn.release();
                     if (result && result.affectedRows > 0) {
                         console.log(`[${sessionId}] ✅ Status auto-updated: ${messageId.substring(0, 20)} -> delivered`);
-                        io.to(`session-${sessionId}`).emit('message-status-update', {
+                        io.to(`session-${phoneNumber}`).emit('message-status-update', {
                             messageId, id: messageId, chatJid: chat_jid,
                             status: 'delivered', sessionId, timestamp: new Date().toISOString()
                         });
@@ -2432,7 +2432,7 @@ async function saveMessageToDB(sessionId, msg) {
         if (!chat_jid.includes('@g.us')) {
             console.log(`[${sessionId}] 🚀💾 EMITIENDO desde saveMessageToDB:`, messageId.substring(0, 20), from_me ? '(FROM_ME)' : '(ENTRANTE)');
             console.log(`[${sessionId}] 📡 Emitiendo a sala: session-${phoneNumber}`);
-            io.to(`session-${sessionId}`).emit('message', {
+            io.to(`session-${phoneNumber}`).emit('message', {
                 id: messageId,
                 from: sender_jid || chat_jid,
                 chatJid: chat_jid,
@@ -2452,7 +2452,7 @@ async function saveMessageToDB(sessionId, msg) {
             
             // 🚫 NO emitir si el chat_jid es el propio número
             if (chatJidPhone !== phoneNumber) {
-                io.to(`session-${sessionId}`).emit('chat-update', {
+                io.to(`session-${phoneNumber}`).emit('chat-update', {
                     id: chat_jid,
                     lastMessage: text_content || 'Media',
                     timestamp: new Date(timestamp).toISOString(),
@@ -6437,7 +6437,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             // SIEMPRE emitir a ambas salas
                             io.to(`session-${sessionId}`).emit('message', clientMessage);
                             if (phoneNumber) {
-                                io.to(`session-${sessionId}`).emit('message', clientMessage);
+                                io.to(`session-${phoneNumber}`).emit('message', clientMessage);
                             }
 
                             // 🔥 EMITIR TAMBIÉN A AGENTES ASIGNADOS
@@ -6534,7 +6534,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                 // ✅ Emitir respuesta del bot vía Socket.IO
                                                 const phoneNumber = await getUserPhoneNumber(sessionId);
                                                 if (phoneNumber) {
-                                                    io.to(`session-${sessionId}`).emit('message', {
+                                                    io.to(`session-${phoneNumber}`).emit('message', {
                                                         id: botMessage.id,
                                                         chatJid: senderJid,
                                                         from: botMessage.sender_jid,
@@ -6575,9 +6575,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                         };
 
                                                         if (from_me) {
-                                                            io.to(`session-${sessionId}`).emit('message:sent', specificPayload);
+                                                            io.to(`session-${phoneNumber}`).emit('message:sent', specificPayload);
                                                         } else {
-                                                            io.to(`session-${sessionId}`).emit('message:received', specificPayload);
+                                                            io.to(`session-${phoneNumber}`).emit('message:received', specificPayload);
                                                         }
                                                     } catch (emitErr) {
                                                         console.warn(`[DB-MSG] ⚠️ Error emitiendo eventos específicos de mensaje:`, emitErr.message);
@@ -6604,7 +6604,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                 // ✅ Emitir menú vía Socket.IO
                                                 const phoneNumber = await getUserPhoneNumber(sessionId);
                                                 if (phoneNumber) {
-                                                    io.to(`session-${sessionId}`).emit('message', {
+                                                    io.to(`session-${phoneNumber}`).emit('message', {
                                                         id: botMessage.id,
                                                         chatJid: senderJid,
                                                         from: botMessage.sender_jid,
@@ -6796,7 +6796,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                     // También emitir a la sala del phoneNumber (para agentes y usuarios persistentes)
                     if (phoneNumber) {
-                        io.to(`session-${sessionId}`).emit('message-status-update', statusUpdate);
+                        io.to(`session-${phoneNumber}`).emit('message-status-update', statusUpdate);
                         console.log(`[${sessionId}] ✅ Estado emitido a session-${phoneNumber}: ${messageId} -> ${newStatus}`);
                     }
 
@@ -7125,7 +7125,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
             // Emitir inicio de sincronización general
             const totalItems = (historySet.contacts?.length || 0) + (historySet.chats?.length || 0) + (historySet.messages?.length || 0);
-            io.to(`session-${sessionId}`).emit('sync-progress', {
+            io.to(`session-${phoneNumber}`).emit('sync-progress', {
                 status: 'syncing',
                 current: 0,
                 total: totalItems,
@@ -7136,7 +7136,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             // Procesar CONTACTOS del historial
             if (historySet.contacts && historySet.contacts.length > 0) {
                 console.log(`[${sessionId}] 👥 Guardando ${historySet.contacts.length} contactos del historial...`);
-                io.to(`session-${sessionId}`).emit('sync-progress', {
+                io.to(`session-${phoneNumber}`).emit('sync-progress', {
                     status: 'syncing',
                     current: 0,
                     total: totalItems,
@@ -7155,7 +7155,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 }
                 console.log(`[${sessionId}] ✅ Contactos del historial guardados`);
 
-                io.to(`session-${sessionId}`).emit('sync-progress', {
+                io.to(`session-${phoneNumber}`).emit('sync-progress', {
                     status: 'syncing',
                     current: historySet.contacts.length,
                     total: totalItems,
@@ -7383,7 +7383,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 let savedCount = 0;
 
                 // Emitir inicio de sincronización
-                io.to(`session-${sessionId}`).emit('sync-progress', {
+                io.to(`session-${phoneNumber}`).emit('sync-progress', {
                     status: 'syncing',
                     current: 0,
                     total: totalMessages,
@@ -7456,7 +7456,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         if (savedCount % 50 === 0) {
                             const percentage = Math.floor((savedCount / totalMessages) * 100);
                             console.log(`[${sessionId}] 📊 Procesados ${savedCount}/${totalMessages} mensajes históricos (${percentage}%)...`);
-                            io.to(`session-${sessionId}`).emit('sync-progress', {
+                            io.to(`session-${phoneNumber}`).emit('sync-progress', {
                                 status: 'syncing',
                                 current: savedCount,
                                 total: totalMessages,
@@ -7472,7 +7472,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 console.log(`[${sessionId}] ✅ ${savedCount} mensajes del historial guardados`);
 
                 // Emitir finalización de sincronización
-                io.to(`session-${sessionId}`).emit('sync-progress', {
+                io.to(`session-${phoneNumber}`).emit('sync-progress', {
                     status: 'completed',
                     current: savedCount,
                     total: totalMessages,
@@ -9247,7 +9247,7 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
 
         // 🔥 Emitir también al phoneNumber del admin si existe y es diferente
         if (phoneNumber && phoneNumber !== actualSessionId) {
-            io.to(`session-${sessionId}`).emit('message', messagePayload);
+            io.to(`session-${phoneNumber}`).emit('message', messagePayload);
             console.log(`[AGENT-SEND] 📤 Mensaje emitido a session-${phoneNumber} (admin)`);
         }
 
@@ -9459,7 +9459,7 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
         // 🔥 Emitir también al phoneNumber del admin si existe y es diferente
         const phoneNumber = req.body.phoneNumber;
         if (phoneNumber && phoneNumber !== actualSessionId) {
-            io.to(`session-${sessionId}`).emit('message', mediaPayload);
+            io.to(`session-${phoneNumber}`).emit('message', mediaPayload);
             console.log(`[SEND-MEDIA] 📤 Mensaje emitido a session-${phoneNumber} (admin)`);
         }
 
@@ -12924,29 +12924,18 @@ app.post('/api/update-contacts-avatars/:sessionId', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            // ✅ Reducido a 20 para evitar timeout
+            // Obtener contactos sin avatar o con avatar vacío
             const [contacts] = await connection.execute(
                 `SELECT jid, name FROM contacts 
                  WHERE session_id = ? 
                  AND jid LIKE "%@s.whatsapp.net" 
                  AND (avatar_url IS NULL OR avatar_url = "")
-                 LIMIT 20`,
+                 LIMIT 50`,
                 [phoneNumber]
             );
 
             console.log(`[AVATAR-UPDATE] Encontrados ${contacts.length} contactos sin avatar`);
 
-            // ✅ Responder rápido al cliente para evitar timeout
-            res.json({
-                success: true,
-                message: `Procesando ${contacts.length} contactos en segundo plano...`,
-                stats: {
-                    totalContacts: contacts.length,
-                    processing: true
-                }
-            });
-
-            // ✅ Continuar procesamiento en segundo plano
             let updatedCount = 0;
             let errorCount = 0;
 
@@ -12973,10 +12962,22 @@ app.post('/api/update-contacts-avatars/:sessionId', async (req, res) => {
                 }
 
                 // Pequeña pausa para no saturar
-                await new Promise(resolve => setTimeout(resolve, 150));
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
 
-            console.log(`[AVATAR-UPDATE] ✅ Completado en segundo plano: ${updatedCount} actualizados, ${errorCount} errores`);
+            const stats = {
+                totalContacts: contacts.length,
+                updatedAvatars: updatedCount,
+                errors: errorCount
+            };
+
+            console.log(`[AVATAR-UPDATE] ✅ Completado: ${updatedCount} actualizados, ${errorCount} errores`);
+
+            res.json({
+                success: true,
+                message: `Avatares actualizados: ${updatedCount} de ${contacts.length} contactos`,
+                stats
+            });
 
         } finally {
             connection.release();

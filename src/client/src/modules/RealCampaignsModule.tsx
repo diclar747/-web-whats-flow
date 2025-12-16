@@ -370,8 +370,18 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     setSenderError('');
 
     try {
-      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active`);
+      // ✅ Obtener sessionId del usuario actual
+      const currentSessionId = sessionStorage.getItem('whatsflow_session') || 
+                               localStorage.getItem('whatsflow_session') || 
+                               sessionId;
+      
+      console.log('[CAMPAIGNS] Cargando sesiones para:', currentSessionId);
+      
+      // ✅ Pasar sessionId en el query
+      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active?sessionId=${currentSessionId}`);
       const data = await response.json();
+
+      console.log('[CAMPAIGNS] Sesiones recibidas:', data.sessions?.length || 0);
 
       if (data.success) {
         const mapped = (data.sessions || []).map((s: any) => ({

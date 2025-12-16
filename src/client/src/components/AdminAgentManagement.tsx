@@ -68,6 +68,7 @@ interface Agent {
 interface Contact {
   jid: string;
   name: string;
+  notify_name?: string;
   avatar_url?: string;
 }
 
@@ -88,7 +89,15 @@ const AdminAgentManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
-  const [sessionId] = useState('default');
+  
+  // ✅ OBTENER SESIÓN REAL DEL USUARIO CONECTADO
+  const [sessionId] = useState(() => {
+    return sessionStorage.getItem('whatsflow_session') || 
+           localStorage.getItem('whatsflow_session') || 
+           sessionStorage.getItem('sessionId') ||
+           localStorage.getItem('sessionId') ||
+           'default';
+  });
 
   // Dialogs
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
@@ -119,9 +128,18 @@ const AdminAgentManagement: React.FC = () => {
   const apiUrl = getAPIBaseURL();
   const token = sessionStorage.getItem('token') || '';
 
+  // 🔍 LOG DE INICIALIZACIÓN
+  console.log('═════════════════════════════════════════');
+  console.log('[AdminAgentManagement] COMPONENTE CARGADO');
+  console.log('  SessionId:', sessionId);
+  console.log('  API URL:', apiUrl);
+  console.log('  Token:', token ? 'PRESENTE' : 'AUSENTE');
+  console.log('═════════════════════════════════════════');
+
   useEffect(() => {
+    console.log('[AdminAgentManagement] useEffect ejecutado - Cargando datos...');
     loadData();
-    loadContacts();
+    // ✅ NO cargar contactos al inicio - se cargan al escribir
     const interval = setInterval(loadData, 30000); // Refresh cada 30 segundos
     return () => clearInterval(interval);
   }, [sessionId]);
@@ -183,26 +201,48 @@ const AdminAgentManagement: React.FC = () => {
     }
   };
 
-  const loadContacts = async () => {
+  const loadContacts = async (searchTerm: string = '') => {
     try {
       setLoadingContacts(true);
-      const adminSessionId = sessionStorage.getItem('whatsflow_session') || sessionId;
-      const response = await fetch(`${apiUrl}/api/contacts?sessionId=${adminSessionId}`, {
+      
+      // ✅ OBTENER SESIÓN ACTUAL DEL USUARIO CONECTADO
+      const currentSessionId = sessionStorage.getItem('whatsflow_session') || 
+                               localStorage.getItem('whatsflow_session') || 
+                               sessionStorage.getItem('sessionId') ||
+                               localStorage.getItem('sessionId') ||
+                               sessionId;
+      
+      console.log('[LOAD-CONTACTS] Buscando contactos para sesión:', currentSessionId, 'Término:', searchTerm || 'TODOS');
+      
+      // ✅ Usar búsqueda con término si existe
+      const searchParam = searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : '';
+      const response = await fetch(`${apiUrl}/api/contacts/${currentSessionId}?limit=100${searchParam}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
 
-      if (!response.ok) throw new Error('Error cargando contactos');
+      if (!response.ok) {
+        console.error('[LOAD-CONTACTS] Error:', response.status);
+        throw new Error('Error cargando contactos');
+      }
 
       const data = await response.json();
+      console.log('[LOAD-CONTACTS] ✅ Contactos recibidos:', data.contacts?.length || 0);
+      
       if (data.success && data.contacts) {
         // Filtrar solo contactos individuales (no grupos)
         const individualContacts = data.contacts.filter((c: any) => c.jid && c.jid.endsWith('@s.whatsapp.net'));
         setContacts(individualContacts);
+        return individualContacts;
+      } else {
+        setContacts([]);
+        return [];
       }
     } catch (err) {
-      console.error('Error loading contacts:', err);
+      console.error('[LOAD-CONTACTS] Error:', err);
+      setContacts([]);
+      return [];
     } finally {
       setLoadingContacts(false);
     }
@@ -788,36 +828,41 @@ const AdminAgentManagement: React.FC = () => {
         </DialogTitle>
         <DialogContent>
           <Box display="flex" flexDirection="column" gap={2} mt={2}>
-            <Alert severity="info">
-              💡 Busca el contacto para autocompletar nombre, teléfono y avatar
-            </Alert>
-
-            {/* Búsqueda de Contactos */}
+            {/* ✅ AUTOCOMPLETADO SIMPLE */}
             <Autocomplete
+              freeSolo
               options={contacts}
-              getOptionLabel={(option) => option.name || option.jid}
-              value={selectedContact}
+              inputValue={newAgentName}
               loading={loadingContacts}
-              onChange={(event, newValue) => {
-                setSelectedContact(newValue);
-                if (newValue) {
-                  setNewAgentName(newValue.name || '');
-                  // Extraer número de teléfono del JID
-                  const phone = newValue.jid.split('@')[0];
-                  setNewAgentPhone(phone);
-                  setNewAgentAvatar(newValue.avatar_url || '');
+              getOptionLabel={(option) => {
+                if (typeof option === 'string') return option;
+                return option.name || option.notify_name || option.jid?.split('@')[0] || '';
+              }}
+              filterOptions={(options) => options}
+              onInputChange={(event, value) => {
+                setNewAgentName(value);
+                if (value && value.length >= 2) {
+                  loadContacts(value);
+                }
+              }}
+              onChange={(event, value) => {
+                if (value && typeof value === 'object') {
+                  setNewAgentName(value.name || value.notify_name || '');
+                  setNewAgentPhone(value.jid?.split('@')[0] || '');
+                  setNewAgentAvatar(value.avatar_url || '');
                 }
               }}
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="🔍 Buscar Contacto"
-                  placeholder="Escribe el nombre del contacto..."
+                  label="Nombre Completo"
+                  required
+                  helperText={contacts.length > 0 ? `${contacts.length} contactos encontrados` : "Escribe 2 letras para buscar"}
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
                       <>
-                        {loadingContacts ? <CircularProgress color="inherit" size={20} /> : null}
+                        {loadingContacts && <CircularProgress size={20} />}
                         {params.InputProps.endAdornment}
                       </>
                     ),
@@ -825,28 +870,18 @@ const AdminAgentManagement: React.FC = () => {
                 />
               )}
               renderOption={(props, option) => (
-                <Box component="li" {...props} display="flex" alignItems="center" gap={2}>
-                  <Avatar src={option.avatar_url} sx={{ width: 32, height: 32 }}>
-                    {option.name?.charAt(0) || '?'}
+                <Box component="li" {...props} sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                  <Avatar src={option.avatar_url} sx={{ width: 40, height: 40 }}>
+                    {(option.name || option.notify_name || '?').charAt(0)}
                   </Avatar>
                   <Box>
-                    <Typography variant="body2">{option.name || 'Sin nombre'}</Typography>
-                    <Typography variant="caption" color="textSecondary">
-                      {option.jid.split('@')[0]}
+                    <Typography variant="body1">{option.name || option.notify_name || 'Sin nombre'}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {option.jid?.split('@')[0]}
                     </Typography>
                   </Box>
                 </Box>
               )}
-              noOptionsText="No se encontraron contactos"
-            />
-
-            <TextField
-              label="Nombre Completo"
-              fullWidth
-              value={newAgentName}
-              onChange={(e) => setNewAgentName(e.target.value)}
-              required
-              helperText="El nombre del agente"
             />
 
             <TextField

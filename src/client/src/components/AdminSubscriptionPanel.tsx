@@ -85,6 +85,10 @@ interface ConnectionSession {
   phoneNumber: string;
   isConnected: boolean;
   timestamp: string;
+  name?: string;
+  avatar?: string;
+  ownerPhone?: string;
+  isPrimary?: boolean;
 }
 
 interface PlanRequest {
@@ -201,7 +205,19 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
 
       // Cargar sesiones activas (conexiones)
       try {
-        const connResponse = await fetch(`${getAPIBaseURL()}/api/sessions/active`);
+        // Obtener sessionId del usuario actual (si está disponible)
+        const currentSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+        
+        const connUrl = currentSessionId 
+          ? `${getAPIBaseURL()}/api/sessions/active?sessionId=${currentSessionId}`
+          : `${getAPIBaseURL()}/api/sessions/active`;
+        
+        const connResponse = await fetch(connUrl, {
+          headers: token ? {
+            'Authorization': `Bearer ${token}`
+          } : {}
+        });
         const connData = await connResponse.json();
         if (connData.success && Array.isArray(connData.sessions)) {
           setConnections(connData.sessions);
@@ -255,13 +271,29 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
       console.log(`[AdminSubscriptionPanel] Activando plan para usuario: ${selectedUser.phone}`);
       console.log(`[AdminSubscriptionPanel] Plan: ${formData.planName}, Días: ${formData.days}`);
 
+      // ✅ Obtener token de autenticación del admin
+      const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+      const currentSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+      
+      const headers: any = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Agregar token si existe
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      // Agregar sessionId del admin en headers
+      if (currentSessionId) {
+        headers['X-Session-Id'] = currentSessionId;
+      }
+      
       const response = await fetch(`${getAPIBaseURL()}/api/subscriptions/activate?phone=${selectedUser.phone}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
-          sessionId: selectedUser.phone, // También en el body
+          sessionId: selectedUser.phone, // Usuario objetivo
           planType: formData.planName,
           days: formData.days,
           customEndDate: formData.customEndDate || undefined
@@ -944,8 +976,10 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
               <Table>
                 <TableHead>
                   <TableRow>
+                    <TableCell>Usuario</TableCell>
                     <TableCell>Teléfono</TableCell>
                     <TableCell>Session ID</TableCell>
+                    <TableCell>Tipo</TableCell>
                     <TableCell>Estado</TableCell>
                     <TableCell>Último Registro</TableCell>
                   </TableRow>
@@ -954,9 +988,50 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
                   {connections.map((c) => (
                     <TableRow key={`${c.sessionId}-${c.timestamp}`} hover>
                       <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {c.avatar ? (
+                            <img 
+                              src={c.avatar} 
+                              alt={c.name || 'Avatar'} 
+                              style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }}
+                              onError={(e) => { e.currentTarget.src = '/logo192.png'; }}
+                            />
+                          ) : (
+                            <Box sx={{ 
+                              width: 32, 
+                              height: 32, 
+                              borderRadius: '50%', 
+                              bgcolor: '#e0e0e0',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}>
+                              <Typography variant="caption" sx={{ color: '#666' }}>
+                                {c.name?.charAt(0)?.toUpperCase() || '?'}
+                              </Typography>
+                            </Box>
+                          )}
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {c.name || 'Sin nombre'}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
                         <Typography variant="body2" sx={{ fontWeight: 600 }}>{c.phoneNumber || '-'}</Typography>
                       </TableCell>
-                      <TableCell>{c.sessionId}</TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#666' }}>
+                          {c.sessionId}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={c.isPrimary ? 'Principal' : 'Secundaria'}
+                          size="small"
+                          color={c.isPrimary ? 'primary' as any : 'default' as any}
+                          variant="outlined"
+                        />
+                      </TableCell>
                       <TableCell>
                         <Chip
                           label={c.isConnected ? 'Conectado' : 'Desconectado'}
@@ -971,7 +1046,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
                   ))}
                   {connections.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={4}>
+                      <TableCell colSpan={6}>
                         <Alert severity="info">No hay conexiones activas en este momento.</Alert>
                       </TableCell>
                     </TableRow>
