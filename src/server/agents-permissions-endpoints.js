@@ -1,10 +1,12 @@
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
+const { sendWhatsAppMessage } = require('./whatsapp-loader');
 
 module.exports = function (app, pool) {
 
     // Importar middleware de autenticación
     const { authenticateToken } = require('./middleware/auth');
+    const { checkActivePlan } = require('./middleware/checkActivePlan');
 
     // ==================== GESTIÓN DE AGENTES CON PRIVILEGIOS ====================
 
@@ -86,7 +88,7 @@ module.exports = function (app, pool) {
      * Crear nuevo agente con privilegios
      * POST /api/agents/create
      */
-    app.post('/api/agents/create', async (req, res) => {
+    app.post('/api/agents/create', authenticateToken, checkActivePlan, async (req, res) => {
         try {
             console.log('🔍 [AGENT-CREATE] ===== INICIO DE PETICIÓN =====');
             console.log('🔍 [AGENT-CREATE] Headers:', {
@@ -266,77 +268,172 @@ module.exports = function (app, pool) {
 
                 console.log(`✅ Agente creado: ${email}`);
 
-                // Enviar credenciales por WhatsApp si se solicita
-                if (sendWhatsApp && phone) {
-                    try {
-                        console.log(`📱 [AGENT-CREATE] Enviando credenciales por WhatsApp a: ${phone}`);
+                // Variable para trackear si el WhatsApp fue enviado exitosamente
+                let whatsappSent = false;
+                let whatsappError = null;
 
-                        // Obtener el socket de WhatsApp del admin
-                        const sessions = global.sessions || new Map();
-                        let sock = null;
-
-                        // Buscar socket activo del admin
-                        for (const [sessionId, sessionData] of sessions.entries()) {
-                            if (sessionData.sock && sessionData.phoneNumber === adminPhone) {
-                                sock = sessionData.sock;
-                                break;
-                            }
-                        }
-
-                        if (sock) {
-                            // Formatear número para WhatsApp
-                            const whatsappNumber = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`;
-
-                            // Mensaje con credenciales elegante y profesional
-                            const message = `🎉 *¡Bienvenido/a al equipo, ${name}!* 🎉\n\n` +
-                                `✨ Has sido registrado/a como *AGENTE* en nuestro sistema WhatsFlow ✨\n\n` +
-                                `━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                                `🔐 *TUS CREDENCIALES DE ACCESO*\n` +
-                                `━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                                `👤 *Usuario:*\n` +
-                                `   ${email}\n\n` +
-                                `🔑 *Contraseña:*\n` +
-                                `   ${finalPassword}\n\n` +
-                                `🌐 *URL de Acceso:*\n` +
-                                `   https://web.whats-flow.com/login\n\n` +
-                                `━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
-                                `📋 *INSTRUCCIONES DE ACCESO:*\n\n` +
-                                `1️⃣ Ingresa al link de arriba\n` +
-                                `2️⃣ Usa tu email como usuario\n` +
-                                `3️⃣ Ingresa la contraseña proporcionada\n` +
-                                `4️⃣ ¡Listo! Ya puedes gestionar tus chats\n\n` +
-                                `⚠️ *MUY IMPORTANTE:*\n\n` +
-                                `✅ Guarda estas credenciales en un lugar seguro\n` +
-                                `✅ Te recomendamos cambiar tu contraseña después del primer acceso\n` +
-                                `✅ NUNCA compartas tus credenciales con nadie\n` +
-                                `✅ Si olvidas tu contraseña, contacta al administrador\n\n` +
-                                `💼 *Como agente podrás:*\n` +
-                                `• Gestionar chats asignados\n` +
-                                `• Responder a clientes en tiempo real\n` +
-                                `• Ver historial de conversaciones\n` +
-                                `• Marcar chats como resueltos\n` +
-                                `• Y mucho más...\n\n` +
-                                `💡 *¿Necesitas ayuda?*\n` +
-                                `Contacta a tu administrador si tienes alguna duda o problema para acceder al sistema.\n\n` +
-                                `¡Bienvenido/a al equipo! Juntos haremos un excelente trabajo 💪\n\n` +
-                                `🚀 *WhatsFlow - Gestión Inteligente de WhatsApp*`;
-
-                            await sock.sendMessage(whatsappNumber, { text: message });
-                            console.log(`✅ [AGENT-CREATE] Credenciales enviadas por WhatsApp a ${phone}`);
+                // Enviar credenciales por WhatsApp si se solicita (sin bloquear la respuesta)
+                if (sendWhatsApp) {
+                    // Validar que se proporcionó teléfono
+                    if (!phone) {
+                        console.log('⚠️ [AGENT-CREATE] sendWhatsApp solicitado pero no se proporcionó teléfono');
+                        whatsappError = 'No se proporcionó número de teléfono';
+                    } else {
+                        // Validar formato del teléfono
+                        const phoneDigits = phone.replace(/[^0-9]/g, '');
+                        if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+                            console.log(`⚠️ [AGENT-CREATE] Formato de teléfono inválido: ${phone} (dígitos: ${phoneDigits.length})`);
+                            whatsappError = 'Formato de teléfono inválido';
                         } else {
-                            console.log(`⚠️ [AGENT-CREATE] No se encontró socket activo del admin para enviar WhatsApp`);
+                            // Hacer el envío en background
+                            setImmediate(async () => {
+                                try {
+                                    console.log(`📱 [AGENT-CREATE] ===== INICIO ENVÍO WHATSAPP =====`);
+                                    console.log(`📱 [AGENT-CREATE] Destinatario: ${phone} (${phoneDigits})`);
+                                    console.log(`📡 [AGENT-CREATE] AdminPhone: ${adminPhone || 'N/A'}`);
+                                    console.log(`📡 [AGENT-CREATE] SessionId: ${userSessionId || 'N/A'}`);
+
+                                    // Mensaje con credenciales elegante y profesional
+                                    const message = `🎉 *¡Bienvenido/a ${name}!* 🎉
+
+✨ Has sido registrado como *AGENTE* en WhatsFlow ✨
+
+━━━━━━━━━━━━━━━━━━━━
+
+🔐 *CREDENCIALES DE ACCESO*
+
+👤 *Usuario:* ${email}
+🔑 *Contraseña:* ${finalPassword}
+🌐 *URL:* https://web.whats-flow.com/login
+
+━━━━━━━━━━━━━━━━━━━━
+
+📱 *INSTRUCCIONES:*
+
+1️⃣ Ingresa al link de arriba
+2️⃣ Usa tu email como usuario
+3️⃣ Ingresa la contraseña
+4️⃣ ¡Listo para trabajar!
+
+━━━━━━━━━━━━━━━━━━━━
+
+⚠️ *IMPORTANTE:*
+
+✅ Guarda estas credenciales
+✅ Cambia tu contraseña al primer acceso
+✅ No compartas tus credenciales
+✅ Contacta al admin si necesitas ayuda
+
+━━━━━━━━━━━━━━━━━━━━
+
+💼 *Como agente podrás:*
+• Gestionar chats asignados
+• Responder en tiempo real
+• Ver historial completo
+• Organizar tu trabajo
+
+¡Bienvenido al equipo! 💪
+
+🚀 *WhatsFlow* - Gestión Inteligente de WhatsApp`;
+
+                                    // Buscar sesión activa del admin en global.sessions
+                                    const sessions = global.sessions || new Map();
+                                    console.log(`🔍 [AGENT-CREATE] Sesiones disponibles: ${sessions.size}`);
+                                    console.log(`🔍 [AGENT-CREATE] IDs de sesiones:`, Array.from(sessions.keys()));
+
+                                    let activeSock = null;
+                                    let activeSessionId = null;
+
+                                    // 1. Intentar buscar por adminPhone
+                                    if (adminPhone) {
+                                        console.log(`🔎 [AGENT-CREATE] Buscando sesión para adminPhone: ${adminPhone}`);
+                                        for (const [sid, sessionData] of sessions.entries()) {
+                                            if (sessionData.sock && sessionData.phoneNumber === adminPhone) {
+                                                activeSock = sessionData.sock;
+                                                activeSessionId = sid;
+                                                console.log(`✅ [AGENT-CREATE] Sesión encontrada por adminPhone: ${sid}`);
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    // 2. Si no encuentra por adminPhone, intentar con userSessionId
+                                    if (!activeSock && userSessionId) {
+                                        console.log(`🔎 [AGENT-CREATE] Buscando sesión por userSessionId: ${userSessionId}`);
+                                        if (sessions.has(userSessionId)) {
+                                            const sessionData = sessions.get(userSessionId);
+                                            if (sessionData && sessionData.sock) {
+                                                activeSock = sessionData.sock;
+                                                activeSessionId = userSessionId;
+                                                console.log(`✅ [AGENT-CREATE] Sesión encontrada por userSessionId: ${userSessionId}`);
+                                            }
+                                        }
+                                    }
+
+                                    // 3. Si aún no encuentra, intentar con la primera sesión activa disponible
+                                    if (!activeSock) {
+                                        console.log(`🔎 [AGENT-CREATE] Buscando cualquier sesión activa disponible...`);
+                                        for (const [sid, sessionData] of sessions.entries()) {
+                                            if (sessionData.sock) {
+                                                activeSock = sessionData.sock;
+                                                activeSessionId = sid;
+                                                console.log(`✅ [AGENT-CREATE] Usando sesión activa: ${sid}`);
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    // Intentar enviar el mensaje
+                                    if (activeSock) {
+                                        const whatsappNumber = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`;
+                                        console.log(`📤 [AGENT-CREATE] Enviando mensaje a: ${whatsappNumber}`);
+                                        console.log(`📤 [AGENT-CREATE] Usando sesión: ${activeSessionId}`);
+
+                                        try {
+                                            await activeSock.sendMessage(whatsappNumber, { text: message });
+                                            console.log(`✅✅✅ [AGENT-CREATE] ¡MENSAJE ENVIADO EXITOSAMENTE! ✅✅✅`);
+                                            console.log(`📱 [AGENT-CREATE] Credenciales enviadas a ${phone} vía sesión ${activeSessionId}`);
+                                            whatsappSent = true;
+                                        } catch (sendError) {
+                                            console.error(`❌ [AGENT-CREATE] Error al enviar mensaje:`, sendError.message);
+                                            console.error(`❌ [AGENT-CREATE] Stack:`, sendError.stack);
+                                            whatsappError = `Error al enviar WhatsApp: ${sendError.message}`;
+                                        }
+                                    } else {
+                                        console.error(`❌ [AGENT-CREATE] No se encontró ninguna sesión activa de WhatsApp`);
+                                        console.error(`💡 [AGENT-CREATE] Asegúrate de que el admin tenga una sesión de WhatsApp conectada`);
+                                        console.log(`📊 [AGENT-CREATE] Debug - Sesiones exploradas:`, {
+                                            totalSessions: sessions.size,
+                                            sessionIds: Array.from(sessions.keys()),
+                                            adminPhone,
+                                            userSessionId
+                                        });
+                                        whatsappError = 'No se encontró sesión activa de WhatsApp para enviar el mensaje.';
+                                    }
+
+                                    console.log(`📱 [AGENT-CREATE] ===== FIN ENVÍO WHATSAPP =====`);
+
+                                } catch (whatsappCritError) {
+                                    console.error(`❌ [AGENT-CREATE] Error crítico enviando WhatsApp:`, whatsappCritError.message);
+                                    console.error(`❌ [AGENT-CREATE] Stack:`, whatsappCritError.stack);
+                                    whatsappError = `Error crítico en el proceso de envío de WhatsApp: ${whatsappCritError.message}`;
+                                }
+                            });
                         }
-                    } catch (whatsappError) {
-                        console.error(`❌ [AGENT-CREATE] Error enviando WhatsApp:`, whatsappError.message);
-                        // No fallar la creación si el WhatsApp no se envía
                     }
                 }
+
+
+                console.log(`✅ [AGENT-CREATE] Agente ${agentId} creado exitosamente`);
+                console.log(`📤 [AGENT-CREATE] Retornando respuesta al cliente...`);
 
                 res.json({
                     success: true,
                     agentId,
                     message: 'Agente creado exitosamente' + (sendWhatsApp && phone ? ' y credenciales enviadas por WhatsApp' : '')
                 });
+
+                console.log(`✅ [AGENT-CREATE] Respuesta enviada al cliente`);
             } catch (error) {
                 await connection.rollback();
                 throw error;

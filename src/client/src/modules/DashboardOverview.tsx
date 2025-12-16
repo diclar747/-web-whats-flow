@@ -140,12 +140,32 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
   const [quickStats, setQuickStats] = useState<QuickStat[]>([]);
   const [topAgents, setTopAgents] = useState<TopAgent[]>([]);
   const [chatbotAnalytics, setChatbotAnalytics] = useState<ChatbotAnalytics[]>([]);
+  const [systemMetrics, setSystemMetrics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
   useEffect(() => {
     loadDashboardData();
+    loadSystemMetrics();
+
+    // Auto-refresh system metrics every 30 seconds
+    const metricsInterval = setInterval(loadSystemMetrics, 30000);
+
+    return () => clearInterval(metricsInterval);
   }, [sessionId]);
+
+  const loadSystemMetrics = async () => {
+    try {
+      const response = await fetch('/api/system/metrics');
+      const data = await response.json();
+      if (data.success) {
+        setSystemMetrics(data);
+        console.log('📊 Métricas del sistema actualizadas:', data);
+      }
+    } catch (error) {
+      console.error('❌ Error cargando métricas del sistema:', error);
+    }
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -1021,8 +1041,11 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
                         }} />
                       }
                     >
-                      <Avatar sx={{ bgcolor: '#00a884', mr: 2 }}>
-                        {agent.avatar}
+                      <Avatar
+                        src={typeof agent.avatar === 'string' && agent.avatar.startsWith('http') ? agent.avatar : undefined}
+                        sx={{ bgcolor: '#00a884', mr: 2, width: 48, height: 48 }}
+                      >
+                        {(!agent.avatar || !agent.avatar.startsWith('http')) && agent.avatar}
                       </Avatar>
                     </Badge>
                     <Box sx={{ flex: 1 }}>
@@ -1057,68 +1080,95 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
               </CardContent>
             </Card>
 
-            {/* Estado del Sistema Avanzado */}
+            {/* Estado del Sistema Avanzado - Datos Reales */}
             <Card elevation={3} sx={{ borderRadius: 4 }}>
               <CardContent sx={{ p: 3 }}>
                 <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-                  🛡️ Estado del Sistema
+                  🛡️ Estado del Sistema {systemMetrics && <Chip label="EN VIVO" size="small" color="success" sx={{ ml: 1 }} />}
                 </Typography>
 
                 <Stack spacing={2}>
+                  {/* WhatsApp API */}
                   <Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                       <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
-                        <SignalCellularAlt sx={{ fontSize: 16, mr: 1, color: '#4caf50' }} />
+                        <SignalCellularAlt sx={{ fontSize: 16, mr: 1, color: systemMetrics?.whatsappAPI?.status === 'ACTIVO' ? '#4caf50' : '#f44336' }} />
                         WhatsApp API
                       </Typography>
-                      <Chip label="ACTIVO" size="small" sx={theme => ({
-                        bgcolor: alpha(theme.palette.success.main, 0.15),
-                        color: theme.palette.success.light,
-                        border: '1px solid',
-                        borderColor: alpha(theme.palette.success.main, 0.3)
-                      })} />
+                      <Chip
+                        label={systemMetrics?.whatsappAPI?.status || 'CARGANDO'}
+                        size="small"
+                        sx={theme => ({
+                          bgcolor: alpha(systemMetrics?.whatsappAPI?.status === 'ACTIVO' ? theme.palette.success.main : theme.palette.error.main, 0.15),
+                          color: systemMetrics?.whatsappAPI?.status === 'ACTIVO' ? theme.palette.success.light : theme.palette.error.light,
+                          border: '1px solid',
+                          borderColor: alpha(systemMetrics?.whatsappAPI?.status === 'ACTIVO' ? theme.palette.success.main : theme.palette.error.main, 0.3)
+                        })}
+                      />
                     </Box>
-                    <LinearProgress value={100} variant="determinate" sx={{ height: 6, borderRadius: 3 }} />
+                    <LinearProgress
+                      value={systemMetrics?.whatsappAPI?.status === 'ACTIVO' ? 100 : 0}
+                      variant="determinate"
+                      sx={{ height: 6, borderRadius: 3 }}
+                    />
                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                      Latencia: 45ms • Uptime: 99.9%
+                      {systemMetrics ? `Latencia: ${systemMetrics.whatsappAPI.latency} • Uptime: ${systemMetrics.whatsappAPI.uptime} • Sesiones: ${systemMetrics.whatsappAPI.activeSessions}` : 'Cargando...'}
                     </Typography>
                   </Box>
 
+                  {/* Servidores */}
                   <Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                       <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
                         <BatteryFull sx={{ fontSize: 16, mr: 1, color: '#4caf50' }} />
                         Servidores
                       </Typography>
-                      <Chip label="ÓPTIMO" size="small" sx={theme => ({
-                        bgcolor: alpha(theme.palette.success.main, 0.15),
-                        color: theme.palette.success.light,
-                        border: '1px solid',
-                        borderColor: alpha(theme.palette.success.main, 0.3)
-                      })} />
+                      <Chip
+                        label={systemMetrics?.servers?.status || 'CARGANDO'}
+                        size="small"
+                        sx={theme => ({
+                          bgcolor: alpha(theme.palette.success.main, 0.15),
+                          color: theme.palette.success.light,
+                          border: '1px solid',
+                          borderColor: alpha(theme.palette.success.main, 0.3)
+                        })}
+                      />
                     </Box>
-                    <LinearProgress value={85} variant="determinate" sx={{ height: 6, borderRadius: 3 }} />
+                    <LinearProgress
+                      value={systemMetrics?.servers?.cpu?.usage || 0}
+                      variant="determinate"
+                      sx={{ height: 6, borderRadius: 3 }}
+                    />
                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                      CPU: 35% • RAM: 68% • Almacenamiento: 45%
+                      {systemMetrics ? `CPU: ${systemMetrics.servers.cpu.usage}% (${systemMetrics.servers.cpu.cores} cores) • RAM: ${systemMetrics.servers.ram.usage}% (${systemMetrics.servers.ram.used}/${systemMetrics.servers.ram.total}) • Disco: ${systemMetrics.servers.disk.usage}%` : 'Cargando...'}
                     </Typography>
                   </Box>
 
+                  {/* Base de Datos */}
                   <Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                       <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center' }}>
                         <CloudDone sx={{ fontSize: 16, mr: 1, color: '#2196f3' }} />
                         Base de Datos
                       </Typography>
-                      <Chip label="SINCRONIZADO" size="small" sx={theme => ({
-                        bgcolor: alpha(theme.palette.info.main, 0.15),
-                        color: theme.palette.info.light,
-                        border: '1px solid',
-                        borderColor: alpha(theme.palette.info.main, 0.3)
-                      })} />
+                      <Chip
+                        label={systemMetrics?.database?.status || 'CARGANDO'}
+                        size="small"
+                        sx={theme => ({
+                          bgcolor: alpha(theme.palette.info.main, 0.15),
+                          color: theme.palette.info.light,
+                          border: '1px solid',
+                          borderColor: alpha(theme.palette.info.main, 0.3)
+                        })}
+                      />
                     </Box>
-                    <LinearProgress value={92} variant="determinate" sx={{ height: 6, borderRadius: 3 }} />
+                    <LinearProgress
+                      value={systemMetrics?.database?.connections?.usage || 0}
+                      variant="determinate"
+                      sx={{ height: 6, borderRadius: 3 }}
+                    />
                     <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                      Última copia: hace 15 min • Conexiones: 47/100
+                      {systemMetrics?.database?.connections ? `${systemMetrics.database.lastBackup} • Conexiones: ${systemMetrics.database.connections.active}/${systemMetrics.database.connections.max} (${systemMetrics.database.connections.usage}%)` : 'Cargando...'}
                     </Typography>
                   </Box>
                 </Stack>

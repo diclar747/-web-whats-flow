@@ -834,7 +834,58 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
       </Box>
 
       {/* Diálogo de edición/creación de cita - SIMPLIFICADO */}
-      <Dialog open={showDialog} onClose={() => !saving && setShowDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={showDialog}
+        onClose={() => !saving && setShowDialog(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            backgroundColor: '#1e293b',
+            color: 'white',
+            '& .MuiDialogTitle-root': {
+              backgroundColor: '#0f172a',
+              borderBottom: '1px solid rgba(255,255,255,0.1)'
+            },
+            '& .MuiDialogContent-root': {
+              backgroundColor: '#1e293b'
+            },
+            '& .MuiDialogActions-root': {
+              backgroundColor: '#0f172a',
+              borderTop: '1px solid rgba(255,255,255,0.1)'
+            },
+            '& .MuiTextField-root': {
+              '& .MuiOutlinedInput-root': {
+                color: 'white',
+                '& fieldset': {
+                  borderColor: 'rgba(255,255,255,0.2)'
+                },
+                '&:hover fieldset': {
+                  borderColor: 'rgba(255,255,255,0.3)'
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: '#6366f1'
+                }
+              },
+              '& .MuiInputLabel-root': {
+                color: 'rgba(255,255,255,0.7)'
+              },
+              '& .MuiFormHelperText-root': {
+                color: 'rgba(255,255,255,0.5)'
+              }
+            },
+            '& .MuiSelect-root': {
+              color: 'white'
+            },
+            '& .MuiInputLabel-root': {
+              color: 'rgba(255,255,255,0.7)'
+            },
+            '& .MuiMenuItem-root': {
+              color: 'white'
+            }
+          }
+        }}
+      >
         <DialogTitle sx={{ fontWeight: 600, fontSize: '1.5rem' }}>
           {selectedEvent ? '✏️ Editar Cita' : '➕ Nueva Cita'}
         </DialogTitle>
@@ -1000,11 +1051,16 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
             </FormControl>
 
             {formData.notification_template && (
-              <Paper sx={{ p: 2, backgroundColor: '#f5f5f5' }}>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+              <Paper sx={{
+                p: 2,
+                backgroundColor: '#0f172a',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                boxShadow: '0 0 10px rgba(16, 185, 129, 0.1)'
+              }}>
+                <Typography variant="subtitle2" sx={{ color: '#10b981', fontWeight: 600 }} gutterBottom>
                   Vista previa del mensaje:
                 </Typography>
-                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', color: 'rgba(255,255,255,0.9)' }}>
                   {previewTemplate(formData.notification_template)}
                 </Typography>
               </Paper>
@@ -1045,6 +1101,58 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
         onClose={() => setShowSettingsDialog(false)}
         maxWidth="md"
         fullWidth
+        PaperProps={{
+          sx: {
+            backgroundColor: '#1e293b',
+            color: 'white',
+            '& .MuiDialogTitle-root': {
+              backgroundColor: '#0f172a',
+              borderBottom: '1px solid rgba(255,255,255,0.1)'
+            },
+            '& .MuiDialogContent-root': {
+              backgroundColor: '#1e293b'
+            },
+            '& .MuiTextField-root': {
+              '& .MuiOutlinedInput-root': {
+                color: 'white',
+                '& fieldset': {
+                  borderColor: 'rgba(255,255,255,0.2)'
+                },
+                '&:hover fieldset': {
+                  borderColor: 'rgba(255,255,255,0.3)'
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: '#6366f1'
+                }
+              },
+              '& .MuiInputLabel-root': {
+                color: 'rgba(255,255,255,0.7)'
+              }
+            },
+            '& .MuiListItemText-primary': {
+              color: 'white'
+            },
+            '& .MuiListItemText-secondary': {
+              color: 'rgba(255,255,255,0.6)'
+            },
+            '& .MuiAlert-root': {
+              backgroundColor: 'rgba(56, 189, 248, 0.1)',
+              color: '#7dd3fc',
+              '& .MuiAlert-icon': {
+                color: '#38bdf8'
+              }
+            },
+            '& .MuiTab-root': {
+              color: 'rgba(255,255,255,0.7)',
+              '&.Mui-selected': {
+                color: '#6366f1'
+              }
+            },
+            '& .MuiTabs-indicator': {
+              backgroundColor: '#6366f1'
+            }
+          }
+        }}
       >
         <DialogTitle sx={{ fontWeight: 600, fontSize: '1.5rem' }}>
           ⚙️ Configuración del Calendario

@@ -124,6 +124,9 @@ const AdminAgentManagement: React.FC = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [loadingContacts, setLoadingContacts] = useState(false);
+  
+  // ✅ Ref para el debounce timer
+  const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   const apiUrl = getAPIBaseURL();
   const token = sessionStorage.getItem('token') || '';
@@ -212,35 +215,47 @@ const AdminAgentManagement: React.FC = () => {
                                localStorage.getItem('sessionId') ||
                                sessionId;
       
-      console.log('[LOAD-CONTACTS] Buscando contactos para sesión:', currentSessionId, 'Término:', searchTerm || 'TODOS');
+      console.log('[LOAD-CONTACTS] 🔍 Buscando contactos para sesión:', currentSessionId);
+      console.log('[LOAD-CONTACTS] 🔎 Término de búsqueda:', searchTerm || 'TODOS');
       
-      // ✅ Usar búsqueda con término si existe
-      const searchParam = searchTerm ? `&search=${encodeURIComponent(searchTerm)}` : '';
-      const response = await fetch(`${apiUrl}/api/contacts/${currentSessionId}?limit=100${searchParam}`, {
+      // ✅ Siempre usar búsqueda, incluso si está vacío
+      const searchParam = `&search=${encodeURIComponent(searchTerm || '')}`;
+      const url = `${apiUrl}/api/contacts/${currentSessionId}?limit=100${searchParam}`;
+      
+      console.log('[LOAD-CONTACTS] 📡 URL:', url);
+      
+      const response = await fetch(url, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
       });
 
       if (!response.ok) {
-        console.error('[LOAD-CONTACTS] Error:', response.status);
-        throw new Error('Error cargando contactos');
+        console.error('[LOAD-CONTACTS] ❌ Error HTTP:', response.status);
+        throw new Error(`Error HTTP ${response.status}`);
       }
 
       const data = await response.json();
-      console.log('[LOAD-CONTACTS] ✅ Contactos recibidos:', data.contacts?.length || 0);
+      console.log('[LOAD-CONTACTS] ✅ Respuesta:', {
+        success: data.success,
+        totalContactos: data.contacts?.length || 0,
+        mensaje: data.message || 'Sin mensaje'
+      });
       
       if (data.success && data.contacts) {
         // Filtrar solo contactos individuales (no grupos)
         const individualContacts = data.contacts.filter((c: any) => c.jid && c.jid.endsWith('@s.whatsapp.net'));
+        console.log('[LOAD-CONTACTS] 📋 Contactos individuales filtrados:', individualContacts.length);
         setContacts(individualContacts);
         return individualContacts;
       } else {
+        console.log('[LOAD-CONTACTS] ⚠️ No hay contactos o error:', data.error || 'Sin datos');
         setContacts([]);
         return [];
       }
     } catch (err) {
-      console.error('[LOAD-CONTACTS] Error:', err);
+      console.error('[LOAD-CONTACTS] ❌ Error completo:', err);
       setContacts([]);
       return [];
     } finally {
@@ -828,36 +843,77 @@ const AdminAgentManagement: React.FC = () => {
         </DialogTitle>
         <DialogContent>
           <Box display="flex" flexDirection="column" gap={2} mt={2}>
-            {/* ✅ AUTOCOMPLETADO SIMPLE */}
+            {/* ✅ AUTOCOMPLETADO CON BÚSQUEDA DE CONTACTOS */}
             <Autocomplete
               freeSolo
               options={contacts}
               inputValue={newAgentName}
               loading={loadingContacts}
+              noOptionsText={
+                newAgentName.length < 2 
+                  ? "Escribe al menos 2 letras para buscar" 
+                  : loadingContacts 
+                  ? "Buscando..." 
+                  : "No se encontraron contactos"
+              }
               getOptionLabel={(option) => {
                 if (typeof option === 'string') return option;
                 return option.name || option.notify_name || option.jid?.split('@')[0] || '';
               }}
-              filterOptions={(options) => options}
-              onInputChange={(event, value) => {
+              filterOptions={(options) => options} // No filtrar localmente, ya viene filtrado del servidor
+              onInputChange={(event, value, reason) => {
+                console.log('[AUTOCOMPLETE] onInputChange:', { value, reason, length: value.length });
                 setNewAgentName(value);
+                
+                // Limpiar timeout anterior
+                if (searchTimeoutRef.current) {
+                  clearTimeout(searchTimeoutRef.current);
+                }
+                
+                // Búsqueda con debounce
                 if (value && value.length >= 2) {
-                  loadContacts(value);
+                  // Usar setTimeout para debounce
+                  searchTimeoutRef.current = setTimeout(() => {
+                    console.log('[AUTOCOMPLETE] 🔍 Ejecutando búsqueda para:', value);
+                    loadContacts(value);
+                  }, 500); // Esperar 500ms después de que el usuario deje de escribir
+                } else if (value.length === 0) {
+                  setContacts([]);  // Limpiar contactos si se borra todo
+                  console.log('[AUTOCOMPLETE] 🧹 Campo vacío, limpiando contactos');
                 }
               }}
               onChange={(event, value) => {
+                console.log('[AUTOCOMPLETE] onChange:', value);
                 if (value && typeof value === 'object') {
-                  setNewAgentName(value.name || value.notify_name || '');
-                  setNewAgentPhone(value.jid?.split('@')[0] || '');
-                  setNewAgentAvatar(value.avatar_url || '');
+                  const name = value.name || value.notify_name || '';
+                  const phone = value.jid?.split('@')[0] || '';
+                  const avatar = value.avatar_url || '';
+                  
+                  console.log('[AUTOCOMPLETE] Contacto seleccionado:', { name, phone });
+                  
+                  setNewAgentName(name);
+                  setNewAgentPhone(phone);
+                  setNewAgentAvatar(avatar);
+                  setSelectedContact(value);
+                } else if (typeof value === 'string') {
+                  // Si escriben texto libre
+                  setNewAgentName(value);
                 }
               }}
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Nombre Completo"
+                  label="Nombre Completo *"
                   required
-                  helperText={contacts.length > 0 ? `${contacts.length} contactos encontrados` : "Escribe 2 letras para buscar"}
+                  helperText={
+                    loadingContacts 
+                      ? "🔍 Buscando contactos..." 
+                      : contacts.length > 0 
+                      ? `✅ ${contacts.length} contacto(s) encontrado(s)` 
+                      : newAgentName.length >= 2 
+                      ? "⚠️ No se encontraron contactos con ese nombre"
+                      : "💡 Escribe al menos 2 letras para buscar en tus contactos"
+                  }
                   InputProps={{
                     ...params.InputProps,
                     endAdornment: (
@@ -870,14 +926,16 @@ const AdminAgentManagement: React.FC = () => {
                 />
               )}
               renderOption={(props, option) => (
-                <Box component="li" {...props} sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                <Box component="li" {...props} sx={{ display: 'flex', gap: 2, alignItems: 'center', py: 1 }}>
                   <Avatar src={option.avatar_url} sx={{ width: 40, height: 40 }}>
-                    {(option.name || option.notify_name || '?').charAt(0)}
+                    {(option.name || option.notify_name || '?').charAt(0).toUpperCase()}
                   </Avatar>
-                  <Box>
-                    <Typography variant="body1">{option.name || option.notify_name || 'Sin nombre'}</Typography>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="body1" fontWeight={500}>
+                      {option.name || option.notify_name || 'Sin nombre'}
+                    </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {option.jid?.split('@')[0]}
+                      📱 {option.jid?.split('@')[0]}
                     </Typography>
                   </Box>
                 </Box>

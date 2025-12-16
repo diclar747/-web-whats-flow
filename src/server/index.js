@@ -21,6 +21,7 @@ const moment = require('moment');
 
 // Importar middleware de autenticación
 const { authenticateToken, authorizeRole } = require('./middleware/auth');
+const { initializePlanMiddleware, checkActivePlan } = require('./middleware/checkActivePlan');
 const { validateUniqueSession, createUniqueSession, destroySession } = require('./middleware/sessionValidator');
 const { generalLimiter, authLimiter, apiMessageLimiter, webhookLimiter, qrLimiter } = require('./middleware/rateLimiter');
 
@@ -277,6 +278,9 @@ console.log('✅ Analytics endpoints cargados');
 
 require('./personalized-campaigns-endpoints')(app, poolProxy);
 console.log('✅ Endpoints de Campañas Personalizadas cargados');
+
+require('./system-metrics-endpoints')(app, poolProxy);
+console.log('✅ Endpoints de Métricas del Sistema cargados');
 
 
 
@@ -553,6 +557,10 @@ async function initializeDatabase() {
         app.set('dbPool', pool);
         global.dbPool = pool; // También global para fácil acceso
         console.log('[DB-INIT] Pool made available to routes');
+
+        // Inicializar middleware de verificación de plan con el pool
+        initializePlanMiddleware(pool);
+        console.log('[DB-INIT] Plan middleware initialized');
 
         // Hacer pool accesible globalmente en app
         app.set('pool', pool);
@@ -6816,21 +6824,37 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                     console.log(`[${sessionId}] 🔄 Updating message ${messageId} to status: ${newStatus}`);
 
-                    const messageToUpdate = {
-                        id: messageId,
-                        chat_jid: chatJid, // Necesario para identificar la sesión si el ID no es globalmente único
-                        from_me: update.key.fromMe, // from_me es importante para el contexto
-                        timestamp: new Date(), // El timestamp del update, no del mensaje original
-                        status: newStatus,
-                        // No necesitamos todos los campos, solo los que usa saveMessageToDB para la condición ON DUPLICATE KEY UPDATE
-                        // y los que usamos para identificar unívocamente (id, session_id - que se pasa a saveMessageToDB)
-                        // session_id, sender_jid, message_type, text_content, etc. pueden ser undefined aquí.
-                    };
+                    // ✅ CRITICAL FIX: Actualizar estado directamente en la base de datos
+                    // Esto asegura que el estado se persista correctamente incluso después de recargar la página
+                    if (pool) {
+                        try {
+                            const phoneNumber = await getUserPhoneNumber(sessionId);
+                            if (phoneNumber) {
+                                const connection = await pool.getConnection();
+                                try {
+                                    // Actualizar el estado del mensaje en la base de datos
+                                    const [updateResult] = await connection.execute(
+                                        'UPDATE messages SET status = ?, updated_at = NOW() WHERE id = ? AND session_id = ?',
+                                        [newStatus, messageId, phoneNumber]
+                                    );
 
-                    // Reutilizar saveMessageToDB con ON DUPLICATE KEY UPDATE status = VALUES(status)
-                    // Necesitamos asegurar que saveMessageToDB tiene la logica de session_id
-                    await saveMessageToDB(sessionId, messageToUpdate);
-                    console.log(`[${sessionId}] Message ${messageId} in chat ${chatJid} status updated to ${newStatus} in DB.`);
+                                    if (updateResult.affectedRows > 0) {
+                                        console.log(`[${sessionId}] ✅ Estado actualizado en BD: ${messageId} → ${newStatus} (${updateResult.affectedRows} rows)`);
+                                    } else {
+                                        console.log(`[${sessionId}] ⚠️ No se encontró mensaje en BD para actualizar: ${messageId}`);
+                                    }
+                                } finally {
+                                    connection.release();
+                                }
+                            } else {
+                                console.error(`[${sessionId}] ❌ No se pudo obtener phoneNumber para actualizar estado`);
+                            }
+                        } catch (dbError) {
+                            console.error(`[${sessionId}] ❌ Error actualizando estado en BD:`, dbError);
+                        }
+                    }
+
+                    console.log(`[${sessionId}] ✅ Message ${messageId} in chat ${chatJid} status updated to ${newStatus}`);
 
                     // También actualizar campaign_recipients si este mensaje pertenece a una campaña
                     if (pool) {
@@ -10602,16 +10626,20 @@ app.get('/api/history/messages', async (req, res) => {
         // Construir placeholders para IN clause
         const placeholders = sessionIds.map(() => '?').join(',');
 
+        // ✅ FIX: Usar solo el primer sessionId para filtrar contactos
+        // Esto evita que se obtengan nombres de contactos de otras sesiones
+        const primarySessionId = sessionIds[0];
+
         let query = `SELECT m.id, m.session_id, m.chat_jid,
                      COALESCE(c.name, c.notify_name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as chat_name,
                      m.sender_jid,
                      COALESCE(s.name, s.notify_name, SUBSTRING_INDEX(m.sender_jid, '@', 1)) as sender_name,
                      m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status
                      FROM messages m
-                     LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id IN (${placeholders})
-                     LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id IN (${placeholders})
+                     LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = ?
+                     LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id = ?
                      WHERE (m.session_id IN (${placeholders}) OR m.phone_number IN (${placeholders}))`;
-        const queryParams = [...sessionIds, ...sessionIds, ...sessionIds, ...sessionIds];
+        const queryParams = [primarySessionId, primarySessionId, ...sessionIds, ...sessionIds];
 
         if (chatJid) {
             const fullChatJid = chatJid.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`;
@@ -15173,7 +15201,7 @@ app.post('/api/campaigns/upload-media', (req, res) => {
 });
 
 // Crear nueva campaña
-app.post('/api/campaigns/create', async (req, res) => {
+app.post('/api/campaigns/create', authenticateToken, checkActivePlan, async (req, res) => {
     const { sessionId, campaign } = req.body;
 
     if (!sessionId || !campaign) {

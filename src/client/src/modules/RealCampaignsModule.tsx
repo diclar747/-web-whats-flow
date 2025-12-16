@@ -274,10 +274,10 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
   const loadCampaigns = useCallback(async () => {
     try {
       setLoading(true);
-      
+
       // Cargar solo campañas del sessionId principal del usuario (no de otras líneas de otros usuarios)
       console.log(`📋 Cargando campañas del usuario actual: ${sessionId}`);
-      
+
       const response = await fetch(`${getAPIBaseURL()}/api/campaigns/${sessionId}`);
       const data = await response.json();
 
@@ -371,12 +371,12 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
     try {
       // ✅ Obtener sessionId del usuario actual
-      const currentSessionId = sessionStorage.getItem('whatsflow_session') || 
-                               localStorage.getItem('whatsflow_session') || 
-                               sessionId;
-      
+      const currentSessionId = sessionStorage.getItem('whatsflow_session') ||
+        localStorage.getItem('whatsflow_session') ||
+        sessionId;
+
       console.log('[CAMPAIGNS] Cargando sesiones para:', currentSessionId);
-      
+
       // ✅ Pasar sessionId en el query
       const response = await fetch(`${getAPIBaseURL()}/api/sessions/active?sessionId=${currentSessionId}`);
       const data = await response.json();
@@ -1209,7 +1209,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       console.log(`📤 Creando campaña con ${newCampaign.contacts?.length || 0} contactos`);
       console.log(`   Sesión del usuario: ${sessionId}`);
       console.log(`   Línea de envío: ${activeSessionId}`);
-      
+
       const campaignPayload = {
         sessionId: sessionId,  // Siempre usar la sesión principal del usuario
         campaign: {
@@ -1702,10 +1702,14 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                     <Box sx={{ mb: 2 }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                         <Typography variant="body2">
-                          Progreso: {campaign.progress.sent}/{campaign.progress.total}
+                          Progreso: {campaign.status === 'completed'
+                            ? `${campaign.progress.total}/${campaign.progress.total}`
+                            : `${campaign.progress.sent}/${campaign.progress.total}`}
                         </Typography>
                         <Typography variant="body2">
-                          {Math.round((campaign.progress.sent / campaign.progress.total) * 100)}%
+                          {campaign.status === 'completed'
+                            ? '100%'
+                            : Math.round((campaign.progress.sent / campaign.progress.total) * 100) + '%'}
                         </Typography>
                       </Box>
                       {(() => {
@@ -3488,9 +3492,9 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           Confirmar Eliminación de Campaña
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
-          <Alert 
-            severity="warning" 
-            sx={{ 
+          <Alert
+            severity="warning"
+            sx={{
               mb: 2,
               bgcolor: isDarkMode ? 'rgba(245, 158, 11, 0.1)' : undefined,
               color: isDarkMode ? '#fbbf24' : undefined,
@@ -3507,8 +3511,8 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
           </Typography>
 
           {campaignToDelete && (
-            <Card sx={{ 
-              mt: 2, 
+            <Card sx={{
+              mt: 2,
               bgcolor: isDarkMode ? '#0f172a' : '#f5f5f5',
               backgroundImage: 'none',
               border: isDarkMode ? '1px solid rgba(148, 163, 184, 0.1)' : '1px solid rgba(0, 0, 0, 0.12)'

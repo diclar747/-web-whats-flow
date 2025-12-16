@@ -12,7 +12,9 @@
 }
 
 .rbc-today {
-  background-color: #e8f0fe !important;
+  background-color: rgba(30, 41, 59, 0.6) !important;
+  border: 2px solid #10b981 !important;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
 }
 
 .rbc-event {

@@ -38,6 +38,7 @@ import {
   CircularProgress,
   Divider
 } from '@mui/material';
+  import Autocomplete from '@mui/material/Autocomplete';
 import {
   PersonAdd,
   Edit,
@@ -109,10 +110,17 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
     name: '',
     email: '',
     phone: '',
+    avatar_url: '',
     password: '',
     max_concurrent_chats: 5
   });
   const [showPassword, setShowPassword] = useState(false);
+
+  // Estados para búsqueda de contactos
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [loadingContacts, setLoadingContacts] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
+  const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
   // Estados del diálogo de confirmación
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -198,7 +206,34 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
       const data = await response.json();
 
       if (data.success) {
-        setAgents(data.agents || []);
+        let loadedAgents: Agent[] = data.agents || [];
+
+        // Enriquecer con avatar desde contactos si falta
+        const agentsNeedingAvatar = loadedAgents.filter(a => !a.avatar_url && a.phone);
+        if (agentsNeedingAvatar.length > 0) {
+          try {
+            const updated = await Promise.all(loadedAgents.map(async (a) => {
+              if (a.avatar_url || !a.phone) return a;
+              const phoneDigits = String(a.phone).replace(/[^0-9]/g, '');
+              try {
+                const res = await fetch(`${getAPIBaseURL()}/api/contacts/search/${sessionId}/${encodeURIComponent(phoneDigits)}`);
+                const json = await res.json();
+                if (json && json.success && json.contact) {
+                  const avatar = json.contact.avatar_url || json.contact.avatarUrl || null;
+                  if (avatar) return { ...a, avatar_url: avatar } as Agent;
+                }
+              } catch (e) {
+                console.warn('[AGENTS] No se pudo enriquecer avatar para', a.email);
+              }
+              return a;
+            }));
+            loadedAgents = updated as Agent[];
+          } catch (_) {
+            // Ignorar errores de enriquecimiento
+          }
+        }
+
+        setAgents(loadedAgents);
       } else {
         console.error('Error al cargar agentes', data);
         showSnackbar(data.error || 'Error al cargar agentes', 'error');
@@ -230,6 +265,59 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
     }
   };
 
+    // Función para cargar contactos desde el backend
+    const loadContacts = async (searchTerm: string) => {
+      if (!searchTerm || searchTerm.length < 2) {
+        console.log('[LOAD-CONTACTS] 💡 Búsqueda muy corta, se necesitan al menos 2 caracteres');
+        setContacts([]);
+        return;
+      }
+
+      console.log(`[LOAD-CONTACTS] 🔍 Buscando contactos para sesión: ${sessionId}`);
+      console.log(`[LOAD-CONTACTS] 🔎 Término de búsqueda: "${searchTerm}"`);
+
+      try {
+        setLoadingContacts(true);
+        const url = `${getAPIBaseURL()}/api/contacts/${sessionId}?limit=100&search=${encodeURIComponent(searchTerm)}`;
+        console.log(`[LOAD-CONTACTS] 📡 URL de petición: ${url}`);
+
+        const response = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('agentToken') || sessionStorage.getItem('token')}`
+          }
+        });
+
+        const data = await response.json();
+        console.log('[LOAD-CONTACTS] ✅ Respuesta recibida:', data);
+
+        // La API responde con "contacts" (y algunos módulos antiguos con "contactos")
+        const rawContacts = (data && (data.contacts || data.contactos)) || [];
+
+        if (data.success && Array.isArray(rawContacts)) {
+          // Normalizar campos y filtrar solo individuales
+          const normalized = rawContacts
+            .map((c: any) => ({
+              ...c,
+              name: c.name || c.notify_name || c.notify || c.jid?.split('@')[0] || '',
+              avatar_url: c.avatar_url || c.avatarUrl || c.avatar || null,
+              jid: c.jid,
+            }))
+            .filter((c: any) => c && c.jid && !String(c.jid).includes('@g.us'));
+
+          console.log(`[LOAD-CONTACTS] 📋 Contactos individuales filtrados: ${normalized.length}`);
+          setContacts(normalized);
+        } else {
+          console.log('[LOAD-CONTACTS] ⚠️ No se encontraron contactos o respuesta inválida');
+          setContacts([]);
+        }
+      } catch (error) {
+        console.error('[LOAD-CONTACTS] ❌ Error al cargar contactos:', error);
+        setContacts([]);
+      } finally {
+        setLoadingContacts(false);
+      }
+    };
+
   // Abrir diálogo para crear o editar agente
   const handleOpenDialog = (agent?: Agent) => {
     if (agent) {
@@ -238,6 +326,7 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
         name: agent.name,
         email: agent.email,
         phone: agent.phone || '',
+        avatar_url: (agent as any).avatar_url || '',
         password: '',
         max_concurrent_chats: agent.max_concurrent_chats || 5
       });
@@ -247,6 +336,7 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
         name: '',
         email: '',
         phone: '',
+        avatar_url: '',
         password: '',
         max_concurrent_chats: 5
       });
@@ -263,6 +353,8 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
 
   // Guardar agente (crear o actualizar)
   const handleSaveAgent = async () => {
+    console.log('🚀 [FRONTEND-AGENT] Iniciando handleSaveAgent...');
+    
     // Validaciones
     if (!formData.name || !formData.email) {
       showSnackbar('Por favor completa nombre y email', 'warning');
@@ -285,7 +377,11 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
-        max_concurrent_chats: formData.max_concurrent_chats
+        avatar_url: formData.avatar_url || undefined,
+        max_concurrent_chats: formData.max_concurrent_chats,
+        // Enviar credenciales por WhatsApp y facilitar autenticación en backend
+        sendWhatsApp: true,
+        sessionId: sessionId || sessionStorage.getItem('sessionId') || localStorage.getItem('sessionId') || localStorage.getItem('whatsflow_session') || sessionStorage.getItem('whatsflow_session')
       };
 
       // Solo incluir password si se está editando y se proporcionó uno nuevo, o si es creación
@@ -293,16 +389,35 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
         payload.password = formData.password;
       }
 
+      console.log('🌐 [FRONTEND-AGENT] Enviando request:', {
+        url,
+        method,
+        payload: { ...payload, password: payload.password ? '***' : undefined }
+      });
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos de timeout
+
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('agentToken') || sessionStorage.getItem('token')}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      console.log('📡 [FRONTEND-AGENT] Response recibido:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
       });
 
       const data = await response.json();
+      console.log('📦 [FRONTEND-AGENT] Data parseado:', data);
 
       if (data.success) {
         showSnackbar(
@@ -315,8 +430,16 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
         showSnackbar(data.error || 'Error al guardar agente', 'error');
       }
     } catch (error) {
-      console.error('Error guardando agente:', error);
-      showSnackbar('Error de conexión al guardar agente', 'error');
+      console.error('❌ [FRONTEND-AGENT] Error guardando agente:', error);
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          showSnackbar('Timeout: El servidor tardó demasiado en responder', 'error');
+        } else {
+          showSnackbar(`Error: ${error.message}`, 'error');
+        }
+      } else {
+        showSnackbar('Error de conexión al guardar agente', 'error');
+      }
     }
   };
 
@@ -640,7 +763,11 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
                               />
                             }
                           >
-                            <Avatar sx={{ mr: 2, bgcolor: '#00a884' }}>
+                            <Avatar
+                              src={(agent as any).avatar_url || undefined}
+                              sx={{ mr: 2, bgcolor: (agent as any).avatar_url ? 'transparent' : '#00a884' }}
+                              imgProps={{ referrerPolicy: 'no-referrer' }}
+                            >
                               {agent.name.charAt(0).toUpperCase()}
                             </Avatar>
                           </Badge>
@@ -759,14 +886,107 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
         <form onSubmit={(e) => { e.preventDefault(); handleSaveAgent(); }}>
           <DialogContent>
             <Stack spacing={2} sx={{ mt: 2 }}>
-              <TextField
-                fullWidth
-                label="Nombre completo"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-                autoComplete="name"
-              />
+                <Autocomplete
+                  fullWidth
+                  freeSolo
+                  options={contacts}
+                  loading={loadingContacts}
+                  getOptionLabel={(option: any) => {
+                    if (typeof option === 'string') return option;
+                    return option?.name || option?.notify_name || '';
+                  }}
+                  filterOptions={(x) => x}
+                  value={formData.name}
+                  onChange={(event, newValue) => {
+                    console.log('[AUTOCOMPLETE] Contacto seleccionado:', newValue);
+                    if (typeof newValue === 'string') {
+                      setFormData({ ...formData, name: newValue });
+                    } else if (newValue && newValue.name) {
+                      let phone = newValue.phone || '';
+                      if (!phone && newValue.jid) {
+                        phone = newValue.jid.split('@')[0];
+                      }
+                      const avatarUrl = newValue.avatar_url || newValue.avatarUrl || null;
+                      console.log(`[AUTOCOMPLETE] 📱 Auto-llenando teléfono: ${phone}`);
+                      setFormData({
+                        ...formData,
+                        name: newValue.name,
+                        phone: phone,
+                        avatar_url: avatarUrl || ''
+                      });
+                    }
+                  }}
+                  onInputChange={(event, value, reason) => {
+                    console.log(`[AUTOCOMPLETE] onInputChange: {value: "${value}", reason: "${reason}"}`);
+                    setSearchInput(value);
+                    setFormData({ ...formData, name: value });
+                    if (searchTimeoutRef.current) {
+                      clearTimeout(searchTimeoutRef.current);
+                    }
+                    if (value && value.length >= 2) {
+                      console.log(`[AUTOCOMPLETE] 🔍 Ejecutando búsqueda para: "${value}"`);
+                      searchTimeoutRef.current = setTimeout(() => {
+                        loadContacts(value);
+                      }, 500);
+                    } else {
+                      setContacts([]);
+                    }
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Nombre completo"
+                      required
+                      placeholder="Escribe al menos 2 letras para buscar..."
+                      InputProps={{
+                        ...params.InputProps,
+                        endAdornment: (
+                          <>
+                            {loadingContacts ? <CircularProgress color="inherit" size={20} /> : null}
+                            {params.InputProps.endAdornment}
+                          </>
+                        ),
+                      }}
+                      helperText={
+                        loadingContacts 
+                          ? '🔍 Buscando contactos...'
+                          : contacts.length > 0
+                          ? `✅ ${contacts.length} contacto(s) encontrado(s)`
+                          : searchInput && searchInput.length >= 2
+                          ? '⚠️ No se encontraron contactos con ese nombre'
+                          : '💡 Escribe al menos 2 letras para buscar en tus contactos'
+                      }
+                    />
+                  )}
+                  renderOption={(props, option: any) => (
+                    <Box component="li" {...props} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1 }}>
+                      <Avatar
+                        src={option.avatar_url}
+                        alt={option.name}
+                        sx={{ width: 40, height: 40 }}
+                      >
+                        {option.name?.[0]?.toUpperCase() || '?'}
+                      </Avatar>
+                      <Box>
+                        <Typography variant="body1" fontWeight={500}>
+                          {option.name || option.notify_name}
+                        </Typography>
+                        {option.jid && (
+                          <Typography variant="caption" color="text.secondary">
+                            📱 {option.jid.split('@')[0]}
+                          </Typography>
+                        )}
+                      </Box>
+                    </Box>
+                  )}
+                  noOptionsText={
+                    searchInput.length < 2
+                      ? "Escribe al menos 2 letras para buscar"
+                      : loadingContacts
+                      ? "Buscando..."
+                      : "No se encontraron contactos con ese nombre"
+                  }
+                />
               <TextField
                 fullWidth
                 label="Email"

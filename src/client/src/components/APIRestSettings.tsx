@@ -80,6 +80,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
   const [testImageUrl, setTestImageUrl] = useState('');
   const [testFileUrl, setTestFileUrl] = useState('');
   const [testFilename, setTestFilename] = useState('');
+  const [testFile, setTestFile] = useState<File | null>(null);
   const [testResult, setTestResult] = useState<any>(null);
   const [testLoading, setTestLoading] = useState(false);
   const [selectedApiKey, setSelectedApiKey] = useState('');
@@ -209,6 +210,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
     try {
       let endpoint = '';
       let body: any = {};
+      let isFormData = false;
 
       switch (testEndpoint) {
         case 'text':
@@ -223,18 +225,38 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
           endpoint = '/api/rest/send/document';
           body = { to: testTo, document: testFileUrl, filename: testFilename, caption: testMessage };
           break;
+        case 'file':
+          if (!testFile) {
+            setSnackbar({ open: true, message: 'Selecciona un archivo primero', severity: 'error' });
+            setTestLoading(false);
+            return;
+          }
+          endpoint = '/api/rest/send/file';
+          const formData = new FormData();
+          formData.append('file', testFile);
+          formData.append('to', testTo);
+          formData.append('caption', testMessage);
+          body = formData;
+          isFormData = true;
+          break;
         case 'status':
           endpoint = `/api/rest/status/${cleanSessionId}`;
           break;
       }
 
+      const headers: any = {
+        'X-API-Key': selectedApiKey
+      };
+
+      // No agregar Content-Type para FormData (el browser lo hace automático)
+      if (!isFormData) {
+        headers['Content-Type'] = 'application/json';
+      }
+
       const response = await fetch(`${getAPIBaseURL()}${endpoint}`, {
         method: testEndpoint === 'status' ? 'GET' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': selectedApiKey
-        },
-        body: testEndpoint === 'status' ? undefined : JSON.stringify(body)
+        headers: headers,
+        body: testEndpoint === 'status' ? undefined : (isFormData ? body : JSON.stringify(body))
       });
 
       const data = await response.json();
@@ -291,37 +313,16 @@ async function sendMessage(to, message) {
 // Usar
 const result = await sendMessage('595981234567', 'Hola!');
 console.log(result);`,
-    python: `import requests
-
-api_key = 'YOUR_API_KEY'
-api_url = '${getAPIBaseURL()}/api/rest'
-
-# Enviar mensaje de texto
-def send_message(to, message):
-    response = requests.post(
-        f'{api_url}/send/text',
-        headers={
-            'X-API-Key': api_key,
-            'Content-Type': 'application/json'
-        },
-        json={
-            'to': to,
-            'message': message
-        }
-    )
-    return response.json()
-
-# Usar
-result = send_message('595981234567', 'Hola desde Python!')
-print(result)`,
     php: `<?php
 $apiKey = 'YOUR_API_KEY';
 $apiUrl = '${getAPIBaseURL()}/api/rest';
 
-// Enviar mensaje de texto
-function sendMessage($to, $message) {
+// ============================================
+// ENVIAR MENSAJE DE TEXTO
+// ============================================
+function sendText($to, $message) {
     global $apiKey, $apiUrl;
-
+    
     $ch = curl_init("$apiUrl/send/text");
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
@@ -333,17 +334,257 @@ function sendMessage($to, $message) {
         'to' => $to,
         'message' => $message
     ]));
-
+    
     $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-
+    
     return json_decode($response, true);
 }
 
-// Usar
-$result = sendMessage('595981234567', 'Hola desde PHP!');
-var_dump($result);
-?>`
+// ============================================
+// ENVIAR IMAGEN (URL)
+// ============================================
+function sendImage($to, $imageUrl, $caption = '') {
+    global $apiKey, $apiUrl;
+    
+    $ch = curl_init("$apiUrl/send/image");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "X-API-Key: $apiKey",
+        "Content-Type: application/json"
+    ]);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
+        'to' => $to,
+        'image' => $imageUrl,
+        'caption' => $caption
+    ]));
+    
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    return json_decode($response, true);
+}
+
+// ============================================
+// ENVIAR ARCHIVO (UPLOAD DIRECTO)
+// ============================================
+function sendFile($to, $filePath, $caption = '') {
+    global $apiKey, $apiUrl;
+    
+    // Verificar que el archivo existe
+    if (!file_exists($filePath)) {
+        return ['success' => false, 'error' => 'Archivo no encontrado'];
+    }
+    
+    $cfile = curl_file_create(
+        $filePath,
+        mime_content_type($filePath),
+        basename($filePath)
+    );
+    
+    $ch = curl_init("$apiUrl/send/file");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "X-API-Key: $apiKey"
+        // NO incluir Content-Type, cURL lo maneja automático
+    ]);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, [
+        'file' => $cfile,
+        'to' => $to,
+        'caption' => $caption
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    return json_decode($response, true);
+}
+
+// ============================================
+// VERIFICAR ESTADO DE CONEXIÓN
+// ============================================
+function checkStatus($sessionId) {
+    global $apiKey, $apiUrl;
+    
+    $ch = curl_init("$apiUrl/status/$sessionId");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "X-API-Key: $apiKey"
+    ]);
+    
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    return json_decode($response, true);
+}
+
+// ============================================
+// MANEJO DE ERRORES
+// ============================================
+function handleAPIResponse($result) {
+    if (!$result['success']) {
+        switch ($result['error']) {
+            case 'Sin mensajes disponibles en tu plan':
+                echo "⛔ Sin saldo en tu plan\n";
+                echo "Usados: {$result['used']}/{$result['limit']}\n";
+                break;
+            case 'API Key inválida o inactiva':
+                echo "🔑 API Key incorrecta\n";
+                break;
+            default:
+                echo "❌ Error: {$result['error']}\n";
+        }
+        return false;
+    }
+    
+    echo "✅ Mensaje enviado: {$result['messageId']}\n";
+    return true;
+}
+
+// ============================================
+// EJEMPLOS DE USO
+// ============================================
+
+// Enviar texto
+$result = sendText('595981234567', 'Hola desde PHP!');
+handleAPIResponse($result);
+
+// Enviar imagen
+$result = sendImage(
+    '595981234567',
+    'https://example.com/imagen.jpg',
+    'Mira esta imagen'
+);
+handleAPIResponse($result);
+
+// Enviar archivo local
+$result = sendFile(
+    '595981234567',
+    '/ruta/a/documento.pdf',
+    'Aquí está el documento'
+);
+handleAPIResponse($result);
+
+// Verificar conexión
+$status = checkStatus('595985768793');
+if ($status['connected']) {
+    echo "✅ WhatsApp conectado: {$status['phoneNumber']}\n";
+} else {
+    echo "❌ WhatsApp desconectado\n";
+}
+?>`,
+    python: `import requests
+from pathlib import Path
+
+api_key = 'YOUR_API_KEY'
+api_url = '${getAPIBaseURL()}/api/rest'
+
+# ============================================
+# ENVIAR MENSAJE DE TEXTO
+# ============================================
+def send_text(to, message):
+    response = requests.post(
+        f'{api_url}/send/text',
+        headers={'X-API-Key': api_key, 'Content-Type': 'application/json'},
+        json={'to': to, 'message': message}
+    )
+    return response.json()
+
+# ============================================
+# ENVIAR IMAGEN (URL)
+# ============================================
+def send_image(to, image_url, caption=''):
+    response = requests.post(
+        f'{api_url}/send/image',
+        headers={'X-API-Key': api_key, 'Content-Type': 'application/json'},
+        json={'to': to, 'image': image_url, 'caption': caption}
+    )
+    return response.json()
+
+# ============================================
+# ENVIAR ARCHIVO (UPLOAD DIRECTO)
+# ============================================
+def send_file(to, file_path, caption=''):
+    file_path = Path(file_path)
+    
+    if not file_path.exists():
+        return {'success': False, 'error': 'Archivo no encontrado'}
+    
+    with open(file_path, 'rb') as f:
+        files = {'file': (file_path.name, f, 'application/octet-stream')}
+        data = {'to': to, 'caption': caption}
+        
+        response = requests.post(
+            f'{api_url}/send/file',
+            headers={'X-API-Key': api_key},
+            files=files,
+            data=data
+        )
+    
+    return response.json()
+
+# ============================================
+# VERIFICAR ESTADO
+# ============================================
+def check_status(session_id):
+    response = requests.get(
+        f'{api_url}/status/{session_id}',
+        headers={'X-API-Key': api_key}
+    )
+    return response.json()
+
+# ============================================
+# MANEJO DE ERRORES
+# ============================================
+def handle_response(result):
+    if not result.get('success'):
+        error = result.get('error', 'Error desconocido')
+        
+        if 'Sin mensajes disponibles' in error:
+            print(f"⛔ Sin saldo: {result.get('used')}/{result.get('limit')}")
+        elif 'API Key inválida' in error:
+            print("🔑 API Key incorrecta")
+        else:
+            print(f"❌ Error: {error}")
+        return False
+    
+    print(f"✅ Enviado: {result.get('messageId')}")
+    return True
+
+# ============================================
+# EJEMPLOS DE USO
+# ============================================
+if __name__ == '__main__':
+    # Enviar texto
+    result = send_text('595981234567', 'Hola desde Python!')
+    handle_response(result)
+    
+    # Enviar imagen
+    result = send_image(
+        '595981234567',
+        'https://example.com/imagen.jpg',
+        'Mira esta imagen'
+    )
+    handle_response(result)
+    
+    # Enviar archivo local
+    result = send_file(
+        '595981234567',
+        '/ruta/a/documento.pdf',
+        'Aquí está el documento'
+    )
+    handle_response(result)
+    
+    # Verificar conexión
+    status = check_status('595985768793')
+    if status.get('connected'):
+        print(f"✅ Conectado: {status.get('phoneNumber')}")
+    else:
+        print("❌ Desconectado")`
   };
 
   return (
@@ -633,8 +874,9 @@ var_dump($result);
                     sx={{ color: '#e3e8ef', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#30363d' } }}
                   >
                     <MenuItem value="text" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>📝 Mensaje de Texto</MenuItem>
-                    <MenuItem value="image" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>🖼️ Imagen</MenuItem>
-                    <MenuItem value="document" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>📎 Documento</MenuItem>
+                    <MenuItem value="image" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>🖼️ Imagen (URL)</MenuItem>
+                    <MenuItem value="document" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>📎 Documento (URL)</MenuItem>
+                    <MenuItem value="file" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>📤 Archivo (Upload)</MenuItem>
                     <MenuItem value="status" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>🔌 Estado de Conexión</MenuItem>
                   </Select>
                 </FormControl>
@@ -670,6 +912,75 @@ var_dump($result);
                           '& .MuiOutlinedInput-notchedOutline': { borderColor: '#30363d' }
                         }}
                       />
+                    )}
+
+                    {testEndpoint === 'image' && (
+                      <>
+                        <TextField
+                          fullWidth
+                          label="URL de Imagen"
+                          placeholder="https://example.com/imagen.jpg"
+                          value={testImageUrl}
+                          onChange={(e) => setTestImageUrl(e.target.value)}
+                          sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': { color: '#e3e8ef' },
+                            '& .MuiInputLabel-root': { color: '#8b949e' },
+                            '& .MuiOutlinedInput-notchedOutline': { borderColor: '#30363d' }
+                          }}
+                        />
+                        <TextField
+                          fullWidth
+                          label="Caption (opcional)"
+                          value={testMessage}
+                          onChange={(e) => setTestMessage(e.target.value)}
+                          sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': { color: '#e3e8ef' },
+                            '& .MuiInputLabel-root': { color: '#8b949e' },
+                            '& .MuiOutlinedInput-notchedOutline': { borderColor: '#30363d' }
+                          }}
+                        />
+                      </>
+                    )}
+
+                    {testEndpoint === 'file' && (
+                      <>
+                        <Button
+                          variant="outlined"
+                          component="label"
+                          fullWidth
+                          sx={{ mb: 2, borderColor: '#30363d', color: '#e3e8ef' }}
+                        >
+                          📁 Seleccionar Archivo
+                          <input
+                            type="file"
+                            hidden
+                            onChange={(e) => {
+                              if (e.target.files && e.target.files[0]) {
+                                setTestFile(e.target.files[0]);
+                              }
+                            }}
+                          />
+                        </Button>
+                        {testFile && (
+                          <Alert severity="info" sx={{ mb: 2, bgcolor: '#1a3a52', color: '#e3e8ef' }}>
+                            📄 {testFile.name} ({(testFile.size / 1024).toFixed(2)} KB)
+                          </Alert>
+                        )}
+                        <TextField
+                          fullWidth
+                          label="Caption (opcional)"
+                          value={testMessage}
+                          onChange={(e) => setTestMessage(e.target.value)}
+                          sx={{
+                            mb: 2,
+                            '& .MuiInputBase-input': { color: '#e3e8ef' },
+                            '& .MuiInputLabel-root': { color: '#8b949e' },
+                            '& .MuiOutlinedInput-notchedOutline': { borderColor: '#30363d' }
+                          }}
+                        />
+                      </>
                     )}
                   </>
                 )}
