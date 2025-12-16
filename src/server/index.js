@@ -275,6 +275,9 @@ console.log('✅ Rutas de Clientes cargadas');
 require('./analytics-endpoints')(app, poolProxy);
 console.log('✅ Analytics endpoints cargados');
 
+require('./personalized-campaigns-endpoints')(app, poolProxy);
+console.log('✅ Endpoints de Campañas Personalizadas cargados');
+
 
 
 
@@ -353,6 +356,7 @@ app.use((req, res, next) => {
 
 // Mapa para almacenar sesiones activas de WhatsApp
 const sessions = new Map();
+global.sessions = sessions; // ✅ Hacer sessions accesible globalmente
 let lastQRSession = null;
 const QR_EXPIRY_TIME = 2 * 60 * 1000; // 2 minutos
 
@@ -817,6 +821,83 @@ async function createTables() {
             // Ignorar si ya existen
             console.log('[DB-MIGRATION] Columnas/constraint ya existen en campaign_recipients');
         }
+
+        // ==========================================
+        // TABLAS PARA CAMPAÑAS PERSONALIZADAS CON EXCEL
+        // ==========================================
+
+        // Tabla principal de campañas personalizadas
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS personalized_campaigns ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'session_id VARCHAR(255) NOT NULL,'
+            + 'name VARCHAR(255) NOT NULL,'
+            + 'message_template TEXT NOT NULL,'
+            + 'template_id INT NULL,'
+            + 'excel_filename VARCHAR(255),'
+            + 'status ENUM(\'draft\', \'active\', \'paused\', \'completed\') DEFAULT \'draft\','
+            + 'total_recipients INT DEFAULT 0,'
+            + 'sent_count INT DEFAULT 0,'
+            + 'delivered_count INT DEFAULT 0,'
+            + 'read_count INT DEFAULT 0,'
+            + 'failed_count INT DEFAULT 0,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
+            + 'INDEX idx_session (session_id),'
+            + 'INDEX idx_status (status)'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        console.log('[DB-TABLES] Table \'personalized_campaigns\' ensured.');
+
+        // Tabla de destinatarios con datos detallados (número, nombre, monto, fecha, cuotas)
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS campaign_recipients_detailed ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'campaign_id INT NOT NULL,'
+            + 'phone_number VARCHAR(20) NOT NULL,'
+            + 'name VARCHAR(255) NOT NULL,'
+            + 'amount DECIMAL(12,2) NOT NULL,'
+            + 'due_day INT NOT NULL COMMENT \'Día del mes para vencimiento (1-31)\','
+            + 'installments INT DEFAULT 1,'
+            + 'paid BOOLEAN DEFAULT FALSE,'
+            + 'status ENUM(\'pending\', \'sent\', \'delivered\', \'read\', \'failed\') DEFAULT \'pending\','
+            + 'message_id VARCHAR(255),'
+            + 'error_message TEXT,'
+            + 'sent_at DATETIME NULL,'
+            + 'delivered_at DATETIME NULL,'
+            + 'read_at DATETIME NULL,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
+            + 'FOREIGN KEY (campaign_id) REFERENCES personalized_campaigns(id) ON DELETE CASCADE,'
+            + 'INDEX idx_campaign (campaign_id),'
+            + 'INDEX idx_phone (phone_number),'
+            + 'INDEX idx_due_day (due_day),'
+            + 'INDEX idx_status (status),'
+            + 'INDEX idx_paid (paid)'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        console.log('[DB-TABLES] Table \'campaign_recipients_detailed\' ensured.');
+
+        // Tabla de plantillas predefinidas para campañas
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS campaign_templates_predefined ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'name VARCHAR(255) NOT NULL,'
+            + 'category ENUM(\'simple\', \'formal\', \'urgent\', \'installments\', \'custom\') DEFAULT \'custom\','
+            + 'message_text TEXT NOT NULL,'
+            + 'variables JSON COMMENT \'Lista de variables disponibles\','
+            + 'is_active BOOLEAN DEFAULT TRUE,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
+            + 'INDEX idx_category (category)'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        console.log('[DB-TABLES] Table \'campaign_templates_predefined\' ensured.');
+
+        // ==========================================
+        // FIN TABLAS CAMPAÑAS PERSONALIZADAS
+        // ==========================================
+
 
         // Tabla de tableros Kanban
         await connection.query(
@@ -2115,7 +2196,7 @@ async function saveMessageToDB(sessionId, msg) {
         // 🚫 RECHAZAR MENSAJES LID - Pero primero intentar convertir usando contactos existentes
         if (chat_jid.includes('@lid')) {
             console.log(`[DB-MSG] 🔍 Mensaje LID detectado: ${chat_jid}, intentando convertir...`);
-            
+
             // Buscar si existe este LID en contactos y encontrar el contacto real asociado
             try {
                 // Buscar contacto LID
@@ -2123,11 +2204,11 @@ async function saveMessageToDB(sessionId, msg) {
                     'SELECT name, notify_name FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
                     [chat_jid, phoneNumber]
                 );
-                
+
                 if (lidContact.length > 0) {
                     const lidName = lidContact[0].name || lidContact[0].notify_name;
                     console.log(`[DB-MSG] 📝 LID tiene nombre: ${lidName}`);
-                    
+
                     // Buscar contacto normal con el mismo nombre
                     const [realContact] = await connection.execute(
                         `SELECT jid FROM contacts 
@@ -2137,7 +2218,7 @@ async function saveMessageToDB(sessionId, msg) {
                          LIMIT 1`,
                         [lidName, lidName, phoneNumber]
                     );
-                    
+
                     if (realContact.length > 0) {
                         const oldJid = chat_jid;
                         chat_jid = realContact[0].jid;
@@ -2172,12 +2253,12 @@ async function saveMessageToDB(sessionId, msg) {
                      LIMIT 1`,
                     [chat_jid, phoneNumber]
                 );
-                
+
                 if (contactMatches.length > 0 && contactMatches[0].jid) {
                     const realJid = contactMatches[0].jid;
                     console.log(`[LID-CONVERT] ✓ Convirtiendo LID ${chat_jid} -> ${realJid} (${contactMatches[0].name})`);
                     chat_jid = realJid;
-                    
+
                     // También convertir sender_jid si es el mismo LID
                     if (sender_jid === rawChatJid) {
                         sender_jid = realJid;
@@ -2186,7 +2267,7 @@ async function saveMessageToDB(sessionId, msg) {
                     // PASO 2: Si no se encuentra en usuario actual, buscar en TODAS las sesiones
                     const lidNumber = chat_jid.split('@')[0];
                     console.log(`[LID-CONVERT] ⚠️ LID ${chat_jid} no encontrado localmente, buscando globalmente...`);
-                    
+
                     // Buscar si algún otro usuario tiene este número en formato normal
                     const [globalMatches] = await connection.execute(
                         `SELECT jid FROM contacts 
@@ -2194,12 +2275,12 @@ async function saveMessageToDB(sessionId, msg) {
                          LIMIT 1`,
                         [lidNumber]
                     );
-                    
+
                     if (globalMatches.length > 0) {
                         const realJid = globalMatches[0].jid;
                         console.log(`[LID-CONVERT] ✓ Encontrado globalmente: ${chat_jid} -> ${realJid}`);
                         chat_jid = realJid;
-                        
+
                         if (sender_jid === rawChatJid) {
                             sender_jid = realJid;
                         }
@@ -2449,7 +2530,7 @@ async function saveMessageToDB(sessionId, msg) {
             // 🆕 EMITIR CHAT UPDATE para actualizar la lista lateral
             const chatJidPhone = chat_jid.split('@')[0];
             console.log(`[${sessionId}] 🔍 [MONITOR] Emitiendo chat-update para chat_jid=${chat_jid}, phone=${chatJidPhone}, phoneNumber=${phoneNumber}`);
-            
+
             // 🚫 NO emitir si el chat_jid es el propio número
             if (chatJidPhone !== phoneNumber) {
                 io.to(`session-${sessionId}`).emit('chat-update', {
@@ -3898,10 +3979,10 @@ async function performFullSync(sessionId, sock, userSessionId) {
 async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter = 'all', limit = 500, offset = 0) {
     console.log(`\n\n⭐⭐⭐ [CHATLIST] FUNCIÓN LLAMADA ⭐⭐⭐`);
     console.log(`[CHATLIST] sessionId recibido: "${sessionId}"`);
-    
+
     // Obtener el número de teléfono del usuario en lugar de la session_id temporal
     const phoneNumber = await getUserPhoneNumber(sessionId);
-    
+
     console.log(`[CHATLIST] phoneNumber obtenido: "${phoneNumber}"`);
     console.log(`[CHATLIST] ¿Son diferentes? sessionId="${sessionId}" vs phoneNumber="${phoneNumber}" → ${sessionId !== phoneNumber ? '✅ DIFERENTES' : '❌ IGUALES'}\n`);
 
@@ -3993,7 +4074,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         // 🔧 CONSULTA CORREGIDA - Buscar SOLO por phoneNumber (NO por sessionId)
         console.log(`[CHATLIST] 🔍 sessionId recibido: "${sessionId}"`);
         console.log(`[CHATLIST] 🔍 phoneNumber obtenido: "${phoneNumber}"`);
-        
+
         // ⚠️ CRÍTICO: BUSCAR SOLO POR PHONENUMBER
         // La tabla messages usa session_id para almacenar el número de teléfono (datos históricos)
         // NO usar sessionId en la búsqueda porque causa mezcla de datos de múltiples usuarios
@@ -4037,7 +4118,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             ORDER BY m.timestamp DESC
             LIMIT 1000;
         `;
-        
+
         console.log(`[CHATLIST] 🔎 BUSCANDO EN BD: messages WHERE session_id = "${phoneNumber}" (excluyendo ${phoneNumber}@*)`);
         const [allRows] = await connection.execute(query, [
             phoneNumber, // phone_number para subquery de LID
@@ -4047,7 +4128,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         ]);
 
         console.log(`[DB-CHATLIST] ⚡ SQL ejecutado con filtro SQL, total rows: ${allRows.length}`);
-        
+
         // 🔄 Agrupar por chat_jid y mantener solo el último mensaje
         const chatMap = new Map();
         for (const row of allRows) {
@@ -4057,9 +4138,9 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             }
         }
         const rows = Array.from(chatMap.values());
-        
+
         console.log(`[DB-CHATLIST] 📊 Después de agrupar: ${rows.length} chats únicos`);
-        
+
         // 🔍 DEBUG: Mostrar los primeros chats retornados por SQL
         if (rows.length > 0) {
             console.log(`[DB-CHATLIST] 🔍 TOP 5 CHATS DESPUÉS DE FILTRO SQL (phoneNumber=${phoneNumber}):`);
@@ -4081,7 +4162,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             }
             return !isOwn;
         });
-        
+
         const removedCount = beforeFilter - filteredRows.length;
         if (removedCount > 0) {
             console.log(`[DB-CHATLIST] 🧹 Se removieron ${removedCount} chats en filtro JavaScript (número propio del usuario)`);
@@ -4146,7 +4227,7 @@ async function updateContactWithAvailableInfo(sock, jid, pushName, notifyName, p
                          LIMIT 1`,
                         [pushName, pushName, phoneNumber]
                     );
-                    
+
                     if (matches.length > 0) {
                         const realContact = matches[0];
                         contactName = realContact.name;
@@ -4688,16 +4769,16 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     session: sessionInfo,
                     createdAt: Date.now()
                 };
-                
+
                 // THROTTLE: Solo emitir QR si han pasado al menos 60 segundos desde el último
                 const lastQRTime = qrThrottleMap.get(sessionId) || 0;
                 const timeSinceLastQR = Date.now() - lastQRTime;
-                
+
                 if (timeSinceLastQR < QR_THROTTLE_TIME) {
                     console.log(`[${sessionId}] ⏸️  QR generado pero no emitido (throttle activo - ${Math.round((QR_THROTTLE_TIME - timeSinceLastQR) / 1000)}s restantes)`);
                     return;
                 }
-                
+
                 console.log(`[${sessionId}] ✅ Nuevo código QR generado y listo para emitir`);
                 qrThrottleMap.set(sessionId, Date.now());
 
@@ -4731,10 +4812,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             if (connection === 'open') {
                 sessionInfo.isConnected = true;
                 sessionInfo.qr = null;
-                
+
                 // Limpiar throttle de QR al conectarse exitosamente
                 qrThrottleMap.delete(sessionId);
-                
+
                 console.log(`[${sessionId}] ¡WhatsApp conectado exitosamente!`);
 
                 // Log detallado para debugging
@@ -5979,13 +6060,13 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             m.messages = m.messages.filter(msg => {
                 // 🆕 PRIORIZAR remoteJidAlt si existe (contiene el JID real cuando remoteJid es LID)
                 let jid = msg.key?.remoteJidAlt || msg.key?.remoteJid;
-                
+
                 // Si aún así es LID y no hay alternativa, rechazar
                 if (jid && jid.includes('@lid') && !msg.key?.remoteJidAlt) {
                     console.log(`[${sessionId}] 🚫 IGNORANDO mensaje LID sin alternativa: ${jid}`);
                     return false;
                 }
-                
+
                 if (!jid) return false;
 
                 // Rechazar status/estados
@@ -5996,7 +6077,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     console.log(`[${sessionId}] 🚫 IGNORANDO mensaje de grupo: ${jid}`);
                     return false;
                 }
-                
+
                 return jid.includes('@s.whatsapp.net');
             });
 
@@ -6114,7 +6195,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 if (!msg.key.fromMe && phoneNumber) {
                     const senderJidPhone = senderJid.split('@')[0];
                     console.log(`[${sessionId}] 🔍 [MONITOR] OPTIMISTIC chat-update para senderJid=${senderJid}, phone=${senderJidPhone}, phoneNumber=${phoneNumber}`);
-                    
+
                     // ✅ CORREGIDO: Emitir solo a la sesión específica
                     io.to(`session-${sessionId}`).emit('unread-count-update', {
                         chatJid: senderJid,
@@ -6136,7 +6217,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         console.log(`[${sessionId}] 🚀 chat-update OPTIMISTA emitido para ${senderJid}`);
                     } else {
                         console.log(`[${sessionId}] 🚫 chat-update NO emitido (propio número): ${senderJid}`);
-                    }                }
+                    }
+                }
             }
             console.log(`[${sessionId}] 🏁 EMISIÓN COMPLETADA`);
             // ═══════════════════════════════════════════════════════════
@@ -7940,7 +8022,7 @@ app.post('/api/qr-refresh', async (req, res) => {
     // Crear nueva sesión
     try {
         const newSession = await createSession(newSessionId, true);
-        
+
         if (!newSession) {
             throw new Error('Error creando sesión de WhatsApp');
         }
@@ -7951,7 +8033,7 @@ app.post('/api/qr-refresh', async (req, res) => {
             await new Promise(resolve => setTimeout(resolve, 500));
             attempts++;
         }
-        
+
         if (newSession.qr) {
             const qrDataUrl = await QRCode.toDataURL(newSession.qr, {
                 width: 300,
@@ -8065,9 +8147,9 @@ app.get('/api/sessions/active', async (req, res) => {
                 // ✅ FILTRO según rol:
                 // - SuperAdmin (595994854167): Ve TODAS las sesiones
                 // - Cliente normal: Ve solo su sesión principal + sesiones secundarias asociadas
-                const belongsToUser = isSuperAdmin || 
-                                    (phoneNumber === userPhone) || 
-                                    (ownerPhone === userPhone);
+                const belongsToUser = isSuperAdmin ||
+                    (phoneNumber === userPhone) ||
+                    (ownerPhone === userPhone);
 
                 if (belongsToUser) {
                     const avatar = sessionData.user?.imgUrl || null;
@@ -8095,7 +8177,7 @@ app.get('/api/sessions/active', async (req, res) => {
                 const connection = await pool.getConnection();
                 try {
                     let dbSessions;
-                    
+
                     if (isSuperAdmin) {
                         // SuperAdmin ve TODAS las sesiones de la base de datos
                         [dbSessions] = await connection.execute(
@@ -8122,7 +8204,7 @@ app.get('/api/sessions/active', async (req, res) => {
                             const authPath = path.join(BASE_AUTH_DIR, dbSession.session_id);
                             const credsPath = path.join(authPath, 'creds.json');
                             const hasValidAuth = fs.existsSync(credsPath);
-                            
+
                             // Solo mostrar si tiene credenciales válidas o está conectada en memoria
                             const isConnectedInMemory = sessions.has(dbSession.session_id) || sessions.has(dbSession.phone_number);
                             if (hasValidAuth || isConnectedInMemory) {
@@ -8604,24 +8686,24 @@ app.post('/api/reconnect-session', async (req, res) => {
 
     try {
         console.log(`[SESSION-RECONNECT] 🔄 Intentando reconectar sesión: ${sessionId}`);
-        
+
         // Verificar que existan archivos de autenticación
         const authPath = path.join(BASE_AUTH_DIR, sessionId);
         const credsPath = path.join(authPath, 'creds.json');
-        
+
         if (!fs.existsSync(credsPath)) {
             console.log(`[SESSION-RECONNECT] ❌ No se encontraron credenciales para: ${sessionId}`);
-            return res.json({ 
-                success: false, 
-                error: 'No se encontraron credenciales de autenticación para esta sesión' 
+            return res.json({
+                success: false,
+                error: 'No se encontraron credenciales de autenticación para esta sesión'
             });
         }
 
         // Si ya está conectada en memoria, informar
         if (sessions.has(sessionId)) {
             console.log(`[SESSION-RECONNECT] ⚠️ La sesión ya está conectada: ${sessionId}`);
-            return res.json({ 
-                success: true, 
+            return res.json({
+                success: true,
                 message: 'La sesión ya está conectada',
                 alreadyConnected: true
             });
@@ -8629,26 +8711,26 @@ app.post('/api/reconnect-session', async (req, res) => {
 
         // Crear/restaurar la sesión
         const sessionInfo = await createSession(sessionId, false, true);
-        
+
         if (sessionInfo && sessionInfo.isConnected) {
             console.log(`[SESSION-RECONNECT] ✅ Sesión reconectada: ${sessionId}`);
-            return res.json({ 
-                success: true, 
+            return res.json({
+                success: true,
                 message: 'Sesión reconectada exitosamente',
                 phoneNumber: sessionInfo.phoneNumber || null
             });
         } else {
             console.log(`[SESSION-RECONNECT] ❌ No se pudo reconectar: ${sessionId}`);
-            return res.json({ 
-                success: false, 
+            return res.json({
+                success: false,
                 error: 'No se pudo establecer la conexión con WhatsApp'
             });
         }
     } catch (error) {
         console.error('[SESSION-RECONNECT] ❌ Error:', error);
-        return res.status(500).json({ 
-            success: false, 
-            error: 'Error al reconectar la sesión: ' + error.message 
+        return res.status(500).json({
+            success: false,
+            error: 'Error al reconectar la sesión: ' + error.message
         });
     }
 });
@@ -10253,7 +10335,7 @@ app.get('/api/chats/:sessionId', async (req, res) => {
         chats = await loadChatListFromDB(sessionId, includeGroups, dateFilter, parsedLimit, parsedOffset);
         const dbLoadTime = Date.now() - startTime;
         console.log(`[API][${sessionId}] ✅ ${chats.length} chats cargados desde BD en ${dbLoadTime}ms`);
-        
+
         // 🚫 FILTRO ADICIONAL - Excluir el número propio del resultado
         const beforeFilter = chats.length;
         chats = chats.filter(chat => {
@@ -10267,12 +10349,12 @@ app.get('/api/chats/:sessionId', async (req, res) => {
         if (chats.length < beforeFilter) {
             console.log(`[API][${sessionId}] 🧹 Se removieron ${beforeFilter - chats.length} chats (número propio)`);
         }
-        
+
         console.log(`[API][${sessionId}] ✅ RESULTADO FINAL: ${chats.length} chats para devolver al cliente (phoneNumber: "${phoneNumber}")`);
         if (chats.length > 0) {
             console.log(`[API][${sessionId}] PRIMER CHAT: ${chats[0].id}`);
         }
-        
+
         source = 'database';
 
         // 🔄 FALLBACK: Solo si la DB está vacía, intentar desde memoria
@@ -14753,20 +14835,20 @@ async function processCampaign(campaignId, sessionId) {
                         console.log(`[CAMPAIGN-PROCESSOR] ✅ Archivo leído: ${mediaBuffer.length} bytes`);
 
                         if (campaign.message_media_type.startsWith('image')) {
-                            messagePayload = { 
-                                image: mediaBuffer, 
+                            messagePayload = {
+                                image: mediaBuffer,
                                 caption: messageText,
                                 mimetype: campaign.message_media_type
                             };
                         } else if (campaign.message_media_type.startsWith('video')) {
-                            messagePayload = { 
-                                video: mediaBuffer, 
+                            messagePayload = {
+                                video: mediaBuffer,
                                 caption: messageText,
                                 mimetype: campaign.message_media_type
                             };
                         } else if (campaign.message_media_type.startsWith('audio')) {
-                            messagePayload = { 
-                                audio: mediaBuffer, 
+                            messagePayload = {
+                                audio: mediaBuffer,
                                 mimetype: campaign.message_media_type,
                                 ptt: false // false = audio normal, true = nota de voz
                             };
@@ -14792,6 +14874,12 @@ async function processCampaign(campaignId, sessionId) {
                         [sentMsg.key.id, recipient.id]
                     );
                     sentCount++;
+
+                    // Incrementar contadores de mensajes del plan
+                    await connection.execute(
+                        'UPDATE user_sessions SET messages_sent_this_month = messages_sent_this_month + 1, messages_scheduled = messages_scheduled + 1 WHERE phone_number = ? OR session_id = ?',
+                        [sessionId, sessionId]
+                    );
 
                     // Actualizar contador en la campaña
                     await connection.execute(
@@ -15591,10 +15679,49 @@ app.post('/api/campaigns/:id/start', async (req, res) => {
 
             console.log(`[CAMPAIGN-${id}] 🚀 Iniciando campaña "${campaign.name}" con ${recipients.length} destinatarios`);
 
+            // ===== VERIFICAR LÍMITE DE MENSAJES DEL PLAN =====
+            // Obtener plan del usuario desde user_sessions
+            const [userPlan] = await connection.execute(
+                `SELECT u.*, p.max_messages_per_month 
+                 FROM user_sessions u
+                 LEFT JOIN plans p ON u.plan_id = p.id
+                 WHERE u.phone_number = ? OR u.session_id = ?`,
+                [sessionId, sessionId]
+            );
+
+            let maxMessagesToSendByPlan = recipients.length;
+
+            if (userPlan.length > 0) {
+                const user = userPlan[0];
+                const maxMessages = user.max_messages_per_month || 0;
+                const usedMessages = user.messages_sent_this_month || 0;
+                const availableMessages = maxMessages - usedMessages;
+
+                console.log(`[CAMPAIGN-${id}] 📊 Plan del usuario:`);
+                console.log(`[CAMPAIGN-${id}]    - Máximo: ${maxMessages} mensajes/mes`);
+                console.log(`[CAMPAIGN-${id}]    - Usados: ${usedMessages}`);
+                console.log(`[CAMPAIGN-${id}]    - Disponibles: ${availableMessages}`);
+
+                if (availableMessages <= 0) {
+                    console.log(`[CAMPAIGN-${id}] ⛔ Sin mensajes disponibles. Campaña cancelada.`);
+                    await connection.execute(
+                        'UPDATE campaigns SET status = \'paused\', updated_at = NOW() WHERE id = ?',
+                        [id]
+                    );
+                    connection.release();
+                    return;
+                }
+
+                if (availableMessages < recipients.length) {
+                    maxMessagesToSendByPlan = availableMessages;
+                    console.log(`[CAMPAIGN-${id}] ⚠️ Saldo insuficiente. Se enviarán solo ${maxMessagesToSendByPlan} de ${recipients.length} mensajes`);
+                }
+            }
+
             // Enviar mensajes en background
             (async () => {
                 let sendTimes = [];
-                let maxMessagesToSend = recipients.length;
+                let maxMessagesToSend = Math.min(recipients.length, maxMessagesToSendByPlan);
                 if (campaign.use_random_timing && campaign.random_timing_msg_count > 0) {
                     const totalTimeMs = (campaign.random_timing_time_span_minutes || 1) * 60 * 1000;
                     const msgCount = Math.min(recipients.length, campaign.random_timing_msg_count);
@@ -15680,8 +15807,14 @@ app.post('/api/campaigns/:id/start', async (req, res) => {
                             [sentMsg.key.id, recipient.id]
                         );
 
+                        // Descontar del plan del usuario desde user_sessions
+                        await connection.execute(
+                            'UPDATE user_sessions SET messages_sent_this_month = messages_sent_this_month + 1, messages_scheduled = messages_scheduled + 1 WHERE phone_number = ? OR session_id = ?',
+                            [sessionId, sessionId]
+                        );
+
                         const elapsedMinutes = Math.round((Date.now() - startTime) / 1000 / 60 * 10) / 10;
-                        console.log(`[CAMPAIGN-${id}] ✅ Mensaje ${i + 1}/${recipients.length} enviado a ${recipient.contact_jid} (${elapsedMinutes}min)`);
+                        console.log(`[CAMPAIGN-${id}] ✅ Mensaje ${i + 1}/${maxMessagesToSend} enviado a ${recipient.contact_jid} (${elapsedMinutes}min)`);
 
                     } catch (error) {
                         console.error(`[CAMPAIGN-${id}] ❌ Error enviando a ${recipient.contact_jid}:`, error);
@@ -16426,17 +16559,35 @@ app.post('/api/auth/login', async (req, res) => {
             // No enviar password en la respuesta
             delete user.password;
 
-            // Asignar período de prueba de 24h si el usuario no tiene plan activo
-            try {
-                const [subRows] = await connection.execute(
-                    'SELECT subscription_status, subscription_plan, subscription_start_date, subscription_end_date FROM users WHERE id = ?',
+            // Asignar período de prueba de 24h
+            // Obtener suscripción desde user_sessions (tabla principal)
+            // Para agentes/supervisores, la suscripción se basa en la sesión del admin_phone
+            // Para admins, se basa en su propia sesión
+            let sub = {};
+            let userPhoneForSubscription = user.phone; // Default to user's phone
+
+            if (user.role === 'agent' || user.role === 'supervisor') {
+                const [adminData] = await connection.execute(
+                    'SELECT admin_phone FROM users WHERE id = ?',
                     [user.id]
                 );
-                const sub = subRows[0] || {};
-                const hasActivePlan = sub.subscription_status === 'active';
-                const hasTrial = sub.subscription_status === 'trial';
-                const trialExpired = hasTrial && sub.subscription_end_date && new Date(sub.subscription_end_date) < new Date();
-                const neverHadTrial = !sub.subscription_start_date;
+                if (adminData.length > 0 && adminData[0].admin_phone) {
+                    userPhoneForSubscription = adminData[0].admin_phone;
+                }
+            }
+
+            const [subscriptionRows] = await connection.execute(
+                'SELECT subscription_status, subscription_plan, subscription_start_date, subscription_end_date, plan_id, messages_sent_this_month FROM user_sessions WHERE phone_number = ? ORDER BY last_activity DESC LIMIT 1',
+                [userPhoneForSubscription]
+            );
+            sub = subscriptionRows[0] || {};
+
+            const hasActivePlan = sub.subscription_status === 'active';
+            const hasTrial = sub.subscription_status === 'trial';
+            const trialExpired = hasTrial && sub.subscription_end_date && new Date(sub.subscription_end_date) < new Date();
+            const neverHadTrial = !sub.subscription_start_date;
+
+            try {
                 if ((user.role === 'agent' || user.role === 'supervisor') && !hasActivePlan && !hasTrial && neverHadTrial) {
                     await connection.execute(
                         `UPDATE users SET 
@@ -20328,11 +20479,11 @@ app.get('/api/whatsapp/statuses/:sessionId', async (req, res) => {
             try {
                 console.log(`[STATUSES-API] 🔍 Intentando obtener estados de status@broadcast...`);
                 const statusJid = 'status@broadcast';
-                
+
                 // Intentar obtener mensajes de estado
                 const statusMessages = await sock.fetchStatusMessages?.() || [];
                 console.log(`[STATUSES-API] 📥 Obtenidos ${statusMessages.length} estados desde WhatsApp`);
-                
+
                 // Procesar cada estado recibido
                 for (const statusMsg of statusMessages) {
                     try {
@@ -20454,8 +20605,8 @@ app.get('/api/whatsapp/statuses/:sessionId', async (req, res) => {
             try {
                 // Obtener estados de contactos desde la base de datos
                 // Solo obtener estados que no hayan expirado (últimas 24 horas)
-                                const [statuses] = await connection.execute(
-                                        `SELECT
+                const [statuses] = await connection.execute(
+                    `SELECT
                                                 contact_jid,
                                                 contact_name,
                                                 avatar_url,
@@ -20468,8 +20619,8 @@ app.get('/api/whatsapp/statuses/:sessionId', async (req, res) => {
                                          WHERE session_id = ?
                                              AND (expires_at IS NULL OR expires_at > NOW())
                                          ORDER BY contact_jid, published_at DESC`,
-                                        [phoneNumber || sessionId]
-                                );
+                    [phoneNumber || sessionId]
+                );
 
                 console.log(`[STATUSES-API] 📊 ${statuses.length} estados encontrados en base de datos para session ${phoneNumber || sessionId}`);
 
@@ -20576,16 +20727,22 @@ app.get('/api/whatsapp/statuses/:sessionId', async (req, res) => {
 app.get('/api/contacts/search/:sessionId/:phone', async (req, res) => {
     try {
         const { sessionId, phone } = req.params;
+        console.log(`📞 [CONTACTS-SEARCH] Buscando contacto: sessionId=${sessionId}, phone=${phone}`);
 
         const phoneNumber = await getUserPhoneNumber(sessionId);
         if (!phoneNumber) {
+            console.log(`⚠️ [CONTACTS-SEARCH] Sesión no encontrada: ${sessionId}`);
             return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
         }
+
+        console.log(`✅ [CONTACTS-SEARCH] Sesión encontrada: ${phoneNumber}`);
 
         const connection = await pool.getConnection();
         try {
             // Buscar en contactos por JID (extraer número antes de @) o phone_number
             const searchPattern = `%${phone}%`;
+            console.log(`🔍 [CONTACTS-SEARCH] SQL params: phoneNumber=${phoneNumber}, searchPattern=${searchPattern}`);
+
             const [contacts] = await connection.execute(
                 `SELECT name, 
                         SUBSTRING_INDEX(jid, '@', 1) as phone,
@@ -20599,7 +20756,9 @@ app.get('/api/contacts/search/:sessionId/:phone', async (req, res) => {
                 [phoneNumber, searchPattern, searchPattern]
             );
 
+            console.log(`📊 [CONTACTS-SEARCH] Resultados encontrados: ${contacts.length}`);
             if (contacts.length > 0) {
+                console.log(`✅ [CONTACTS-SEARCH] Contacto encontrado:`, contacts[0]);
                 res.json({
                     success: true,
                     contact: {
@@ -20609,13 +20768,14 @@ app.get('/api/contacts/search/:sessionId/:phone', async (req, res) => {
                     }
                 });
             } else {
+                console.log(`❌ [CONTACTS-SEARCH] No encontrado`);
                 res.json({ success: true, contact: null });
             }
         } finally {
             connection.release();
         }
     } catch (error) {
-        console.error('[CONTACTS] Error buscando contacto:', error);
+        console.error(`❌ [CONTACTS-SEARCH] Error:`, error.message, error.stack);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -21524,14 +21684,14 @@ app.post('/api/subscriptions/users', async (req, res) => {
                 is_admin: 1,
                 is_super_admin: session.phone_number === '595994854167' ? 1 : 0,
                 days_remaining: session.days_remaining || 0,
-                plan_display_name: session.subscription_plan === 'free' ? 'Gratis' : 
-                                   session.subscription_plan === 'basico' ? 'Plan Básico' :
-                                   session.subscription_plan === 'estandar' ? 'Estándar' :
-                                   session.subscription_plan === 'manager' ? 'Manager' :
-                                   session.subscription_plan === 'comercial' ? 'Comercial' :
-                                   session.subscription_plan === 'ejecutivo' ? 'Ejecutivo' :
-                                   session.subscription_plan === 'corporativo' ? 'Corporativo' :
-                                   session.subscription_plan || 'Sin Plan',
+                plan_display_name: session.subscription_plan === 'free' ? 'Gratis' :
+                    session.subscription_plan === 'basico' ? 'Plan Básico' :
+                        session.subscription_plan === 'estandar' ? 'Estándar' :
+                            session.subscription_plan === 'manager' ? 'Manager' :
+                                session.subscription_plan === 'comercial' ? 'Comercial' :
+                                    session.subscription_plan === 'ejecutivo' ? 'Ejecutivo' :
+                                        session.subscription_plan === 'corporativo' ? 'Corporativo' :
+                                            session.subscription_plan || 'Sin Plan',
                 price: 0
             }));
 
@@ -21565,7 +21725,7 @@ app.post('/api/subscriptions/activate', async (req, res) => {
 
     // Aceptar sessionId del body o phone del query parameter
     const sessionId = bodySessionId || req.query.phone;
-    
+
     console.log(`[SUBSCRIPTIONS] 🔍 Activando suscripción para: ${sessionId}`);
     console.log(`[SUBSCRIPTIONS] 📦 Body completo:`, JSON.stringify(req.body, null, 2));
     console.log(`[SUBSCRIPTIONS] 🔗 Query params:`, JSON.stringify(req.query, null, 2));
@@ -21605,7 +21765,7 @@ app.post('/api/subscriptions/activate', async (req, res) => {
         try {
             // 🔴 VERIFICAR QUE EL USUARIO EXISTA EN user_sessions
             console.log(`[SUBSCRIPTIONS] 🔍 Buscando usuario ${phoneNumber} en user_sessions...`);
-            
+
             const [userSession] = await connection.execute(
                 'SELECT phone_number, session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1',
                 [phoneNumber]
@@ -21688,7 +21848,7 @@ app.post('/api/subscriptions/activate', async (req, res) => {
 // POST /api/subscriptions/deactivate - Desactivar usuario
 app.post('/api/subscriptions/deactivate', async (req, res) => {
     const { sessionId, reason = '' } = req.body;
-    
+
     console.log(`[SUBSCRIPTIONS] 🔍 Desactivando suscripción para: ${sessionId}`);
 
     if (!sessionId) {
@@ -21741,7 +21901,7 @@ app.post('/api/subscriptions/deactivate', async (req, res) => {
 // GET /api/subscriptions - Listar todas las suscripciones (admin)
 app.get('/api/subscriptions', async (req, res) => {
     const { status, planType, limit = 50, offset = 0 } = req.query;
-    
+
     console.log(`[SUBSCRIPTIONS] 📋 Listando suscripciones: status=${status}, plan=${planType}`);
 
     if (!pool) {
@@ -21980,21 +22140,34 @@ app.post('/api/update-contact-names/:sessionId', async (req, res) => {
 
 
 // ============= ENDPOINTS DE API REST =============
-const apiRestRouter = require('./routes/api-rest');
-// Pasar sessions a las rutas de API REST
+
+// Endpoints de gestión de API Keys (generar, listar, eliminar)
+const apiRestKeysRouter = require('./routes/api-rest');
+// Pasar sessions al router
 app.use((req, res, next) => {
     req.sessions = sessions;
     next();
 });
-app.use('/api/rest', apiRestRouter);
+app.use('/api/rest', apiRestKeysRouter);
+
+// ============= ENDPOINTS DE API REST =============
+console.log('🔥 [INDEX.JS] Cargando módulo api-rest-endpoints...');
+const { registerAPIRestEndpoints } = require('./api-rest-endpoints');
+console.log('🔥 [INDEX.JS] Módulo cargado, tipo de registerAPIRestEndpoints:', typeof registerAPIRestEndpoints);
+console.log('🔥 [INDEX.JS] Llamando a registerAPIRestEndpoints...');
+registerAPIRestEndpoints(app, pool, sessions);
+console.log('🔥 [INDEX.JS] registerAPIRestEndpoints ejecutado');
+
 // ============= FIN ENDPOINTS DE API REST =============
 
 // ============= ENDPOINTS DE ESTADOS DE WHATSAPP =============
 // Registrar sessions en app para que las rutas de estados puedan acceder
-app.set('sessions', sessions);
-const statusesRouter = require('./routes/statuses')(app, io);
-app.use('/api/statuses', statusesRouter);
-console.log('✅ Sistema de Estados de WhatsApp cargado correctamente');
+app.locals.sessions = sessions;
+// const statusEndpoints = require('./status-endpoints');
+// statusEndpoints(app, pool, sessions);
+// TODO: Restore status endpoints when module is available
+
+// ============= FIN ENDPOINTS DE ESTADOS =============
 
 // ============= PWA REMOVIDA - NO REQUERIDA =============
 // Los endpoints PWA han sido eliminados para optimización
@@ -22485,6 +22658,29 @@ server.headersTimeout = 320000; // 5 minutos 20 segundos
 // Iniciar servidor
 const PORT = process.env.PORT || 3002;
 server.listen(PORT, '0.0.0.0', async () => {
+    console.log(`✅ Servidor corriendo en puerto ${PORT}`);
+    console.log(`📅 Timestamp: ${new Date().toISOString()}`);
+    console.log(`🌍 Modo: ${process.env.NODE_ENV || 'development'}`);
+
+    // Inicializar base de datos
+    await initializeDatabase();
+
+    // ==========================================
+    // INICIAR SCHEDULER DE CAMPAÑAS PERSONALIZADAS
+    // ==========================================
+    if (global.dbPool && global.sessions) {
+        const { startScheduler } = require('./personalized-campaign-scheduler');
+        startScheduler(global.dbPool, global.sessions);
+    } else {
+        console.log('[CAMPAIGN-SCHEDULER] ⚠️  Esperando pool y sessions...');
+        // Reintentar después de 10 segundos
+        setTimeout(() => {
+            if (global.dbPool && global.sessions) {
+                const { startScheduler } = require('./personalized-campaign-scheduler');
+                startScheduler(global.dbPool, global.sessions);
+            }
+        }, 10000);
+    }
     console.log(`\n🚀 WhatsApp Web API iniciado en puerto ${PORT} (IPv4 + IPv6)`);
     console.log(`📱 Endpoints disponibles:`);
     console.log(`   GET  /api/qr-status - Obtener código QR`);
@@ -22927,31 +23123,31 @@ console.log('[STARTUP] ✅ Scheduler optimizado y consolidado.');
 // ============= ENDPOINT: Actualizar nombre y avatar de sesión =============
 app.post('/api/sessions/update-profile/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
-    
+
     try {
         console.log(`[UPDATE-PROFILE] Actualizando perfil para sesión: ${sessionId}`);
-        
+
         const sessionInfo = sessions.get(sessionId);
         if (!sessionInfo || !sessionInfo.sock) {
             return res.status(404).json({ success: false, error: 'Sesión no encontrada o no conectada' });
         }
-        
+
         const sock = sessionInfo.sock;
         const phoneNumber = await getUserPhoneNumber(sessionId);
-        
+
         if (!phoneNumber) {
             return res.status(400).json({ success: false, error: 'No se pudo obtener el número de teléfono' });
         }
-        
+
         // Obtener nombre y avatar actualizados
         let userName = null;
         let userAvatarUrl = null;
-        
+
         if (sock.user) {
             userName = sock.user.pushname || sock.user.name || sock.user.notify || sock.user.verifiedName || null;
             console.log(`[UPDATE-PROFILE] Nombre encontrado: ${userName}`);
         }
-        
+
         const userJid = phoneNumber + '@s.whatsapp.net';
         try {
             const profilePicUrl = await sock.profilePictureUrl(userJid, 'image');
@@ -22962,7 +23158,7 @@ app.post('/api/sessions/update-profile/:sessionId', async (req, res) => {
         } catch (picErr) {
             console.log(`[UPDATE-PROFILE] Sin foto de perfil`);
         }
-        
+
         // Actualizar en base de datos
         if (pool) {
             await pool.execute(
@@ -22971,14 +23167,14 @@ app.post('/api/sessions/update-profile/:sessionId', async (req, res) => {
             );
             console.log(`[UPDATE-PROFILE] ✅ Perfil actualizado en BD para ${phoneNumber}`);
         }
-        
+
         // Actualizar en memoria
         if (sessionInfo.user) {
             sessionInfo.user.name = userName;
             sessionInfo.user.pushname = userName;
             sessionInfo.user.imgUrl = userAvatarUrl;
         }
-        
+
         res.json({
             success: true,
             profile: {
@@ -22987,7 +23183,7 @@ app.post('/api/sessions/update-profile/:sessionId', async (req, res) => {
                 phoneNumber: phoneNumber
             }
         });
-        
+
     } catch (error) {
         console.error(`[UPDATE-PROFILE] Error:`, error);
         res.status(500).json({ success: false, error: error.message });

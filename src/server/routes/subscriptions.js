@@ -24,7 +24,7 @@ function getSessions(req) {
 async function sendWelcomeMessage(phone, planName, days) {
   try {
     const sessions = global.whatsappSessions || new Map();
-    
+
     // Buscar la sesión activa del cliente
     let clientSession = null;
     for (const [sessionId, sessionData] of sessions.entries()) {
@@ -33,10 +33,10 @@ async function sendWelcomeMessage(phone, planName, days) {
         break;
       }
     }
-    
+
     if (!clientSession || !clientSession.sock) {
       console.log(`[WELCOME-MSG] ⚠️ No hay sesión activa para ${phone}, buscando admin para enviar...`);
-      
+
       // Buscar sesión del admin para enviar el mensaje
       const adminPhone = '595994854167';
       for (const [sessionId, sessionData] of sessions.entries()) {
@@ -45,13 +45,13 @@ async function sendWelcomeMessage(phone, planName, days) {
           break;
         }
       }
-      
+
       if (!clientSession || !clientSession.sock) {
         console.log(`[WELCOME-MSG] ⚠️ No hay sesión activa del admin, no se puede enviar mensaje`);
         return false;
       }
     }
-    
+
     // Mensajes creativos según el plan
     const messages = {
       basic: `🎉 ¡FELICIDADES! 🎉
@@ -149,18 +149,18 @@ Estamos contigo en cada paso 🤝
 
 ¡Bienvenido! 💙`
     };
-    
+
     // Obtener el mensaje según el plan (default: basic)
     const planKey = planName.toLowerCase().replace(/\s+/g, '_');
     const message = messages[planKey] || messages.basic.replace('BÁSICO', planName.toUpperCase()).replace('Básico', planName);
-    
+
     // Enviar mensaje al cliente
     const jid = `${phone}@s.whatsapp.net`;
     await clientSession.sock.sendMessage(jid, { text: message });
-    
+
     console.log(`[WELCOME-MSG] ✅ Mensaje de bienvenida enviado a ${phone} para plan ${planName}`);
     return true;
-    
+
   } catch (error) {
     console.error(`[WELCOME-MSG] ❌ Error enviando mensaje de bienvenida:`, error);
     return false;
@@ -419,7 +419,13 @@ router.get('/my-subscription', async (req, res) => {
           subscription_status,
           subscription_start_date,
           subscription_end_date,
-          subscription_days
+          subscription_days,
+          plan_id,
+          messages_sent_this_month,
+          messages_scheduled,
+          messages_personalized,
+          messages_api,
+          messages_chatbot
         FROM user_sessions
         WHERE phone_number = ? AND is_active = 1
         LIMIT 1
@@ -452,6 +458,11 @@ router.get('/my-subscription', async (req, res) => {
                 price: 0,
                 max_users: 999999,
                 max_messages_per_month: 999999,
+                messages_sent_this_month: session.messages_sent_this_month || 0,
+                messages_scheduled: session.messages_scheduled || 0,
+                messages_personalized: session.messages_personalized || 0,
+                messages_api: session.messages_api || 0,
+                messages_chatbot: session.messages_chatbot || 0,
                 max_campaigns: 999999,
                 max_contacts: 999999,
                 max_channels: 999999,
@@ -494,6 +505,11 @@ router.get('/my-subscription', async (req, res) => {
                 price: plan.price,
                 max_users: plan.max_agents || 0,
                 max_messages_per_month: plan.max_messages || 0,
+                messages_sent_this_month: session.messages_sent_this_month || 0,
+                messages_scheduled: session.messages_scheduled || 0,
+                messages_personalized: session.messages_personalized || 0,
+                messages_api: session.messages_api || 0,
+                messages_chatbot: session.messages_chatbot || 0,
                 max_campaigns: 0,
                 max_contacts: 0,
                 max_channels: plan.max_channels || 0,
@@ -799,7 +815,7 @@ router.post('/activate', checkAdmin, async (req, res) => {
           console.log('[ACTIVATE] Plan activado en user_sessions para:', phone);
 
           await connection.commit();
-          
+
           // 🎉 Enviar mensaje de bienvenida al cliente
           console.log('[ACTIVATE] 📨 Enviando mensaje de bienvenida a:', phone);
           setTimeout(() => {
@@ -807,7 +823,7 @@ router.post('/activate', checkAdmin, async (req, res) => {
               console.error('[ACTIVATE] Error enviando mensaje de bienvenida:', err);
             });
           }, 2000); // Esperar 2 segundos para que el commit se complete
-          
+
           return res.json({
             success: true,
             message: 'Suscripción activada exitosamente en user_sessions',
@@ -848,7 +864,7 @@ router.post('/activate', checkAdmin, async (req, res) => {
         VALUES (?, ?, ?, ?, ?, ?, 'active', ?)
       `, [targetUserId, finalPlanName, startDate, endDate, subscriptionDays, plan.price, adminId]);
       await connection.commit();
-      
+
       // 🎉 Enviar mensaje de bienvenida al cliente
       console.log('[ACTIVATE] 📨 Enviando mensaje de bienvenida a:', phone);
       setTimeout(() => {
@@ -856,7 +872,7 @@ router.post('/activate', checkAdmin, async (req, res) => {
           console.error('[ACTIVATE] Error enviando mensaje de bienvenida:', err);
         });
       }, 2000); // Esperar 2 segundos para que el commit se complete
-      
+
       res.json({ success: true, message: 'Suscripción activada exitosamente', subscription: { userId: targetUserId, plan: finalPlanName, startDate, endDate, days: subscriptionDays } });
     } catch (error) {
       await connection.rollback();

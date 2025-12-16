@@ -938,7 +938,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     const targetSession = waSessions.find((s: any) => s.sessionId === targetSessionId);
     const isPrimary = targetSession?.isPrimary || targetSessionId === sessionId;
     const hasSecondaries = waSessions.filter((s: any) => s.ownerPhone === targetSession?.phoneNumber).length > 0;
-    
+
     setDisconnectDialog({ open: true, targetSessionId, isPrimary, hasSecondaries });
   };
 
@@ -955,7 +955,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       setSnackbar({ open: true, message: 'Se desconectó la línea principal. El sistema puede cerrar sesión.', severity: 'warning' });
       try {
         const resp = await fetch(`${getAPIBaseURL()}/api/logout-session`, { method: 'POST' });
-        await resp.json().catch(() => {});
+        await resp.json().catch(() => { });
       } catch (e) {
         // Ignorar si no existe endpoint
       }
@@ -965,7 +965,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
   const handleReconnectSession = async (targetSessionId: string) => {
     try {
       setSnackbar({ open: true, message: 'Reconectando sesión...', severity: 'info' });
-      
+
       const response = await fetch(`${getAPIBaseURL()}/api/reconnect-session`, {
         method: 'POST',
         headers: {
@@ -2008,11 +2008,11 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
                     // Solo la sesión que coincide con el sessionId del módulo es principal
                     const isPrimary = session.sessionId === sessionId;
                     const iconBg = isPrimary ? 'primary.main' : 'success.main';
-                    
+
                     return (
                       <ListItem key={session.sessionId} divider>
                         <ListItemAvatar>
-                          <Avatar 
+                          <Avatar
                             src={session.avatar || undefined}
                             sx={{ bgcolor: !session.avatar ? iconBg : undefined }}
                           >
@@ -2026,19 +2026,19 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
                                 {session.name || session.phoneNumber || session.sessionId}
                               </Typography>
                               {isPrimary && (
-                                <Chip 
-                                  label="👑 Principal" 
-                                  color="primary" 
-                                  size="small" 
+                                <Chip
+                                  label="👑 Principal"
+                                  color="primary"
+                                  size="small"
                                   sx={{ ml: 1 }}
                                 />
                               )}
                               {!isPrimary && session.ownerPhone && (
-                                <Chip 
-                                  label="Secundaria" 
-                                  color="success" 
-                                  variant="outlined" 
-                                  size="small" 
+                                <Chip
+                                  label="Secundaria"
+                                  color="success"
+                                  variant="outlined"
+                                  size="small"
                                   sx={{ ml: 1 }}
                                 />
                               )}
@@ -2188,51 +2188,129 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
             </Card>
           </Grid>
 
-          {/* Características del plan */}
+
+          {/* Características del plan - Desglose de Mensajes (Dark Mode Compacto) */}
           <Grid item xs={12} md={6}>
-            <Card>
+            <Card sx={{
+              background: 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)',
+              color: 'white'
+            }}>
               <CardContent>
-                <Typography variant="h6" gutterBottom>📊 Características de tu Plan</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>
+                  📊 Control de Mensajes
+                </Typography>
                 {mySubscription.plan_details && (
                   <Box>
+                    {/* Resumen compacto */}
                     <Box sx={{ mb: 2 }}>
-                      <Typography variant="body2" color="textSecondary" gutterBottom>
-                        Usuarios permitidos:
+                      <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                        {mySubscription.plan_details.messages_sent_this_month.toLocaleString()} / {
+                          mySubscription.plan_details.max_messages_per_month === 999999
+                            ? '∞'
+                            : mySubscription.plan_details.max_messages_per_month.toLocaleString()
+                        }
                       </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {mySubscription.plan_details.max_users === 999999 ? 'Ilimitado' : mySubscription.plan_details.max_users}
-                      </Typography>
+                      {mySubscription.plan_details.max_messages_per_month !== 999999 && (
+                        <>
+                          <LinearProgress
+                            variant="determinate"
+                            value={Math.min(100, (mySubscription.plan_details.messages_sent_this_month / mySubscription.plan_details.max_messages_per_month) * 100)}
+                            sx={{
+                              mt: 1,
+                              height: 8,
+                              borderRadius: 1,
+                              bgcolor: 'rgba(255,255,255,0.2)',
+                              '& .MuiLinearProgress-bar': {
+                                bgcolor: 'rgba(255,255,255,0.9)'
+                              }
+                            }}
+                          />
+                          <Typography variant="body2" sx={{ mt: 1, opacity: 0.9 }}>
+                            ✨ {Math.max(0, mySubscription.plan_details.max_messages_per_month - mySubscription.plan_details.messages_sent_this_month).toLocaleString()} disponibles
+                          </Typography>
+                        </>
+                      )}
                     </Box>
-                    <Box sx={{ mb: 2 }}>
-                      <Typography variant="body2" color="textSecondary" gutterBottom>
-                        Mensajes por mes:
-                      </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {mySubscription.plan_details.max_messages_per_month === 999999
-                          ? 'Ilimitado'
-                          : mySubscription.plan_details.max_messages_per_month.toLocaleString()}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ mb: 2 }}>
-                      <Typography variant="body2" color="textSecondary" gutterBottom>
-                        Campañas:
-                      </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {mySubscription.plan_details.max_campaigns === 999999
-                          ? 'Ilimitadas'
-                          : mySubscription.plan_details.max_campaigns}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ mb: 2 }}>
-                      <Typography variant="body2" color="textSecondary" gutterBottom>
-                        Contactos:
-                      </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {mySubscription.plan_details.max_contacts === 999999
-                          ? 'Ilimitados'
-                          : mySubscription.plan_details.max_contacts.toLocaleString()}
-                      </Typography>
-                    </Box>
+
+                    {/* Grid horizontal de 3 tarjetas a la misma altura */}
+                    <Grid container spacing={1.5}>
+                      {/* Campañas (combina programadas + personalizadas) */}
+                      <Grid item xs={4}>
+                        <Box sx={{
+                          p: 2,
+                          bgcolor: 'rgba(255,255,255,0.15)',
+                          borderRadius: 2,
+                          border: '1px solid rgba(255,255,255,0.3)',
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between'
+                        }}>
+                          <Box>
+                            <Typography variant="h5" sx={{ mb: 1 }}>📅</Typography>
+                            <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
+                              {(mySubscription.plan_details.messages_scheduled || 0) + (mySubscription.plan_details.messages_personalized || 0)}
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" sx={{ opacity: 0.9, fontWeight: 600 }}>
+                            Campaña
+                          </Typography>
+                        </Box>
+                      </Grid>
+
+                      {/* API REST */}
+                      <Grid item xs={4}>
+                        <Box sx={{
+                          p: 2,
+                          bgcolor: 'rgba(255,255,255,0.15)',
+                          borderRadius: 2,
+                          border: '1px solid rgba(255,255,255,0.3)',
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between'
+                        }}>
+                          <Box>
+                            <Typography variant="h5" sx={{ mb: 1 }}>🔌</Typography>
+                            <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
+                              {mySubscription.plan_details.messages_api || 0}
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" sx={{ opacity: 0.9, fontWeight: 600 }}>
+                            API REST
+                          </Typography>
+                        </Box>
+                      </Grid>
+
+                      {/* Bot */}
+                      <Grid item xs={4}>
+                        <Box sx={{
+                          p: 2,
+                          bgcolor: 'rgba(255,255,255,0.15)',
+                          borderRadius: 2,
+                          border: '1px solid rgba(255,255,255,0.3)',
+                          height: '100%',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between'
+                        }}>
+                          <Box>
+                            <Typography variant="h5" sx={{ mb: 1 }}>🤖</Typography>
+                            <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
+                              {mySubscription.plan_details.messages_chatbot || 0}
+                            </Typography>
+                          </Box>
+                          <Typography variant="body2" sx={{ opacity: 0.9, fontWeight: 600 }}>
+                            Bot
+                          </Typography>
+                        </Box>
+                      </Grid>
+                    </Grid>
+
+                    {/* Nota compacta */}
+                    <Typography variant="caption" sx={{ mt: 1.5, opacity: 0.7, display: 'block' }}>
+                      ℹ️ Mensajes de chat no se cuentan
+                    </Typography>
                   </Box>
                 )}
               </CardContent>
