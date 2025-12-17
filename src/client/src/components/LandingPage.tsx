@@ -159,19 +159,19 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           const response = await fetch(`${getAPIBaseURL()}/api/session/${pendingSessionId}/status`);
           const data = await response.json();
           console.log('[LANDING-POLLING] Estado de sesión:', data);
-          
+
           if (data.success && data.isConnected) {
             const finalSessionId = data.phoneNumber || pendingSessionId;
             console.log('✅ [LANDING-POLLING] ¡Sesión conectada! Redirigiendo a dashboard...');
-            
+
             setIsConnected(true);
             setSessionId(finalSessionId);
             setShowQRModal(false);
             setLoading(false);
             sessionStorage.setItem('whatsflow_session', finalSessionId);
-            
+
             if (check) clearInterval(check);
-            
+
             onQRSuccess(finalSessionId);
             navigate('/dashboard', { replace: true });
           }
@@ -180,7 +180,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
         }
       }, 3000); // Cada 3 segundos - menos agresivo
     }
-    return () => { 
+    return () => {
       if (check) {
         console.log('[LANDING] Deteniendo polling');
         clearInterval(check);
@@ -244,7 +244,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
 
           console.log('📱 [LANDING] Llamando onQRSuccess y navegando al dashboard...');
           onQRSuccess(finalSessionId);
-          
+
           // Redirigir al dashboard INMEDIATAMENTE
           setTimeout(() => {
             navigate('/dashboard', { replace: true });
@@ -253,13 +253,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
         } else if (!currentPendingSessionId && showQRModal && !sessionId) {
           const finalSessionId = data.phoneNumber || data.sessionId;
           console.log(`✅ [LANDING] Conexión sin pendingSessionId previo: ${finalSessionId}`);
-          
+
           setIsConnected(true);
           setSessionId(finalSessionId);
           setShowQRModal(false);
           setLoading(false);
           sessionStorage.setItem('whatsflow_session', finalSessionId);
-          
+
           onQRSuccess(finalSessionId);
           setTimeout(() => {
             navigate('/dashboard', { replace: true });
@@ -289,7 +289,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
         try {
           localStorage.setItem('token', data.token);
           sessionStorage.setItem('token', data.token);
-        } catch {}
+        } catch { }
         navigate('/dashboard', { replace: true });
       }
     });
@@ -333,9 +333,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
         timestamp: data.timestamp,
         expiresIn: data.expiresIn
       });
-      
+
       const currentPendingSessionId = pendingSessionIdRef.current;
-      
+
       // Solo aceptar QR si es de nuestra sesión o si no hay sesión pendiente aún
       if (!currentPendingSessionId || data.sessionId === currentPendingSessionId) {
         if (data.qrDataUrl) {
@@ -432,29 +432,32 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
   };
 
 
-  // Ref para controlar que el QR solo se genere una vez automáticamente
-  const autoQRGeneratedRef = useRef(false);
+  // ❌ ELIMINADO: Generación automática de QR
+  // Ahora el usuario debe hacer clic en "Conectar por QR" para generar el código
 
-  // Generar QR automáticamente al cargar (solo una vez)
-  useEffect(() => {
-    const shouldGenerate = !isConnected && !autoQRGeneratedRef.current;
+  const handleRefreshStatus = async () => {
+    if (!pendingSessionId) return;
 
-    console.log('[LANDING] 🔍 Verificando si generar QR automáticamente:', {
-      isConnected,
-      autoQRGenerated: autoQRGeneratedRef.current,
-      shouldGenerate
-    });
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/session/${pendingSessionId}/status`);
+      const data = await response.json();
 
-    if (shouldGenerate) {
-      console.log('[LANDING] 🎯 Generando QR automáticamente al cargar...');
-      autoQRGeneratedRef.current = true;
+      if (data.success && data.isConnected) {
+        const finalSessionId = data.phoneNumber || pendingSessionId;
+        console.log('✅ Sesión conectada!');
 
-      // Pequeño delay para asegurar que el socket esté conectado
-      setTimeout(() => {
-        fetchQR();
-      }, 500);
+        setIsConnected(true);
+        setSessionId(finalSessionId);
+        setShowQRModal(false);
+        sessionStorage.setItem('whatsflow_session', finalSessionId);
+
+        onQRSuccess(finalSessionId);
+        navigate('/dashboard', { replace: true });
+      }
+    } catch (error) {
+      console.error('Error verificando estado:', error);
     }
-  }, [isConnected]); // Solo depender de isConnected
+  };
 
   if (!isConnected) {
     return (
@@ -618,17 +621,65 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
                       ) : (
                         <Box sx={{ width: 256, height: 256, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2 }}>
                           <QrCode sx={{ fontSize: 80, color: '#cbd5e1' }} />
-                          <Button
-                            variant="contained"
-                            onClick={fetchQR}
-                            sx={{
-                              bgcolor: '#6366f1',
-                              '&:hover': { bgcolor: '#4f46e5' }
-                            }}
-                          >
-                            Generar QR
-                          </Button>
+                          <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>
+                            Haz clic para generar el código QR
+                          </Typography>
                         </Box>
+                      )}
+                    </Box>
+
+                    {/* 🆕 Botones de Control - Similar a la imagen de referencia */}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+                      <Button
+                        variant="contained"
+                        fullWidth
+                        size="large"
+                        onClick={fetchQR}
+                        disabled={loading}
+                        startIcon={<QrCode />}
+                        sx={{
+                          bgcolor: '#10b981',
+                          color: 'white',
+                          py: 1.5,
+                          borderRadius: 2,
+                          textTransform: 'none',
+                          fontWeight: 600,
+                          fontSize: '1rem',
+                          '&:hover': {
+                            bgcolor: '#059669'
+                          },
+                          '&:disabled': {
+                            bgcolor: '#6b7280',
+                            color: '#d1d5db'
+                          }
+                        }}
+                      >
+                        {qrDataUrl ? 'Regenerar QR' : 'Conectar por QR'}
+                      </Button>
+
+                      {pendingSessionId && (
+                        <Button
+                          variant="outlined"
+                          fullWidth
+                          size="large"
+                          onClick={handleRefreshStatus}
+                          startIcon={<Refresh />}
+                          sx={{
+                            borderColor: '#6366f1',
+                            color: '#6366f1',
+                            py: 1.5,
+                            borderRadius: 2,
+                            textTransform: 'none',
+                            fontWeight: 600,
+                            fontSize: '1rem',
+                            '&:hover': {
+                              borderColor: '#4f46e5',
+                              bgcolor: 'rgba(99, 102, 241, 0.1)'
+                            }
+                          }}
+                        >
+                          Actualizar estado
+                        </Button>
                       )}
                     </Box>
 

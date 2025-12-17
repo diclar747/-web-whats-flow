@@ -16,7 +16,11 @@ import {
   InputAdornment,
   Paper,
   CircularProgress,
-  Chip
+  Chip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import {
   Chat as ChatIcon,
@@ -27,7 +31,11 @@ import {
   EmojiEmotions as EmojiIcon,
   MoreVert as MoreIcon,
   Description as DocumentIcon,
-  GetApp as DownloadIcon
+  GetApp as DownloadIcon,
+  ErrorOutline,
+  Warning,
+  CheckCircle,
+  Info
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -36,6 +44,7 @@ import { useSocket } from '../context/SocketContext';
 import EmojiPicker from 'emoji-picker-react';
 import { useTransferNotifications } from '../hooks/useTransferNotifications';
 import { useTheme } from '../contexts/ThemeContext';
+import NotificationPermissionModal from '../components/NotificationPermissionModal';
 
 interface AgentChat {
   id: string;
@@ -68,6 +77,8 @@ interface Message {
 const AgentDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { socket, isConnected, on, off } = useSocket();
+  const { isDarkMode } = useTheme();
+
 
   // Estados
   const [agentId, setAgentId] = useState<number | null>(null);
@@ -82,6 +93,26 @@ const AgentDashboard: React.FC = () => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
+  const [alertDialog, setAlertDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    severity: 'error' | 'warning' | 'info' | 'success';
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    severity: 'info'
+  });
+
+  // 🆕 Helper function para mostrar alertas modernas
+  const showAlert = (
+    title: string,
+    message: string,
+    severity: 'error' | 'warning' | 'info' | 'success' = 'info'
+  ) => {
+    setAlertDialog({ open: true, title, message, severity });
+  };
 
   // Hook para notificaciones de transferencia
   useTransferNotifications(socket, agentId || undefined);
@@ -110,12 +141,14 @@ const AgentDashboard: React.FC = () => {
       setUserName(savedUserName || 'Agente');
       console.log('✅ AgentId establecido:', userId);
 
-      // Solicitar permisos de notificación
+      // Solicitar permisos de notificación - REEMPLAZADO POR COMPONENTE MODAL
+      /* 
       if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission().then(permission => {
           console.log('🔔 Permisos de notificación:', permission);
         });
       }
+      */
 
       // Obtener sessionId del ADMIN desde la base de datos
       try {
@@ -136,11 +169,19 @@ const AgentDashboard: React.FC = () => {
           sessionStorage.setItem('adminPhoneNumber', data.phoneNumber || '');
         } else {
           console.error('❌ [AGENT] No se pudo obtener sesión del admin:', data.message);
-          alert('⚠️ El administrador no tiene una sesión activa de WhatsApp.\n\nNo podrás enviar mensajes hasta que el admin inicie sesión en WhatsApp.');
+          showAlert(
+            'Sesión No Disponible',
+            'El administrador no tiene una sesión activa de WhatsApp.\n\nNo podrás enviar mensajes hasta que el admin inicie sesión en WhatsApp.',
+            'warning'
+          );
         }
       } catch (error) {
         console.error('❌ [AGENT] Error obteniendo sessionId:', error);
-        alert('Error al conectar con el sistema. Por favor, recarga la página.');
+        showAlert(
+          'Error de Conexión',
+          'Error al conectar con el sistema. Por favor, recarga la página.',
+          'error'
+        );
       }
     };
 
@@ -429,14 +470,22 @@ const AgentDashboard: React.FC = () => {
         // Remover mensaje temporal y mostrar error
         setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
         setMessageText(messageToSend); // Restaurar mensaje
-        alert('Error: ' + (data.error || 'No se pudo enviar el mensaje'));
+        showAlert(
+          'Error al Enviar',
+          data.error || 'No se pudo enviar el mensaje',
+          'error'
+        );
       }
     } catch (error: any) {
       console.error('[AGENT-SEND] ❌ Exception:', error);
       // Remover mensaje temporal en caso de error
       setMessages(prev => prev.filter(msg => msg.id !== tempMessage.id));
       setMessageText(messageToSend); // Restaurar mensaje
-      alert('Error de red: ' + error.message);
+      showAlert(
+        'Error de Red',
+        error.message || 'Error de conexión',
+        'error'
+      );
     } finally {
       setSending(false);
     }
@@ -472,11 +521,19 @@ const AgentDashboard: React.FC = () => {
         console.log('[AGENT-MEDIA] ✅ Multimedia enviada');
         // El mensaje aparecerá vía Socket.IO
       } else {
-        alert('Error: ' + (data.error || 'No se pudo enviar el archivo'));
+        showAlert(
+          'Error al Enviar',
+          data.error || 'No se pudo enviar el archivo',
+          'error'
+        );
       }
     } catch (error: any) {
       console.error('[AGENT-MEDIA] ❌ Error:', error);
-      alert('Error de red: ' + error.message);
+      showAlert(
+        'Error de Red',
+        error.message || 'Error de conexión',
+        'error'
+      );
     } finally {
       setSending(false);
       // Limpiar input
@@ -526,6 +583,9 @@ const AgentDashboard: React.FC = () => {
           </Button>
         </Toolbar>
       </AppBar>
+
+      {/* Modal de permisos de notificación */}
+      <NotificationPermissionModal />
 
       {/* Layout estilo WhatsApp Web */}
       <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
@@ -846,6 +906,59 @@ const AgentDashboard: React.FC = () => {
           </Box>
         )}
       </Box>
+
+      {/* 🆕 Modal moderno para alertas */}
+      <Dialog
+        open={alertDialog.open}
+        onClose={() => setAlertDialog({ ...alertDialog, open: false })}
+        PaperProps={{
+          style: {
+            backgroundColor: isDarkMode ? '#202c33' : '#fff',
+            borderRadius: '16px',
+            maxWidth: '450px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.24)'
+          }
+        }}
+      >
+        <DialogTitle sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 2,
+          color: isDarkMode ? '#e9edef' : '#111b21',
+          fontWeight: 600,
+          fontSize: '1.25rem',
+          pb: 1
+        }}>
+          {alertDialog.severity === 'error' && <ErrorOutline sx={{ color: '#f44336', fontSize: 32 }} />}
+          {alertDialog.severity === 'warning' && <Warning sx={{ color: '#ff9800', fontSize: 32 }} />}
+          {alertDialog.severity === 'success' && <CheckCircle sx={{ color: '#4caf50', fontSize: 32 }} />}
+          {alertDialog.severity === 'info' && <Info sx={{ color: '#2196f3', fontSize: 32 }} />}
+          {alertDialog.title}
+        </DialogTitle>
+        <DialogContent sx={{ color: isDarkMode ? '#aebac1' : '#667781', pt: 2 }}>
+          <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.6 }}>
+            {alertDialog.message}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 3 }}>
+          <Button
+            onClick={() => setAlertDialog({ ...alertDialog, open: false })}
+            variant="contained"
+            fullWidth
+            sx={{
+              bgcolor: '#00a884',
+              '&:hover': { bgcolor: '#008f6f' },
+              borderRadius: '8px',
+              textTransform: 'none',
+              fontWeight: 600,
+              py: 1.2,
+              fontSize: '1rem'
+            }}
+          >
+            Entendido
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

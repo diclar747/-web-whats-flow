@@ -366,7 +366,7 @@ const QR_EXPIRY_TIME = 2 * 60 * 1000; // 2 minutos
 
 // Sistema de throttle para generación de QR (evita generar muchos QR seguidos)
 const qrThrottleMap = new Map(); // sessionId -> último timestamp de QR emitido
-const QR_THROTTLE_TIME = 12 * 1000;
+const QR_THROTTLE_TIME = 40 * 60 * 1000; // 40 minutos - evitar regenerar QR constantemente
 
 // Mapa auxiliar para asociar las sesiones creadas con el número dueño de la suscripción
 // Esto permite aplicar límites de plan por cantidad de líneas conectadas
@@ -9373,6 +9373,19 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
         };
         await saveMessageToDB(actualSessionId, dbMessage);
         console.log('[AGENT-SEND] 💾 Mensaje guardado con agentId:', finalAgentId, 'agentName:', finalAgentName || 'Sin agente');
+
+        // ✅ Actualizar status de 'pending' a 'sent' en BD para evitar icono de error
+        if (pool) {
+            try {
+                await pool.execute(
+                    `UPDATE messages SET status = 'sent' WHERE id = ?`,
+                    [sentResult.key.id]
+                );
+                console.log('[AGENT-SEND] ✅ Status actualizado a sent en BD');
+            } catch (err) {
+                console.log('[AGENT-SEND] ⚠️ Error actualizando status:', err.message);
+            }
+        }
 
         // Si es un agente enviando, actualizar estado de 'pending' a 'active' automáticamente
         if (agentId && pool) {
@@ -22754,8 +22767,14 @@ server.setTimeout(300000); // 5 minutos para manejar operaciones largas
 server.keepAliveTimeout = 310000; // 5 minutos 10 segundos
 server.headersTimeout = 320000; // 5 minutos 20 segundos
 
-// Iniciar servidor
-const PORT = process.env.PORT || 3002;
+// ============= INICIO DEL SERVIDOR =============
+const PORT = process.env.PORT || 3001;
+
+// ============= REGISTER STATUSES ROUTER =============
+const statusesRouter = require('./routes/statuses')(app, io);
+app.use('/api/statuses', statusesRouter);
+console.log('✅ Router de Estados de WhatsApp cargado');
+
 server.listen(PORT, '0.0.0.0', async () => {
     console.log(`✅ Servidor corriendo en puerto ${PORT}`);
     console.log(`📅 Timestamp: ${new Date().toISOString()}`);

@@ -15,7 +15,8 @@ import {
   SmartToy, Send, Inbox, Visibility, CheckCircle, Error as ErrorIcon,
   Schedule, Group, ViewKanban, PersonAdd, Timer, Speed, Warning,
   BarChart as BarChartIcon, PieChart as PieChartIcon, Timeline,
-  CloudDone, Block, Reply, Done, DoneAll, AccessTime, CalendarToday
+  CloudDone, Block, Reply, Done, DoneAll, AccessTime, CalendarToday,
+  Dns, Storage, Memory, SettingsInputComponent, CloudQueue
 } from '@mui/icons-material';
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area,
@@ -29,6 +30,37 @@ import dayjs, { Dayjs } from 'dayjs';
 
 interface AnalyticsModuleProps {
   sessionId: string;
+}
+
+interface SystemMetrics {
+  timestamp: string;
+  success: boolean;
+  whatsappAPI: {
+    status: string;
+    activeSessions: number;
+    latency: string;
+    uptime: string;
+    uptimePercent: number;
+  };
+  servers: {
+    status: string;
+    cpu: { usage: number; cores: number };
+    ram: { usage: number; total: string; used: string; free: string };
+    disk: { usage: number };
+  };
+  database: {
+    status: string;
+    connections: { active: number; max: number; usage: number };
+    lastBackup: string;
+    replication: string;
+  };
+  system: {
+    platform: string;
+    architecture: string;
+    hostname: string;
+    nodeVersion: string;
+    uptime: number;
+  };
 }
 
 const COLORS = ['#00a884', '#25d366', '#128c7e', '#075e54', '#34b7f1', '#ece5dd'];
@@ -64,6 +96,7 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
   const [agentsData, setAgentsData] = useState<any>(null);
   const [chatbotsData, setChatbotsData] = useState<any>(null);
   const [connectionsData, setConnectionsData] = useState<any>(null);
+  const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
 
   const loadAllData = async () => {
     setLoading(true);
@@ -73,14 +106,15 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
       const params = `sessionId=${sessionId}&startDate=${startDate.format('YYYY-MM-DD')}&endDate=${endDate.format('YYYY-MM-DD')}`;
 
       // Load all analytics data in parallel
-      const [dashRes, msgRes, campRes, kanRes, agentRes, botRes, connRes] = await Promise.allSettled([
+      const [dashRes, msgRes, campRes, kanRes, agentRes, botRes, connRes, sysRes] = await Promise.allSettled([
         fetch(`/api/analytics/dashboard?sessionId=${sessionId}`),
         fetch(`/api/analytics/messages?${params}`),
         fetch(`/api/analytics/campaigns?${params}`),
         fetch(`/api/analytics/kanban?${params}`),
         fetch(`/api/analytics/agents?${params}`),
         fetch(`/api/analytics/chatbots?${params}`),
-        fetch(`/api/session/${sessionId}/status`)
+        fetch(`/api/session/${sessionId}/status`),
+        fetch(`/api/system/metrics`)
       ]);
 
       // Process dashboard data
@@ -127,9 +161,16 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
       }
 
       // Process connections data
+      // Process connections data
       if (connRes.status === 'fulfilled' && connRes.value.ok) {
         const json = await connRes.value.json();
         setConnectionsData(json);
+      }
+
+      // Process system metrics
+      if (sysRes.status === 'fulfilled' && sysRes.value.ok) {
+        const json = await sysRes.value.json();
+        setSystemMetrics(json);
       }
 
     } catch (err: any) {
@@ -178,7 +219,7 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
       { label: 'Campañas Activas', value: formatNumber(activeCampaigns), icon: <Campaign />, color: CHART_COLORS.warning, trend: `${formatNumber(dash.campaigns?.total || 0)} total` },
       { label: 'Agentes Online', value: formatNumber(onlineAgents), icon: <People />, color: CHART_COLORS.success, trend: `de ${formatNumber(totalAgents)} total` },
       { label: 'Chatbots Activos', value: formatNumber(activeChatbots), icon: <SmartToy />, color: CHART_COLORS.purple, trend: 'Sistema activo' },
-      { label: 'Tableros Kanban', value: formatNumber(kanbanBoards), icon: <ViewKanban />, color: CHART_COLORS.info, trend: `${formatNumber(dash.kanban?.contacts || 0)} contactos` },
+      // Tarjeta de Kanban eliminada por solicitud del usuario
       { label: 'Conexiones Activas', value: formatNumber(activeConnections), icon: <Badge />, color: CHART_COLORS.info, trend: 'WhatsApp conectado' },
       { label: 'Mensajes Fallidos', value: formatNumber(failedMessages), icon: <ErrorIcon />, color: CHART_COLORS.error, trend: `${formatPercentage(failureRate)} tasa fallo` }
     ];
@@ -244,18 +285,131 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
 
           <Grid item xs={12} md={4}>
             <Paper sx={{ p: 3, bgcolor: '#1e293b', color: 'white', height: '100%' }}>
-              <Typography variant="h6" mb={2}>Alertas del Sistema</Typography>
-              <Stack spacing={2}>
-                <Alert severity="success" sx={{ bgcolor: 'rgba(37,211,102,0.1)', color: '#25d366' }}>
-                  Sistema funcionando óptimamente
-                </Alert>
-                <Alert severity="info" sx={{ bgcolor: 'rgba(59,130,246,0.1)', color: '#3b82f6' }}>
-                  3 campañas programadas para hoy
-                </Alert>
-                <Alert severity="warning" sx={{ bgcolor: 'rgba(255,152,0,0.1)', color: '#ff9800' }}>
-                  Cola de mensajes: {formatNumber(msgs.pending || 0)}
-                </Alert>
+              <Stack direction="row" spacing={1} alignItems="center" mb={2}>
+                <Dns sx={{ color: '#3b82f6' }} />
+                <Typography variant="h6">Estado del Sistema</Typography>
+                <Chip
+                  label="EN VIVO"
+                  size="small"
+                  sx={{
+                    bgcolor: '#25d366',
+                    color: '#0b2e13',
+                    fontWeight: 'bold',
+                    height: 20,
+                    fontSize: '0.65rem'
+                  }}
+                />
               </Stack>
+
+              {systemMetrics ? (
+                <Stack spacing={3}>
+                  {/* WhatsApp API Section */}
+                  <Box>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <BarChartIcon sx={{ color: '#25d366', fontSize: 20 }} />
+                        <Typography variant="body2" fontWeight="500">WhatsApp API</Typography>
+                      </Stack>
+                      <Chip
+                        label={systemMetrics.whatsappAPI.status}
+                        size="small"
+                        sx={{
+                          bgcolor: systemMetrics.whatsappAPI.status === 'ACTIVO' ? 'rgba(37,211,102,0.1)' : 'rgba(239,68,68,0.1)',
+                          color: systemMetrics.whatsappAPI.status === 'ACTIVO' ? '#25d366' : '#ef4444',
+                          height: 20,
+                          fontSize: '0.7rem'
+                        }}
+                      />
+                    </Stack>
+                    <LinearProgress
+                      variant="determinate"
+                      value={100}
+                      sx={{
+                        bgcolor: '#334155',
+                        height: 6,
+                        borderRadius: 3,
+                        '& .MuiLinearProgress-bar': { bgcolor: '#3b82f6' } // Blue line as in design
+                      }}
+                    />
+                    <Stack direction="row" justifyContent="space-between" mt={0.5}>
+                      <Typography variant="caption" color="#94a3b8">Latencia: {systemMetrics.whatsappAPI.latency}</Typography>
+                      <Typography variant="caption" color="#94a3b8">Uptime: {systemMetrics.whatsappAPI.uptime}</Typography>
+                    </Stack>
+                  </Box>
+
+                  {/* Servers Section */}
+                  <Box>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Storage sx={{ color: '#25d366', fontSize: 20 }} />
+                        <Typography variant="body2" fontWeight="500">Servidores</Typography>
+                      </Stack>
+                      <Chip
+                        label={systemMetrics.servers.status}
+                        size="small"
+                        sx={{
+                          bgcolor: systemMetrics.servers.status === 'ÓPTIMO' ? 'rgba(37,211,102,0.1)' : 'rgba(255,152,0,0.1)',
+                          color: systemMetrics.servers.status === 'ÓPTIMO' ? '#25d366' : '#ff9800',
+                          height: 20,
+                          fontSize: '0.7rem'
+                        }}
+                      />
+                    </Stack>
+                    {/* CPU Bar */}
+                    <LinearProgress
+                      variant="determinate"
+                      value={systemMetrics.servers.cpu.usage}
+                      sx={{
+                        bgcolor: '#334155',
+                        height: 6,
+                        borderRadius: 3,
+                        '& .MuiLinearProgress-bar': { bgcolor: '#8b5cf6' } // Purple line
+                      }}
+                    />
+                    <Typography variant="caption" color="#94a3b8" display="block" mt={0.5}>
+                      CPU: {systemMetrics.servers.cpu.usage}% ({systemMetrics.servers.cpu.cores} cores) • RAM: {systemMetrics.servers.ram.usage}% ({systemMetrics.servers.ram.used}/{systemMetrics.servers.ram.total}) • Disco: {systemMetrics.servers.disk.usage}%
+                    </Typography>
+                  </Box>
+
+                  {/* Database Section */}
+                  <Box>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <CloudQueue sx={{ color: '#3b82f6', fontSize: 20 }} />
+                        <Typography variant="body2" fontWeight="500">Base de Datos</Typography>
+                      </Stack>
+                      <Chip
+                        label={systemMetrics.database.status}
+                        size="small"
+                        sx={{
+                          bgcolor: 'rgba(59,130,246,0.1)',
+                          color: '#3b82f6',
+                          height: 20,
+                          fontSize: '0.7rem'
+                        }}
+                      />
+                    </Stack>
+                    <LinearProgress
+                      variant="determinate"
+                      value={systemMetrics.database.connections.usage}
+                      sx={{
+                        bgcolor: '#334155',
+                        height: 6,
+                        borderRadius: 3,
+                        '& .MuiLinearProgress-bar': { bgcolor: '#8b5cf6' } // Purple/Blue
+                      }}
+                    />
+                    <Typography variant="caption" color="#94a3b8" display="block" mt={0.5}>
+                      Backup: {systemMetrics.database.lastBackup} • Conexiones: {systemMetrics.database.connections.active}/{systemMetrics.database.connections.max} ({systemMetrics.database.connections.usage}%)
+                    </Typography>
+                  </Box>
+
+                </Stack>
+              ) : (
+                <Box display="flex" justifyContent="center" alignItems="center" height={200}>
+                  <CircularProgress size={30} />
+                </Box>
+              )}
             </Paper>
           </Grid>
         </Grid>
@@ -352,11 +506,30 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
 
   // ============= TAB 2: CAMPAIGNS ANALYTICS =============
   const CampaignsAnalytics = () => {
-    const campaignsList = camps.list || [
-      { id: 1, name: 'Campaña Promocional', status: 'active', contacts: 1250, sent: 1200, delivered: 1180 },
-      { id: 2, name: 'Recordatorio Pago', status: 'scheduled', contacts: 850, sent: 0, delivered: 0 },
-      { id: 3, name: 'Newsletter Semanal', status: 'completed', contacts: 2100, sent: 2100, delivered: 2050 }
-    ];
+    const [realCampaigns, setRealCampaigns] = React.useState<any[]>([]);
+
+    React.useEffect(() => {
+      // Cargar campañas reales desde la base de datos
+      fetch(`/api/campaigns?sessionId=${sessionId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.campaigns) {
+            // Mapear campañas reales con sus datos
+            const mapped = data.campaigns.map((c: any) => ({
+              id: c.id,
+              name: c.campaign_name || c.name || 'Sin nombre',
+              status: c.status || 'draft',
+              contacts: c.total_contacts || c.contacts?.length || 0,
+              sent: c.messages_sent || 0,
+              delivered: c.messages_delivered || 0
+            }));
+            setRealCampaigns(mapped);
+          }
+        })
+        .catch(err => console.error('Error cargando campañas:', err));
+    }, [sessionId]);
+
+    const campaignsList = realCampaigns.length > 0 ? realCampaigns : camps.list || [];
 
     const statusData = [
       { name: 'Activas', value: camps.active || 3, color: CHART_COLORS.success },
@@ -561,11 +734,30 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
 
   // ============= TAB 4: AGENTS ANALYTICS =============
   const AgentsAnalytics = () => {
-    const agentsList = agents.list || [
-      { id: 1, name: 'Juan Pérez', status: 'online', messages: 145, avgResponse: 45, satisfaction: 4.8 },
-      { id: 2, name: 'María García', status: 'busy', messages: 132, avgResponse: 52, satisfaction: 4.9 },
-      { id: 3, name: 'Carlos López', status: 'online', messages: 98, avgResponse: 38, satisfaction: 4.7 }
-    ];
+    const [realAgents, setRealAgents] = React.useState<any[]>([]);
+
+    React.useEffect(() => {
+      // Cargar agentes reales desde la base de datos
+      fetch(`/api/agents?sessionId=${sessionId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.agents) {
+            // Mapear agentes reales con sus datos
+            const mapped = data.agents.map((a: any) => ({
+              id: a.id,
+              name: a.name || a.email || 'Agente',
+              status: a.agent_status || a.status || 'offline',
+              messages: a.messages_handled || 0,
+              avgResponse: a.avg_response_time || 60,
+              satisfaction: a.satisfaction_rating || 4.5
+            }));
+            setRealAgents(mapped);
+          }
+        })
+        .catch(err => console.error('Error cargando agentes:', err));
+    }, [sessionId]);
+
+    const agentsList = realAgents.length > 0 ? realAgents : agents.list || [];
 
     const statusDistribution = [
       { name: 'Online', value: agents.online || 3, color: CHART_COLORS.success },

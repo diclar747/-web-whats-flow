@@ -524,7 +524,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             setSession(newSession);
             setConnectionStatus('connected');
 
-            await requestNotificationPermission();
+            // await requestNotificationPermission(); // 🚫 Desactivado para usar Modal UI moderno
 
             console.log('📱 Cargando chats automáticamente...');
             await loadChats(savedSessionId);

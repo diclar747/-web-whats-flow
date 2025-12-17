@@ -389,18 +389,43 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     console.log(`[PERFORMANCE] Filtrando ${messages.length} mensajes con filtros:`, { dateFilter, quickFilter });
 
     const filtered = messages.filter(msg => {
-      // Filtrar por fecha si está seleccionada
+      // Si no hay filtro de fecha, mostrar todos
       if (!dateFilter) return true;
-      const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
-      // Si hay un filtro rápido, mostrar desde esa fecha hasta hoy
+
+      // Obtener fecha del mensaje (solo fecha, sin hora) en formato comparable
+      const msgTimestamp = new Date(msg.timestamp);
+      const msgDate = new Date(msgTimestamp.getFullYear(), msgTimestamp.getMonth(), msgTimestamp.getDate());
+
+      // Crear objeto Date para el filtro (inicio del día)
+      const filterDateParts = dateFilter.split('-');
+      const filterDate = new Date(
+        parseInt(filterDateParts[0]),  // año
+        parseInt(filterDateParts[1]) - 1,  // mes (0-indexed)
+        parseInt(filterDateParts[2])   // día
+      );
+
+      // Fecha de hoy (inicio del día)
+      const today = new Date();
+      const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
       if (quickFilter) {
-        return msgDate >= dateFilter;
+        // Filtro rápido: desde filterDate hasta hoy (inclusive)
+        return msgDate >= filterDate && msgDate <= todayMidnight;
       }
-      // Si es fecha específica, solo ese día
-      return msgDate === dateFilter;
+
+      // Fecha específica: solo ese día exacto
+      return msgDate.getTime() === filterDate.getTime();
     });
 
     console.log(`[PERFORMANCE] Mensajes después del filtro: ${filtered.length}`);
+    console.log(`[DATE-FILTER]`, {
+      totalMessages: messages.length,
+      dateFilter,
+      quickFilter,
+      filteredCount: filtered.length,
+      firstMsg: messages[0]?.timestamp,
+      lastMsg: messages[messages.length - 1]?.timestamp
+    });
     return filtered;
   }, [messages, dateFilter, quickFilter]);
 

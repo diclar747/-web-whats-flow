@@ -454,8 +454,10 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
       case 'read':
         return <DoneAllIcon sx={{ fontSize: '14px', color: '#25D366' }} />; // WhatsApp green
       case 'failed':
+      case 'error':
         return <ErrorIcon sx={{ fontSize: '14px', color: '#f44336' }} />;
       default:
+        // Por defecto: mostrar como enviado en lugar de error
         return <DoneIcon sx={{ fontSize: '14px', color: '#667781' }} />;
     }
   };
@@ -1095,7 +1097,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                         )}
 
                         {/* 🆕 Mostrar nombre del agente o "Admin" para mensajes salientes */}
-                        {msg.isFromMe && msg.agent_name && (
+                        {msg.isFromMe && (
                           <Typography
                             variant="caption"
                             sx={{
@@ -1107,7 +1109,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                               fontSize: '0.7rem'
                             }}
                           >
-                            {msg.agent_name}
+                            {msg.agent_name || 'Admin'}
                           </Typography>
                         )}
 
