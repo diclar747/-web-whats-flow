@@ -453,14 +453,21 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
               ? `${nameParts[0][0]}${nameParts[1][0]}`
               : nameParts[0].substring(0, 2);
 
-            // Determinar estado basado en actividad reciente
-            const lastLogin = user.last_login ? new Date(user.last_login) : null;
-            const now = new Date();
-            const minutesSinceLogin = lastLogin ? Math.floor((now.getTime() - lastLogin.getTime()) / 60000) : 999;
+            // 🔧 FIX: Usar el agent_status REAL de la base de datos
+            // No calcular basado en last_login, usar el estado actual del agente
+            const agentStatus = user.agent_status || 'offline';
 
-            let status = 'away';
-            if (minutesSinceLogin < 5) status = 'online';
-            else if (minutesSinceLogin < 30) status = 'busy';
+            // Mapear agent_status (online/offline/busy/paused) a formato del dashboard (online/away/busy)
+            let dashboardStatus: 'online' | 'away' | 'busy' = 'away';
+            if (agentStatus === 'online') {
+              dashboardStatus = 'online';
+            } else if (agentStatus === 'busy') {
+              dashboardStatus = 'busy';
+            } else if (agentStatus === 'paused' || agentStatus === 'offline') {
+              dashboardStatus = 'away';
+            }
+
+            console.log(`[DASHBOARD] Agente ${user.name}: agent_status=${agentStatus}, dashboardStatus=${dashboardStatus}`);
 
             return {
               id: user.id.toString(),
@@ -469,7 +476,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
               messages: 0, // Se puede calcular desde mensajes enviados
               responseTime: '< 1m',
               satisfaction: 4.5,
-              status: status as 'online' | 'away' | 'busy'
+              status: dashboardStatus
             };
           });
 

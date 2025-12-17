@@ -21,14 +21,14 @@ router.get('/flows/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const connection = await mysql.createConnection(dbConfig);
-    
+
     const [flows] = await connection.query(
       'SELECT * FROM chatbot_flows WHERE session_id = ? ORDER BY created_at DESC',
       [sessionId]
     );
-    
+
     await connection.end();
-    
+
     // Parsear flow_data y adaptar al formato del frontend
     const parsedFlows = flows.map(flow => {
       const flowData = flow.flow_data ? JSON.parse(flow.flow_data) : {};
@@ -61,7 +61,7 @@ router.get('/flows/:sessionId', async (req, res) => {
         }
       };
     });
-    
+
     res.json({ success: true, flows: parsedFlows });
   } catch (error) {
     console.error('Error obteniendo flujos:', error);
@@ -74,9 +74,9 @@ router.post('/flows/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const flowData = req.body;
-    
+
     const connection = await mysql.createConnection(dbConfig);
-    
+
     // Guardar todos los datos del flujo en flow_data como JSON
     const completeFlowData = {
       name: flowData.name,
@@ -98,7 +98,7 @@ router.post('/flows/:sessionId', async (req, res) => {
         lastTriggered: null
       }
     };
-    
+
     const [result] = await connection.query(
       `INSERT INTO chatbot_flows (
         session_id, flow_name, flow_data, is_active
@@ -110,11 +110,11 @@ router.post('/flows/:sessionId', async (req, res) => {
         flowData.active !== false ? 1 : 0
       ]
     );
-    
+
     const flowId = result.insertId.toString();
-    
+
     await connection.end();
-    
+
     const newFlow = {
       id: flowId,
       name: flowData.name,
@@ -132,9 +132,9 @@ router.post('/flows/:sessionId', async (req, res) => {
         lastTriggered: null
       }
     };
-    
+
     console.log(`[CHATBOT] ✅ Flujo creado en BD: ${newFlow.name} (${flowData.triggers?.length} triggers)`);
-    
+
     res.json({ success: true, flow: newFlow });
   } catch (error) {
     console.error('Error creando flujo:', error);
@@ -147,9 +147,9 @@ router.put('/flows/:sessionId/:flowId', async (req, res) => {
   try {
     const { sessionId, flowId } = req.params;
     const updatedFlow = req.body;
-    
+
     const connection = await mysql.createConnection(dbConfig);
-    
+
     // Guardar todos los datos del flujo en flow_data como JSON
     const completeFlowData = {
       name: updatedFlow.name,
@@ -171,7 +171,7 @@ router.put('/flows/:sessionId/:flowId', async (req, res) => {
         lastTriggered: null
       }
     };
-    
+
     const [result] = await connection.query(
       `UPDATE chatbot_flows SET 
         flow_name = ?, flow_data = ?, is_active = ?
@@ -184,9 +184,9 @@ router.put('/flows/:sessionId/:flowId', async (req, res) => {
         sessionId
       ]
     );
-    
+
     await connection.end();
-    
+
     if (result.affectedRows > 0) {
       console.log(`[CHATBOT] ✏️ Flujo actualizado en BD: ${updatedFlow.name} (${updatedFlow.flowType})`);
       res.json({ success: true, flow: updatedFlow });
@@ -203,18 +203,18 @@ router.put('/flows/:sessionId/:flowId', async (req, res) => {
 router.delete('/flows/:sessionId/:flowId', async (req, res) => {
   try {
     const { sessionId, flowId } = req.params;
-    
+
     const connection = await mysql.createConnection(dbConfig);
-    
+
     await connection.query(
       'DELETE FROM chatbot_flows WHERE id = ? AND session_id = ?',
       [flowId, sessionId]
     );
-    
+
     await connection.end();
-    
+
     console.log(`[CHATBOT] 🗑️ Flujo eliminado de BD: ${flowId}`);
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Error eliminando flujo:', error);
@@ -227,25 +227,25 @@ router.patch('/flows/:sessionId/:flowId/toggle', async (req, res) => {
   try {
     const { sessionId, flowId } = req.params;
     const { active } = req.body;
-    
+
     const connection = await mysql.createConnection(dbConfig);
-    
+
     await connection.query(
       'UPDATE chatbot_flows SET is_active = ? WHERE id = ? AND session_id = ?',
       [active ? 1 : 0, flowId, sessionId]
     );
-    
+
     const [flows] = await connection.query(
       'SELECT * FROM chatbot_flows WHERE id = ? AND session_id = ?',
       [flowId, sessionId]
     );
-    
+
     await connection.end();
-    
+
     if (flows.length > 0) {
       const flow = flows[0];
       const flowData = flow.flow_data ? JSON.parse(flow.flow_data) : {};
-      
+
       const parsedFlow = {
         id: flow.id.toString(),
         name: flowData.name || flow.flow_name,
@@ -258,7 +258,7 @@ router.patch('/flows/:sessionId/:flowId/toggle', async (req, res) => {
         aiConfig: flowData.aiConfig || {},
         stats: flowData.stats || {}
       };
-      
+
       console.log(`[CHATBOT] ${active ? '▶️' : '⏸️'} Flujo ${active ? 'activado' : 'pausado'}: ${parsedFlow.name}`);
       res.json({ success: true, flow: parsedFlow });
     } else {
@@ -380,7 +380,7 @@ router.put('/settings/:sessionId', async (req, res) => {
           settings.workingHours?.enabled ? 1 : 0,
           settings.workingHours?.start || '09:00',
           settings.workingHours?.end || '18:00',
-          JSON.stringify(settings.workingHours?.days || [1,2,3,4,5]),
+          JSON.stringify(settings.workingHours?.days || [1, 2, 3, 4, 5]),
           settings.fallbackMessage || 'Lo siento, no entiendo tu mensaje.',
           settings.transferToAgent ? 1 : 0,
           settings.aiEnabled ? 1 : 0,
@@ -409,7 +409,7 @@ router.put('/settings/:sessionId', async (req, res) => {
           settings.workingHours?.enabled ? 1 : 0,
           settings.workingHours?.start || '09:00',
           settings.workingHours?.end || '18:00',
-          JSON.stringify(settings.workingHours?.days || [1,2,3,4,5]),
+          JSON.stringify(settings.workingHours?.days || [1, 2, 3, 4, 5]),
           settings.fallbackMessage || 'Lo siento, no entiendo tu mensaje.',
           settings.transferToAgent ? 1 : 0,
           settings.aiEnabled ? 1 : 0,
@@ -450,7 +450,7 @@ router.get('/stats/:sessionId', async (req, res) => {
       transferredToAgent: 0,
       avgResponseTime: 0
     };
-    
+
     res.json({ success: true, stats });
   } catch (error) {
     console.error('Error obteniendo estadísticas:', error);
@@ -464,15 +464,15 @@ router.post('/process-message/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { message, from } = req.body;
-    
+
     const connection = await mysql.createConnection(dbConfig);
-    
+
     // Obtener configuración del chatbot desde BD
     const [settingsRows] = await connection.query(
       'SELECT * FROM chatbot_settings WHERE session_id = ?',
       [sessionId]
     );
-    
+
     // Si no hay configuración, usar valores por defecto (bot HABILITADO)
     let settings = null;
     if (settingsRows.length === 0) {
@@ -488,18 +488,18 @@ router.post('/process-message/:sessionId', async (req, res) => {
         return res.json({ success: false, botResponse: null, reason: 'Bot desactivado' });
       }
     }
-    
+
     // Verificar horario de atención (si existe en BD)
     if (settings.working_hours_enabled) {
       const now = new Date();
       const currentDay = now.getDay();
       const currentTime = now.toTimeString().slice(0, 5);
-      
+
       const workingDays = JSON.parse(settings.working_days || '[]');
-      
+
       if (!workingDays.includes(currentDay) ||
-          currentTime < settings.working_hours_start ||
-          currentTime > settings.working_hours_end) {
+        currentTime < settings.working_hours_start ||
+        currentTime > settings.working_hours_end) {
         await connection.end();
         return res.json({
           success: true,
@@ -508,18 +508,18 @@ router.post('/process-message/:sessionId', async (req, res) => {
         });
       }
     }
-    
+
     // Buscar flujos activos desde BD
     const [flows] = await connection.query(
       'SELECT * FROM chatbot_flows WHERE session_id = ? AND is_active = 1',
       [sessionId]
     );
-    
+
     await connection.end();
-    
+
     const messageLower = message.toLowerCase().trim();
     let matchedFlow = null;
-    
+
     // Parsear flujos con flow_data
     const parsedFlows = flows.map(flow => {
       const flowData = flow.flow_data ? JSON.parse(flow.flow_data) : {};
@@ -531,22 +531,22 @@ router.post('/process-message/:sessionId', async (req, res) => {
         aiConfig: flowData.aiConfig || {}
       };
     });
-    
+
     // Primero buscar flujos programados con triggers
     for (const flow of parsedFlows) {
       if (flow.flowType === 'programmed') {
         const matched = flow.triggers.some(trigger => {
           const triggerLower = trigger.toLowerCase().trim();
-          return messageLower === triggerLower || 
-                 messageLower.includes(' ' + triggerLower + ' ') ||
-                 messageLower.startsWith(triggerLower + ' ') ||
-                 messageLower.endsWith(' ' + triggerLower) ||
-                 messageLower.includes(triggerLower);
+          return messageLower === triggerLower ||
+            messageLower.includes(' ' + triggerLower + ' ') ||
+            messageLower.startsWith(triggerLower + ' ') ||
+            messageLower.endsWith(' ' + triggerLower) ||
+            messageLower.includes(triggerLower);
         });
-        
+
         if (matched) {
           matchedFlow = flow;
-          
+
           // Actualizar stats globales
           const stats = chatbotStats.get(sessionId) || {
             totalInteractions: 0,
@@ -557,12 +557,12 @@ router.post('/process-message/:sessionId', async (req, res) => {
           stats.totalInteractions++;
           stats.successfulResponses++;
           chatbotStats.set(sessionId, stats);
-          
+
           break;
         }
       }
     }
-    
+
     if (!matchedFlow) {
       // Si no hay flujo con triggers, buscar el primer flujo con IA activo
       matchedFlow = parsedFlows.find(f => f.flowType === 'ai');
@@ -570,22 +570,22 @@ router.post('/process-message/:sessionId', async (req, res) => {
         console.log(`[CHATBOT] 🤖 No hay flujo específico, usando IA: ${matchedFlow.flow_name}`);
       }
     }
-    
+
     if (matchedFlow) {
       console.log(`[CHATBOT] 🎯 Flujo activado: ${matchedFlow.flow_name} (${matchedFlow.flowType}) por mensaje de ${from}`);
-      
+
       // Si el flujo tiene un kanban asociado, agregar el contacto al kanban
       const kanbanBoardId = matchedFlow.aiConfig?.kanbanBoardId || matchedFlow.kanban_board_id;
       if (kanbanBoardId) {
         try {
           const connection2 = await mysql.createConnection(dbConfig);
-          
+
           // Verificar si el contacto ya existe en ese kanban
           const [existingContact] = await connection2.query(
             'SELECT id FROM kanban_contacts WHERE board_id = ? AND contact_jid = ?',
             [kanbanBoardId, from]
           );
-          
+
           if (existingContact.length === 0) {
             // Agregar el contacto al kanban
             await connection2.query(
@@ -596,38 +596,46 @@ router.post('/process-message/:sessionId', async (req, res) => {
           } else {
             console.log(`[CHATBOT] 📋 Contacto ${from} ya existe en kanban ${kanbanBoardId}`);
           }
-          
+
           await connection2.end();
         } catch (kanbanError) {
           console.error('[CHATBOT] Error agregando contacto al kanban:', kanbanError);
           // No fallar la respuesta del bot si falla el kanban
         }
       }
-      
+
       let responses = [];
-      
+
       // Verificar si es flujo con IA o programado
       if (matchedFlow.flowType === 'ai') {
         console.log(`[CHATBOT] 🤖 Generando respuesta con IA para: "${message}"`);
-        
+
         try {
           const axios = require('axios');
-          
+
           // Construir contexto del negocio desde aiConfig
           let systemPrompt = 'Eres un asistente virtual de servicio al cliente. Responde de manera amable, profesional y útil en español.';
-          
+
+          console.log(`[CHATBOT-AI] 📋 aiConfig disponible:`, JSON.stringify(matchedFlow.aiConfig, null, 2));
+
           if (matchedFlow.aiConfig?.businessData || matchedFlow.aiConfig?.scrapedContent) {
             systemPrompt += '\n\nInformación del negocio:\n';
             if (matchedFlow.aiConfig.businessData) {
+              console.log(`[CHATBOT-AI] ✅ Usando businessData: ${matchedFlow.aiConfig.businessData.substring(0, 100)}...`);
               systemPrompt += matchedFlow.aiConfig.businessData + '\n\n';
             }
             if (matchedFlow.aiConfig.scrapedContent) {
+              console.log(`[CHATBOT-AI] ✅ Usando scrapedContent: ${matchedFlow.aiConfig.scrapedContent.substring(0, 100)}...`);
               systemPrompt += matchedFlow.aiConfig.scrapedContent;
             }
+          } else {
+            console.log(`[CHATBOT-AI] ⚠️ No hay businessData ni scrapedContent configurado`);
           }
-          
+
           systemPrompt += '\n\nResponde siempre basándote en la información proporcionada. Si no sabes algo, sé honesto y ofrece ayuda alternativa. Mantén las respuestas concisas y útiles.';
-          
+
+          console.log(`[CHATBOT-AI] 📝 System Prompt (primeros 200 chars): ${systemPrompt.substring(0, 200)}...`);
+
           const deepseekResponse = await axios.post(
             'https://api.deepseek.com/v1/chat/completions',
             {
@@ -648,19 +656,30 @@ router.post('/process-message/:sessionId', async (req, res) => {
               timeout: 30000
             }
           );
-          
+
           const aiResponse = deepseekResponse.data.choices[0].message.content;
-          
+
           console.log(`[CHATBOT] 🤖 IA respondió: ${aiResponse.substring(0, 100)}...`);
-          
+
           responses = [{
             id: '1',
             type: 'text',
             content: aiResponse
           }];
-          
+
         } catch (aiError) {
-          console.error('[CHATBOT] ❌ Error con IA:', aiError.response?.data || aiError.message);
+          console.error('[CHATBOT] ❌ Error con IA (DETALLES COMPLETOS):');
+          console.error('[CHATBOT] Error message:', aiError.message);
+          console.error('[CHATBOT] Error stack:', aiError.stack);
+          if (aiError.response) {
+            console.error('[CHATBOT] API Response Status:', aiError.response.status);
+            console.error('[CHATBOT] API Response Data:', JSON.stringify(aiError.response.data, null, 2));
+            console.error('[CHATBOT] API Response Headers:', aiError.response.headers);
+          }
+          if (aiError.request) {
+            console.error('[CHATBOT] Request was made but no response:', aiError.request);
+          }
+
           // Fallback a mensaje genérico
           responses = [{
             id: '1',
@@ -668,7 +687,7 @@ router.post('/process-message/:sessionId', async (req, res) => {
             content: 'Disculpa, estoy teniendo problemas para procesar tu mensaje. ¿Podrías intentar de nuevo?'
           }];
         }
-        
+
       } else {
         // Flujo programado - usar respuestas guardadas
         responses = matchedFlow.responses || [{
@@ -678,7 +697,7 @@ router.post('/process-message/:sessionId', async (req, res) => {
           mediaUrl: ''
         }];
       }
-      
+
       res.json({
         success: true,
         botResponse: responses,
@@ -691,7 +710,7 @@ router.post('/process-message/:sessionId', async (req, res) => {
     } else {
       // No hay flujos activos
       console.log(`[CHATBOT] ❌ No se encontró flujo activo para: "${message}"`);
-      
+
       res.json({
         success: false,
         botResponse: null,
@@ -710,32 +729,32 @@ router.get('/analytics/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const connection = await mysql.createConnection(dbConfig);
-    
+
     // Obtener configuración del chatbot
     const [settings] = await connection.query(
       'SELECT enabled FROM chatbot_settings WHERE session_id = ?',
       [sessionId]
     );
-    
+
     const chatbotEnabled = settings.length > 0 ? Boolean(settings[0].enabled) : false;
-    
+
     // Obtener todos los flujos del usuario
     const [flows] = await connection.query(
       'SELECT * FROM chatbot_flows WHERE session_id = ? ORDER BY created_at DESC',
       [sessionId]
     );
-    
+
     await connection.end();
-    
+
     // Formatear analíticas para el dashboard
     const analytics = flows.map(flow => {
       const flowData = flow.flow_data ? JSON.parse(flow.flow_data) : {};
       const triggers = flowData.triggers || [];
       const flowIsActive = flow.is_active === 1 || flow.is_active === true;
       const isActive = chatbotEnabled && flowIsActive;
-      
+
       console.log(`[CHATBOT-ANALYTICS] Flow ${flow.id}: chatbotEnabled=${chatbotEnabled}, flow.is_active=${flow.is_active}, flowIsActive=${flowIsActive}, final=${isActive}`);
-      
+
       return {
         id: flow.id,
         name: flowData.name || flow.flow_name,
@@ -751,9 +770,9 @@ router.get('/analytics/:sessionId', async (req, res) => {
         color: isActive ? '#00a884' : '#94a3b8'
       };
     });
-    
+
     console.log(`[CHATBOT-ANALYTICS] Enviando ${analytics.length} chatbots para ${sessionId} (enabled: ${chatbotEnabled})`);
-    
+
     res.json({
       success: true,
       analytics: analytics,
@@ -772,18 +791,18 @@ router.post('/upload', async (req, res) => {
   const multer = require('multer');
   const path = require('path');
   const fs = require('fs');
-  
+
   try {
     // Configurar storage de multer
     const storage = multer.diskStorage({
       destination: (req, file, cb) => {
         const uploadDir = path.join(__dirname, '../../uploads/chatbot');
-        
+
         // Crear directorio si no existe
         if (!fs.existsSync(uploadDir)) {
           fs.mkdirSync(uploadDir, { recursive: true });
         }
-        
+
         cb(null, uploadDir);
       },
       filename: (req, file, cb) => {
@@ -792,7 +811,7 @@ router.post('/upload', async (req, res) => {
         cb(null, 'chatbot-' + uniqueSuffix + ext);
       }
     });
-    
+
     const upload = multer({
       storage: storage,
       limits: {
@@ -802,7 +821,7 @@ router.post('/upload', async (req, res) => {
         const allowedTypes = /jpeg|jpg|png|gif|mp4|mov|pdf|doc|docx/;
         const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
         const mimetype = allowedTypes.test(file.mimetype);
-        
+
         if (mimetype && extname) {
           return cb(null, true);
         } else {
@@ -810,7 +829,7 @@ router.post('/upload', async (req, res) => {
         }
       }
     }).single('file');
-    
+
     upload(req, res, (err) => {
       if (err) {
         console.error('[UPLOAD] Error:', err);
@@ -819,19 +838,19 @@ router.post('/upload', async (req, res) => {
           error: err.message
         });
       }
-      
+
       if (!req.file) {
         return res.status(400).json({
           success: false,
           error: 'No se proporcionó archivo'
         });
       }
-      
+
       // Retornar URL del archivo
       const fileUrl = `/uploads/chatbot/${req.file.filename}`;
-      
+
       console.log(`[UPLOAD] ✅ Archivo subido: ${req.file.filename}`);
-      
+
       res.json({
         success: true,
         url: fileUrl,
@@ -839,7 +858,7 @@ router.post('/upload', async (req, res) => {
         size: req.file.size
       });
     });
-    
+
   } catch (error) {
     console.error('[UPLOAD] Error:', error);
     res.status(500).json({
@@ -855,7 +874,7 @@ router.post('/upload', async (req, res) => {
 router.post('/scrape-url', async (req, res) => {
   const axios = require('axios');
   const cheerio = require('cheerio');
-  
+
   try {
     const { url } = req.body;
 
@@ -884,7 +903,7 @@ router.post('/scrape-url', async (req, res) => {
 
     // Extraer texto del main content o body
     let content = '';
-    
+
     // Intentar obtener contenido principal
     const mainSelectors = ['main', 'article', '[role="main"]', '.content', '.main-content', '#content'];
     for (const selector of mainSelectors) {
@@ -894,7 +913,7 @@ router.post('/scrape-url', async (req, res) => {
         break;
       }
     }
-    
+
     // Si no hay main content, usar body
     if (!content) {
       content = $('body').text();
@@ -919,8 +938,8 @@ router.post('/scrape-url', async (req, res) => {
 
     console.log(`[SCRAPER] ✅ Contenido extraído exitosamente: ${content.length} caracteres`);
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       content,
       metadata: {
         title: $('title').text() || '',

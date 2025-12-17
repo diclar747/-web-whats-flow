@@ -59,32 +59,68 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         console.log('🔄 AuthContext: Verificando sesión (soporte persistente habilitado)');
 
-        // 🔄 RESTAURAR sesión desde localStorage si no existe en sessionStorage
-        let token = sessionStorage.getItem('token') || sessionStorage.getItem('whatsflow_token');
+        // 🔧 FIX: PRIORIDAD 1 - Restaurar desde localStorage (sesión persistente)
+        let token = localStorage.getItem('token') || localStorage.getItem('whatsflow_token');
 
-        if (!token) {
-          // Intentar restaurar desde backup de localStorage
-          const backupToken = localStorage.getItem('agent_token_backup');
-          const backupUserId = localStorage.getItem('agent_userId_backup');
-          const backupUserName = localStorage.getItem('agent_userName_backup');
-          const backupUserRole = localStorage.getItem('agent_userRole_backup');
+        if (token) {
+          console.log('💾 Sesión persistente encontrada en localStorage');
 
-          if (backupToken && backupUserId) {
-            console.log('💾 Restaurando sesión desde localStorage backup...');
-            sessionStorage.setItem('token', backupToken);
-            sessionStorage.setItem('userId', backupUserId);
-            sessionStorage.setItem('userName', backupUserName || '');
-            sessionStorage.setItem('userRole', backupUserRole || 'agent');
+          // Restaurar todos los datos de sesión a sessionStorage
+          const userIdLS = localStorage.getItem('userId');
+          const userNameLS = localStorage.getItem('userName');
+          const userRoleLS = localStorage.getItem('userRole');
+          const sessionTokenLS = localStorage.getItem('sessionToken');
+          const whatsflowSessionLS = localStorage.getItem('whatsflow_session');
+          const userPermissionsLS = localStorage.getItem('userPermissions');
+          const permissionsByModuleLS = localStorage.getItem('permissionsByModule');
 
-            // Regenerar deviceId si no existe
-            let deviceId = sessionStorage.getItem('device_id');
-            if (!deviceId) {
-              deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-              sessionStorage.setItem('device_id', deviceId);
+          // Copiar a sessionStorage para uso durante esta sesión
+          if (userIdLS) sessionStorage.setItem('userId', userIdLS);
+          if (userNameLS) sessionStorage.setItem('userName', userNameLS);
+          if (userRoleLS) sessionStorage.setItem('userRole', userRoleLS);
+          if (sessionTokenLS) sessionStorage.setItem('sessionToken', sessionTokenLS);
+          if (whatsflowSessionLS) sessionStorage.setItem('whatsflow_session', whatsflowSessionLS);
+          if (userPermissionsLS) sessionStorage.setItem('userPermissions', userPermissionsLS);
+          if (permissionsByModuleLS) sessionStorage.setItem('permissionsByModule', permissionsByModuleLS);
+          sessionStorage.setItem('token', token);
+          sessionStorage.setItem('whatsflow_token', token);
+
+          // Regenerar deviceId si no existe
+          let deviceId = sessionStorage.getItem('device_id');
+          if (!deviceId) {
+            deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            sessionStorage.setItem('device_id', deviceId);
+          }
+
+          console.log('✅ Sesión restaurada desde localStorage a sessionStorage');
+        } else {
+          // 🔧 FIX: PRIORIDAD 2 - Intentar sessionStorage (sesión temporal)
+          token = sessionStorage.getItem('token') || sessionStorage.getItem('whatsflow_token');
+
+          if (!token) {
+            // PRIORIDAD 3 - Intentar backup antiguo (compatibilidad)
+            const backupToken = localStorage.getItem('agent_token_backup');
+            const backupUserId = localStorage.getItem('agent_userId_backup');
+            const backupUserName = localStorage.getItem('agent_userName_backup');
+            const backupUserRole = localStorage.getItem('agent_userRole_backup');
+
+            if (backupToken && backupUserId) {
+              console.log('💾 Restaurando sesión desde backup antiguo...');
+              sessionStorage.setItem('token', backupToken);
+              sessionStorage.setItem('userId', backupUserId);
+              sessionStorage.setItem('userName', backupUserName || '');
+              sessionStorage.setItem('userRole', backupUserRole || 'agent');
+
+              // Regenerar deviceId si no existe
+              let deviceId = sessionStorage.getItem('device_id');
+              if (!deviceId) {
+                deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                sessionStorage.setItem('device_id', deviceId);
+              }
+
+              token = backupToken;
+              console.log('✅ Sesión restaurada desde backup antiguo');
             }
-
-            token = backupToken;
-            console.log('✅ Sesión restaurada desde backup');
           }
         }
 
@@ -110,7 +146,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             if (response.status === 401) {
               console.log('❌ Token expirado/inválido (401), limpiando sesión');
               sessionStorage.clear();
-              // Limpiar también backups de localStorage
+              // Limpiar también localStorage y backups
+              localStorage.removeItem('token');
+              localStorage.removeItem('whatsflow_token');
+              localStorage.removeItem('userRole');
+              localStorage.removeItem('userName');
+              localStorage.removeItem('userId');
+              localStorage.removeItem('sessionToken');
+              localStorage.removeItem('whatsflow_session');
+              localStorage.removeItem('userPermissions');
+              localStorage.removeItem('permissionsByModule');
               localStorage.removeItem('agent_token_backup');
               localStorage.removeItem('agent_userId_backup');
               localStorage.removeItem('agent_userName_backup');

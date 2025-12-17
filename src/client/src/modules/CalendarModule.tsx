@@ -220,15 +220,17 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
           // Normalizar el tiempo - puede venir como HH:mm o HH:mm:ss
           const timeStr = apt.appointment_time.includes(':') ? apt.appointment_time.substring(0, 5) : apt.appointment_time;
 
-          // Parsear fecha y hora manualmente para evitar conversiones de zona horaria
+          // 🔧 FIX: Parsear fecha y hora manualmente para evitar conversiones de zona horaria
+          // Usar componentes numéricos garantiza que Date se crea en zona horaria local
           const [year, month, day] = dateStr.split('-').map(Number);
           const [hour, minute] = timeStr.split(':').map(Number);
 
           // Crear Date en zona horaria local sin conversiones
-          const startDateTime = new Date(year, month - 1, day, hour, minute);
-          const endDateTime = new Date(year, month - 1, day, hour + 1, minute);
+          // IMPORTANTE: El mes en JavaScript es 0-indexado, por eso usamos (month - 1)
+          const startDateTime = new Date(year, month - 1, day, hour, minute, 0, 0);
+          const endDateTime = new Date(year, month - 1, day, hour + 1, minute, 0, 0);
 
-          console.log(`[CALENDAR] Loading event: ${apt.patient_name} - ${dateStr} ${timeStr} -> ${startDateTime.toLocaleString()}`);
+          console.log(`[CALENDAR] Loading event: ${apt.patient_name} - ${dateStr} ${timeStr} -> ${startDateTime.toLocaleString()} (Day: ${startDateTime.getDate()})`);
 
           // Obtener categoría si existe
           const category = categories.find(c => c.id === apt.category_id);

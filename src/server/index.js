@@ -20191,7 +20191,15 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            let query = `SELECT * FROM appointments WHERE session_id = ?`;
+            // 🔧 FIX: Usar DATE_FORMAT y TIME_FORMAT para evitar conversiones de zona horaria
+            let query = `SELECT 
+                id, session_id, patient_name, patient_phone, doctor_name, company_name, 
+                description, 
+                DATE_FORMAT(appointment_date, '%Y-%m-%d') as appointment_date,
+                TIME_FORMAT(appointment_time, '%H:%i') as appointment_time,
+                status, reminder_sent, notes, reminder_time, notification_template, category_id,
+                created_at, updated_at
+                FROM appointments WHERE session_id = ?`;
             const params = [phoneNumber];
 
             if (startDate && endDate) {

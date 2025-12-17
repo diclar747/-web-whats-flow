@@ -161,7 +161,7 @@ module.exports = function (app, pool) {
             const connection = await pool.getConnection();
 
             try {
-                let query = 'SELECT id, name, email, role, department, category, status, avatar_url, phone, last_login, created_at, session_id FROM users WHERE 1=1';
+                let query = 'SELECT id, name, email, role, department, category, status, agent_status, avatar_url, phone, last_login, created_at, session_id FROM users WHERE 1=1';
                 const params = [];
 
                 // FILTRO OBLIGATORIO: Cada usuario solo ve sus propios agentes
