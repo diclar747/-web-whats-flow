@@ -196,6 +196,36 @@ module.exports = function (app, pool) {
         }
     });
 
+    // Obtener perfil de un usuario específico
+    app.get('/api/users/:id/profile', async (req, res) => {
+        try {
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const { id } = req.params;
+            const connection = await pool.getConnection();
+
+            try {
+                const [users] = await connection.execute(
+                    'SELECT id, name, email, role, department, category, status, avatar_url, phone, last_login, created_at FROM users WHERE id = ?',
+                    [id]
+                );
+
+                if (users.length === 0) {
+                    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+                }
+
+                res.json({ success: true, user: users[0] });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error obteniendo perfil de usuario:', error);
+            res.status(500).json({ success: false, error: 'Error obteniendo perfil de usuario' });
+        }
+    });
+
     // Crear nuevo usuario
     app.post('/api/users', async (req, res) => {
         try {

@@ -11,6 +11,7 @@ interface TransferNotification {
   playSound: boolean;
   showNotification: boolean;
   timestamp: string;
+  note?: string; // Nota opcional del admin
 }
 
 export const useTransferNotifications = (socket: any, userId?: number) => {
@@ -71,9 +72,8 @@ export const useTransferNotifications = (socket: any, userId?: number) => {
     toast.custom(
       (t) => (
         <div
-          className={`${
-            t.visible ? 'animate-enter' : 'animate-leave'
-          } max-w-md w-full bg-white shadow-xl rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5 overflow-hidden`}
+          className={`${t.visible ? 'animate-enter' : 'animate-leave'
+            } max-w-md w-full bg-white shadow-xl rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5 overflow-hidden`}
           style={{
             animation: t.visible
               ? 'enter 0.3s ease-out'
@@ -92,6 +92,11 @@ export const useTransferNotifications = (socket: any, userId?: number) => {
                 <p className="mt-1 text-sm text-gray-700">
                   Chat con: <strong>{data.chatName}</strong>
                 </p>
+                {data.note && (
+                  <p className="mt-2 text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                    📝 {data.note}
+                  </p>
+                )}
                 <p className="mt-1 text-xs text-gray-500">
                   Transferido por Admin
                 </p>

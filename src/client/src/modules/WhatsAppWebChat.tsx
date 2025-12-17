@@ -443,10 +443,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     }
 
     // Si el mensaje ES de nosotros (from_me = true)
-    // Verificar si fue enviado por un agente
-    if (msg.agent_id && msg.agent_id !== 0) {
+    // Verificar si fue enviado por un agente (soportar ambos formatos: snake_case y camelCase)
+    const agentId = msg.agent_id || msg.agentId;
+    const agentName = msg.agent_name || msg.agentName;
+
+    if (agentId && agentId !== 0) {
       // Tiene agent_id válido, mostrar nombre del agente
-      return msg.agent_name || msg.agentName || `Agente ${msg.agent_id}`;
+      return agentName || `Agente ${agentId}`;
     }
 
     // Si no tiene agent_id o es 0, es el Admin
@@ -1369,64 +1372,64 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
             <StatusList sessionId={sessionId} />
           </Box>
         ) : (
-        <List
-          sx={{ flex: 1, overflow: 'auto', p: 0 }}
-          onScroll={(e) => {
-            const target = e.currentTarget;
-            if (
-              !isLoadingMoreChats &&
-              hasMoreChats &&
-              target.scrollHeight - target.scrollTop <= target.clientHeight + 50 // Umbral de 50px
-            ) {
-              console.log('📜 [SCROLL] Llegó al fondo, cargando más chats...');
-              if (loadChats) {
-                // Usar chats.length como offset
-                loadChats(sessionId, 'all', chats.length, true);
+          <List
+            sx={{ flex: 1, overflow: 'auto', p: 0 }}
+            onScroll={(e) => {
+              const target = e.currentTarget;
+              if (
+                !isLoadingMoreChats &&
+                hasMoreChats &&
+                target.scrollHeight - target.scrollTop <= target.clientHeight + 50 // Umbral de 50px
+              ) {
+                console.log('📜 [SCROLL] Llegó al fondo, cargando más chats...');
+                if (loadChats) {
+                  // Usar chats.length como offset
+                  loadChats(sessionId, 'all', chats.length, true);
+                }
               }
-            }
-          }}
-        >
-          {filteredChats.map((chat: any) => (
-            <ChatListItem
-              key={chat.id}
-              chat={chat}
-              activeChatId={activeChat?.id}
-              chatListCollapsed={chatListCollapsed}
-              colors={colors}
-              onSelect={async (c) => {
-                // Fijar el chat activo
-                setActiveChat?.(c);
-                // Cargar el historial del chat seleccionado
-                if (loadMessages) {
-                  await loadMessages(c.id);
-                }
-                // Marcar como leído si corresponde
-                if (c.unreadCount && c.unreadCount > 0 && markChatAsRead) {
-                  markChatAsRead(c.id);
-                }
-              }}
-              formatTime={formatTime}
-              sessionId={sessionId}
-            />
-          ))}
+            }}
+          >
+            {filteredChats.map((chat: any) => (
+              <ChatListItem
+                key={chat.id}
+                chat={chat}
+                activeChatId={activeChat?.id}
+                chatListCollapsed={chatListCollapsed}
+                colors={colors}
+                onSelect={async (c) => {
+                  // Fijar el chat activo
+                  setActiveChat?.(c);
+                  // Cargar el historial del chat seleccionado
+                  if (loadMessages) {
+                    await loadMessages(c.id);
+                  }
+                  // Marcar como leído si corresponde
+                  if (c.unreadCount && c.unreadCount > 0 && markChatAsRead) {
+                    markChatAsRead(c.id);
+                  }
+                }}
+                formatTime={formatTime}
+                sessionId={sessionId}
+              />
+            ))}
 
-          {/* Spinner de "Cargando más" al final de la lista */}
-          {isLoadingMoreChats && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-              <CircularProgress size={24} sx={{ color: colors.primary }} />
-            </Box>
-          )}
+            {/* Spinner de "Cargando más" al final de la lista */}
+            {isLoadingMoreChats && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+                <CircularProgress size={24} sx={{ color: colors.primary }} />
+              </Box>
+            )}
 
-          {/* Indicador de fin de lista (opcional, solo visible al final real) */}
-          {!hasMoreChats && chats.length > 0 && !chatListCollapsed && (
-            <Box sx={{ p: 2, textAlign: 'center', opacity: 0.5 }}>
-              <Typography variant="caption" color="textSecondary">
-                — Fin de los chats —
-              </Typography>
-            </Box>
-          )}
+            {/* Indicador de fin de lista (opcional, solo visible al final real) */}
+            {!hasMoreChats && chats.length > 0 && !chatListCollapsed && (
+              <Box sx={{ p: 2, textAlign: 'center', opacity: 0.5 }}>
+                <Typography variant="caption" color="textSecondary">
+                  — Fin de los chats —
+                </Typography>
+              </Box>
+            )}
 
-        </List>
+          </List>
         )}
       </Box>
 
@@ -2759,7 +2762,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 />
 
                 {activeChat && (
-                  <Paper sx={{ mt: 2, p: 2, bgcolor: '#f0f2f5' }}>
+                  <Paper sx={{ mt: 2, p: 2, bgcolor: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
                     <Typography variant="caption" color="textSecondary">Chat a transferir:</Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
                       <Avatar src={`${getAPIBaseURL()}/api/avatar/${sessionId}/${activeChat.id}`} sx={{ width: 32, height: 32 }}>

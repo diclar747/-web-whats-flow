@@ -103,11 +103,11 @@ const UsersModule: React.FC<UsersModuleProps> = ({ sessionId }) => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  
+
   // Estado para diálogo de privilegios
   const [openPrivilegesDialog, setOpenPrivilegesDialog] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<User | null>(null);
-  
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -220,12 +220,12 @@ const UsersModule: React.FC<UsersModuleProps> = ({ sessionId }) => {
 
       // Preparar datos para enviar - solo incluir campos con valores
       const dataToSend: any = { ...formData };
-      
+
       // Agregar sessionId para vincular agentes a su admin
       if (sessionId) {
         dataToSend.sessionId = sessionId;
       }
-      
+
       // Si estamos editando y la contraseña está vacía, eliminarla del objeto
       if (editingUser && !formData.password) {
         delete dataToSend.password;
@@ -1044,7 +1044,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ sessionId }) => {
               <Typography variant="subtitle2" gutterBottom>
                 Chat a Transferir:
               </Typography>
-              <Typography variant="body2" sx={{ bgcolor: '#f5f5f5', p: 2, borderRadius: 1 }}>
+              <Typography variant="body2" sx={{ bgcolor: 'rgba(99, 102, 241, 0.1)', p: 2, borderRadius: 1, border: '1px solid rgba(99, 102, 241, 0.3)' }}>
                 {selectedChat?.contact_name || selectedChat?.chat_jid}
               </Typography>
             </Box>
@@ -1098,13 +1098,13 @@ const UsersModule: React.FC<UsersModuleProps> = ({ sessionId }) => {
         </DialogTitle>
         <DialogContent>
           <Box sx={{ textAlign: 'center', py: 2 }}>
-            <Box sx={{ 
-              width: 60, 
-              height: 60, 
-              borderRadius: '50%', 
-              bgcolor: 'error.light', 
-              display: 'flex', 
-              alignItems: 'center', 
+            <Box sx={{
+              width: 60,
+              height: 60,
+              borderRadius: '50%',
+              bgcolor: 'error.light',
+              display: 'flex',
+              alignItems: 'center',
               justifyContent: 'center',
               margin: '0 auto 16px'
             }}>
@@ -1119,18 +1119,18 @@ const UsersModule: React.FC<UsersModuleProps> = ({ sessionId }) => {
           </Box>
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'center', gap: 1, px: 2, pb: 2 }}>
-          <Button 
-            onClick={cancelDeleteUser} 
-            variant="outlined" 
+          <Button
+            onClick={cancelDeleteUser}
+            variant="outlined"
             fullWidth
             sx={{ py: 1.5 }}
           >
             Cancelar
           </Button>
-          <Button 
-            onClick={confirmDeleteUser} 
-            variant="contained" 
-            color="error" 
+          <Button
+            onClick={confirmDeleteUser}
+            variant="contained"
+            color="error"
             fullWidth
             sx={{ py: 1.5 }}
           >
@@ -1140,14 +1140,14 @@ const UsersModule: React.FC<UsersModuleProps> = ({ sessionId }) => {
       </Dialog>
 
       {/* Diálogo de Gestión de Privilegios */}
-      <Dialog 
-        open={openPrivilegesDialog} 
+      <Dialog
+        open={openPrivilegesDialog}
         onClose={handleClosePrivileges}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle sx={{ 
-          bgcolor: 'primary.main', 
+        <DialogTitle sx={{
+          bgcolor: 'primary.main',
           color: 'white',
           display: 'flex',
           alignItems: 'center',
@@ -1160,15 +1160,15 @@ const UsersModule: React.FC<UsersModuleProps> = ({ sessionId }) => {
           <Alert severity="info" sx={{ mb: 2 }}>
             Gestión de privilegios para el agente <strong>{selectedAgent?.email}</strong>
           </Alert>
-          
+
           <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
             Aquí podrás configurar los permisos específicos del agente:
           </Typography>
 
           <Stack spacing={2}>
-            <Box sx={{ 
-              p: 2, 
-              border: '1px solid', 
+            <Box sx={{
+              p: 2,
+              border: '1px solid',
               borderColor: 'divider',
               borderRadius: 1
             }}>
@@ -1195,7 +1195,7 @@ const UsersModule: React.FC<UsersModuleProps> = ({ sessionId }) => {
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button 
+          <Button
             onClick={handleClosePrivileges}
             variant="contained"
             fullWidth

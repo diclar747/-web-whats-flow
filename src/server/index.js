@@ -2178,13 +2178,41 @@ async function saveMessageToDB(sessionId, msg) {
 
     const connection = await pool.getConnection();
     try {
+        // 🆕 DETERMINAR AGENTE AUTOMÁTICAMENTE si el mensaje es saliente
+        let detectedAgentId = msg.agent_id || null;
+        let detectedAgentName = msg.agent_name || null;
+
+        // Si el mensaje es enviado (from_me = true) y no tiene agente asignado
+        if (msg.from_me && !detectedAgentId) {
+            try {
+                // Buscar si hay un agente asignado a este chat
+                const [assignment] = await connection.execute(`
+                    SELECT u.id, u.name
+                    FROM chat_assignments ca
+                    JOIN users u ON ca.user_id = u.id
+                    WHERE ca.chat_jid = ? 
+                      AND ca.status = 'active'
+                    ORDER BY ca.assigned_at DESC
+                    LIMIT 1
+                `, [msg.chat_jid || msg.sender_jid]);
+
+                if (assignment.length > 0) {
+                    detectedAgentId = assignment[0].id;
+                    detectedAgentName = assignment[0].name;
+                    console.log(`[DB-MSG] ✅ Agente detectado: ${detectedAgentName} (ID: ${detectedAgentId})`);
+                } else {
+                    console.log(`[DB-MSG] ℹ️ No hay agente asignado, guardando como Admin`);
+                }
+            } catch (agentError) {
+                console.error('[DB-MSG] Error detectando agente:', agentError.message);
+            }
+        }
+
         const {
             id: messageId, // Baileys message ID
             chat_jid: rawChatJid, // JID of the chat (contact or group)
             sender_jid: rawSenderJid, // JID of the actual sender (can be different from chat_jid in groups)
             from_me,
-            agent_id = null, // ID del agente (opcional)
-            agent_name = null, // Nombre del agente (opcional)
             message_type,
             text_content,
             media_url,
@@ -2196,6 +2224,10 @@ async function saveMessageToDB(sessionId, msg) {
             status = 'sent', // Default status, can be updated later
             is_read = false // 🆕 Default is_read
         } = msg;
+
+        // Usar agentes detectados
+        const agent_id = detectedAgentId;
+        const agent_name = detectedAgentName;
 
         // Normalizar JIDs para eliminar sufijos de dispositivo/hilo
         let chat_jid = normalizeJid(rawChatJid);
@@ -6473,6 +6505,32 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 }
                             }
 
+                            // Obtener información del agente si el mensaje es enviado por nosotros
+                            let agentId = null;
+                            let agentName = null;
+                            if (dbMessage.from_me && pool && phoneNumber) {
+                                try {
+                                    const connection = await pool.getConnection();
+                                    try {
+                                        const [agentData] = await connection.execute(
+                                            `SELECT m.agent_id, m.agent_name 
+                                             FROM messages m 
+                                             WHERE m.id = ? AND m.session_id = ? 
+                                             LIMIT 1`,
+                                            [dbMessage.id, phoneNumber]
+                                        );
+                                        if (agentData[0]) {
+                                            agentId = agentData[0].agent_id;
+                                            agentName = agentData[0].agent_name;
+                                        }
+                                    } finally {
+                                        connection.release();
+                                    }
+                                } catch (err) {
+                                    console.error(`[${sessionId}] Error obteniendo datos del agente:`, err);
+                                }
+                            }
+
                             const clientMessage = {
                                 id: dbMessage.id,
                                 from: dbMessage.sender_jid,
@@ -6497,6 +6555,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 senderJid: dbMessage.sender_jid,
                                 sender_jid: dbMessage.sender_jid,
                                 sessionId: sessionId, // Agregar sessionId para validación
+                                // Información del agente
+                                agent_id: agentId,
+                                agent_name: agentName,
+                                agentId: agentId,
+                                agentName: agentName,
                                 // NUEVOS CAMPOS para nombre y avatar
                                 contactName: contactName,
                                 contact_name: contactName,
@@ -6527,7 +6590,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             // SIEMPRE emitir a ambas salas
                             io.to(`session-${sessionId}`).emit('message', clientMessage);
                             if (phoneNumber) {
-                                io.to(`session-${sessionId}`).emit('message', clientMessage);
+                                io.to(`session-${phoneNumber}`).emit('message', clientMessage);
                             }
 
                             // 🔥 EMITIR TAMBIÉN A AGENTES ASIGNADOS
@@ -10694,7 +10757,7 @@ app.get('/api/history/messages', async (req, res) => {
             type: msg.message_type,
             status: msg.status,
             agentId: msg.agent_id,
-            agentName: msg.agent_name || (msg.from_me && msg.agent_id ? 'Agente' : (msg.from_me ? 'Admin' : '-'))
+            agentName: msg.agent_name || null
         }));
 
         console.log(`[API-HISTORY] Returning ${historyMessages.length} messages, total: ${totalMessages}`);

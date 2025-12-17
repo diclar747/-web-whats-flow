@@ -1094,6 +1094,23 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                           </Typography>
                         )}
 
+                        {/* 🆕 Mostrar nombre del agente o "Admin" para mensajes salientes */}
+                        {msg.isFromMe && msg.agent_name && (
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: '#00a884',
+                              mr: 1,
+                              mb: 0.25,
+                              fontWeight: 500,
+                              alignSelf: 'flex-end',
+                              fontSize: '0.7rem'
+                            }}
+                          >
+                            {msg.agent_name}
+                          </Typography>
+                        )}
+
                         <div style={{ position: 'relative' }}>
                           <IconButton
                             size="small"

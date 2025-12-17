@@ -77,25 +77,25 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageText, setMessageText] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   // Transfer states
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [availableAgents, setAvailableAgents] = useState<any[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState('');
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
-  
+
   // Loading states
   const [loadingChats, setLoadingChats] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
-  
+
   // Pagination
   const [chatsPage, setChatsPage] = useState(1);
   const [messagesPage, setMessagesPage] = useState(1);
   const [hasMoreChats, setHasMoreChats] = useState(true);
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
-  
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -104,49 +104,49 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
   const chatsObserver = useRef<IntersectionObserver>();
   const messagesObserver = useRef<IntersectionObserver>();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3002';
   const token = sessionStorage.getItem('token') || '';
 
   // ============== LOAD CHATS ==============
   const loadChats = useCallback(async (page: number = 1, append: boolean = false) => {
     if (loadingChats) return;
-    
+
     setLoadingChats(true);
     try {
-      const endpoint = userRole === 'agent' 
+      const endpoint = userRole === 'agent'
         ? `/api/agent/chats?sessionId=${sessionId}&page=${page}&limit=20`
         : `/api/chats/${sessionId}?page=${page}&limit=20`;
-      
+
       const response = await fetch(`${apiUrl}${endpoint}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      
+
       if (!response.ok) throw new Error('Error loading chats');
-      
+
       const data = await response.json();
       let newChats: Chat[] = [];
-      
+
       // Handle different response formats
       if (data.chats) {
         newChats = data.chats;
       } else if (Array.isArray(data)) {
         newChats = data;
       }
-      
+
       // Sort by last message time
       newChats.sort((a: Chat, b: Chat) => {
         const timeA = new Date(a.last_message_time || 0).getTime();
         const timeB = new Date(b.last_message_time || 0).getTime();
         return timeB - timeA;
       });
-      
+
       if (append) {
         setChats(prev => [...prev, ...newChats]);
       } else {
         setChats(newChats);
       }
-      
+
       setHasMoreChats(newChats.length === 20);
     } catch (error) {
       console.error('Error loading chats:', error);
@@ -158,19 +158,19 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
   // ============== LOAD MESSAGES ==============
   const loadMessages = useCallback(async (chatJid: string, page: number = 1, append: boolean = false) => {
     if (loadingMessages) return;
-    
+
     setLoadingMessages(true);
     try {
       const response = await fetch(
         `${apiUrl}/api/messages/${sessionId}/${chatJid}?page=${page}&limit=50`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
-      
+
       if (!response.ok) throw new Error('Error loading messages');
-      
+
       const data = await response.json();
       const newMessages = data.messages || [];
-      
+
       if (append) {
         setMessages(prev => [...newMessages, ...prev]);
       } else {
@@ -178,7 +178,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
         // Scroll to bottom on initial load
         setTimeout(() => scrollToBottom(), 100);
       }
-      
+
       setHasMoreMessages(newMessages.length === 50);
     } catch (error) {
       console.error('Error loading messages:', error);
@@ -190,11 +190,11 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
   // ============== SEND MESSAGE ==============
   const handleSendMessage = async () => {
     if (!messageText.trim() || !selectedChat || sending) return;
-    
+
     setSending(true);
     const tempMessageText = messageText;
     const tempTimestamp = new Date().toISOString();
-    
+
     // AGREGAR MENSAJE OPTIMISTICAMENTE (aparece inmediatamente)
     const optimisticMessage: Message = {
       id: -1, // ID temporal negativo
@@ -205,17 +205,17 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
       media_url: undefined,
       sentBy: sessionStorage.getItem('userName') || undefined
     };
-    
+
     // Guardar referencia al índice del mensaje temporal
     setMessages(prev => [...prev, optimisticMessage]);
     setMessageText('');
     setTimeout(() => scrollToBottom(), 100);
-    
+
     try {
       // Obtener datos del usuario actual
       const userId = sessionStorage.getItem('userId');
       const userName = sessionStorage.getItem('userName');
-      
+
       const response = await fetch(`${apiUrl}/api/send/message`, {
         method: 'POST',
         headers: {
@@ -230,11 +230,11 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
           sentByName: userName
         })
       });
-      
+
       if (!response.ok) throw new Error('Error sending message');
-      
+
       const result = await response.json();
-      
+
       // REEMPLAZAR mensaje temporal con el mensaje real del servidor
       if (result.success && result.messageId) {
         setMessages(prev => {
@@ -247,7 +247,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
           return prev;
         });
       }
-      
+
     } catch (error) {
       console.error('Error sending message:', error);
       // REMOVER mensaje temporal si falla
@@ -271,14 +271,14 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
     setSending(true);
     const fileName = file.name;
     const tempTimestamp = new Date().toISOString();
-    
+
     // Determinar tipo de archivo
     const fileType = file.type.split('/')[0]; // image, video, audio, etc.
     let mediaType = 'document';
     if (fileType === 'image') mediaType = 'image';
     else if (fileType === 'video') mediaType = 'video';
     else if (fileType === 'audio') mediaType = 'audio';
-    
+
     // AGREGAR MENSAJE OPTIMISTICAMENTE
     const optimisticMessage: Message = {
       id: -1, // ID temporal
@@ -288,15 +288,15 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
       media_type: mediaType,
       media_url: URL.createObjectURL(file) // Preview local
     };
-    
+
     setMessages(prev => [...prev, optimisticMessage]);
     setTimeout(() => scrollToBottom(), 100);
-    
+
     try {
       // Obtener datos del usuario actual
       const userId = sessionStorage.getItem('userId');
       const userName = sessionStorage.getItem('userName');
-      
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('sessionId', sessionId);
@@ -321,17 +321,17 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
       // REEMPLAZAR mensaje temporal con el real
       if (data.success && data.messageId) {
         setMessages(prev => {
-          const tempIndex = prev.findIndex(msg => 
-            msg.id === -1 && 
-            msg.timestamp === tempTimestamp && 
+          const tempIndex = prev.findIndex(msg =>
+            msg.id === -1 &&
+            msg.timestamp === tempTimestamp &&
             msg.text_content === `📎 ${fileName}`
           );
           if (tempIndex !== -1) {
             const updated = [...prev];
-            updated[tempIndex] = { 
-              ...updated[tempIndex], 
+            updated[tempIndex] = {
+              ...updated[tempIndex],
               id: data.messageId,
-              media_url: data.mediaUrl || updated[tempIndex].media_url 
+              media_url: data.mediaUrl || updated[tempIndex].media_url
             };
             return updated;
           }
@@ -346,7 +346,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
     } catch (error) {
       console.error('Error sending file:', error);
       // REMOVER mensaje temporal si falla
-      setMessages(prev => prev.filter(msg => 
+      setMessages(prev => prev.filter(msg =>
         !(msg.id === -1 && msg.timestamp === tempTimestamp && msg.text_content === `📎 ${fileName}`)
       ));
       alert('Error enviando archivo');
@@ -393,7 +393,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
 
   const handleTransferChat = async () => {
     if (!selectedChat || !selectedAgentId) return;
-    
+
     try {
       const response = await fetch(`${apiUrl}/api/chats/transfer`, {
         method: 'POST',
@@ -408,7 +408,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
           fromAgentId: userId
         })
       });
-      
+
       const data = await response.json();
       if (data.success) {
         alert('Chat transferido exitosamente');
@@ -429,12 +429,12 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
   };
 
   // ============== INTERSECTION OBSERVERS ==============
-  
+
   // Observer for loading more chats
   const lastChatRef = useCallback((node: HTMLLIElement | null) => {
     if (loadingChats) return;
     if (chatsObserver.current) chatsObserver.current.disconnect();
-    
+
     chatsObserver.current = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting && hasMoreChats) {
         setChatsPage(prev => {
@@ -444,7 +444,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
         });
       }
     });
-    
+
     if (node) chatsObserver.current.observe(node);
   }, [loadingChats, hasMoreChats, loadChats]);
 
@@ -452,12 +452,12 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
   const firstMessageRef = useCallback((node: HTMLDivElement | null) => {
     if (loadingMessages) return;
     if (messagesObserver.current) messagesObserver.current.disconnect();
-    
+
     messagesObserver.current = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting && hasMoreMessages) {
         const container = messagesContainerRef.current;
         const scrollHeightBefore = container?.scrollHeight || 0;
-        
+
         setMessagesPage(prev => {
           const nextPage = prev + 1;
           if (selectedChat) {
@@ -472,7 +472,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
         });
       }
     });
-    
+
     if (node) messagesObserver.current.observe(node);
   }, [loadingMessages, hasMoreMessages, selectedChat, loadMessages]);
 
@@ -488,10 +488,10 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
   // ============== RENDER LINKS ==============
   const renderTextWithLinks = (text: string) => {
     if (!text) return null;
-    
+
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const parts = text.split(urlRegex);
-    
+
     return parts.map((part, index) => {
       if (part.match(urlRegex)) {
         return (
@@ -517,22 +517,22 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
   };
 
   // ============== SEARCH FILTER ==============
-  const filteredChats = chats.filter(chat => 
+  const filteredChats = chats.filter(chat =>
     chat.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     chat.jid?.includes(searchTerm)
   );
 
   // ============== EFFECTS ==============
-  
+
   // Initial load
   useEffect(() => {
     loadChats(1, false);
-    
+
     // Refresh chats every 30 seconds
     const interval = setInterval(() => {
       loadChats(1, false);
     }, 30000);
-    
+
     return () => clearInterval(interval);
   }, []);
 
@@ -542,37 +542,37 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
       query: { sessionId },
       transports: ['websocket', 'polling']
     });
-    
+
     socketRef.current = socket;
-    
+
     console.log('🔌 [OptimizedChat] Socket conectado para sessionId:', sessionId);
-    
+
     socket.on('connect', () => {
       console.log('🔌 [OptimizedChat] Socket.IO conectado:', socket.id);
       socket.emit('join-session', { sessionId });
     });
-    
+
     socket.on('message', (data: any) => {
       console.log('💬 [OptimizedChat] Mensaje recibido en tiempo real:', data);
-      
+
       // Obtener el JID del chat desde varios campos posibles
       const messageChatJid = data.chatJid || data.chat_jid || data.key?.remoteJid || data.from;
-      
+
       if (!messageChatJid) {
         console.warn('⚠️ [OptimizedChat] Mensaje sin chatJid, ignorando');
         return;
       }
-      
+
       // Construir el nuevo mensaje con todos los campos necesarios
       const messageId = data.id || data.key?.id || `msg-${Date.now()}`;
       const newMessage: Message = {
         id: messageId,
-        text_content: data.text_content || data.message || data.text || 
-                     data.message?.conversation || data.message?.extendedTextMessage?.text || 
-                     (data.media_type === 'image' ? '📷 Imagen' : 
-                      data.media_type === 'video' ? '🎥 Video' :
-                      data.media_type === 'audio' ? '🔊 Audio' :
-                      data.media_type === 'sticker' ? '🎨 Sticker' : ''),
+        text_content: data.text_content || data.message || data.text ||
+          data.message?.conversation || data.message?.extendedTextMessage?.text ||
+          (data.media_type === 'image' ? '📷 Imagen' :
+            data.media_type === 'video' ? '🎥 Video' :
+              data.media_type === 'audio' ? '🔊 Audio' :
+                data.media_type === 'sticker' ? '🎨 Sticker' : ''),
         from_me: Boolean(data.isFromMe || data.from_me || data.key?.fromMe),
         timestamp: data.timestamp || new Date().toISOString(),
         media_type: data.media_type || data.type,
@@ -581,23 +581,23 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
         agent_id: data.agent_id,  // 🔥 Incluir ID del agente
         agent_name: data.agent_name  // 🔥 Incluir nombre del agente
       };
-      
+
       // Si hay un chat seleccionado y el mensaje es para ese chat
       if (selectedChat && messageChatJid === selectedChat.jid) {
         console.log('✅ [OptimizedChat] Mensaje para el chat actual:', selectedChat.jid);
-        
+
         setMessages(prev => {
           // Verificar duplicados por ID
-          const messageExists = prev.some(msg => 
-            msg.id === newMessage.id || 
+          const messageExists = prev.some(msg =>
+            msg.id === newMessage.id ||
             (msg.timestamp === newMessage.timestamp && msg.text_content === newMessage.text_content)
           );
-          
+
           if (messageExists) {
             console.log('📝 [OptimizedChat] Mensaje duplicado, ignorando');
             return prev;
           }
-          
+
           console.log('➕ [OptimizedChat] Agregando mensaje nuevo');
           return [...prev, newMessage];
         });
@@ -605,25 +605,25 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
       } else {
         console.log('📭 [OptimizedChat] Mensaje para otro chat:', messageChatJid);
       }
-      
+
       // Actualizar lista de chats para mostrar el mensaje más reciente arriba
       setChats(prevChats => {
         const chatIndex = prevChats.findIndex(c => c.jid === messageChatJid);
-        
+
         if (chatIndex >= 0) {
           // Chat existe, moverlo al inicio
           const updatedChats = [...prevChats];
           const [movedChat] = updatedChats.splice(chatIndex, 1);
-          
+
           // Actualizar último mensaje y timestamp
           movedChat.last_message = newMessage.text_content;
           movedChat.last_message_time = newMessage.timestamp;
-          
+
           // Incrementar contador de no leídos solo si no es del usuario
           if (!newMessage.from_me) {
             movedChat.unread_count = (movedChat.unread_count || 0) + 1;
           }
-          
+
           return [movedChat, ...updatedChats];
         } else {
           // Chat nuevo, agregarlo al inicio
@@ -633,11 +633,11 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
         }
       });
     });
-    
+
     // Listener para actualización de estado de mensajes (entregado/visto)
     socket.on('message-status', (data: any) => {
       console.log('✓ [OptimizedChat] Actualización de estado:', data);
-      
+
       if (selectedChat && data.chatJid === selectedChat.jid) {
         setMessages(prev => prev.map(msg => {
           if (msg.id === data.messageId) {
@@ -647,15 +647,15 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
         }));
       }
     });
-    
+
     socket.on('disconnect', () => {
       console.log('🔌 [OptimizedChat] Socket desconectado');
     });
-    
+
     socket.on('error', (error: any) => {
       console.error('❌ [OptimizedChat] Error de socket:', error);
     });
-    
+
     return () => {
       console.log('🔌 [OptimizedChat] Cerrando socket');
       socket.disconnect();
@@ -720,7 +720,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
           {filteredChats.map((chat, index) => {
             const isLastChat = index === filteredChats.length - 1;
             const isSelected = selectedChat?.jid === chat.jid;
-            
+
             return (
               <React.Fragment key={chat.jid}>
                 <ListItem
@@ -739,7 +739,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                         </Avatar>
                       </Badge>
                     </ListItemAvatar>
-                    
+
                     <ListItemText
                       primary={
                         <Box display="flex" justifyContent="space-between" alignItems="center">
@@ -765,7 +765,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
               </React.Fragment>
             );
           })}
-          
+
           {loadingChats && (
             <Box display="flex" justifyContent="center" p={2}>
               <CircularProgress size={24} />
@@ -850,11 +850,11 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                   <CircularProgress size={20} />
                 </Box>
               )}
-              
+
               {messages.map((message, index) => {
                 const isFirstMessage = index === 0;
                 const isFromMe = message.from_me;
-                
+
                 return (
                   <Box
                     key={message.id}
@@ -888,20 +888,20 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                               }}
                             />
                           )}
-                          
+
                           {/* Audio */}
                           {(message.message_type === 'audioMessage' || message.media_type === 'audio') && message.media_url && (
                             <Box sx={{ width: '100%', minWidth: '250px' }}>
-                              <audio 
-                                controls 
+                              <audio
+                                controls
                                 style={{ width: '100%' }}
                                 preload="metadata"
                               >
-                                <source 
+                                <source
                                   src={message.media_url.startsWith('http') ? message.media_url : `${apiUrl}${message.media_url}`}
                                   type="audio/ogg"
                                 />
-                                <source 
+                                <source
                                   src={message.media_url.startsWith('http') ? message.media_url : `${apiUrl}${message.media_url}`}
                                   type="audio/mpeg"
                                 />
@@ -909,7 +909,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                               </audio>
                             </Box>
                           )}
-                          
+
                           {/* Video */}
                           {(message.message_type === 'videoMessage' || message.media_type === 'video') && message.media_url && (
                             <video
@@ -917,13 +917,13 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                               style={{ maxWidth: '100%', borderRadius: '8px' }}
                               preload="metadata"
                             >
-                              <source 
+                              <source
                                 src={message.media_url.startsWith('http') ? message.media_url : `${apiUrl}${message.media_url}`}
                               />
                               Tu navegador no soporta el elemento de video.
                             </video>
                           )}
-                          
+
                           {/* Documento */}
                           {(message.message_type === 'documentMessage' || message.media_type === 'document') && message.media_url && (
                             <Button
@@ -932,7 +932,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                               href={message.media_url.startsWith('http') ? message.media_url : `${apiUrl}${message.media_url}`}
                               target="_blank"
                               download
-                              sx={{ 
+                              sx={{
                                 textTransform: 'none',
                                 borderRadius: 2,
                                 borderColor: '#00a884',
@@ -946,7 +946,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                               📄 Descargar archivo
                             </Button>
                           )}
-                          
+
                           {/* Sticker */}
                           {message.message_type === 'stickerMessage' && message.media_url && (
                             <img
@@ -961,7 +961,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                           )}
                         </Box>
                       )}
-                      
+
                       {message.text_content && (
                         <Box>
                           <Typography variant="body2" sx={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}>
@@ -969,10 +969,10 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                           </Typography>
                           {/* Badge del agente/admin que envió el mensaje */}
                           {isFromMe && (message.agent_name || message.sentBy) && message.agent_id !== 0 && (
-                            <Chip 
+                            <Chip
                               label={`👤 ${message.agent_name || message.sentBy}`}
                               size="small"
-                              sx={{ 
+                              sx={{
                                 mt: 0.5,
                                 height: 22,
                                 fontSize: '0.75rem',
@@ -988,7 +988,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                           )}
                         </Box>
                       )}
-                      
+
                       <Typography
                         variant="caption"
                         sx={{
@@ -1005,13 +1005,13 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                   </Box>
                 );
               })}
-              
+
               {loadingMessages && messagesPage === 1 && (
                 <Box display="flex" justifyContent="center" alignItems="center" height="100%">
                   <CircularProgress />
                 </Box>
               )}
-              
+
               <div ref={messagesEndRef} />
             </Box>
 
@@ -1102,7 +1102,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
           <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
             Selecciona un agente para transferir este chat:
           </Typography>
-          
+
           {loadingAgents ? (
             <Box display="flex" justifyContent="center" py={3}>
               <CircularProgress />
@@ -1126,9 +1126,9 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                       <Box>
                         <Typography variant="body2">
                           {agent.name}
-                          <Chip 
-                            label={agent.role} 
-                            size="small" 
+                          <Chip
+                            label={agent.role}
+                            size="small"
                             sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
                             color={agent.role === 'admin' ? 'error' : agent.role === 'supervisor' ? 'warning' : 'primary'}
                           />
@@ -1151,7 +1151,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
           )}
 
           {selectedChat && (
-            <Paper sx={{ mt: 2, p: 2, bgcolor: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+            <Paper sx={{ mt: 2, p: 2, bgcolor: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
               <Typography variant="caption" color="textSecondary">
                 Chat a transferir:
               </Typography>

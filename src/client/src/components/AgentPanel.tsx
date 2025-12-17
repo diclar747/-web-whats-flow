@@ -81,13 +81,13 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  
+
   // Estados para transferencia de chat
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [selectedChat, setSelectedChat] = useState<ChatAssignment | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<number | ''>('');
   const [transferReason, setTransferReason] = useState('');
-  
+
   // Estados para ver mensajes
   const [viewMessagesDialogOpen, setViewMessagesDialogOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
@@ -107,9 +107,9 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
           'Authorization': `Bearer ${token}`
         }
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         setChats(data.chats || []);
       } else {
@@ -131,14 +131,14 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
           'Authorization': `Bearer ${token}`
         }
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         // Filtrar agentes activos que no sean el usuario actual
-        const availableAgents = data.users.filter((agent: any) => 
-          agent.id !== user.id && 
-          agent.status === 'active' && 
+        const availableAgents = data.users.filter((agent: any) =>
+          agent.id !== user.id &&
+          agent.status === 'active' &&
           ['agent', 'supervisor'].includes(agent.role)
         );
         setAgents(availableAgents);
@@ -199,7 +199,7 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
     try {
       setSelectedChat(chat);
       setViewMessagesDialogOpen(true);
-      
+
       // Aquí iría la lógica para cargar los mensajes del chat
       // Por ahora simulamos con datos de ejemplo
       const mockMessages = [
@@ -216,7 +216,7 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
           timestamp: new Date().toISOString()
         }
       ];
-      
+
       setChatMessages(mockMessages);
     } catch (error) {
       console.error('Error cargando mensajes:', error);
@@ -236,10 +236,10 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
         from_me: true,
         timestamp: new Date().toISOString()
       };
-      
+
       setChatMessages([...chatMessages, newMsg]);
       setNewMessage('');
-      
+
       // Aquí harías la llamada a la API para enviar el mensaje real
     } catch (error) {
       console.error('Error enviando mensaje:', error);
@@ -259,10 +259,10 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Box sx={{ 
-        mb: 4, 
-        display: 'flex', 
-        justifyContent: 'space-between', 
+      <Box sx={{
+        mb: 4,
+        display: 'flex',
+        justifyContent: 'space-between',
         alignItems: 'center',
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
         borderRadius: 3,
@@ -380,9 +380,9 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
             <Grid container spacing={3}>
               {chats.map((chat) => (
                 <Grid item xs={12} md={6} lg={4} key={chat.id}>
-                  <Card 
-                    elevation={3} 
-                    sx={{ 
+                  <Card
+                    elevation={3}
+                    sx={{
                       height: '100%',
                       border: '1px solid #e0e0e0',
                       '&:hover': {
@@ -399,19 +399,19 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
                           overlap="circular"
                           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                           badgeContent={
-                            <Box sx={{ 
-                              width: 12, 
-                              height: 12, 
-                              borderRadius: '50%', 
-                              bgcolor: chat.status === 'active' ? '#4caf50' : '#9e9e9e' 
+                            <Box sx={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: '50%',
+                              bgcolor: chat.status === 'active' ? '#4caf50' : '#9e9e9e'
                             }} />
                           }
                         >
-                          <Avatar 
-                            src={chat.avatar_url} 
-                            sx={{ 
-                              width: 56, 
-                              height: 56, 
+                          <Avatar
+                            src={chat.avatar_url}
+                            sx={{
+                              width: 56,
+                              height: 56,
                               bgcolor: '#2196f3',
                               fontSize: '1.5rem',
                               fontWeight: 600
@@ -431,9 +431,9 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
                       </Box>
 
                       <Box sx={{ mb: 2 }}>
-                        <Typography 
-                          variant="body2" 
-                          sx={{ 
+                        <Typography
+                          variant="body2"
+                          sx={{
                             color: '#64748b',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -452,7 +452,7 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
                         <Chip
                           label={`${chat.message_count || 0} mensajes`}
                           size="small"
-                          sx={{ 
+                          sx={{
                             bgcolor: '#e3f2fd',
                             color: '#1976d2',
                             fontWeight: 600
@@ -485,7 +485,7 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
                           variant="contained"
                           startIcon={<TransferWithinAStation />}
                           onClick={() => handleTransferChat(chat)}
-                          sx={{ 
+                          sx={{
                             flex: 1,
                             bgcolor: '#9c27b0',
                             '&:hover': { bgcolor: '#7b1fa2' }
@@ -525,7 +525,7 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
               <Typography variant="subtitle2" gutterBottom>
                 Chat a transferir:
               </Typography>
-              <Typography variant="body2" sx={{ bgcolor: 'rgba(255, 255, 255, 0.05)', p: 2, borderRadius: 1, border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+              <Typography variant="body2" sx={{ bgcolor: 'rgba(99, 102, 241, 0.1)', p: 2, borderRadius: 1, border: '1px solid rgba(99, 102, 241, 0.3)' }}>
                 {selectedChat.contact_name} ({selectedChat.contact_phone})
               </Typography>
             </Box>
@@ -560,10 +560,10 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
           <Button onClick={() => setTransferDialogOpen(false)}>
             Cancelar
           </Button>
-          <Button 
-            variant="contained" 
+          <Button
+            variant="contained"
             onClick={confirmTransferChat}
-            sx={{ 
+            sx={{
               bgcolor: '#9c27b0',
               '&:hover': { bgcolor: '#7b1fa2' }
             }}
@@ -574,10 +574,10 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
       </Dialog>
 
       {/* Diálogo de visualización de mensajes */}
-      <Dialog 
-        open={viewMessagesDialogOpen} 
-        onClose={() => setViewMessagesDialogOpen(false)} 
-        maxWidth="md" 
+      <Dialog
+        open={viewMessagesDialogOpen}
+        onClose={() => setViewMessagesDialogOpen(false)}
+        maxWidth="md"
         fullWidth
         sx={{ '& .MuiDialog-paper': { height: '80vh' } }}
       >
@@ -585,25 +585,25 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
           💬 Conversación con {selectedChat?.contact_name}
         </DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column' }}>
-          <Box sx={{ 
-            flex: 1, 
-            overflowY: 'auto', 
-            mb: 2, 
-            p: 2, 
+          <Box sx={{
+            flex: 1,
+            overflowY: 'auto',
+            mb: 2,
+            p: 2,
             bgcolor: '#f8fafc',
             borderRadius: 1,
             border: '1px solid #e2e8f0'
           }}>
             {chatMessages.map((message) => (
-              <Box 
+              <Box
                 key={message.id}
-                sx={{ 
-                  display: 'flex', 
+                sx={{
+                  display: 'flex',
                   justifyContent: message.from_me ? 'flex-end' : 'flex-start',
                   mb: 2
                 }}
               >
-                <Box sx={{ 
+                <Box sx={{
                   maxWidth: '70%',
                   bgcolor: message.from_me ? '#00a884' : '#ffffff',
                   color: message.from_me ? '#ffffff' : '#000000',
@@ -612,11 +612,11 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
                   boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
                 }}>
                   <Typography variant="body1">{message.text}</Typography>
-                  <Typography 
-                    variant="caption" 
-                    sx={{ 
-                      display: 'block', 
-                      mt: 1, 
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      display: 'block',
+                      mt: 1,
                       opacity: 0.7,
                       textAlign: message.from_me ? 'right' : 'left'
                     }}
@@ -649,7 +649,7 @@ const AgentPanel: React.FC<AgentPanelProps> = ({ user, token, onLogout }) => {
               variant="contained"
               onClick={handleSendMessage}
               disabled={!newMessage.trim()}
-              sx={{ 
+              sx={{
                 minWidth: 'auto',
                 bgcolor: '#00a884',
                 '&:hover': { bgcolor: '#008c6d' },

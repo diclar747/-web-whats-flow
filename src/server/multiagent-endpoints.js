@@ -540,6 +540,17 @@ module.exports = function (app, pool) {
                     WHERE chat_jid = ? AND session_id = ? AND status = 'active'
                 `, [chat_jid, session_id]);
 
+                // Obtener nombre del contacto
+                const [contactInfo] = await connection.execute(`
+                    SELECT COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as contact_name
+                    FROM (SELECT 1) as dummy
+                    LEFT JOIN contacts c ON c.jid = ? AND c.session_id = ?
+                    LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
+                    LIMIT 1
+                `, [chat_jid, chat_jid, session_id, chat_jid, session_id]);
+
+                const chatName = contactInfo[0]?.contact_name || chat_jid.replace('@s.whatsapp.net', '');
+
                 // Insertar mensaje de sistema
                 const systemMessageId = 'SYS-CLOSE-' + Date.now();
                 const systemContent = `🛑 Conversación finalizada por ${req.user.name}`;
@@ -563,8 +574,21 @@ module.exports = function (app, pool) {
                     isFromMe: true
                 });
 
-                // Emitir evento de cierre
-                io.emit('chat-closed', { chatJid: chat_jid, by: req.user.name });
+                // Emitir evento de cierre a la sala del admin
+                const closeEventData = {
+                    chatJid: chat_jid,
+                    chatName: chatName,
+                    sessionId: session_id,
+                    closedBy: req.user.name,
+                    closedById: req.user.id || req.user.dbId,
+                    timestamp: new Date().toISOString(),
+                    message: `${req.user.name} cerró la conversación con ${chatName}`
+                };
+
+                io.to(`session-${session_id}`).emit('conversation-closed', closeEventData);
+                io.emit('chat-closed', { chatJid: chat_jid, by: req.user.name }); // Legacy event
+
+                console.log(`✅ Chat ${chat_jid} cerrado por ${req.user.name}, evento emitido a session-${session_id}`);
 
                 res.json({ success: true, message: 'Chat cerrado correctamente' });
             } finally {
