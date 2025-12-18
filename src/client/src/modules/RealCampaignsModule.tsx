@@ -1231,9 +1231,13 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         }
       };
 
+      const token = sessionStorage.getItem('token');
       const createResponse = await fetch(`${getAPIBaseURL()}/api/campaigns/create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify(campaignPayload)
       });
 

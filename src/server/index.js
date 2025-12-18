@@ -10242,14 +10242,15 @@ app.get('/api/messages/:sessionId', async (req, res) => {
             m.id, m.session_id, m.user_session_id, m.chat_jid, m.sender_jid,
             m.from_me, m.message_type, m.text_content, m.media_url, m.media_mime_type,
             m.timestamp, m.status,
-            m.sender_name, m.sender_avatar,  -- 🆕 Campos de información del remitente
-            NULL as sentBy  -- No usar join si la tabla no existe
+            m.sender_name, m.sender_avatar,
+            m.agent_id, m.agent_name,
+            NULL as sentBy
         FROM messages m
-        WHERE (m.session_id = ? OR m.phone_number = ?)`;
+        WHERE(m.session_id = ? OR m.phone_number = ?)`;
         const queryParams = [phoneNumber, phoneNumber]; // Buscar por phone_number O session_id
 
         if (number) {
-            const chatJid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+            const chatJid = number.includes('@') ? number : `${number} @s.whatsapp.net`;
             query += ' AND m.chat_jid = ?';
             queryParams.push(chatJid);
         }
@@ -10291,16 +10292,16 @@ app.get('/api/messages/:sessionId', async (req, res) => {
         // MARCAR MENSAJES COMO LEÍDOS cuando se cargan (solo los recibidos, no los enviados)
         if (number && messagesFromDB.length > 0) {
             try {
-                const chatJid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+                const chatJid = number.includes('@') ? number : `${number} @s.whatsapp.net`;
                 await connection.execute(
                     `UPDATE messages SET is_read = true
                      WHERE chat_jid = ?
-                       AND (session_id = ? OR phone_number = ?)
+            AND(session_id = ? OR phone_number = ?)
                        AND from_me = false
                        AND COALESCE(is_read, false) = false`,
                     [chatJid, phoneNumber, phoneNumber]
                 );
-                console.log(`[API-MSG] ✓ Mensajes de ${chatJid} marcados como leídos`);
+                console.log(`[API - MSG] ✓ Mensajes de ${chatJid} marcados como leídos`);
             } catch (readErr) {
                 console.error('[API-MSG] Error marcando mensajes como leídos:', readErr);
             }
@@ -10351,7 +10352,7 @@ app.get('/api/messages/:sessionId', async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`[API-MSG] Error fetching messages for session ${sessionId}:`, error);
+        console.error(`[API - MSG] Error fetching messages for session ${sessionId}: `, error);
         res.status(500).json({ success: false, error: 'Failed to retrieve messages from database' });
     } finally {
         if (connection) connection.release();
@@ -10362,7 +10363,7 @@ app.get('/api/messages/:sessionId', async (req, res) => {
 app.post('/api/force-sync/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
 
-    console.log(`[API-SYNC] 🔄 Solicitud de sincronización forzada para sessionId: ${sessionId}`);
+    console.log(`[API - SYNC] 🔄 Solicitud de sincronización forzada para sessionId: ${sessionId} `);
 
     try {
         // Verificar que la sesión existe y está conectada
@@ -10383,7 +10384,7 @@ app.post('/api/force-sync/:sessionId', async (req, res) => {
             });
         }
 
-        console.log(`[API-SYNC] Iniciando sincronización para user_session_id: ${userSessionId}`);
+        console.log(`[API - SYNC] Iniciando sincronización para user_session_id: ${userSessionId} `);
 
         // Ejecutar sincronización
         const stats = await syncHistoricalData(sessionId, session.sock, userSessionId);
@@ -10399,7 +10400,7 @@ app.post('/api/force-sync/:sessionId', async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`[API-SYNC] ❌ Error en sincronización forzada:`, error);
+        console.error(`[API - SYNC] ❌ Error en sincronización forzada: `, error);
         res.status(500).json({
             success: false,
             error: 'Error durante la sincronización',
@@ -10424,17 +10425,17 @@ app.get('/api/chats/:sessionId', async (req, res) => {
     const isConnected = !!(session && session.isConnected);
 
     try {
-        console.log(`[API][${sessionId}] 📅 Solicitud de chats con filtro: ${dateFilter}. includeGroups: ${includeGroups} (FORZADO - grupos bloqueados)`);
+        console.log(`[API][${sessionId}] 📅 Solicitud de chats con filtro: ${dateFilter}.includeGroups: ${includeGroups} (FORZADO - grupos bloqueados)`);
 
         let chats = [];
         let source = 'database';
 
         // ⚡ PRIORIDAD 1: SIEMPRE cargar desde DB primero (es mucho más rápido)
-        console.log(`[API][${sessionId}] 🚀 Cargando chats desde BD (paginado: limit ${parsedLimit}, offset ${parsedOffset})...`);
+        console.log(`[API][${sessionId}] 🚀 Cargando chats desde BD(paginado: limit ${parsedLimit}, offset ${parsedOffset})...`);
         const startTime = Date.now();
         chats = await loadChatListFromDB(sessionId, includeGroups, dateFilter, parsedLimit, parsedOffset);
         const dbLoadTime = Date.now() - startTime;
-        console.log(`[API][${sessionId}] ✅ ${chats.length} chats cargados desde BD en ${dbLoadTime}ms`);
+        console.log(`[API][${sessionId}] ✅ ${chats.length} chats cargados desde BD en ${dbLoadTime} ms`);
 
         // 🚫 FILTRO ADICIONAL - Excluir el número propio del resultado
         const beforeFilter = chats.length;
@@ -10447,12 +10448,12 @@ app.get('/api/chats/:sessionId', async (req, res) => {
             return !isOwn;
         });
         if (chats.length < beforeFilter) {
-            console.log(`[API][${sessionId}] 🧹 Se removieron ${beforeFilter - chats.length} chats (número propio)`);
+            console.log(`[API][${sessionId}] 🧹 Se removieron ${beforeFilter - chats.length} chats(número propio)`);
         }
 
-        console.log(`[API][${sessionId}] ✅ RESULTADO FINAL: ${chats.length} chats para devolver al cliente (phoneNumber: "${phoneNumber}")`);
+        console.log(`[API][${sessionId}] ✅ RESULTADO FINAL: ${chats.length} chats para devolver al cliente(phoneNumber: "${phoneNumber}")`);
         if (chats.length > 0) {
-            console.log(`[API][${sessionId}] PRIMER CHAT: ${chats[0].id}`);
+            console.log(`[API][${sessionId}] PRIMER CHAT: ${chats[0].id} `);
         }
 
         source = 'database';
@@ -10473,7 +10474,7 @@ app.get('/api/chats/:sessionId', async (req, res) => {
                     memoryChats = Array.from(session.sock.store.chats || []);
                 }
 
-                console.log(`[API][${sessionId}] 📱 Chats en memoria: ${memoryChats.length}`);
+                console.log(`[API][${sessionId}] 📱 Chats en memoria: ${memoryChats.length} `);
 
                 // Filtrar y mapear chats
                 chats = memoryChats
@@ -10486,7 +10487,7 @@ app.get('/api/chats/:sessionId', async (req, res) => {
                         // 🚫 EXCLUIR PROPIO NÚMERO
                         const chatPhoneOnly = chat.id.split('@')[0];
                         if (chatPhoneOnly === phoneNumber) {
-                            console.log(`[API][${sessionId}] 🚫 Excluyendo propio número: ${phoneNumber}`);
+                            console.log(`[API][${sessionId}] 🚫 Excluyendo propio número: ${phoneNumber} `);
                             return false;
                         }
                         return true;
@@ -10511,7 +10512,7 @@ app.get('/api/chats/:sessionId', async (req, res) => {
                 source = 'memory';
                 console.log(`[API][${sessionId}] ✅ Devolviendo ${chats.length} chats desde MEMORIA`);
             } catch (memoryError) {
-                console.error(`[API][${sessionId}] ❌ Error obteniendo chats de memoria:`, memoryError);
+                console.error(`[API][${sessionId}] ❌ Error obteniendo chats de memoria: `, memoryError);
                 chats = [];
             }
         }
@@ -10530,7 +10531,7 @@ app.get('/api/chats/:sessionId', async (req, res) => {
             source
         });
     } catch (error) {
-        console.error(`[API][${sessionId}] Error cargando chats:`, error);
+        console.error(`[API][${sessionId}] Error cargando chats: `, error);
         res.status(500).json({
             success: false,
             error: 'Error interno del servidor al cargar chats.',
@@ -10545,7 +10546,7 @@ app.get('/api/chats/:sessionId', async (req, res) => {
 app.get('/api/chats-list/:sessionId', (req, res) => {
     // Redirigir al endpoint real que ya funciona
     // El cliente seguirá la redirección automáticamente
-    res.redirect(`/api/chats/${req.params.sessionId}?dateFilter=all`);
+    res.redirect(`/ api / chats / ${req.params.sessionId}?dateFilter = all`);
 });
 
 // Obtener mensajes de un chat específico
@@ -10645,7 +10646,7 @@ app.get('/api/messages', async (req, res) => {
         queryParams.push(parseInt(limit, 10));
         queryParams.push(parseInt(offset, 10));
 
-        console.log(`[MESSAGES] Ejecutando query para obtener mensajes (filtro: ${dateFilter}, límite: ${limit})`);
+        console.log(`[MESSAGES] Ejecutando query para obtener mensajes(filtro: ${dateFilter}, límite: ${limit})`);
 
         const [messagesDesc] = await connection.query(
             sqlQuery,
@@ -10687,7 +10688,7 @@ app.get('/api/messages', async (req, res) => {
 app.get('/api/history/messages', async (req, res) => {
     const { limit = 10000, offset = 0, sessionId, chatJid, startDate, endDate, direction, status: filterStatus } = req.query; // LÍMITE: 10,000 por defecto para cargar historial completo
 
-    console.log(`[API-HISTORY] Request for sessionId: ${sessionId}`);
+    console.log(`[API - HISTORY] Request for sessionId: ${sessionId} `);
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible.' });
@@ -10695,7 +10696,7 @@ app.get('/api/history/messages', async (req, res) => {
 
     // Obtener todos los session_ids válidos para este usuario
     const sessionIds = await getAllSessionIds(sessionId);
-    console.log(`[API-HISTORY] SessionIds found: ${sessionIds.join(', ')}`);
+    console.log(`[API - HISTORY] SessionIds found: ${sessionIds.join(', ')} `);
 
     const connection = await pool.getConnection();
     try {
@@ -10707,18 +10708,18 @@ app.get('/api/history/messages', async (req, res) => {
         const primarySessionId = sessionIds[0];
 
         let query = `SELECT m.id, m.session_id, m.chat_jid,
-                     COALESCE(c.name, c.notify_name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as chat_name,
-                     m.sender_jid,
-                     COALESCE(s.name, s.notify_name, SUBSTRING_INDEX(m.sender_jid, '@', 1)) as sender_name,
-                     m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status
+    COALESCE(c.name, c.notify_name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as chat_name,
+    m.sender_jid,
+    COALESCE(s.name, s.notify_name, SUBSTRING_INDEX(m.sender_jid, '@', 1)) as sender_name,
+    m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status
                      FROM messages m
                      LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = ?
-                     LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id = ?
-                     WHERE (m.session_id IN (${placeholders}) OR m.phone_number IN (${placeholders}))`;
+    LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id = ?
+        WHERE(m.session_id IN(${placeholders}) OR m.phone_number IN(${placeholders}))`;
         const queryParams = [primarySessionId, primarySessionId, ...sessionIds, ...sessionIds];
 
         if (chatJid) {
-            const fullChatJid = chatJid.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`;
+            const fullChatJid = chatJid.includes('@') ? chatJid : `${chatJid} @s.whatsapp.net`;
             query += ' AND m.chat_jid = ?';
             queryParams.push(fullChatJid);
         }
@@ -10773,7 +10774,7 @@ app.get('/api/history/messages', async (req, res) => {
             agentName: msg.agent_name || null
         }));
 
-        console.log(`[API-HISTORY] Returning ${historyMessages.length} messages, total: ${totalMessages}`);
+        console.log(`[API - HISTORY] Returning ${historyMessages.length} messages, total: ${totalMessages} `);
 
         res.json({
             success: true,
@@ -10788,7 +10789,7 @@ app.get('/api/history/messages', async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`[API-HISTORY] Error fetching history messages:`, error);
+        console.error(`[API - HISTORY] Error fetching history messages: `, error);
         res.status(500).json({ success: false, error: 'Error al obtener historial de mensajes.' });
     } finally {
         if (connection) connection.release();
@@ -10821,25 +10822,25 @@ app.get('/api/history/full/:sessionId', async (req, res) => {
         try {
             // Consultar todos los mensajes para este número de teléfono
             const [messages] = await connection.execute(
-                `SELECT 
-                    m.id,
-                    m.chat_jid,
-                    c.name as chat_name,
-                    m.sender_jid,
-                    s.name as sender_name,
-                    m.from_me,
-                    m.message_type,
-                    m.text_content,
-                    m.media_url,
-                    m.media_mime_type,
-                    m.timestamp,
-                    m.status
+                `SELECT
+m.id,
+    m.chat_jid,
+    c.name as chat_name,
+    m.sender_jid,
+    s.name as sender_name,
+    m.from_me,
+    m.message_type,
+    m.text_content,
+    m.media_url,
+    m.media_mime_type,
+    m.timestamp,
+    m.status
                 FROM messages m
                 LEFT JOIN contacts c ON m.chat_jid = c.jid
                 LEFT JOIN contacts s ON m.sender_jid = s.jid
                 WHERE m.session_id = ?
-                ORDER BY m.timestamp DESC
-                LIMIT ? OFFSET ?`,
+    ORDER BY m.timestamp DESC
+LIMIT ? OFFSET ? `,
                 [phoneNumber, parseInt(limit, 10), parseInt(offset, 10)]
             );
 
@@ -10878,7 +10879,7 @@ app.get('/api/history/full/:sessionId', async (req, res) => {
             if (connection) connection.release();
         }
     } catch (error) {
-        console.error(`[API-HISTORY-FULL] Error obteniendo historial completo para sesión ${sessionId}:`, error);
+        console.error(`[API - HISTORY - FULL] Error obteniendo historial completo para sesión ${sessionId}: `, error);
         res.status(500).json({
             success: false,
             error: 'Error interno del servidor al obtener historial completo'
@@ -10894,7 +10895,7 @@ async function getDashboardStats(sessionId) {
         // Si no hay sesión activa en memoria, usar el sessionId directamente (podría ser ya el número de teléfono)
         const sessionFilter = phoneNumber || sessionId;
 
-        console.log(`[STATS] Obteniendo estadísticas para: ${sessionFilter}`);
+        console.log(`[STATS] Obteniendo estadísticas para: ${sessionFilter} `);
 
         if (!pool && !memoryStorage.isMemoryMode) {
             return {
@@ -10946,16 +10947,16 @@ async function getDashboardStats(sessionId) {
                 // CONSULTA 1: Todas las estadísticas de mensajes en una sola query
                 const [mensajesStats] = await connection.execute(
                     `SELECT
-                        COUNT(*) as total,
-                        SUM(CASE WHEN DATE(timestamp) = CURDATE() THEN 1 ELSE 0 END) as hoy,
-                        SUM(CASE WHEN DATE(timestamp) = CURDATE() AND from_me = TRUE THEN 1 ELSE 0 END) as enviados_hoy,
-                        SUM(CASE WHEN DATE(timestamp) = CURDATE() AND from_me = FALSE THEN 1 ELSE 0 END) as recibidos_hoy,
-                        SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END) as vistos,
-                        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pendientes,
-                        SUM(CASE WHEN from_me = 0 AND is_read = 0 THEN 1 ELSE 0 END) as no_leidos,
-                        COUNT(DISTINCT CASE WHEN timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN chat_jid END) as chats_activos
+COUNT(*) as total,
+    SUM(CASE WHEN DATE(timestamp) = CURDATE() THEN 1 ELSE 0 END) as hoy,
+    SUM(CASE WHEN DATE(timestamp) = CURDATE() AND from_me = TRUE THEN 1 ELSE 0 END) as enviados_hoy,
+    SUM(CASE WHEN DATE(timestamp) = CURDATE() AND from_me = FALSE THEN 1 ELSE 0 END) as recibidos_hoy,
+    SUM(CASE WHEN status = 'read' THEN 1 ELSE 0 END) as vistos,
+    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pendientes,
+    SUM(CASE WHEN from_me = 0 AND is_read = 0 THEN 1 ELSE 0 END) as no_leidos,
+    COUNT(DISTINCT CASE WHEN timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN chat_jid END) as chats_activos
                     FROM messages
-                    WHERE session_id = ?`,
+                    WHERE session_id = ? `,
                     [sessionFilter]
                 );
 
@@ -10981,7 +10982,7 @@ async function getDashboardStats(sessionId) {
                 const [grupos] = await connection.execute(
                     `SELECT COUNT(*) as grupos
                     FROM contact_groups
-                    WHERE session_id = ?`,
+                    WHERE session_id = ? `,
                     [sessionFilter]
                 );
 
@@ -10991,9 +10992,9 @@ async function getDashboardStats(sessionId) {
                 // CONSULTA 3: Campañas globales
                 const [campanas] = await connection.execute(
                     `SELECT
-                        COUNT(*) as total,
-                        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as activas,
-                        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pendientes
+COUNT(*) as total,
+    SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as activas,
+    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pendientes
                     FROM campaigns`
                 );
                 stats.campanasTotales = campanas[0].total || 0;
@@ -11003,14 +11004,14 @@ async function getDashboardStats(sessionId) {
                 // CONSULTA 4: Agentes y líneas activas (datos globales)
                 const [globales] = await connection.execute(
                     `SELECT
-                        (SELECT COUNT(*) FROM users WHERE status = 'active') as agentes,
-                        (SELECT COUNT(*) FROM user_sessions WHERE is_active = 1) as lineas
+    (SELECT COUNT(*) FROM users WHERE status = 'active') as agentes,
+    (SELECT COUNT(*) FROM user_sessions WHERE is_active = 1) as lineas
                     FROM DUAL`
                 );
                 stats.agentesActivos = globales[0].agentes || 0;
                 stats.lineasActivas = globales[0].lineas || 0;
 
-                console.log(`[STATS] Estadísticas calculadas para: ${sessionFilter}:`, stats);
+                console.log(`[STATS] Estadísticas calculadas para: ${sessionFilter}: `, stats);
 
             } finally {
                 connection.release();
@@ -11044,7 +11045,7 @@ async function getDashboardStats(sessionId) {
         };
 
     } catch (error) {
-        console.error(`[STATS] Error obteniendo estadísticas para ${sessionId}:`, error);
+        console.error(`[STATS] Error obteniendo estadísticas para ${sessionId}: `, error);
         return {
             success: false,
             error: 'Error al obtener estadísticas',
@@ -11058,11 +11059,11 @@ function emitDashboardStats(sessionId) {
     getDashboardStats(sessionId).then(data => {
         if (data.success) {
             // Emitir a la sesión específica
-            io.emit(`dashboard-stats-${sessionId}`, data.stats);
-            console.log(`[SOCKET] 📊 Estadísticas emitidas para sesión: ${sessionId}`);
+            io.emit(`dashboard - stats - ${sessionId} `, data.stats);
+            console.log(`[SOCKET] 📊 Estadísticas emitidas para sesión: ${sessionId} `);
         }
     }).catch(err => {
-        console.error(`[SOCKET] Error emitiendo estadísticas para ${sessionId}:`, err);
+        console.error(`[SOCKET] Error emitiendo estadísticas para ${sessionId}: `, err);
     });
 }
 
@@ -11074,12 +11075,12 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
     const { page = 0, limit = 999999, search = '' } = req.query; // Sin límite por defecto (999999 = todos)
 
-    console.log(`[API-CONTACTS] ========================================`);
-    console.log(`[API-CONTACTS] 🔍 BÚSQUEDA DE CONTACTOS`);
-    console.log(`[API-CONTACTS] SessionId: ${sessionId}`);
-    console.log(`[API-CONTACTS] Page: ${page}, Limit: ${limit}`);
-    console.log(`[API-CONTACTS] Search term: "${search}"`);
-    console.log(`[API-CONTACTS] ========================================`);
+    console.log(`[API - CONTACTS] ========================================`);
+    console.log(`[API - CONTACTS] 🔍 BÚSQUEDA DE CONTACTOS`);
+    console.log(`[API - CONTACTS] SessionId: ${sessionId} `);
+    console.log(`[API - CONTACTS] Page: ${page}, Limit: ${limit} `);
+    console.log(`[API - CONTACTS] Search term: "${search}"`);
+    console.log(`[API - CONTACTS] ========================================`);
 
     if (!pool) {
         return res.status(503).json({
@@ -11091,10 +11092,10 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
     try {
         // Obtener todos los session_ids válidos para este usuario
         const sessionIds = await getAllSessionIds(sessionId);
-        console.log(`[API-CONTACTS] SessionIds found: ${sessionIds.join(', ')}`);
+        console.log(`[API - CONTACTS] SessionIds found: ${sessionIds.join(', ')} `);
 
         if (!sessionIds || sessionIds.length === 0) {
-            console.log(`[API-CONTACTS] No sessionIds found for: ${sessionId}`);
+            console.log(`[API - CONTACTS] No sessionIds found for: ${sessionId} `);
             return res.status(400).json({
                 success: false,
                 error: 'No se pudo obtener información de la sesión'
@@ -11106,8 +11107,8 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
             // Obtener todos los phone_numbers asociados a estos sessionIds
             const [userSessions] = await connection.execute(
                 `SELECT DISTINCT phone_number FROM user_sessions
-                 WHERE phone_number IN (${sessionIds.map(() => '?').join(',')})
-                    OR session_id IN (${sessionIds.map(() => '?').join(',')})`,
+                 WHERE phone_number IN(${sessionIds.map(() => '?').join(',')})
+                    OR session_id IN(${sessionIds.map(() => '?').join(',')})`,
                 [...sessionIds, ...sessionIds]
             );
 
@@ -11119,7 +11120,7 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
                 }
             });
 
-            console.log(`[API-CONTACTS] Expanded sessionIds: ${allSessionIds.join(', ')}`);
+            console.log(`[API - CONTACTS] Expanded sessionIds: ${allSessionIds.join(', ')} `);
 
             // Construir placeholders para IN clause
             const placeholders = allSessionIds.map(() => '?').join(',');
@@ -11128,19 +11129,19 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
             let searchCondition = '';
             let searchParams = [];
             if (search && search.trim() !== '') {
-                searchCondition = ` AND (name LIKE ? OR notify_name LIKE ? OR jid LIKE ?)`;
-                const searchTerm = `%${search}%`;
+                searchCondition = ` AND(name LIKE ? OR notify_name LIKE ? OR jid LIKE ?)`;
+                const searchTerm = `% ${search}% `;
                 searchParams = [searchTerm, searchTerm, searchTerm];
-                console.log(`[API-CONTACTS] 🔎 Aplicando búsqueda: "${searchTerm}"`);
+                console.log(`[API - CONTACTS] 🔎 Aplicando búsqueda: "${searchTerm}"`);
             } else {
-                console.log(`[API-CONTACTS] ℹ️ Sin término de búsqueda - Listando todos`);
+                console.log(`[API - CONTACTS] ℹ️ Sin término de búsqueda - Listando todos`);
             }
 
             // Primero obtener el total de contactos (sin paginación)
             const [totalResult] = await connection.execute(
                 `SELECT COUNT(*) as total
                 FROM contacts
-                WHERE session_id IN (${placeholders}) AND jid LIKE '%@s.whatsapp.net'${searchCondition}`,
+                WHERE session_id IN(${placeholders}) AND jid LIKE '%@s.whatsapp.net'${searchCondition} `,
                 [...allSessionIds, ...searchParams]
             );
             const totalContacts = totalResult[0].total;
@@ -11152,17 +11153,17 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
             // 🆕 Ordenar por última actualización (updated_at) - Los más recientes al final, antiguos primero
             const [contacts] = await connection.execute(
                 `SELECT
-                    jid,
-                    name,
-                    notify_name,
-                    avatar_url,
-                    session_id,
-                    created_at,
-                    updated_at
+jid,
+    name,
+    notify_name,
+    avatar_url,
+    session_id,
+    created_at,
+    updated_at
                 FROM contacts
-                WHERE session_id IN (${placeholders}) AND jid LIKE '%@s.whatsapp.net'${searchCondition}
+                WHERE session_id IN(${placeholders}) AND jid LIKE '%@s.whatsapp.net'${searchCondition}
                 ORDER BY created_at ASC, updated_at ASC, name ASC
-                LIMIT ? OFFSET ?`,
+LIMIT ? OFFSET ? `,
                 [...allSessionIds, ...searchParams, parseInt(limit), offset]
             );
 
@@ -11180,9 +11181,9 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
                 updatedAt: contact.updated_at
             }));
 
-            console.log(`[API-CONTACTS] ✅ Resultados encontrados: ${contacts.length} de ${totalContacts} total`);
+            console.log(`[API - CONTACTS] ✅ Resultados encontrados: ${contacts.length} de ${totalContacts} total`);
             if (search && search.trim() !== '' && contacts.length > 0) {
-                console.log(`[API-CONTACTS] 📋 Primeros resultados: ${contacts.slice(0, 3).map(c => c.name || c.notify_name).join(', ')}`);
+                console.log(`[API - CONTACTS] 📋 Primeros resultados: ${contacts.slice(0, 3).map(c => c.name || c.notify_name).join(', ')} `);
             }
 
             res.json({
@@ -11198,7 +11199,7 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
             if (connection) connection.release();
         }
     } catch (error) {
-        console.error(`[API-CONTACTS] Error obteniendo contactos para sesión ${sessionId}:`, error);
+        console.error(`[API - CONTACTS] Error obteniendo contactos para sesión ${sessionId}: `, error);
         res.status(500).json({
             success: false,
             error: 'Error interno del servidor al obtener contactos'
@@ -11232,8 +11233,8 @@ app.get('/api/groups/:sessionId', async (req, res) => {
             // Obtener todos los phone_numbers asociados a estos sessionIds
             const [userSessions] = await connection.execute(
                 `SELECT DISTINCT phone_number FROM user_sessions 
-                 WHERE phone_number IN (${sessionIds.map(() => '?').join(',')}) 
-                    OR session_id IN (${sessionIds.map(() => '?').join(',')})`,
+                 WHERE phone_number IN(${sessionIds.map(() => '?').join(',')}) 
+                    OR session_id IN(${sessionIds.map(() => '?').join(',')})`,
                 [...sessionIds, ...sessionIds]
             );
 
@@ -11245,7 +11246,7 @@ app.get('/api/groups/:sessionId', async (req, res) => {
                 }
             });
 
-            console.log(`[API-GROUPS] Expanded sessionIds: ${allSessionIds.join(', ')}`);
+            console.log(`[API - GROUPS] Expanded sessionIds: ${allSessionIds.join(', ')} `);
 
             // Construir placeholders para IN clause
             const placeholders = allSessionIds.map(() => '?').join(',');
@@ -11253,16 +11254,16 @@ app.get('/api/groups/:sessionId', async (req, res) => {
             // Consultar grupos desde contact_groups
             const [groups] = await connection.execute(
                 `SELECT
-                    jid,
-                    name,
-                    avatar_url,
-                    session_id,
-                    description,
-                    participants_count,
-                    created_at,
-                    updated_at
+jid,
+    name,
+    avatar_url,
+    session_id,
+    description,
+    participants_count,
+    created_at,
+    updated_at
                 FROM contact_groups
-                WHERE session_id IN (${placeholders})
+                WHERE session_id IN(${placeholders})
                 ORDER BY created_at DESC, name ASC`,
                 allSessionIds
             );
@@ -11274,12 +11275,12 @@ app.get('/api/groups/:sessionId', async (req, res) => {
                 // Obtener el conteo actualizado desde contact_group_members
                 try {
                     const [memberRows] = await connection.execute(
-                        `SELECT COUNT(*) as count FROM contact_group_members WHERE group_jid = ? AND session_id IN (${placeholders})`,
+                        `SELECT COUNT(*) as count FROM contact_group_members WHERE group_jid = ? AND session_id IN(${placeholders})`,
                         [group.jid, ...allSessionIds]
                     );
                     memberCount = memberRows[0]?.count || memberCount;
                 } catch (err) {
-                    console.error(`[API-GROUPS] Error obteniendo miembros de grupo ${group.jid}:`, err.message);
+                    console.error(`[API - GROUPS] Error obteniendo miembros de grupo ${group.jid}: `, err.message);
                 }
 
                 return {
@@ -11310,7 +11311,7 @@ app.get('/api/groups/:sessionId', async (req, res) => {
             if (connection) connection.release();
         }
     } catch (error) {
-        console.error(`[API-GROUPS] Error obteniendo grupos para sesión ${sessionId}:`, error);
+        console.error(`[API - GROUPS] Error obteniendo grupos para sesión ${sessionId}: `, error);
         res.status(500).json({
             success: false,
             error: 'Error interno del servidor al obtener grupos'
@@ -11346,18 +11347,18 @@ app.get('/api/group-contacts/:sessionId/:groupId', async (req, res) => {
         try {
             const metadata = await session.sock.groupMetadata(groupId);
 
-            console.log(`[API-GROUP-CONTACTS] Grupo: ${metadata.subject}, Participantes: ${metadata.participants?.length || 0}`);
+            console.log(`[API - GROUP - CONTACTS] Grupo: ${metadata.subject}, Participantes: ${metadata.participants?.length || 0} `);
 
             // Debug: Ver estructura completa de TODOS los participantes
             if (metadata.participants && metadata.participants.length > 0) {
-                console.log(`[API-GROUP-PARTICIPANTS] ========== DEBUG METADATA ==========`);
-                console.log(`[API-GROUP-PARTICIPANTS] Grupo: ${metadata.subject || metadata.id}`);
-                console.log(`[API-GROUP-PARTICIPANTS] Total participantes: ${metadata.participants.length}`);
-                console.log(`[API-GROUP-PARTICIPANTS] Primeros 3 participantes COMPLETOS:`);
+                console.log(`[API - GROUP - PARTICIPANTS] ========== DEBUG METADATA ==========`);
+                console.log(`[API - GROUP - PARTICIPANTS] Grupo: ${metadata.subject || metadata.id} `);
+                console.log(`[API - GROUP - PARTICIPANTS] Total participantes: ${metadata.participants.length} `);
+                console.log(`[API - GROUP - PARTICIPANTS] Primeros 3 participantes COMPLETOS: `);
                 metadata.participants.slice(0, 3).forEach((p, i) => {
-                    console.log(`[API-GROUP-PARTICIPANTS] Participante ${i + 1}:`, JSON.stringify(p, null, 2));
+                    console.log(`[API - GROUP - PARTICIPANTS] Participante ${i + 1}: `, JSON.stringify(p, null, 2));
                 });
-                console.log(`[API-GROUP-PARTICIPANTS] ====================================`);
+                console.log(`[API - GROUP - PARTICIPANTS] ==================================== `);
             }
 
             // Obtener conexión a la base de datos para buscar nombres
@@ -11372,7 +11373,7 @@ app.get('/api/group-contacts/:sessionId/:groupId', async (req, res) => {
                     let phone = jid.split('@')[0];
                     let name = phone;
 
-                    console.log(`[API-GROUP-CONTACTS] Participante JID: ${jid}, Phone: ${phone}`);
+                    console.log(`[API - GROUP - CONTACTS] Participante JID: ${jid}, Phone: ${phone} `);
 
                     // Si es LID, intentar resolver primero
                     if (jid.includes('@lid')) {
@@ -11380,9 +11381,9 @@ app.get('/api/group-contacts/:sessionId/:groupId', async (req, res) => {
                         if (lidInfo) {
                             phone = lidInfo.phone_number || phone;
                             name = lidInfo.name || lidInfo.notify_name || phone;
-                            console.log(`[API-GROUP-CONTACTS] LID resuelto: ${jid} -> ${phone} (${name})`);
+                            console.log(`[API - GROUP - CONTACTS] LID resuelto: ${jid} -> ${phone} (${name})`);
                         } else {
-                            console.log(`[API-GROUP-CONTACTS] LID no resuelto aún: ${jid}`);
+                            console.log(`[API - GROUP - CONTACTS] LID no resuelto aún: ${jid} `);
                         }
                     }
 
@@ -11391,15 +11392,15 @@ app.get('/api/group-contacts/:sessionId/:groupId', async (req, res) => {
                         const [memberRows] = await connection.execute(
                             `SELECT phone_number, name, notify_name 
                              FROM contact_group_members 
-                             WHERE contact_jid = ? AND group_jid = ? AND session_id = ? 
-                             LIMIT 1`,
+                             WHERE contact_jid = ? AND group_jid = ? AND session_id = ?
+    LIMIT 1`,
                             [jid, groupId, phoneNumber]
                         );
 
                         if (memberRows.length > 0 && memberRows[0].phone_number) {
                             phone = memberRows[0].phone_number;
                             name = memberRows[0].name || memberRows[0].notify_name || phone;
-                            console.log(`[API-GROUP-CONTACTS] Encontrado en members: ${jid} -> ${phone} (${name})`);
+                            console.log(`[API - GROUP - CONTACTS] Encontrado en members: ${jid} -> ${phone} (${name})`);
                         } else {
                             // Si no está en members, buscar en contacts
                             const [contactRows] = await connection.execute(
@@ -11422,7 +11423,7 @@ app.get('/api/group-contacts/:sessionId/:groupId', async (req, res) => {
                             }
                         }
                     } catch (dbError) {
-                        console.error(`[API-GROUP-CONTACTS] Error buscando contacto ${jid}:`, dbError);
+                        console.error(`[API - GROUP - CONTACTS] Error buscando contacto ${jid}: `, dbError);
                     }
 
                     return {
@@ -11439,7 +11440,7 @@ app.get('/api/group-contacts/:sessionId/:groupId', async (req, res) => {
 
                 connection.release();
             } catch (dbError) {
-                console.error(`[API-GROUP-CONTACTS] Error con base de datos:`, dbError);
+                console.error(`[API - GROUP - CONTACTS] Error con base de datos: `, dbError);
                 if (connection) connection.release();
                 throw dbError;
             }
@@ -11452,7 +11453,7 @@ app.get('/api/group-contacts/:sessionId/:groupId', async (req, res) => {
             });
 
         } catch (metadataError) {
-            console.error(`[API-GROUP-CONTACTS] Error obteniendo metadata del grupo ${groupId}:`, metadataError);
+            console.error(`[API - GROUP - CONTACTS] Error obteniendo metadata del grupo ${groupId}: `, metadataError);
             res.status(500).json({
                 success: false,
                 error: 'Error obteniendo información del grupo'
@@ -11460,7 +11461,7 @@ app.get('/api/group-contacts/:sessionId/:groupId', async (req, res) => {
         }
 
     } catch (error) {
-        console.error(`[API-GROUP-CONTACTS] Error:`, error);
+        console.error(`[API - GROUP - CONTACTS] Error: `, error);
         res.status(500).json({
             success: false,
             error: 'Error interno del servidor'
@@ -11496,7 +11497,7 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
         try {
             const metadata = await session.sock.groupMetadata(groupId);
 
-            console.log(`[API-GROUP-PARTICIPANTS] Grupo: ${metadata.subject}, Participantes: ${metadata.participants?.length || 0}`);
+            console.log(`[API - GROUP - PARTICIPANTS] Grupo: ${metadata.subject}, Participantes: ${metadata.participants?.length || 0} `);
 
             // Obtener conexión a la base de datos para buscar nombres
             const connection = await pool.getConnection();
@@ -11507,7 +11508,7 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
                 const BATCH_SIZE = 5; // Procesar 5 participantes a la vez
                 const allParticipants = metadata.participants || [];
 
-                console.log(`[API-GROUP-PARTICIPANTS] Procesando ${allParticipants.length} participantes en lotes de ${BATCH_SIZE}...`);
+                console.log(`[API - GROUP - PARTICIPANTS] Procesando ${allParticipants.length} participantes en lotes de ${BATCH_SIZE}...`);
 
                 for (let i = 0; i < allParticipants.length; i += BATCH_SIZE) {
                     const batch = allParticipants.slice(i, i + BATCH_SIZE);
@@ -11525,7 +11526,7 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
                                 phone = lidInfo.phone_number;
                                 name = lidInfo.name || lidInfo.notify_name;
                                 isLid = false; // Ya se resolvió
-                                console.log(`[API-GROUP-PARTICIPANTS] ✅ LID resuelto: ${jid} -> ${phone} (${name || 'sin nombre'})`);
+                                console.log(`[API - GROUP - PARTICIPANTS] ✅ LID resuelto: ${jid} -> ${phone} (${name || 'sin nombre'})`);
                             }
                         } else if (jid.includes('@s.whatsapp.net')) {
                             phone = jid.split('@')[0];
@@ -11538,8 +11539,8 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
                                 const [memberRows] = await connection.execute(
                                     `SELECT phone_number, name, notify_name 
                                      FROM contact_group_members 
-                                     WHERE contact_jid = ? AND group_jid = ? AND session_id = ? 
-                                     LIMIT 1`,
+                                     WHERE contact_jid = ? AND group_jid = ? AND session_id = ?
+    LIMIT 1`,
                                     [jid, groupId, phoneNumber]
                                 );
 
@@ -11568,14 +11569,14 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
                                         const waName = await session.sock.getName(jid);
                                         if (waName && waName !== phone && !waName.includes('@')) {
                                             name = waName;
-                                            console.log(`[API-GROUP-PARTICIPANTS] 📛 Nombre obtenido: ${jid.substring(0, 20)}... -> ${waName}`);
+                                            console.log(`[API - GROUP - PARTICIPANTS] 📛 Nombre obtenido: ${jid.substring(0, 20)}... -> ${waName} `);
                                         }
                                     } catch (nameErr) {
                                         // Ignorar
                                     }
                                 }
                             } catch (dbError) {
-                                console.error(`[API-GROUP-PARTICIPANTS] Error buscando contacto ${jid}:`, dbError);
+                                console.error(`[API - GROUP - PARTICIPANTS] Error buscando contacto ${jid}: `, dbError);
                             }
                         }
 
@@ -11583,7 +11584,7 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
                         let displayName = name;
                         if (!displayName && isLid) {
                             const lidNumber = jid.split('@')[0];
-                            displayName = `Miembro ${lidNumber.substring(0, 8)}`;
+                            displayName = `Miembro ${lidNumber.substring(0, 8)} `;
                         }
 
                         return {
@@ -11606,11 +11607,11 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
                     }
                 }
 
-                console.log(`[API-GROUP-PARTICIPANTS] Procesamiento completado: ${participants.length} participantes`);
+                console.log(`[API - GROUP - PARTICIPANTS] Procesamiento completado: ${participants.length} participantes`);
 
                 connection.release();
             } catch (dbError) {
-                console.error(`[API-GROUP-PARTICIPANTS] Error con base de datos:`, dbError);
+                console.error(`[API - GROUP - PARTICIPANTS] Error con base de datos: `, dbError);
                 if (connection) connection.release();
                 throw dbError;
             }
@@ -11625,12 +11626,12 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
                 groupName: metadata.subject || metadata.name,
                 unresolvedLids: unresolvedCount,
                 warning: unresolvedCount > 0 ?
-                    `${unresolvedCount} contactos usan identificadores privados de WhatsApp. Los números reales se mostrarán cuando estos contactos envíen mensajes.` :
+                    `${unresolvedCount} contactos usan identificadores privados de WhatsApp.Los números reales se mostrarán cuando estos contactos envíen mensajes.` :
                     null
             });
 
         } catch (metadataError) {
-            console.error(`[API-GROUP-PARTICIPANTS] Error obteniendo metadata del grupo ${groupId}:`, metadataError);
+            console.error(`[API - GROUP - PARTICIPANTS] Error obteniendo metadata del grupo ${groupId}: `, metadataError);
             res.status(500).json({
                 success: false,
                 error: 'Error obteniendo información del grupo'
@@ -11638,7 +11639,7 @@ app.get('/api/group/participants/:sessionId/:groupId', async (req, res) => {
         }
 
     } catch (error) {
-        console.error(`[API-GROUP-PARTICIPANTS] Error:`, error);
+        console.error(`[API - GROUP - PARTICIPANTS] Error: `, error);
         res.status(500).json({
             success: false,
             error: 'Error interno del servidor'
@@ -11665,23 +11666,23 @@ app.get('/api/local-groups/:sessionId', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            console.log(`[API-LOCAL-GROUPS] Cargando grupos para phone: ${phoneNumber}`);
+            console.log(`[API - LOCAL - GROUPS] Cargando grupos para phone: ${phoneNumber} `);
             const [segments] = await connection.execute(`
-                SELECT
-                    s.id,
-                    s.name,
-                    s.description,
-                    s.count,
-                    s.created_at,
-                    COUNT(cs.id) as contact_count
+SELECT
+s.id,
+    s.name,
+    s.description,
+    s.count,
+    s.created_at,
+    COUNT(cs.id) as contact_count
                 FROM segments s
                 LEFT JOIN contact_segments cs ON s.id = cs.segment_id
                 WHERE s.session_id = ? AND s.is_system = 0
                 GROUP BY s.id
                 ORDER BY s.name ASC
-            `, [phoneNumber]);
+    `, [phoneNumber]);
 
-            console.log(`[API-LOCAL-GROUPS] Encontrados ${segments.length} grupos`);
+            console.log(`[API - LOCAL - GROUPS] Encontrados ${segments.length} grupos`);
 
             res.json({
                 success: true,
@@ -11717,14 +11718,14 @@ app.get('/api/local-group-contacts/:sessionId/:segmentId', async (req, res) => {
             // Obtener contactos del segmento
             const [contacts] = await connection.execute(`
                 SELECT DISTINCT
-                    c.jid,
-                    c.phone_number as phone,
-                    c.name,
-                    c.notify_name
+c.jid,
+    c.phone_number as phone,
+    c.name,
+    c.notify_name
                 FROM contact_segments cs
                 INNER JOIN contacts c ON cs.contact_jid = c.jid
                 WHERE cs.segment_id = ? AND cs.session_id = ?
-            `, [segmentId, phoneNumber]);
+    `, [segmentId, phoneNumber]);
 
             res.json({
                 success: true,
@@ -11759,22 +11760,22 @@ app.post('/api/segments/create', async (req, res) => {
         const connection = await pool.getConnection();
         try {
             // Generar un ID único para el segmento
-            const segmentId = `segment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            const segmentId = `segment - ${Date.now()} -${Math.random().toString(36).substr(2, 9)} `;
 
             // Insertar el nuevo segmento
             await connection.execute(`
-                INSERT INTO segments (id, name, description, session_id, is_system, count, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 0, 0, NOW(), NOW())
-            `, [segmentId, name, description || null, phoneNumber]);
+                INSERT INTO segments(id, name, description, session_id, is_system, count, created_at, updated_at)
+VALUES(?, ?, ?, ?, 0, 0, NOW(), NOW())
+    `, [segmentId, name, description || null, phoneNumber]);
 
             // Obtener el segmento recién creado
             const [segments] = await connection.execute(`
                 SELECT id, name, description, count, created_at, updated_at
                 FROM segments
                 WHERE id = ?
-            `, [segmentId]);
+    `, [segmentId]);
 
-            console.log(`[API-SEGMENTS-CREATE] Grupo local creado: ${name} (${segmentId}) para ${phoneNumber}`);
+            console.log(`[API - SEGMENTS - CREATE] Grupo local creado: ${name} (${segmentId}) para ${phoneNumber} `);
 
             res.json({
                 success: true,
@@ -11811,21 +11812,21 @@ app.post('/api/segments/:segmentId/contacts', async (req, res) => {
             // Agregar contactos al segmento
             for (const contactJid of contactJids) {
                 await connection.execute(`
-                    INSERT IGNORE INTO contact_segments (contact_jid, segment_id, session_id)
-                    VALUES (?, ?, ?)
-                `, [contactJid, segmentId, phoneNumber]);
+                    INSERT IGNORE INTO contact_segments(contact_jid, segment_id, session_id)
+VALUES(?, ?, ?)
+    `, [contactJid, segmentId, phoneNumber]);
             }
 
             // Actualizar el contador
             const [result] = await connection.execute(`
                 SELECT COUNT(*) as count FROM contact_segments WHERE segment_id = ?
-            `, [segmentId]);
+    `, [segmentId]);
 
             await connection.execute(`
                 UPDATE segments SET count = ?, updated_at = NOW() WHERE id = ?
-            `, [result[0].count, segmentId]);
+    `, [result[0].count, segmentId]);
 
-            console.log(`[API-SEGMENTS-CONTACTS] ${contactJids.length} contactos agregados al grupo ${segmentId}`);
+            console.log(`[API - SEGMENTS - CONTACTS] ${contactJids.length} contactos agregados al grupo ${segmentId} `);
 
             res.json({
                 success: true,
@@ -11860,16 +11861,16 @@ app.delete('/api/segments/:segmentId/contacts/:contactJid', async (req, res) => 
             await connection.execute(`
                 DELETE FROM contact_segments 
                 WHERE segment_id = ? AND contact_jid = ? AND session_id = ?
-            `, [segmentId, contactJid, phoneNumber]);
+    `, [segmentId, contactJid, phoneNumber]);
 
             // Actualizar contador
             const [result] = await connection.execute(`
                 SELECT COUNT(*) as count FROM contact_segments WHERE segment_id = ?
-            `, [segmentId]);
+    `, [segmentId]);
 
             await connection.execute(`
                 UPDATE segments SET count = ?, updated_at = NOW() WHERE id = ?
-            `, [result[0].count, segmentId]);
+    `, [result[0].count, segmentId]);
 
             res.json({ success: true, count: result[0].count });
         } finally {
@@ -11899,7 +11900,7 @@ app.get('/api/contacts/:contactJid/segments', async (req, res) => {
                 FROM segments s
                 INNER JOIN contact_segments cs ON s.id = cs.segment_id
                 WHERE cs.contact_jid = ? AND s.session_id = ?
-            `, [contactJid, phoneNumber]);
+    `, [contactJid, phoneNumber]);
 
             res.json({ success: true, segments });
         } finally {
@@ -11928,19 +11929,19 @@ app.get('/api/segments/:sessionId', async (req, res) => {
         try {
             const [segments] = await connection.execute(`
                 SELECT
-                    s.id,
-                    s.name,
-                    s.description,
-                    s.count,
-                    s.created_at,
-                    s.updated_at,
-                    COUNT(cs.id) as contact_count
+s.id,
+    s.name,
+    s.description,
+    s.count,
+    s.created_at,
+    s.updated_at,
+    COUNT(cs.id) as contact_count
                 FROM segments s
                 LEFT JOIN contact_segments cs ON s.id = cs.segment_id
                 WHERE s.session_id = ? AND s.is_system = 0
                 GROUP BY s.id
                 ORDER BY s.name ASC
-            `, [phoneNumber]);
+    `, [phoneNumber]);
 
             res.json({
                 success: true,
@@ -11979,9 +11980,9 @@ app.put('/api/segments/:segmentId', async (req, res) => {
                 UPDATE segments 
                 SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND session_id = ?
-            `, [name, description, segmentId, phoneNumber]);
+    `, [name, description, segmentId, phoneNumber]);
 
-            console.log(`[API-SEGMENTS-UPDATE] Grupo local actualizado: ${segmentId}`);
+            console.log(`[API - SEGMENTS - UPDATE] Grupo local actualizado: ${segmentId} `);
 
             res.json({
                 success: true,
@@ -12018,14 +12019,14 @@ app.delete('/api/segments/:segmentId', async (req, res) => {
             // Eliminar las relaciones de contactos
             await connection.execute(`
                 DELETE FROM contact_segments WHERE segment_id = ? AND session_id = ?
-            `, [segmentId, phoneNumber]);
+    `, [segmentId, phoneNumber]);
 
             // Eliminar el segmento
             await connection.execute(`
                 DELETE FROM segments WHERE id = ? AND session_id = ?
-            `, [segmentId, phoneNumber]);
+    `, [segmentId, phoneNumber]);
 
-            console.log(`[API-SEGMENTS-DELETE] Grupo local eliminado: ${segmentId}`);
+            console.log(`[API - SEGMENTS - DELETE] Grupo local eliminado: ${segmentId} `);
 
             res.json({
                 success: true
@@ -12064,25 +12065,25 @@ app.get('/api/statuses/:sessionId', async (req, res) => {
         try {
             // Obtener estados pendientes y próximos a publicar
             const [pendingStatuses] = await connection.execute(`
-                SELECT 
-                    id, text_content, media_url, media_type, media_mime_type,
-                    scheduled_time, publish_order, interval_minutes, status,
-                    published_at, created_at
+SELECT
+id, text_content, media_url, media_type, media_mime_type,
+    scheduled_time, publish_order, interval_minutes, status,
+    published_at, created_at
                 FROM whatsapp_statuses
-                WHERE phone_number = ? AND status IN ('pending', 'published')
+                WHERE phone_number = ? AND status IN('pending', 'published')
                 ORDER BY publish_order ASC, created_at ASC
-            `, [phoneNumber]);
+    `, [phoneNumber]);
  
             // Obtener historial reciente (últimos 50)
             const [history] = await connection.execute(`
-                SELECT 
-                    id, text_content, media_url, media_type,
-                    published_at, views_count
+SELECT
+id, text_content, media_url, media_type,
+    published_at, views_count
                 FROM whatsapp_statuses_history
                 WHERE phone_number = ?
-                ORDER BY published_at DESC
+    ORDER BY published_at DESC
                 LIMIT 50
-            `, [phoneNumber]);
+    `, [phoneNumber]);
  
             res.json({
                 success: true,
@@ -12095,7 +12096,7 @@ app.get('/api/statuses/:sessionId', async (req, res) => {
             connection.release();
         }
     } catch (error) {
-        console.error(`[API-STATUSES] Error obteniendo estados:`, error);
+        console.error(`[API - STATUSES] Error obteniendo estados: `, error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -12128,17 +12129,17 @@ app.post('/api/statuses/save', upload.any(), async (req, res) => {
             // Insertar nuevos estados
             for (let i = 0; i < statuses.length; i++) {
                 const status = statuses[i];
-                const imageFile = req.files?.find(f => f.fieldname === `status_${i}_image`);
+                const imageFile = req.files?.find(f => f.fieldname === `status_${ i } _image`);
  
                 await connection.execute(`
-                    INSERT INTO whatsapp_statuses 
-                    (session_id, phone_number, text_content, media_url, media_type, media_mime_type, publish_order, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-                `, [
+                    INSERT INTO whatsapp_statuses
+    (session_id, phone_number, text_content, media_url, media_type, media_mime_type, publish_order, status)
+VALUES(?, ?, ?, ?, ?, ?, ?, 'pending')
+    `, [
                     sessionId,
                     phoneNumber,
                     status.text || '',
-                    imageFile ? `/uploads/${imageFile.filename}` : null,
+                    imageFile ? `/ uploads / ${ imageFile.filename } ` : null,
                     imageFile ? 'image' : null,
                     imageFile ? imageFile.mimetype : null,
                     i
@@ -12149,7 +12150,7 @@ app.post('/api/statuses/save', upload.any(), async (req, res) => {
  
             res.json({
                 success: true,
-                message: `${statuses.length} estados guardados correctamente`,
+                message: `${ statuses.length } estados guardados correctamente`,
                 count: statuses.length
             });
  
@@ -12160,7 +12161,7 @@ app.post('/api/statuses/save', upload.any(), async (req, res) => {
             connection.release();
         }
     } catch (error) {
-        console.error(`[API-STATUSES-SAVE] Error:`, error);
+        console.error(`[API - STATUSES - SAVE] Error: `, error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -12182,7 +12183,7 @@ app.delete('/api/statuses/:statusId', async (req, res) => {
             connection.release();
         }
     } catch (error) {
-        console.error(`[API-STATUSES-DELETE] Error:`, error);
+        console.error(`[API - STATUSES - DELETE] Error: `, error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -12205,13 +12206,13 @@ app.put('/api/statuses/:statusId', upload.single('image'), async (req, res) => {
  
             if (req.file) {
                 updates.push('media_url = ?, media_type = ?, media_mime_type = ?');
-                values.push(`/uploads/${req.file.filename}`, 'image', req.file.mimetype);
+                values.push(`/ uploads / ${ req.file.filename } `, 'image', req.file.mimetype);
             }
  
             if (updates.length > 0) {
                 values.push(statusId);
                 await connection.execute(
-                    `UPDATE whatsapp_statuses SET ${updates.join(', ')} WHERE id = ? AND status = 'pending'`,
+                    `UPDATE whatsapp_statuses SET ${ updates.join(', ') } WHERE id = ? AND status = 'pending'`,
                     values
                 );
             }
@@ -12221,7 +12222,7 @@ app.put('/api/statuses/:statusId', upload.single('image'), async (req, res) => {
             connection.release();
         }
     } catch (error) {
-        console.error(`[API-STATUSES-UPDATE] Error:`, error);
+        console.error(`[API - STATUSES - UPDATE] Error: `, error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
@@ -12230,8 +12231,8 @@ app.put('/api/statuses/:statusId', upload.single('image'), async (req, res) => {
 app.post('/api/publish-statuses', async (req, res) => {
     const { sessionId, interval } = req.body;
  
-    console.log(`[STATUS-PUBLISH] 📢 Iniciando publicación para sesión ${sessionId}`);
-    console.log(`[STATUS-PUBLISH] ⏱️ Intervalo: ${interval} minutos`);
+    console.log(`[STATUS - PUBLISH] 📢 Iniciando publicación para sesión ${ sessionId } `);
+    console.log(`[STATUS - PUBLISH] ⏱️ Intervalo: ${ interval } minutos`);
  
     try {
         const phoneNumber = await getUserPhoneNumber(sessionId);
@@ -12255,7 +12256,7 @@ app.post('/api/publish-statuses', async (req, res) => {
                 FROM whatsapp_statuses
                 WHERE phone_number = ? AND status = 'pending'
                 ORDER BY publish_order ASC
-            `, [phoneNumber]);
+    `, [phoneNumber]);
  
             if (statuses.length === 0) {
                 return res.status(400).json({
@@ -12264,7 +12265,7 @@ app.post('/api/publish-statuses', async (req, res) => {
                 });
             }
  
-            console.log(`[STATUS-PUBLISH] 📝 ${statuses.length} estados para publicar`);
+            console.log(`[STATUS - PUBLISH] 📝 ${ statuses.length } estados para publicar`);
  
             // Publicar el primer estado inmediatamente
             const firstStatus = statuses[0];
@@ -12287,28 +12288,28 @@ app.post('/api/publish-statuses', async (req, res) => {
                     UPDATE whatsapp_statuses 
                     SET status = 'published', published_at = NOW() 
                     WHERE id = ?
-                `, [firstStatus.id]);
+    `, [firstStatus.id]);
  
                 // Guardar en historial
                 await connection.execute(`
-                    INSERT INTO whatsapp_statuses_history 
-                    (session_id, phone_number, text_content, media_url, media_type, published_at)
-                    VALUES (?, ?, ?, ?, ?, NOW())
-                `, [sessionId, phoneNumber, firstStatus.text_content, firstStatus.media_url, firstStatus.media_type]);
+                    INSERT INTO whatsapp_statuses_history
+    (session_id, phone_number, text_content, media_url, media_type, published_at)
+VALUES(?, ?, ?, ?, ?, NOW())
+    `, [sessionId, phoneNumber, firstStatus.text_content, firstStatus.media_url, firstStatus.media_type]);
  
-                console.log(`[STATUS-PUBLISH] ✅ Estado 1/${statuses.length} publicado`);
+                console.log(`[STATUS - PUBLISH] ✅ Estado 1 / ${ statuses.length } publicado`);
  
                 // Emitir evento al frontend
-                io.to(`session-${sessionId}`).emit('status-published', {
+                io.to(`session - ${ sessionId } `).emit('status-published', {
                     statusId: firstStatus.id,
                     order: 1,
                     total: statuses.length
                 });
  
             } catch (error) {
-                console.error(`[STATUS-PUBLISH] ❌ Error publicando estado 1:`, error);
+                console.error(`[STATUS - PUBLISH] ❌ Error publicando estado 1: `, error);
                 await connection.execute(
-                    `UPDATE whatsapp_statuses SET status = 'failed', error_message = ? WHERE id = ?`,
+                    `UPDATE whatsapp_statuses SET status = 'failed', error_message = ? WHERE id = ? `,
                     [error.message, firstStatus.id]
                 );
             }
@@ -12324,7 +12325,7 @@ app.post('/api/publish-statuses', async (req, res) => {
  
                     // Actualizar hora programada en DB
                     await connection.execute(
-                        `UPDATE whatsapp_statuses SET scheduled_time = ?, interval_minutes = ? WHERE id = ?`,
+                        `UPDATE whatsapp_statuses SET scheduled_time = ?, interval_minutes = ? WHERE id = ? `,
                         [scheduledTime, interval, status.id]
                     );
  
@@ -12338,7 +12339,7 @@ app.post('/api/publish-statuses', async (req, res) => {
                             );
  
                             if (rows.length === 0) {
-                                console.log(`[STATUS-PUBLISH] ⏭️ Estado ${i + 1} ya no está pendiente, omitiendo`);
+                                console.log(`[STATUS - PUBLISH] ⏭️ Estado ${ i + 1 } ya no está pendiente, omitiendo`);
                                 return;
                             }
  
@@ -12360,58 +12361,58 @@ app.post('/api/publish-statuses', async (req, res) => {
  
                             // Marcar como publicado
                             await conn.execute(
-                                `UPDATE whatsapp_statuses SET status = 'published', published_at = NOW() WHERE id = ?`,
+                                `UPDATE whatsapp_statuses SET status = 'published', published_at = NOW() WHERE id = ? `,
                                 [status.id]
                             );
  
                             // Guardar en historial
                             await conn.execute(`
-                                INSERT INTO whatsapp_statuses_history 
-                                (session_id, phone_number, text_content, media_url, media_type, published_at)
-                                VALUES (?, ?, ?, ?, ?, NOW())
-                            `, [sessionId, phoneNumber, currentStatus.text_content, currentStatus.media_url, currentStatus.media_type]);
+                                INSERT INTO whatsapp_statuses_history
+    (session_id, phone_number, text_content, media_url, media_type, published_at)
+VALUES(?, ?, ?, ?, ?, NOW())
+    `, [sessionId, phoneNumber, currentStatus.text_content, currentStatus.media_url, currentStatus.media_type]);
  
-                            console.log(`[STATUS-PUBLISH] ✅ Estado ${i + 1}/${statuses.length} publicado`);
- 
-                            // Emitir evento
-                            io.to(`session-${sessionId}`).emit('status-published', {
-                                statusId: status.id,
-                                order: i + 1,
-                                total: statuses.length
-                            });
+                            console.log(`[STATUS - PUBLISH] ✅ Estado ${ i + 1 }/${statuses.length} publicado`);
+
+// Emitir evento
+io.to(`session-${sessionId}`).emit('status-published', {
+    statusId: status.id,
+    order: i + 1,
+    total: statuses.length
+});
  
                         } catch (error) {
-                            console.error(`[STATUS-PUBLISH] ❌ Error publicando estado ${i + 1}:`, error);
-                            await conn.execute(
-                                `UPDATE whatsapp_statuses SET status = 'failed', error_message = ? WHERE id = ?`,
-                                [error.message, status.id]
-                            );
-                        } finally {
-                            conn.release();
-                        }
+    console.error(`[STATUS-PUBLISH] ❌ Error publicando estado ${i + 1}:`, error);
+    await conn.execute(
+        `UPDATE whatsapp_statuses SET status = 'failed', error_message = ? WHERE id = ?`,
+        [error.message, status.id]
+    );
+} finally {
+    conn.release();
+}
                     }, delay);
- 
-                    console.log(`[STATUS-PUBLISH] ⏰ Estado ${i + 1} programado para ${scheduledTime.toLocaleString()}`);
+
+console.log(`[STATUS-PUBLISH] ⏰ Estado ${i + 1} programado para ${scheduledTime.toLocaleString()}`);
                 }
             }
- 
-            res.json({
-                success: true,
-                message: `${statuses.length} ${statuses.length === 1 ? 'estado publicado' : 'estados programados'}`,
-                published: 1,
-                scheduled: statuses.length - 1,
-                interval: `${interval} minutos`,
-                nextPublish: statuses.length > 1 ? new Date(Date.now() + parseInt(interval) * 60 * 1000).toLocaleString('es-ES') : null
-            });
+
+res.json({
+    success: true,
+    message: `${statuses.length} ${statuses.length === 1 ? 'estado publicado' : 'estados programados'}`,
+    published: 1,
+    scheduled: statuses.length - 1,
+    interval: `${interval} minutos`,
+    nextPublish: statuses.length > 1 ? new Date(Date.now() + parseInt(interval) * 60 * 1000).toLocaleString('es-ES') : null
+});
  
         } finally {
-            connection.release();
-        }
+    connection.release();
+}
  
     } catch (error) {
-        console.error(`[STATUS-PUBLISH] ❌ Error general:`, error);
-        res.status(500).json({ success: false, error: error.message });
-    }
+    console.error(`[STATUS-PUBLISH] ❌ Error general:`, error);
+    res.status(500).json({ success: false, error: error.message });
+}
 });
  
 */
@@ -15277,7 +15278,7 @@ app.post('/api/campaigns/upload-media', (req, res) => {
 });
 
 // Crear nueva campaña
-app.post('/api/campaigns/create', authenticateToken, checkActivePlan, async (req, res) => {
+app.post('/api/campaigns/create', authenticateToken, /* checkActivePlan, */ async (req, res) => {
     const { sessionId, campaign } = req.body;
 
     if (!sessionId || !campaign) {
@@ -22774,6 +22775,11 @@ const PORT = process.env.PORT || 3001;
 const statusesRouter = require('./routes/statuses')(app, io);
 app.use('/api/statuses', statusesRouter);
 console.log('✅ Router de Estados de WhatsApp cargado');
+
+// ============= REGISTER HEALTH CHECK ROUTER =============
+const healthRouter = require('./health');
+app.use('/api', healthRouter);
+console.log('✅ Health check endpoints disponibles en /api/health, /api/ready, /api/metrics');
 
 server.listen(PORT, '0.0.0.0', async () => {
     console.log(`✅ Servidor corriendo en puerto ${PORT}`);

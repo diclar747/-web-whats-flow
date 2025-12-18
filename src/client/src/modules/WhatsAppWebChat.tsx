@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useWhatsApp } from '../context/WhatsAppContext';
+import { useSocket } from '../context/SocketContext';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import { io } from 'socket.io-client';
 import {
@@ -93,6 +94,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   // El tema se gestiona vía ThemeContext, pero aquí forzamos estilos específicos para el chat
   const theme = useTheme();
 
+  const { socket } = useSocket();
 
   const {
     chats = [],
@@ -198,6 +200,30 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       console.log('🔔 [WhatsAppWebChat] TransferRequest recibido del contexto:', transferRequest);
     }
   }, [transferRequest]);
+
+  // 🆕 Escuchar evento de cierre de chat por agente
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleChatClosed = (data: any) => {
+      console.log('🔒 Chat cerrado por agente:', data);
+
+      setSnackbar({
+        open: true,
+        message: `Chat cerrado por agente ${data.agentName || 'Desconocido'}: ${data.reason}`,
+        severity: 'info'
+      });
+
+      // Recargar chats para actualizar estado "closed"
+      if (loadChats && sessionId) loadChats(sessionId, 'all', 0, false);
+    };
+
+    socket.on('chat-closed-by-agent', handleChatClosed);
+
+    return () => {
+      socket.off('chat-closed-by-agent', handleChatClosed);
+    };
+  }, [socket, loadChats, sessionId]);
 
   const handleAcceptTransfer = async () => {
     if (!transferRequest) return;

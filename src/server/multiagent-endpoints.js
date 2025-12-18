@@ -271,7 +271,7 @@ module.exports = function (app, pool) {
                     FROM chat_assignments ca
                     LEFT JOIN contacts c ON ca.chat_jid = c.jid AND ca.session_id = c.session_id
                     LEFT JOIN contact_groups cg ON ca.chat_jid = cg.jid AND ca.session_id = cg.session_id
-                    WHERE ca.user_id = ? AND ca.status = 'active'
+                    WHERE ca.user_id = ? AND ca.status IN ('active', 'pending')
                 `;
                 const params = [userId];
 
@@ -1026,6 +1026,15 @@ module.exports = function (app, pool) {
                     io.emit('chat:assigned', eventData); // Evento alternativo
                     io.emit('chat-assignment-changed', eventData); // Evento de cambio
 
+                    // 🆕 Emitir al room específico del agente para notificación inmediata
+                    io.to(`agent-${to_user_id}`).emit('chat-assigned', {
+                        chatJid: chat_jid,
+                        sessionId: session_id,
+                        reason: transferReason,
+                        assignedBy: req.user.name || 'Admin',
+                        timestamp: new Date()
+                    });
+
                     // Emitir nuevo mensaje al socket para que aparezca en tiempo real
                     io.emit('message', {
                         id: systemMessageId,
@@ -1050,6 +1059,64 @@ module.exports = function (app, pool) {
         } catch (error) {
             console.error('Error transfiriendo chat:', error);
             res.status(500).json({ success: false, error: 'Error transfiriendo chat' });
+        }
+    });
+
+    // 🆕 Cerrar chat asignado (Agente cierra conversación)
+    app.post('/api/chats/:chatJid/close', authenticateToken, async (req, res) => {
+        const { chatJid } = req.params;
+        const { sessionId, reason } = req.body;
+        const agentId = req.user.dbId; // ID numérico de la tabla users
+
+        if (!agentId) {
+            return res.status(400).json({ success: false, error: 'ID de agente no identificado' });
+        }
+
+        try {
+            const connection = await pool.getConnection();
+            try {
+                // 1. Actualizar estado en chat_assignments
+                const [result] = await connection.execute(
+                    `UPDATE chat_assignments 
+                     SET status = 'closed', closed_at = NOW(), close_reason = ?
+                     WHERE chat_jid = ? AND user_id = ? AND status != 'closed'`,
+                    [reason || 'Cerrado por agente', chatJid, agentId]
+                );
+
+                // 2. Obtener datos del contacto para la notificación
+                const [chatData] = await connection.execute(
+                    `SELECT name, notify_name FROM contacts WHERE jid = ? LIMIT 1`,
+                    [chatJid]
+                );
+                const contactName = chatData[0]?.name || chatData[0]?.notify_name || chatJid.split('@')[0];
+
+                // 3. Notificar al Admin via Socket.IO
+                const io = app.get('io');
+
+                const eventPayload = {
+                    chatJid,
+                    agentName: req.user.name,
+                    agentId: req.user.id,
+                    contactName,
+                    reason: reason || 'Cerrado manualmente',
+                    sessionId,
+                    timestamp: new Date()
+                };
+
+                // Evento global y específico de sesión
+                io.emit('chat-closed-by-agent', eventPayload);
+                if (sessionId) {
+                    io.to(`session-${sessionId}`).emit('chat-closed-by-agent', eventPayload);
+                }
+
+                res.json({ success: true, message: 'Chat cerrado exitosamente' });
+
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error cerrando chat:', error);
+            res.status(500).json({ success: false, error: 'Error interno cerrando chat' });
         }
     });
 
@@ -1342,7 +1409,7 @@ module.exports = function (app, pool) {
                     FROM chat_assignments ca
                     LEFT JOIN contacts c ON ca.chat_jid = c.jid AND ca.session_id = c.session_id
                     LEFT JOIN contact_groups cg ON ca.chat_jid = cg.jid AND ca.session_id = cg.session_id
-                    WHERE ca.user_id = ? AND ca.status IN ('active', 'pending')
+                    WHERE ca.user_id = ? AND ca.status IN ('active', 'pending', 'closed')
                 `;
 
                 const params = [agentId];

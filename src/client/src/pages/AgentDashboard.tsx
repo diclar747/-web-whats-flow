@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Box,
   Avatar,
@@ -20,7 +20,9 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Tabs,
+  Tab
 } from '@mui/material';
 import {
   Chat as ChatIcon,
@@ -34,8 +36,11 @@ import {
   GetApp as DownloadIcon,
   ErrorOutline,
   Warning,
-  CheckCircle,
-  Info
+  CheckCircle as CheckCircleIcon,
+  Info,
+  ChatBubbleOutline,
+  Schedule,
+  Close as CloseIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -53,7 +58,8 @@ interface AgentChat {
   lastMessage: string;
   timestamp: string;
   unreadCount: number;
-  assignedAt: string;
+  assignedAt?: string;
+  status?: 'active' | 'pending' | 'closed'; // 🆕 Estado del chat
 }
 
 interface Message {
@@ -87,12 +93,14 @@ const AgentDashboard: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [messageText, setMessageText] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [tabValue, setTabValue] = useState(0); // 🆕 0=Todos, 1=Activos, 2=Pendientes, 3=Cerrados
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
+  const [avatarUrl, setAvatarUrl] = useState<string>(''); // 🆕 Avatar del agente
   const [alertDialog, setAlertDialog] = useState<{
     open: boolean;
     title: string;
@@ -140,6 +148,20 @@ const AgentDashboard: React.FC = () => {
       setAgentId(parseInt(userId));
       setUserName(savedUserName || 'Agente');
       console.log('✅ AgentId establecido:', userId);
+
+      // 🆕 Cargar avatar del agente
+      try {
+        const avatarResponse = await fetch(`/api/users/${userId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const avatarData = await avatarResponse.json();
+        if (avatarData.success && avatarData.user?.avatar_url) {
+          setAvatarUrl(avatarData.user.avatar_url);
+          console.log('✅ Avatar cargado:', avatarData.user.avatar_url);
+        }
+      } catch (error) {
+        console.error('Error cargando avatar:', error);
+      }
 
       // Solicitar permisos de notificación - REEMPLAZADO POR COMPONENTE MODAL
       /* 
@@ -194,7 +216,8 @@ const AgentDashboard: React.FC = () => {
 
     try {
       const token = sessionStorage.getItem('token');
-      const response = await fetch(`/api/agents/${agentId}/chats?sessionId=${sessionId}`, {
+      // FIX: Usar endpoint correcto /api/agent/chats (singular, basado en token)
+      const response = await fetch(`/api/agent/chats?sessionId=${sessionId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -210,11 +233,19 @@ const AgentDashboard: React.FC = () => {
           lastMessage: chat.last_message_text || 'Sin mensajes',
           timestamp: chat.last_message_time || chat.assigned_at,
           unreadCount: chat.unread_count || 0,
-          assignedAt: chat.assigned_at
+          assignedAt: chat.assigned_at,
+          status: chat.status || 'pending' // 🆕 Incluir status del chat
         }));
 
-        console.log('[AGENT-LOAD-CHATS] Chats mapeados:', mappedChats.length);
-        setChats(mappedChats);
+        // 🆕 Ordenar por timestamp DESC (más reciente primero)
+        const sortedChats = mappedChats.sort((a: AgentChat, b: AgentChat) => {
+          const dateA = new Date(a.timestamp);
+          const dateB = new Date(b.timestamp);
+          return dateB.getTime() - dateA.getTime();
+        });
+
+        console.log('[AGENT-LOAD-CHATS] Chats mapeados y ordenados:', sortedChats.length);
+        setChats(sortedChats);
       }
     } catch (err) {
       console.error('Error loading chats:', err);
@@ -392,6 +423,27 @@ const AgentDashboard: React.FC = () => {
       }
     });
 
+    // 🆕 Escuchar evento específico de chat-assigned con room targeting
+    on('chat-assigned', (data: any) => {
+      console.log('📨 [AGENT-DASHBOARD] Chat asignado recibido:', data);
+
+      // Reproducir sonido de notificación
+      const audio = new Audio('/notification.mp3');
+      audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
+
+      // Mostrar notificación del navegador
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Chat transferido', {
+          body: `Chat asignado por ${data.assignedBy || 'Admin'}: ${data.reason || ''}`,
+          icon: '/whatsapp-icon.png',
+          badge: '/whatsapp-icon.png'
+        });
+      }
+
+      // Recargar lista de chats para incluir el nuevo
+      loadAgentChats();
+    });
+
     return () => {
       off(`agent-${agentId}-new-chat`);
       off('chat:transferred');
@@ -400,6 +452,7 @@ const AgentDashboard: React.FC = () => {
       off('message:received');
       off('message');
       off('message-sent');
+      off('chat-assigned'); // 🆕 Cleanup del nuevo listener
     };
   }, [socket, isConnected, agentId, on, off, loadAgentChats, selectedChat, loadMessages]);
 
@@ -561,10 +614,82 @@ const AgentDashboard: React.FC = () => {
     }
   };
 
-  const filteredChats = chats.filter(chat =>
-    chat.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    chat.id.includes(searchTerm)
-  );
+  // 🆕 Función para cerrar chat
+  const handleCloseChat = async () => {
+    if (!selectedChat || !agentId || !sessionId) return;
+
+    // Usar confirm nativo por simplicidad, idealmente usar un Dialog de MUI
+    if (!window.confirm('¿Seguro que deseas cerrar esta conversación? El admin será notificado.')) {
+      return;
+    }
+
+    try {
+      const token = sessionStorage.getItem('token');
+      // Asegurar URL absoluta
+      const baseUrl = window.location.origin.includes('localhost')
+        ? 'http://localhost:3000'
+        : window.location.origin;
+
+      const response = await fetch(`${baseUrl}/api/chats/${selectedChat.id}/close`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          sessionId,
+          reason: 'Cerrado por agente desde dashboard'
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setAlertDialog({
+          open: true,
+          title: 'Chat Cerrado',
+          message: 'La conversación ha sido cerrada correctamente.',
+          severity: 'success'
+        });
+        loadAgentChats(); // Recargar chat list
+        setSelectedChat(null); // Deseleccionar
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (error: any) {
+      console.error('Error cerrando chat:', error);
+      setAlertDialog({
+        open: true,
+        title: 'Error',
+        message: error.message || 'No se pudo cerrar el chat',
+        severity: 'error'
+      });
+    }
+  };
+
+  // 🆕 Filtrado combinado: por tab Y por búsqueda
+  const filteredChats = useMemo(() => {
+    // Primero filtrar por tab
+    let byTab = chats;
+    switch (tabValue) {
+      case 1: // Activos
+        byTab = chats.filter(c => c.status === 'active');
+        break;
+      case 2: // Pendientes
+        byTab = chats.filter(c => c.status === 'pending');
+        break;
+      case 3: // Cerrados
+        byTab = chats.filter(c => c.status === 'closed');
+        break;
+      default: // Todos
+        byTab = chats;
+    }
+
+    // Luego filtrar por búsqueda
+    return byTab.filter(chat =>
+      chat.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      chat.id.includes(searchTerm)
+    );
+  }, [chats, tabValue, searchTerm]);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: '#111b21' }}>
@@ -575,6 +700,14 @@ const AgentDashboard: React.FC = () => {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
             WhatsFlow - Panel de Agente
           </Typography>
+          {/* 🆕 Avatar y nombre del agente */}
+          {avatarUrl && (
+            <Avatar
+              src={avatarUrl}
+              alt={userName}
+              sx={{ width: 32, height: 32, mr: 1 }}
+            />
+          )}
           <Typography variant="body2" sx={{ mr: 2 }}>
             {userName}
           </Typography>
@@ -627,6 +760,53 @@ const AgentDashboard: React.FC = () => {
               }}
             />
           </Box>
+
+          {/* 🆕 Tabs para filtrar por estado */}
+          <Tabs
+            value={tabValue}
+            onChange={(e, v) => setTabValue(v)}
+            variant="fullWidth"
+            sx={{
+              bgcolor: '#f0f2f5',
+              borderBottom: '1px solid #d1d7db',
+              '& .MuiTab-root': {
+                minHeight: '48px',
+                textTransform: 'none',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                color: '#667781'
+              },
+              '& .Mui-selected': {
+                color: '#00a884 !important'
+              },
+              '& .MuiTabs-indicator': {
+                backgroundColor: '#00a884'
+              }
+            }}
+          >
+            <Tab
+              icon={<ChatBubbleOutline />}
+              iconPosition="start"
+              label={`Todos (${chats.length})`}
+            />
+            <Tab
+              icon={<CheckCircleIcon />}
+              iconPosition="start"
+              label={`Activos (${chats.filter(c => c.status === 'active').length})`}
+            />
+            <Tab
+              icon={<Schedule />}
+              iconPosition="start"
+              label={`Pendientes (${chats.filter(c => c.status === 'pending').length})`}
+            />
+            <Tab
+              icon={<CloseIcon />}
+              iconPosition="start"
+              label={`Cerrados (${chats.filter(c => c.status === 'closed').length})`}
+            />
+          </Tabs>
+
+          {/* Lista de chats */}
 
           {/* Lista de chats */}
           <List sx={{ flexGrow: 1, overflow: 'auto', p: 0 }}>
@@ -714,6 +894,17 @@ const AgentDashboard: React.FC = () => {
                   {selectedChat.id.replace('@s.whatsapp.net', '')}
                 </Typography>
               </Box>
+              {/* 🆕 Botón Cerrar Chat */}
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                onClick={handleCloseChat}
+                startIcon={<CloseIcon />}
+                sx={{ mr: 1 }}
+              >
+                Cerrar
+              </Button>
               <IconButton>
                 <MoreIcon />
               </IconButton>
@@ -931,7 +1122,7 @@ const AgentDashboard: React.FC = () => {
         }}>
           {alertDialog.severity === 'error' && <ErrorOutline sx={{ color: '#f44336', fontSize: 32 }} />}
           {alertDialog.severity === 'warning' && <Warning sx={{ color: '#ff9800', fontSize: 32 }} />}
-          {alertDialog.severity === 'success' && <CheckCircle sx={{ color: '#4caf50', fontSize: 32 }} />}
+          {alertDialog.severity === 'success' && <CheckCircleIcon sx={{ color: '#4caf50', fontSize: 32 }} />}
           {alertDialog.severity === 'info' && <Info sx={{ color: '#2196f3', fontSize: 32 }} />}
           {alertDialog.title}
         </DialogTitle>
