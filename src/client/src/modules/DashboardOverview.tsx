@@ -171,6 +171,14 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
     try {
       setLoading(true);
 
+      // 🆕 VERIFICAR si sessionId es válido
+      if (!sessionId || sessionId.trim() === '') {
+        console.log('ℹ️ SessionId vacío - Mostrando datos por defecto (sin WhatsApp conectado)');
+        setMetrics([]);
+        setLoading(false);
+        return;
+      }
+
       // Cargar estadísticas reales desde la API
       console.log('🔄 Cargando estadísticas del dashboard desde:', `/api/dashboard/stats/${sessionId}`);
       const response = await fetch(`/api/dashboard/stats/${sessionId}`);
@@ -422,15 +430,21 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
 
       // Cargar analíticas reales de chatbots
       try {
-        const chatbotResponse = await fetch(`/api/chatbot/analytics/${sessionId}`);
-        const chatbotData = await chatbotResponse.json();
-
-        if (chatbotData.success && chatbotData.analytics) {
-          console.log('📊 Chatbots cargados:', chatbotData.analytics.length);
-          setChatbotAnalytics(chatbotData.analytics);
-        } else {
-          console.log('⚠️ No hay chatbots configurados');
+        // 🆕 VERIFICAR sessionId antes de hacer petición
+        if (!sessionId || sessionId.trim() === '') {
+          console.log('ℹ️ SessionId vacío - Saltando carga de analíticas de chatbots');
           setChatbotAnalytics([]);
+        } else {
+          const chatbotResponse = await fetch(`/api/chatbot/analytics/${sessionId}`);
+          const chatbotData = await chatbotResponse.json();
+
+          if (chatbotData.success && chatbotData.analytics) {
+            console.log('📊 Chatbots cargados:', chatbotData.analytics.length);
+            setChatbotAnalytics(chatbotData.analytics);
+          } else {
+            console.log('⚠️ No hay chatbots configurados');
+            setChatbotAnalytics([]);
+          }
         }
       } catch (error) {
         console.error('❌ Error cargando chatbots:', error);
@@ -439,7 +453,12 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
 
       // Cargar usuarios reales (agentes/operadores) desde la base de datos
       try {
-        const usersResponse = await fetch(`/api/users?sessionId=${sessionId}`);
+        // 🆕 VERIFICAR sessionId antes de hacer petición
+        if (!sessionId || sessionId.trim() === '') {
+          console.log('ℹ️ SessionId vacío - Saltando carga de usuarios');
+          setTopAgents([]);
+        } else {
+          const usersResponse = await fetch(`/api/users?sessionId=${sessionId}`);
         const usersData = await usersResponse.json();
 
         if (usersData.success && usersData.users && usersData.users.length > 0) {
@@ -484,6 +503,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
         } else {
           console.log('⚠️ No hay usuarios registrados');
           setTopAgents([]); // Mostrar vacío en lugar de datos falsos
+        }
         }
       } catch (error) {
         console.error('❌ Error cargando usuarios:', error);

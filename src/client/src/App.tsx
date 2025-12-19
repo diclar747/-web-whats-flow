@@ -9,8 +9,9 @@ import { WhatsAppProvider } from './context/WhatsAppContext';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import WhatsFlowDashboard from './pages/WhatsFlowDashboard';
-import Login from './components/Login';
-import LandingPage from './components/LandingPage';
+import Login from './pages/Login'; // 🆕 Email/password login
+import Register from './pages/Register'; // 🆕 Registration page
+import LandingPage from './components/LandingPageComplete'; // 🆕 Complete landing with services/pricing
 import AdminLogin from './pages/admin/AdminLogin';
 // import AdminDashboard from './pages/admin/AdminDashboard'; // Removed as per request
 import AgentLogin from './pages/AgentLogin';
@@ -64,12 +65,12 @@ const AppContent: React.FC<{
   return (
     <DndProvider backend={HTML5Backend}>
       <Routes>
-        {/* Ruta principal - Admin con QR */}
+        {/* Ruta principal - Landing page con servicios y precios */}
         <Route path="/" element={
-          sessionId ? (
+          (sessionId || (token && user)) ? (
             <Navigate to="/dashboard" replace />
           ) : (
-            <LandingPage onQRSuccess={handleQRSuccess} />
+            <LandingPage />
           )
         } />
 
@@ -78,17 +79,25 @@ const AppContent: React.FC<{
           sessionId ? (
             <Navigate to="/dashboard" replace />
           ) : (
-            <LandingPage onQRSuccess={handleQRSuccess} />
+            <LandingPage />
           )
         } />
 
-        {/* Ruta de login para agentes - No para usuarios que se conectan con QR */}
+        {/* Ruta de login con email/contraseña */}
         <Route path="/login" element={
-          sessionId ? (
-            // Si ya hay un sessionId (conexión por QR), no permitir acceso a login
+          (sessionId || (token && user)) ? (
             <Navigate to="/dashboard" replace />
           ) : (
-            <Login onLoginSuccess={handleLoginSuccess} />
+            <Login />
+          )
+        } />
+
+        {/* 🆕 Ruta de registro */}
+        <Route path="/register" element={
+          (sessionId || (token && user)) ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <Register />
           )
         } />
 
@@ -115,10 +124,19 @@ const AppContent: React.FC<{
           (() => {
             console.log('🔍 [DASHBOARD-ROUTE] Evaluando acceso:');
             console.log('  - sessionId:', sessionId);
+            console.log('  - token:', token);
             console.log('  - user:', user);
             console.log('  - user.role:', user?.role);
-            console.log('  - Condición agente:', user && (user.role === 'agent' || user.role === 'supervisor'));
-            return (sessionId || (user && (user.role === 'agent' || user.role === 'supervisor'))) ? (
+
+            // Permitir acceso si:
+            // 1. Tiene sessionId (QR login)
+            // 2. Tiene token Y user (Email/Password login)
+            // 3. Es agente/supervisor con credenciales
+            const hasAccess = sessionId ||
+              (token && user) ||
+              (user && (user.role === 'agent' || user.role === 'supervisor'));
+
+            return hasAccess ? (
               <>
                 {user && (user.role === 'agent' || user.role === 'supervisor') ? (
                   // Dashboard simplificado para agentes (requiere user pero NO requiere sessionId inmediato)
@@ -150,7 +168,21 @@ const AppContent: React.FC<{
                     );
                   })()
                 ) : (
-                  <Navigate to="/" replace />
+                  // 🆕 Dashboard SIN autenticación (modo QR) - permitir acceso para generar QR
+                  (() => {
+                    console.log('✅ [DASHBOARD-ROUTE] Cargando Dashboard en modo QR (sin auth)');
+                    return (
+                      <WhatsAppProvider
+                        userId={undefined}
+                        userRole="admin"
+                      >
+                        <WhatsFlowDashboard
+                          sessionId="" // Sin sessionId, permitirá generar QR
+                          onLogout={handleLogout}
+                        />
+                      </WhatsAppProvider>
+                    );
+                  })()
                 )}
               </>
             ) : loading ? (
@@ -306,6 +338,24 @@ const App: React.FC = () => {
         console.log('🚫 [APP-INIT] NO hay credenciales guardadas - Esta pestaña NO está autenticada');
         setLoading(false);
         return; // Salir aquí - no cargar nada, mostrar página de login
+      }
+
+      // ✅ PRIORIDAD: Si hay token de email/password, restaurar INMEDIATAMENTE
+      if (savedToken && savedUserId) {
+        const restoredUser = {
+          id: parseInt(savedUserId),
+          name: savedUserName || 'Usuario',
+          role: savedUserRole || 'user',
+          email: (sessionStorage.getItem('userEmail') || localStorage.getItem('userEmail')) || ''
+        };
+
+        setUser(restoredUser);
+        setToken(savedToken);
+        setUserType(savedUserType as 'admin' | 'agent' || 'agent');
+
+        console.log('✅ [APP-INIT] Usuario autenticado con JWT restaurado:', restoredUser.email);
+        setLoading(false);
+        return; // Sesión JWT restaurada, no necesitamos verificar WhatsApp sessionId
       }
 
       try {
@@ -657,9 +707,37 @@ const App: React.FC = () => {
     sessionStorage.setItem('whatsflow_admin_token', adminData.token);
   };
 
-  const handleLoginSuccess = (userData: any, authToken: string, sessionIdFromLogin?: string) => {
+  const handleLoginSuccess = (userData: any, authToken?: string, sessionIdFromLogin?: string) => {
+    // 🆕 Nuevo flujo: Login con email/password retorna usuario + JWT token
+    if (authToken) {
+      // Email/password login
+      setUser(userData);
+      setToken(authToken);
+      setUserType(userData.role === 'super_admin' ? 'admin' : 'agent');
+
+      // Guardar datos en localStorage y sessionStorage
+      const storageKeys = [
+        { key: 'token', value: authToken },
+        { key: 'user', value: JSON.stringify(userData) },
+        { key: 'userRole', value: userData.role },
+        { key: 'userName', value: userData.full_name },
+        { key: 'userId', value: userData.id.toString() },
+        { key: 'userEmail', value: userData.email },
+        { key: 'whatsflow_user_type', value: userData.role === 'super_admin' ? 'admin' : 'agent' }
+      ];
+
+      storageKeys.forEach(({ key, value }) => {
+        localStorage.setItem(key, value);
+        sessionStorage.setItem(key, value);
+      });
+
+      console.log('✅ Usuario autenticado con JWT:', userData.full_name);
+      return;
+    }
+
+    // Flujo antiguo para compatibilidad (agentes con login de usuario/contraseña viejo)
     setUser(userData);
-    setToken(authToken);
+    setToken(authToken || '');
 
     // Determinar userType según el rol
     if (userData.role === 'admin') {

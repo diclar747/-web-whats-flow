@@ -148,6 +148,15 @@ const UsersModule: React.FC<UsersModuleProps> = ({ sessionId }) => {
   const loadUsers = async () => {
     try {
       setLoading(true);
+      
+      // 🆕 VERIFICAR sessionId antes de hacer petición
+      if (!sessionId || sessionId.trim() === '') {
+        console.log('ℹ️ SessionId vacío - No se pueden cargar usuarios');
+        setUsers([]);
+        setLoading(false);
+        return;
+      }
+      
       let url = `${getAPIBaseURL()}/api/users?sessionId=${sessionId}&`;
       if (filterRole) url += `role=${filterRole}&`;
       if (filterDepartment) url += `department=${filterDepartment}&`;
@@ -170,6 +179,12 @@ const UsersModule: React.FC<UsersModuleProps> = ({ sessionId }) => {
 
   const loadStats = async () => {
     try {
+      // 🆕 VERIFICAR sessionId antes de hacer petición
+      if (!sessionId || sessionId.trim() === '') {
+        console.log('ℹ️ SessionId vacío - No se pueden cargar estadísticas de usuarios');
+        return;
+      }
+      
       const response = await fetch(`${getAPIBaseURL()}/api/users/stats?sessionId=${sessionId}`);
       const data = await response.json();
 

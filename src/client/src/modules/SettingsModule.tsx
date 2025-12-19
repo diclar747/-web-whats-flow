@@ -852,11 +852,32 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         const resp = await fetch(`${getAPIBaseURL()}/api/session/${targetSessionId}/status?deviceId=${encodeURIComponent(deviceId)}`);
         const data = await resp.json();
 
-        if (data.success && data.isConnected) {
+        console.log('[WHATSAPP-POLL]', data);
+
+        // SOLO aceptar si:
+        // 1. Tiene phoneNumber (autenticado)
+        // 2. El sessionId coincide con el que generamos
+        // 3. NO aceptar si solo está en BD (sesión vieja)
+        if (data.success && data.isConnected && data.phoneNumber && data.sessionId === targetSessionId) {
+          console.log('[WHATSAPP] ✅ Sesión NUEVA autenticada detectada');
           stopQrPolling();
+          
+          // Guardar sessionId inmediatamente
+          localStorage.setItem('whatsflow_session', targetSessionId);
+          sessionStorage.setItem('whatsflow_session', targetSessionId);
+          
           setQrState({ sessionId: '', qrDataUrl: '', isLoading: false });
-          setSnackbar({ open: true, message: `Sesión ${data.phoneNumber || targetSessionId} conectada`, severity: 'success' });
-          fetchActiveSessions();
+          setSnackbar({ open: true, message: `✅ WhatsApp conectado: ${data.phoneNumber}`, severity: 'success' });
+          
+          // Recargar después de 1.5 segundos
+          setTimeout(() => {
+            console.log('[WHATSAPP] 🔄 Recargando página...');
+            window.location.reload();
+          }, 1500);
+        } else if (data.success && data.isConnected && !data.phoneNumber) {
+          console.log('[WHATSAPP] ⏳ Sesión en memoria sin phoneNumber aún (esperando escaneo)');
+        } else if (data.success && data.isConnected && data.sessionId !== targetSessionId) {
+          console.log('[WHATSAPP] ⚠️ Sesión encontrada pero NO es la del QR actual - ignorando');
         }
       } catch (err) {
         console.warn('[WHATSAPP] Error al verificar estado de sesión:', err);
@@ -876,6 +897,20 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     setQrState({ sessionId: '', qrDataUrl: '', isLoading: true });
 
     try {
+      // PRIMERO: Cerrar TODAS las sesiones activas en BD para este deviceId
+      // Esto evita que el polling detecte sesiones viejas
+      console.log('[WHATSAPP] 🧹 Desactivando sesiones previas en BD...');
+      try {
+        await fetch(`${getAPIBaseURL()}/api/sessions/cleanup-device`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deviceId: ensuredDeviceId })
+        });
+        console.log('[WHATSAPP] ✅ Sesiones previas limpiadas');
+      } catch (cleanErr) {
+        console.warn('[WHATSAPP] ⚠️ No se pudieron limpiar sesiones previas:', cleanErr);
+      }
+
       // Usar /api/qr-refresh para forzar regeneración de QR
       const response = await fetch(`${getAPIBaseURL()}/api/qr-refresh`, {
         method: 'POST',

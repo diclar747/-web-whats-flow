@@ -8430,6 +8430,36 @@ app.get('/api/session/:sessionId/status', async (req, res) => {
     console.log(`[SESSION-STATUS] 🔍 Verificando sesión: ${sessionId}, deviceId: ${deviceId?.substring(0, 20)}...`);
 
     try {
+        // ✅ PRIMERO: Verificar si la sesión está en MEMORIA (QR recién generado o activo)
+        const inMemorySession = sessions.get(sessionId);
+        if (inMemorySession && inMemorySession.sock) {
+            const phoneNumber = inMemorySession.sock?.user?.id?.split(':')[0];
+
+            // Si NO hay phoneNumber, la sesión está esperando escaneo de QR
+            if (!phoneNumber) {
+                console.log(`[SESSION-STATUS] ⏳ Sesión en memoria SIN phoneNumber (esperando escaneo QR)`);
+                return res.json({
+                    success: true,
+                    isConnected: false,
+                    sessionId,
+                    message: 'Sesión encontrada, pendiente de autenticación (escanea el QR)',
+                    source: 'memory-pending'
+                });
+            }
+
+            // Tiene phoneNumber: QR fue escaneado, sesión autenticada
+            console.log(`[SESSION-STATUS] ✅ Sesión en memoria CON phoneNumber: ${phoneNumber}`);
+            return res.json({
+                success: true,
+                isConnected: true,
+                phoneNumber: phoneNumber || sessionId,
+                sessionId: sessionId,
+                message: 'Sesión WhatsApp activa',
+                source: 'memory-authenticated'
+            });
+        }
+
+        // Si no está en memoria, buscar en BD
         if (!pool) {
             return res.json({
                 success: false,
@@ -8760,6 +8790,100 @@ app.post('/api/sessions/:sessionId/disconnect', async (req, res) => {
     } catch (error) {
         console.error('[SESSION-DISCONNECT] Error:', error);
         return res.status(500).json({ success: false, error: 'No se pudo desconectar la sesión' });
+    }
+});
+
+// Cerrar todas las sesiones activas de un usuario (para limpiar antes de generar QR nuevo)
+app.post('/api/sessions/close-all', async (req, res) => {
+    const { phone } = req.body;
+
+    if (!phone) {
+        return res.status(400).json({ success: false, error: 'phone es requerido' });
+    }
+
+    console.log(`[CLOSE-ALL] 🧹 Cerrando todas las sesiones activas para: ${phone}`);
+
+    try {
+        let closedCount = 0;
+
+        // Cerrar sesiones en memoria
+        for (const [sessionId, session] of sessions.entries()) {
+            try {
+                const sessionPhone = session.sock?.user?.id?.split(':')[0];
+                if (sessionPhone === phone) {
+                    console.log(`[CLOSE-ALL] Cerrando sesión en memoria: ${sessionId}`);
+                    if (session.sock?.logout) {
+                        await session.sock.logout();
+                    }
+                    sessions.delete(sessionId);
+                    sessionOwnerMap.delete(sessionId);
+                    closedCount++;
+                }
+            } catch (err) {
+                console.warn(`[CLOSE-ALL] Error cerrando sesión ${sessionId}:`, err.message);
+            }
+        }
+
+        // Desactivar sesiones en BD
+        if (pool) {
+            const connection = await pool.getConnection();
+            try {
+                await connection.execute(
+                    'UPDATE user_sessions SET is_active = FALSE WHERE phone_number = ?',
+                    [phone]
+                );
+                console.log(`[CLOSE-ALL] Sesiones en BD desactivadas para: ${phone}`);
+            } finally {
+                connection.release();
+            }
+        }
+
+        console.log(`[CLOSE-ALL] ✅ ${closedCount} sesiones cerradas para ${phone}`);
+        return res.json({
+            success: true,
+            message: `${closedCount} sesiones cerradas`,
+            closedCount
+        });
+    } catch (error) {
+        console.error('[CLOSE-ALL] Error:', error);
+        return res.status(500).json({ success: false, error: 'Error cerrando sesiones' });
+    }
+});
+
+// Limpiar sesiones de un dispositivo específico (antes de generar QR nuevo)
+app.post('/api/sessions/cleanup-device', async (req, res) => {
+    const { deviceId } = req.body;
+
+    if (!deviceId) {
+        return res.status(400).json({ success: false, error: 'deviceId es requerido' });
+    }
+
+    console.log(`[CLEANUP-DEVICE] 🧹 Desactivando sesiones del dispositivo: ${deviceId.substring(0, 20)}...`);
+
+    try {
+        if (pool) {
+            const connection = await pool.getConnection();
+            try {
+                const [result] = await connection.execute(
+                    'UPDATE user_sessions SET is_active = FALSE WHERE device_id = ?',
+                    [deviceId]
+                );
+                console.log(`[CLEANUP-DEVICE] ✅ ${result.affectedRows} sesiones desactivadas para deviceId`);
+                
+                return res.json({
+                    success: true,
+                    message: `${result.affectedRows} sesiones desactivadas`,
+                    affectedRows: result.affectedRows
+                });
+            } finally {
+                connection.release();
+            }
+        } else {
+            return res.json({ success: true, message: 'BD no disponible, omitiendo limpieza' });
+        }
+    } catch (error) {
+        console.error('[CLEANUP-DEVICE] Error:', error);
+        return res.status(500).json({ success: false, error: 'Error limpiando sesiones' });
     }
 });
 

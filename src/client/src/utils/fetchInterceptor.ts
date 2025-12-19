@@ -61,9 +61,9 @@ export const setupFetchInterceptor = (): void => {
 
       // Solo advertir si es endpoint crítico Y NO es admin Y NO tiene token
       if ((url.includes('/api/auth/') || url.includes('/api/admin/'))
-          && !isAdminQRMode
-          && userRole !== 'admin'
-          && !hasToken) {
+        && !isAdminQRMode
+        && userRole !== 'admin'
+        && !hasToken) {
         console.warn('[FETCH-INTERCEPTOR] ⚠️ No hay sessionToken/deviceId para endpoint crítico:', url);
       } else {
         console.log('[FETCH-INTERCEPTOR] ℹ️ Sin sessionToken/deviceId, pero permitido para:', url);
@@ -76,7 +76,7 @@ export const setupFetchInterceptor = (): void => {
     const headers = new Headers(init?.headers);
     headers.set('X-Session-Token', sessionToken);
     headers.set('X-Device-Id', deviceId);
-    
+
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
     }
@@ -108,9 +108,6 @@ export const setupFetchInterceptor = (): void => {
 
             // Limpiar sessionStorage
             sessionStorage.clear();
-
-            // Mostrar alerta
-            alert(data.error || 'Tu sesión ha expirado o está activa en otro dispositivo. Por favor, inicia sesión nuevamente.');
 
             // Redirigir a login
             if (!window.location.pathname.includes('/login')) {

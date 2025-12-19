@@ -70,6 +70,7 @@ import {
 import IncomingCall from '../components/IncomingCall';
 import AgentChatView from '../components/AgentChatView';
 import ModernAlert from '../components/ModernAlert';
+import RequiresWhatsApp from '../components/RequiresWhatsApp';
 
 // Lazy loading de módulos para mejor rendimiento
 const WhatsAppWebChat = lazy(() => import('../modules/WhatsAppWebChat'));
@@ -335,6 +336,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   const navigationItems = useMemo(() => {
     // Si no hay userRole pero hay sessionId, es usuario con QR - mostrar todo
     const hasQRSession = sessionId && !permUserRole;
+    // Si hay token JWT, es usuario autenticado con email/password
+    const hasJWTAuth = localStorage.getItem('token') || sessionStorage.getItem('token');
 
     return allNavigationItems.filter(item => {
       const module = moduleMap[item.id];
@@ -342,8 +345,10 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       if (item.id === 'dashboard') return true;
       // Usuario con QR (sin login email/password) ve todo
       if (hasQRSession) return true;
+      // Usuario con JWT autenticado ve todo (mostrará mensaje en módulos que requieren WhatsApp)
+      if (hasJWTAuth) return true;
       // Admin ve todo
-      if (userRole === 'admin') return true;
+      if (userRole === 'admin' || userRole === 'super_admin') return true;
       // Otros usuarios solo ven lo que tienen permiso
       return hasModuleAccess(module);
     });
@@ -452,12 +457,22 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       timestamp: new Date().toISOString()
     });
 
-    if (!sessionId || sessionValid === false) {
-      console.warn('[STATS-DEBUG] ⚠️ ABORTANDO - sessionId o sessionValid inválidos:', {
-        sessionId: sessionId || 'NULL',
-        sessionValid,
-        razón: !sessionId ? 'sessionId es null/undefined' : 'sessionValid es false'
-      });
+    // Si no hay sessionId, verificar si hay JWT token
+    const hasJWTAuth = localStorage.getItem('token') || sessionStorage.getItem('token');
+
+    if (!sessionId && !hasJWTAuth) {
+      console.warn('[STATS-DEBUG] ⚠️ ABORTANDO - sin sessionId ni JWT token');
+      return;
+    }
+
+    // Si es usuario JWT sin WhatsApp, no hay stats que cargar (todo será 0)
+    if (!sessionId && hasJWTAuth) {
+      console.log('[STATS-DEBUG] ℹ️ Usuario JWT sin WhatsApp - stats predeterminados en 0');
+      return;
+    }
+
+    if (sessionValid === false) {
+      console.warn('[STATS-DEBUG] ⚠️ ABORTANDO - sessionValid es false');
       return;
     }
 
@@ -587,9 +602,24 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   const handleSessionLoggedOut = useCallback((data: any) => {
     console.log('[SOCKET] 👋 Sesión cerrada desde el teléfono:', data);
 
+    // ✅ Verificar que el evento pertenece a ESTA sesión
+    const isMySession = data.sessionId === sessionId ||
+      data.phoneNumber === userPhoneNumber;
+
+    if (!isMySession) {
+      console.log('[SOCKET] ⚠️ Evento de logout para otra sesión, ignorando:', {
+        eventSessionId: data.sessionId,
+        mySessionId: sessionId,
+        eventPhone: data.phoneNumber,
+        myPhone: userPhoneNumber
+      });
+      return; // ✅ IGNORAR evento de otras sesiones
+    }
+
     frontendLogger.log('LOGOUT_EVENT_RECEIVED', {
       eventData: data,
       triggeredBy: 'socket.io session-logged-out',
+      verified: true,
       willClearStorage: true,
       willRedirect: true,
       currentUrl: window.location.href
@@ -614,7 +644,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       }
     });
     setAlertOpen(true);
-  }, []);
+  }, [sessionId, userPhoneNumber]); // ✅ Agregar dependencias
 
   const handleAuthToken = useCallback((data: any) => {
     console.log('[SOCKET] 🔐 Token recibido:', data);
@@ -1222,8 +1252,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
         >
           <Fade in={true} timeout={800}>
             <Box>
-              {/* Verificar si la sesión es válida */}
-              {sessionValid === false ? (
+              {/* Verificar si la sesión es válida O si es usuario JWT autenticado */}
+              {sessionValid === false && !localStorage.getItem('token') ? (
                 <Box sx={{
                   display: 'flex',
                   justifyContent: 'center',
@@ -1264,26 +1294,30 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                     <Route path="/" element={<DashboardOverview sessionId={sessionId} />} />
                     <Route path="/chat/*" element={
                       <ProtectedRoute module="chat" action="view">
-                        <Suspense fallback={<ModuleLoadingFallback />}>
-                          {isAgent ? (
-                            <Box sx={{ p: 3 }}>
-                              <AgentChatView
-                                userId={userId || ''}
-                                sessionId={sessionId}
-                                onChatSelect={(chatJid) => {
-                                  navigate(`/dashboard/chat/${chatJid}`);
-                                }}
-                              />
-                            </Box>
-                          ) : (
-                            <WhatsAppWebChat sessionId={sessionId} />
-                          )}
-                        </Suspense>
+                        <RequiresWhatsApp sessionId={sessionId} moduleName="Chat">
+                          <Suspense fallback={<ModuleLoadingFallback />}>
+                            {isAgent ? (
+                              <Box sx={{ p: 3 }}>
+                                <AgentChatView
+                                  userId={userId || ''}
+                                  sessionId={sessionId}
+                                  onChatSelect={(chatJid) => {
+                                    navigate(`/dashboard/chat/${chatJid}`);
+                                  }}
+                                />
+                              </Box>
+                            ) : (
+                              <WhatsAppWebChat sessionId={sessionId} />
+                            )}
+                          </Suspense>
+                        </RequiresWhatsApp>
                       </ProtectedRoute>
                     } />
                     <Route path="/history/*" element={
                       <ProtectedRoute module="chat" action="view">
-                        <HistoryModule sessionId={sessionId} />
+                        <RequiresWhatsApp sessionId={sessionId} moduleName="Historial">
+                          <HistoryModule sessionId={sessionId} />
+                        </RequiresWhatsApp>
                       </ProtectedRoute>
                     } />
                     <Route path="/messages/*" element={
@@ -1299,12 +1333,16 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                     } />
                     <Route path="/crm/*" element={
                       <ProtectedRoute module="contacts" action="view">
-                        <ContactsManagerModule sessionId={sessionId} />
+                        <RequiresWhatsApp sessionId={sessionId} moduleName="Contactos">
+                          <ContactsManagerModule sessionId={sessionId} />
+                        </RequiresWhatsApp>
                       </ProtectedRoute>
                     } />
                     <Route path="/campaigns/*" element={
                       <ProtectedRoute module="campaign" action="view">
-                        <RealCampaignsModule sessionId={sessionId} />
+                        <RequiresWhatsApp sessionId={sessionId} moduleName="Campañas">
+                          <RealCampaignsModule sessionId={sessionId} />
+                        </RequiresWhatsApp>
                       </ProtectedRoute>
                     } />
                     <Route path="/chatbot/*" element={

@@ -43,13 +43,15 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <>{children}</>;
   }
 
-  // Si tiene sessionId pero no userRole, es admin con QR - acceso completo
-  if (sessionId && !userRole) {
+  // Si tiene sessionId, es admin con QR - acceso completo (saltear verificación de permisos)
+  if (sessionId) {
+    console.log('✅ [PROTECTED] SessionId detectado - Acceso admin por QR garantizado');
     return <>{children}</>;
   }
 
   // Admin siempre tiene acceso
   if (userRole === 'admin') {
+    console.log('✅ [PROTECTED] Admin detectado - Acceso garantizado');
     return <>{children}</>;
   }
 
