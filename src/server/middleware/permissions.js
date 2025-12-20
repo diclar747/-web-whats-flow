@@ -20,10 +20,11 @@ function checkPermission(module, action) {
             const token = authHeader.split(' ')[1];
             const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
 
-            // Si es super admin (595994854167), permitir todo
+            // Si es super admin, permitir TODO
             if (decoded.email === '595994854167@whatsapp.local' || 
                 decoded.email === '595994854167' ||
-                decoded.phone === '595994854167') {
+                decoded.phone === '595994854167' ||
+                decoded.is_super_admin === true) {
                 req.user = decoded;
                 return next();
             }
@@ -39,16 +40,24 @@ function checkPermission(module, action) {
 
             const connection = await pool.getConnection();
             try {
-                // Verificar si es usuario admin normal
+                // Buscar por id O email y verificar is_super_admin
                 const [users] = await connection.execute(
-                    'SELECT id, is_admin, admin_phone FROM users WHERE id = ?',
-                    [decoded.id]
+                    'SELECT id, is_super_admin, is_admin FROM users WHERE id = ? OR email = ?',
+                    [decoded.id, decoded.email]
                 );
 
-                if (users.length > 0 && users[0].is_admin) {
-                    // Es admin normal, permitir acceso
-                    req.user = decoded;
-                    return next();
+                if (users.length > 0) {
+                    // Si es super admin, permitir TODO
+                    if (users[0].is_super_admin) {
+                        req.user = decoded;
+                        return next();
+                    }
+                    
+                    // Si es admin normal, permitir acceso
+                    if (users[0].is_admin) {
+                        req.user = decoded;
+                        return next();
+                    }
                 }
 
                 // Si no es admin, verificar si es agente con permisos
@@ -117,7 +126,8 @@ function requireAdmin(req, res, next) {
             // Si es super admin
             if (decoded.email === '595994854167@whatsapp.local' || 
                 decoded.email === '595994854167' ||
-                decoded.phone === '595994854167') {
+                decoded.phone === '595994854167' ||
+                decoded.is_super_admin === true) {
                 req.user = decoded;
                 return next();
             }
@@ -133,15 +143,22 @@ function requireAdmin(req, res, next) {
             const connection = await pool.getConnection();
             try {
                 const [users] = await connection.execute(
-                    'SELECT id, is_admin, admin_phone FROM users WHERE id = ?',
-                    [decoded.id]
+                    'SELECT id, is_super_admin, is_admin FROM users WHERE id = ? OR email = ?',
+                    [decoded.id, decoded.email]
                 );
 
-                if (users.length === 0 || !users[0].is_admin) {
-                    return res.status(403).json({
-                        success: false,
-                        error: 'Solo los administradores pueden realizar esta acción'
-                    });
+                if (users.length > 0) {
+                    // Si es super admin, permitir TODO
+                    if (users[0].is_super_admin) {
+                        req.user = decoded;
+                        return next();
+                    }
+                    
+                    // Si es admin normal, permitir acceso
+                    if (users[0].is_admin) {
+                        req.user = decoded;
+                        return next();
+                    }
                 }
 
                 req.user = decoded;

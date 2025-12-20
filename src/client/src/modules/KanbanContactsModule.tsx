@@ -48,6 +48,7 @@ import {
   Send,
   EmojiEmotions,
   Upload,
+  ViewKanban,
 } from '@mui/icons-material';
 
 interface KanbanContactsModuleProps {
@@ -805,14 +806,20 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
 
   return (
     <Box sx={{ p: 3, width: '100%', maxWidth: '100%' }}>
+      {/* Header */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <ViewKanban sx={{ fontSize: 40, color: '#9c27b0' }} />
+          Gestión de Contactos Kanban
+        </Typography>
+        <Typography variant="body1" color="text.secondary">
+          Arrastra y suelta contactos para categorizarlos y gestionar tu pipeline
+        </Typography>
+      </Box>
+
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
-          <Typography variant="h4" gutterBottom sx={{ fontWeight: 700, color: '#1a1a1a' }}>
-            Gestión de Contactos Kanban
-          </Typography>
-          <Typography variant="body2" color="textSecondary">
-            Arrastra y suelta contactos para categorizarlos
-          </Typography>
+          {/* Espacio reservado para futuros filtros o estadísticas */}
         </Box>
         <Stack direction="row" spacing={2}>
           <Button

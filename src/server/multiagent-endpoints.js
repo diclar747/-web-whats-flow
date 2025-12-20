@@ -13,8 +13,9 @@ module.exports = function (app, pool) {
 
     // Middleware para verificar autenticación (compatible con sistema base64)
     const authenticateToken = async (req, res, next) => {
+        console.log(`[AUTH-MIDDLEWARE] Route: ${req.path}, Method: ${req.method}`);
         const authHeader = req.headers['authorization'];
-        console.log(`[AUTH-DEBUG] Header received: ${authHeader}`); // DEBUG LOG
+        console.log(`[AUTH-DEBUG] Header received: ${authHeader ? 'YES' : 'NO'}`);
         const token = authHeader && authHeader.split(' ')[1];
 
         if (!token) {
@@ -53,7 +54,12 @@ module.exports = function (app, pool) {
                 // Verificar que el usuario existe y está activo
                 const connection = await pool.getConnection();
                 try {
-                    const [rows] = await connection.execute('SELECT * FROM users WHERE id = ?', [decoded.id]);
+                    console.log(`[AUTH-DEBUG] Buscando usuario con id=${decoded.id} (type=${typeof decoded.id})`);
+                    const [rows] = await connection.execute('SELECT id, email, status, role FROM users WHERE id = ?', [decoded.id]);
+                    console.log(`[AUTH-DEBUG] Query result: ${rows.length} filas encontradas`);
+                    if (rows.length > 0) {
+                        console.log(`[AUTH-DEBUG] Usuario encontrado: id=${rows[0].id}, email=${rows[0].email}, status=${rows[0].status}`);
+                    }
                     if (rows.length === 0 || rows[0].status !== 'active') {
                         return res.status(403).json({ success: false, error: 'Usuario no válido o inactivo' });
                     }
@@ -129,6 +135,40 @@ module.exports = function (app, pool) {
             const userId = req.user.id;
             const connection = await pool.getConnection();
             try {
+                // Verificar en BD si es super admin
+                const [userCheck] = await connection.execute(
+                    'SELECT is_super_admin, is_admin FROM users WHERE id = ? OR email = ?',
+                    [userId, req.user.email]
+                );
+                
+                const isSuperAdmin = userCheck.length > 0 && userCheck[0].is_super_admin === 1;
+                const isAdmin = userCheck.length > 0 && userCheck[0].is_admin === 1;
+                
+                if (isSuperAdmin || isAdmin) {
+                    console.log('[PERMISSIONS] Super admin/admin detectado en BD - Retornando permisos totales');
+                    // Super admin tiene acceso a TODO
+                    const allPermissions = [
+                        { permission_name: 'analytics', module: 'analytics', can_view: 1, can_create: 1, can_edit: 1, can_delete: 1 },
+                        { permission_name: 'chat', module: 'chat', can_view: 1, can_create: 1, can_edit: 1, can_delete: 1 },
+                        { permission_name: 'campaign', module: 'campaign', can_view: 1, can_create: 1, can_edit: 1, can_delete: 1 },
+                        { permission_name: 'agents', module: 'agents', can_view: 1, can_create: 1, can_edit: 1, can_delete: 1 },
+                        { permission_name: 'settings', module: 'settings', can_view: 1, can_create: 1, can_edit: 1, can_delete: 1 },
+                        { permission_name: 'clients', module: 'clients', can_view: 1, can_create: 1, can_edit: 1, can_delete: 1 },
+                        { permission_name: 'plans', module: 'plans', can_view: 1, can_create: 1, can_edit: 1, can_delete: 1 },
+                        { permission_name: 'kanban', module: 'kanban', can_view: 1, can_create: 1, can_edit: 1, can_delete: 1 },
+                        { permission_name: 'calendar', module: 'calendar', can_view: 1, can_create: 1, can_edit: 1, can_delete: 1 }
+                    ];
+                    
+                    const grouped = allPermissions.reduce((acc, perm) => {
+                        if (!acc[perm.module]) acc[perm.module] = [];
+                        acc[perm.module].push(perm);
+                        return acc;
+                    }, {});
+                    
+                    return res.json({ success: true, permissions: allPermissions, grouped });
+                }
+                
+                // Para agentes normales, usar la vista de permisos
                 const [permissions] = await connection.execute(`
                     SELECT 
                         permission_name,
@@ -166,6 +206,20 @@ module.exports = function (app, pool) {
             const connection = await pool.getConnection();
 
             try {
+                // Verificar en BD si es super admin
+                const [userCheck] = await connection.execute(
+                    'SELECT is_super_admin, is_admin FROM users WHERE id = ? OR email = ?',
+                    [userId, req.user.email]
+                );
+                
+                const isSuperAdmin = userCheck.length > 0 && userCheck[0].is_super_admin === 1;
+                
+                // Si es super admin, siempre retornar permiso = true
+                if (isSuperAdmin) {
+                    console.log(`[CHECK-PERMISSION] Super admin - Permiso ${permission}/${action} = GRANTED`);
+                    return res.json({ success: true, has_permission: true });
+                }
+
                 const [result] = await connection.execute(`
                     SELECT 
                         CASE 
@@ -1301,13 +1355,6 @@ module.exports = function (app, pool) {
                     console.warn('[MESSAGES-GET] ⚠️ No se pudo resolver phoneNumber para', sessionId);
                 }
 
-                // Resolver user_session_id para limitar por propietario real
-                const [sidRows] = await connection.execute(
-                    'SELECT id FROM user_sessions WHERE session_id = ? OR email = ? OR phone = ? OR owner_phone_number = ? ORDER BY updated_at DESC LIMIT 1',
-                    [sessionId, sessionId, sessionId, sessionId]
-                );
-                const userSessionId = sidRows[0]?.id || null;
-
                 let query = `
                     SELECT
                         m.id,
@@ -1327,10 +1374,10 @@ module.exports = function (app, pool) {
                     FROM messages m
                     LEFT JOIN contacts c ON m.sender_jid = c.jid AND c.session_id = ?
                     LEFT JOIN users u ON m.user_id = u.id
-                    WHERE m.user_session_id = ? AND m.chat_jid = ?
+                    WHERE m.session_id = ? AND m.chat_jid = ?
                 `;
 
-                const params = [phoneNumber, userSessionId || -1, chatJid];
+                const params = [phoneNumber, phoneNumber || sessionId, chatJid];
 
                 // Filtro por fecha (hoy)
                 if (dateFilter === 'today') {

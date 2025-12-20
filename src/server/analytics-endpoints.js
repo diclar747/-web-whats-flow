@@ -802,22 +802,45 @@ module.exports = function (app, pool) {
             const connection = await pool.getConnection();
 
             try {
-                // Get user's connections (all sessions for this owner_phone_number or exact session_id)
-                let sessionIds = [sessionId];
-                
-                // Find all sessions for this user
-                const [ownerRows] = await connection.execute(
-                    'SELECT DISTINCT session_id FROM user_sessions WHERE owner_phone_number = ? OR session_id = ?',
-                    [sessionId, sessionId]
-                );
-                
-                for (const row of ownerRows) {
-                    if (row.session_id && !sessionIds.includes(row.session_id)) {
-                        sessionIds.push(row.session_id);
+                // Resolve owner phone when sessionId is an email or alias
+                let ownerPhone = sessionId;
+                if (ownerPhone && ownerPhone.includes('@')) {
+                    const [userRows] = await connection.execute(
+                        'SELECT phone FROM users WHERE email = ? OR admin_phone = ? LIMIT 1',
+                        [ownerPhone, ownerPhone]
+                    );
+                    if (userRows.length && userRows[0].phone) {
+                        ownerPhone = userRows[0].phone;
                     }
                 }
 
-                // Get all connection details
+                // Fallback: check user_sessions to map email session_id to stored phone/owner_phone_number
+                if (ownerPhone && ownerPhone.includes('@')) {
+                    const [sessionRows] = await connection.execute(
+                        'SELECT phone, owner_phone_number FROM user_sessions WHERE session_id = ? LIMIT 1',
+                        [ownerPhone]
+                    );
+                    if (sessionRows.length) {
+                        ownerPhone = sessionRows[0].owner_phone_number || sessionRows[0].phone || ownerPhone;
+                    }
+                }
+
+                // Collect all related session_ids
+                const sessionIdSet = new Set([sessionId]);
+                if (ownerPhone) sessionIdSet.add(ownerPhone);
+
+                const [ownerRows] = await connection.execute(
+                    'SELECT DISTINCT session_id FROM user_sessions WHERE owner_phone_number = ? OR phone = ? OR session_id = ?',
+                    [ownerPhone, ownerPhone, ownerPhone]
+                );
+
+                for (const row of ownerRows) {
+                    if (row.session_id) {
+                        sessionIdSet.add(row.session_id);
+                    }
+                }
+
+                const sessionIds = Array.from(sessionIdSet);
                 const placeholders = sessionIds.map(() => '?').join(',');
                 const [connections] = await connection.execute(`
                     SELECT 
@@ -835,14 +858,26 @@ module.exports = function (app, pool) {
                         subscription_end_date,
                         messages_sent_this_month
                     FROM user_sessions
-                    WHERE session_id IN (${placeholders}) OR owner_phone_number = ?
+                    WHERE session_id IN (${placeholders}) 
+                        OR owner_phone_number = ?
+                        OR phone = ?
                     ORDER BY is_active DESC, last_activity DESC
-                `, [...sessionIds, sessionId]);
+                `, [...sessionIds, ownerPhone, ownerPhone]);
 
                 // Format connections with connection time calculation
+                const sessions = global.sessions || new Map(); // Obtener sesiones desde global
                 const formattedConnections = connections.map(conn => {
                     let connectionTime = null;
                     let connectionStatus = 'Desconectado';
+                    let displayName = conn.full_name || conn.name || 'Sin nombre';
+                    let displayAvatar = conn.avatar_url;
+                    
+                    // ✅ Si la sesión está en memoria, obtener nombre y avatar de WhatsApp
+                    const sessionData = sessions.get(conn.session_id);
+                    if (sessionData && sessionData.user) {
+                        displayName = sessionData.user.name || sessionData.user.pushname || displayName;
+                        displayAvatar = sessionData.user.imgUrl || displayAvatar;
+                    }
                     
                     if (conn.is_active === 1) {
                         connectionStatus = 'Conectado';
@@ -857,8 +892,8 @@ module.exports = function (app, pool) {
                     return {
                         session_id: conn.session_id,
                         phone: conn.phone,
-                        full_name: conn.full_name || conn.name || 'Sin nombre',
-                        avatar_url: conn.avatar_url,
+                        full_name: displayName,
+                        avatar_url: displayAvatar,
                         is_active: conn.is_active === 1,
                         status: connectionStatus,
                         connection_time: connectionTime,

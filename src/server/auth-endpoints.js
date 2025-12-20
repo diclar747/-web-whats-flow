@@ -53,7 +53,7 @@ function registerAuthEndpoints(app, pool) {
             try {
                 // Verificar si email ya existe
                 const [existing] = await connection.execute(
-                    'SELECT id FROM user_sessions WHERE email = ?',
+                    'SELECT id FROM users WHERE email = ?',
                     [email]
                 );
 
@@ -67,22 +67,20 @@ function registerAuthEndpoints(app, pool) {
                 // Hash de contraseña
                 const password_hash = await hashPassword(password);
 
-                // Generar session_id único para el usuario
-                const session_id = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-                // Insertar usuario
+                // Insertar usuario en tabla users con role=agent (cliente)
                 const [result] = await connection.execute(
-                    `INSERT INTO user_sessions (session_id, full_name, email, phone_number, password_hash, is_active) 
-                     VALUES (?, ?, ?, ?, ?, 1)`,
-                    [session_id, full_name, email, phone, password_hash]
+                    `INSERT INTO users (name, email, phone, password_hash, role, status) 
+                     VALUES (?, ?, ?, ?, 'agent', 'active')`,
+                    [full_name, email, phone, password_hash]
                 );
 
-                console.log(`[AUTH] Nuevo usuario registrado: ${email}`);
+                const newUserId = result.insertId;
+                console.log(`[AUTH] Nuevo cliente registrado: ${email} (ID: ${newUserId})`);
 
                 res.json({
                     success: true,
                     message: 'Usuario registrado exitosamente',
-                    userId: result.insertId
+                    userId: newUserId
                 });
 
             } finally {
@@ -160,25 +158,41 @@ function registerAuthEndpoints(app, pool) {
                 // Generar token JWT con el rol correcto
                 const token = generateToken(user, userRole);
 
-                // Buscar sesión activa de WhatsApp para este usuario
+                // Crear/actualizar user_sessions con session_id = user.id (como string)
                 let whatsappSessionId = null;
                 try {
-                    const [activeSessions] = await connection.execute(
-                        `SELECT session_id, phone_number FROM user_sessions
-                         WHERE is_active = 1
-                         ORDER BY last_connection_time DESC
-                         LIMIT 1`
+                    const sessionId = String(user.id);
+                    
+                    // Eliminar sessions antiguas para este usuario
+                    await connection.execute(
+                        `DELETE FROM user_sessions WHERE email = ? AND session_id != ?`,
+                        [email, sessionId]
                     );
-                    if (activeSessions.length > 0) {
-                        // Priorizar session_id sobre phone_number para mejor compatibilidad
-                        whatsappSessionId = activeSessions[0].session_id;
-                        if (!whatsappSessionId || whatsappSessionId.length < 10) {
-                            whatsappSessionId = activeSessions[0].phone_number;
-                        }
-                        console.log(`[AUTH] ✅ Sesión activa de WhatsApp encontrada: ${whatsappSessionId} (phone: ${activeSessions[0].phone_number})`);
+                    
+                    // Crear/actualizar user_sessions con session_id = user.id
+                    const [checkSession] = await connection.execute(
+                        `SELECT id FROM user_sessions WHERE session_id = ?`,
+                        [sessionId]
+                    );
+                    
+                    if (checkSession.length === 0) {
+                        // Insertar nueva sesión
+                        await connection.execute(
+                            `INSERT INTO user_sessions (session_id, email, phone, full_name, is_active, status) 
+                             VALUES (?, ?, ?, ?, 1, 'active')`,
+                            [sessionId, email, user.phone_number, user.full_name]
+                        );
+                        console.log(`[AUTH] ✅ Sesión creada para usuario: ${email} (session_id: ${sessionId})`);
+                    } else {
+                        // Actualizar sesión existente
+                        await connection.execute(
+                            `UPDATE user_sessions SET email = ?, phone = ?, full_name = ?, is_active = 1, status = 'active' WHERE session_id = ?`,
+                            [email, user.phone_number, user.full_name, sessionId]
+                        );
+                        console.log(`[AUTH] ✅ Sesión actualizada para usuario: ${email} (session_id: ${sessionId})`);
                     }
                 } catch (err) {
-                    console.log('[AUTH] ⚠️ No se pudo buscar sesión de WhatsApp:', err.message);
+                    console.log('[AUTH] ⚠️ Error al crear/actualizar sesión:', err.message);
                 }
 
                 console.log(`[AUTH] Login exitoso: ${email}`);
@@ -186,7 +200,6 @@ function registerAuthEndpoints(app, pool) {
                 res.json({
                     success: true,
                     token,
-                    whatsappSessionId, // Incluir sessionId de WhatsApp si existe
                     user: {
                         id: user.id,
                         full_name: user.full_name,

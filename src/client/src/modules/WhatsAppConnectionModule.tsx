@@ -96,7 +96,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
     setWaLoading(true);
     setWaError('');
     try {
-      const response = await sessionFetch(`/api/sessions/active`, {
+      const response = await sessionFetch(`/api/sessions/active?sessionId=${encodeURIComponent(sessionId)}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -126,7 +126,16 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
 
   useEffect(() => {
     fetchActiveSessions();
-    return () => stopQrPolling();
+    
+    // ✅ Polling cada 5 segundos para mantener estado actualizado en tiempo real
+    const pollInterval = setInterval(() => {
+      fetchActiveSessions();
+    }, 5000);
+    
+    return () => {
+      stopQrPolling();
+      clearInterval(pollInterval);
+    };
   }, [sessionId]);
 
   const stopQrPolling = () => {
@@ -164,7 +173,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       // Iniciar polling para detectar cuando se escanea el QR (más frecuente para detección rápida)
       qrPollRef.current = setInterval(async () => {
         try {
-          const statusResponse = await sessionFetch(`/api/sessions/active`, {
+          const statusResponse = await sessionFetch(`/api/sessions/active?sessionId=${encodeURIComponent(sessionId)}`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
           });
