@@ -161,7 +161,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       setQrState({ sessionId: qrData.sessionId, qrDataUrl: qrData.qrDataUrl, isLoading: false });
       console.log('[WHATSAPP] QR generado para sesión:', qrData.sessionId);
 
-      // Iniciar polling para detectar cuando se escanea el QR
+      // Iniciar polling para detectar cuando se escanea el QR (más frecuente para detección rápida)
       qrPollRef.current = setInterval(async () => {
         try {
           const statusResponse = await sessionFetch(`/api/sessions/active`, {
@@ -172,20 +172,22 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
           if (statusResponse.ok) {
             const statusData = await statusResponse.json();
             const foundSession = (statusData.sessions || []).find(
-              (s: WhatsAppSession) => s.sessionId === qrData.sessionId && s.isConnected
+              (s: WhatsAppSession) => 
+                (s.sessionId === qrData.sessionId || s.phoneNumber === qrData.sessionId) && s.isConnected
             );
 
             if (foundSession) {
-              console.log('[WHATSAPP] ✅ QR escaneado exitosamente');
+              console.log('[WHATSAPP] ✅ QR escaneado exitosamente - Conexión establecida:', foundSession.phoneNumber || foundSession.name);
               stopQrPolling();
               setQrState({ sessionId: '', qrDataUrl: '', isLoading: false });
+              setWaError('');
               await fetchActiveSessions();
             }
           }
         } catch (err) {
           console.error('[WHATSAPP] Error en polling:', err);
         }
-      }, 3000);
+      }, 2000);
     } catch (err: any) {
       console.error('[WHATSAPP] Error en QR flow:', err);
       setWaError(err.message || 'Error al generar código QR');
@@ -387,29 +389,42 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                 {waSessions.map((session) => {
                   const isPrimary = session.sessionId === sessionId;
                   const iconBg = isPrimary ? 'primary.main' : 'success.main';
+                  const displayName = session.name || session.phoneNumber || session.sessionId;
 
                   return (
-                    <ListItem key={session.sessionId} divider>
+                    <ListItem 
+                      key={session.sessionId} 
+                      divider
+                      sx={{
+                        bgcolor: session.isConnected ? 'transparent' : 'rgba(255, 0, 0, 0.05)',
+                        borderLeft: session.isConnected ? '4px solid #25d366' : '4px solid #f44336',
+                        mb: 1,
+                        borderRadius: 1
+                      }}
+                    >
                       <ListItemAvatar>
                         <Avatar
                           src={session.avatar || undefined}
-                          sx={{ bgcolor: !session.avatar ? iconBg : undefined }}
+                          sx={{ 
+                            bgcolor: !session.avatar ? iconBg : undefined,
+                            width: 56,
+                            height: 56
+                          }}
                         >
                           {!session.avatar && <Phone />}
                         </Avatar>
                       </ListItemAvatar>
                       <ListItemText
                         primary={
-                          <Box>
-                            <Typography component="span" variant="subtitle1">
-                              {session.name || session.phoneNumber || session.sessionId}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                            <Typography component="span" variant="subtitle1" sx={{ fontWeight: 600 }}>
+                              {displayName}
                             </Typography>
                             {isPrimary && (
                               <Chip
                                 label="👑 Principal"
                                 color="primary"
                                 size="small"
-                                sx={{ ml: 1 }}
                               />
                             )}
                             {!isPrimary && session.ownerPhone && (
@@ -418,27 +433,41 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                                 color="success"
                                 variant="outlined"
                                 size="small"
-                                sx={{ ml: 1 }}
+                              />
+                            )}
+                            {session.isConnected ? (
+                              <Chip 
+                                label="🟢 Conectado" 
+                                color="success" 
+                                size="small" 
+                                sx={{ fontWeight: 600 }}
+                              />
+                            ) : (
+                              <Chip 
+                                label="🔴 Desconectado" 
+                                color="error" 
+                                size="small"
+                                sx={{ fontWeight: 600 }}
                               />
                             )}
                           </Box>
                         }
                         secondary={
-                          <>
-                            <Typography component="span" variant="body2" display="block">
-                              {session.phoneNumber || session.sessionId}
+                          <Box sx={{ mt: 0.5 }}>
+                            <Typography component="span" variant="body2" display="block" sx={{ fontWeight: 500 }}>
+                              📱 {session.phoneNumber || session.sessionId}
                             </Typography>
-                            {session.isConnected ? (
-                              <Chip label="Conectado" color="success" size="small" icon={<span>🟢</span>} sx={{ mt: 0.5 }} />
-                            ) : (
-                              <Chip label="Desconectado" color="error" size="small" icon={<span>🔴</span>} sx={{ mt: 0.5 }} />
-                            )}
                             {!isPrimary && session.ownerPhone && (
                               <Typography component="span" variant="caption" display="block" color="text.secondary">
                                 Relacionada con: {session.ownerPhone}
                               </Typography>
                             )}
-                          </>
+                            {session.name && session.phoneNumber && session.name !== session.phoneNumber && (
+                              <Typography component="span" variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
+                                👤 Nombre en WhatsApp: {session.name}
+                              </Typography>
+                            )}
+                          </Box>
                         }
                       />
                       <Stack direction="row" spacing={1} alignItems="center">

@@ -635,113 +635,259 @@ module.exports = function (app, pool) {
      */
     app.get('/api/analytics/dashboard', async (req, res) => {
         try {
-            const sessionId = req.query.sessionId;
+            let sessionId = req.query.sessionId;
             const { startDate, endDate } = getDateRange(req);
 
-            if (!sessionId) {
-                return res.status(400).json({ error: 'sessionId is required' });
+            if (!sessionId || !pool) {
+                return res.json({
+                    success: true,
+                    data: {
+                        messages: { total: 0, sent: 0, delivered: 0, read: 0, failed: 0 },
+                        deliveryRate: 0,
+                        readRate: 0,
+                        campaigns: { active: 0, total: 0 },
+                        agents: { total: 0, online: 0 },
+                        chatbots: 0,
+                        kanbans: 0,
+                        messagesFailed: 0,
+                        failureRate: 0,
+                        connections: 0
+                    }
+                });
             }
 
-            // Get all metrics in parallel
-            const [
-                messageStats,
-                campaignStats,
-                agentStats,
-                kanbanStats
-            ] = await Promise.all([
-                // Message stats
-                pool.query(`
+            const connection = await pool.getConnection();
+            try {
+                // 🔄 Si recibimos un email, mapear a phone number
+                if (sessionId.includes('@')) {
+                    const [userRows] = await connection.execute(
+                        'SELECT phone FROM users WHERE email = ? OR admin_phone = ? LIMIT 1',
+                        [sessionId, sessionId]
+                    );
+                    
+                    if (userRows.length > 0 && userRows[0].phone) {
+                        console.log(`[ANALYTICS-DASHBOARD] 📧 Email ${sessionId} mapeado a phone: ${userRows[0].phone}`);
+                        sessionId = userRows[0].phone;
+                    }
+                }
+
+                // Obtener todos los sessionIds relacionados (incluyendo por owner_phone_number)
+                let sessionIds = [sessionId];
+                
+                // Búsqueda por owner_phone_number
+                const [ownerRows] = await connection.execute(
+                    'SELECT DISTINCT session_id FROM user_sessions WHERE owner_phone_number = ?',
+                    [sessionId]
+                );
+                
+                for (const row of ownerRows) {
+                    if (row.session_id && !sessionIds.includes(row.session_id)) {
+                        sessionIds.push(row.session_id);
+                    }
+                }
+
+                const placeholders = sessionIds.map(() => '?').join(',');
+
+                // Messages stats
+                const [messageStats] = await connection.execute(`
                     SELECT 
                         COUNT(*) as total,
                         SUM(CASE WHEN from_me = 1 THEN 1 ELSE 0 END) as sent,
                         SUM(CASE WHEN from_me = 0 THEN 1 ELSE 0 END) as received,
-                        SUM(CASE WHEN status = 'delivered' OR status = 'read' THEN 1 ELSE 0 END) as delivered,
-                        SUM(CASE WHEN is_read = 1 THEN 1 ELSE 0 END) as \`read\`,
-                        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+                        SUM(CASE WHEN from_me = 1 AND status = 'delivered' THEN 1 ELSE 0 END) as delivered,
+                        SUM(CASE WHEN from_me = 1 AND status = 'read' THEN 1 ELSE 0 END) as read_count,
+                        SUM(CASE WHEN from_me = 1 AND status = 'failed' THEN 1 ELSE 0 END) as failed
                     FROM messages
-                    WHERE session_id = ? AND DATE(timestamp) BETWEEN ? AND ?
-                `, [sessionId, startDate, endDate]),
+                    WHERE session_id IN (${placeholders})
+                `, sessionIds);
 
-                // Campaign stats
-                pool.query(`
-                    SELECT 
-                        COUNT(*) as total,
-                        SUM(CASE WHEN status IN ('active', 'running') THEN 1 ELSE 0 END) as active,
-                        SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) as scheduled
-                    FROM campaigns
-                    WHERE session_id = ?
-                `, [sessionId]),
+                const ms = messageStats[0] || {};
+                const totalSent = ms.sent || 0;
+                const delivered = ms.delivered || 0;
+                const read = ms.read_count || 0;
+                const failed = ms.failed || 0;
 
-                // Agent stats
-                pool.query(`
-                    SELECT 
-                        COUNT(*) as total,
-                        SUM(CASE WHEN status IN ('available', 'online') THEN 1 ELSE 0 END) as online,
-                        SUM(CASE WHEN status = 'busy' THEN 1 ELSE 0 END) as busy
-                    FROM agents
-                    WHERE session_id = ? AND is_active = 1
-                `, [sessionId]),
+                const deliveryRate = totalSent > 0 ? ((delivered / totalSent) * 100) : 0;
+                const readRate = totalSent > 0 ? ((read / totalSent) * 100) : 0;
+                const failureRate = totalSent > 0 ? ((failed / totalSent) * 100) : 0;
 
-                // Kanban stats
-                pool.query(`
-                    SELECT 
-                        COUNT(DISTINCT kb.id) as boards,
-                        COUNT(kc.id) as contacts
-                    FROM kanban_boards kb
-                    LEFT JOIN kanban_contacts kc ON kb.id = kc.board_id
-                    WHERE kb.session_id = ?
-                `, [sessionId])
-            ]);
+                // Campaigns stats
+                const [campaigns] = await connection.execute(
+                    `SELECT COUNT(*) as total FROM campaigns WHERE (status = 'active' OR status = 'running' OR status = 'sending') AND session_id IN (${placeholders})`,
+                    sessionIds
+                );
 
-            const messages = messageStats[0][0];
-            const campaigns = campaignStats[0][0];
-            const agents = agentStats[0][0];
-            const kanban = kanbanStats[0][0];
+                // Agents stats - get admin_phone from sessionId
+                let adminPhone = null;
+                const [userRows] = await connection.execute(
+                    'SELECT phone FROM users WHERE phone = ? OR admin_phone = ? LIMIT 1',
+                    [sessionId, sessionId]
+                );
+                if (userRows.length > 0) {
+                    adminPhone = userRows[0].phone;
+                }
 
-            // Calculate KPIs
-            const deliveryRate = calculatePercentage(messages.delivered, messages.sent);
-            const readRate = calculatePercentage(messages.read, messages.sent);
-            const responseRate = calculatePercentage(messages.received, messages.sent);
-            const failureRate = calculatePercentage(messages.failed, messages.sent);
+                const [agents] = await connection.execute(
+                    'SELECT COUNT(*) as total FROM users WHERE status = \'active\' AND role IN (\'agent\', \'supervisor\') AND admin_phone = ?',
+                    [adminPhone || sessionId]
+                );
 
-            res.json({
-                success: true,
-                data: {
-                    messages: {
-                        total: messages.total,
-                        sent: messages.sent,
-                        received: messages.received,
-                        delivered: messages.delivered,
-                        read: messages.read,
-                        failed: messages.failed
-                    },
-                    campaigns: {
-                        total: campaigns.total,
-                        active: campaigns.active,
-                        scheduled: campaigns.scheduled
-                    },
-                    agents: {
-                        total: agents.total,
-                        online: agents.online,
-                        busy: agents.busy
-                    },
-                    kanban: {
-                        boards: kanban.boards,
-                        contacts: kanban.contacts
-                    },
-                    kpis: {
-                        delivery_rate: deliveryRate,
-                        read_rate: readRate,
-                        response_rate: responseRate,
-                        failure_rate: failureRate
+                // Chatbots
+                const [chatbots] = await connection.execute(
+                    `SELECT COUNT(DISTINCT cs.session_id) as total FROM chatbot_settings cs
+                     INNER JOIN chatbot_flows cf ON cs.session_id = cf.session_id
+                     WHERE cs.enabled = 1 AND cf.is_active = 1 AND cs.session_id IN (${placeholders})`,
+                    sessionIds
+                );
+
+                // Kanbans
+                const [kanbans] = await connection.execute(
+                    `SELECT COUNT(*) as total FROM kanban_boards WHERE session_id IN (${placeholders})`,
+                    sessionIds
+                );
+
+                // Conexiones activas - SOLO contar is_active = 1
+                const [connections] = await connection.execute(
+                    `SELECT COUNT(*) as total FROM user_sessions WHERE is_active = 1 AND session_id IN (${placeholders})`,
+                    sessionIds
+                );
+
+                res.json({
+                    success: true,
+                    data: {
+                        messages: {
+                            total: ms.total || 0,
+                            sent: totalSent || 0,
+                            delivered: delivered || 0,
+                            read: read || 0,
+                            failed: failed || 0
+                        },
+                        deliveryRate: parseFloat(deliveryRate.toFixed(1)),
+                        readRate: parseFloat(readRate.toFixed(1)),
+                        campaigns: {
+                            active: campaigns[0]?.total || 0,
+                            total: campaigns[0]?.total || 0
+                        },
+                        agents: {
+                            total: agents[0]?.total || 0,
+                            online: agents[0]?.total || 0
+                        },
+                        chatbots: chatbots[0]?.total || 0,
+                        kanbans: kanbans[0]?.total || 0,
+                        messagesFailed: failed,
+                        failureRate: parseFloat(failureRate.toFixed(1)),
+                        connections: connections[0]?.total || 0
                     }
-                },
-                period: { startDate, endDate }
-            });
+                });
+            } finally {
+                connection.release();
+            }
 
         } catch (error) {
             console.error('[ANALYTICS] Error in dashboard:', error);
             res.status(500).json({ error: 'Failed to fetch dashboard data' });
+        }
+    });
+
+    // ============================================
+    // CONNECTIONS LIST ENDPOINT
+    // ============================================
+    /**
+     * GET /api/analytics/connections
+     * Returns list of all connections (active and inactive) for a user
+     */
+    app.get('/api/analytics/connections', async (req, res) => {
+        try {
+            const sessionId = req.query.sessionId || req.sessionID;
+            const connection = await pool.getConnection();
+
+            try {
+                // Get user's connections (all sessions for this owner_phone_number or exact session_id)
+                let sessionIds = [sessionId];
+                
+                // Find all sessions for this user
+                const [ownerRows] = await connection.execute(
+                    'SELECT DISTINCT session_id FROM user_sessions WHERE owner_phone_number = ? OR session_id = ?',
+                    [sessionId, sessionId]
+                );
+                
+                for (const row of ownerRows) {
+                    if (row.session_id && !sessionIds.includes(row.session_id)) {
+                        sessionIds.push(row.session_id);
+                    }
+                }
+
+                // Get all connection details
+                const placeholders = sessionIds.map(() => '?').join(',');
+                const [connections] = await connection.execute(`
+                    SELECT 
+                        session_id,
+                        phone,
+                        full_name,
+                        name,
+                        avatar_url,
+                        is_active,
+                        last_activity,
+                        created_at,
+                        last_connection_time,
+                        subscription_status,
+                        subscription_plan,
+                        subscription_end_date,
+                        messages_sent_this_month
+                    FROM user_sessions
+                    WHERE session_id IN (${placeholders}) OR owner_phone_number = ?
+                    ORDER BY is_active DESC, last_activity DESC
+                `, [...sessionIds, sessionId]);
+
+                // Format connections with connection time calculation
+                const formattedConnections = connections.map(conn => {
+                    let connectionTime = null;
+                    let connectionStatus = 'Desconectado';
+                    
+                    if (conn.is_active === 1) {
+                        connectionStatus = 'Conectado';
+                        if (conn.last_connection_time) {
+                            connectionTime = conn.last_connection_time;
+                        }
+                    } else if (conn.last_activity) {
+                        const lastActivityDate = new Date(conn.last_activity);
+                        connectionTime = lastActivityDate.toLocaleString('es-PY');
+                    }
+
+                    return {
+                        session_id: conn.session_id,
+                        phone: conn.phone,
+                        full_name: conn.full_name || conn.name || 'Sin nombre',
+                        avatar_url: conn.avatar_url,
+                        is_active: conn.is_active === 1,
+                        status: connectionStatus,
+                        connection_time: connectionTime,
+                        created_at: conn.created_at,
+                        last_activity: conn.last_activity,
+                        subscription_status: conn.subscription_status,
+                        subscription_plan: conn.subscription_plan,
+                        subscription_end_date: conn.subscription_end_date,
+                        messages_sent_this_month: conn.messages_sent_this_month || 0
+                    };
+                });
+
+                res.json({
+                    success: true,
+                    data: {
+                        connections: formattedConnections,
+                        total: formattedConnections.length,
+                        active: formattedConnections.filter(c => c.is_active).length,
+                        inactive: formattedConnections.filter(c => !c.is_active).length
+                    }
+                });
+
+            } finally {
+                connection.release();
+            }
+
+        } catch (error) {
+            console.error('[ANALYTICS] Error in connections:', error);
+            res.status(500).json({ error: 'Failed to fetch connections' });
         }
     });
 

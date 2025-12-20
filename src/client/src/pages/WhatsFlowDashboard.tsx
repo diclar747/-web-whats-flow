@@ -1066,10 +1066,10 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
 
             <Divider orientation="vertical" flexItem sx={{ bgcolor: 'rgba(255,255,255,0.1)', mx: 1 }} />
 
-            {/* 2. Sincronización */}
-            {syncProgress.status !== 'idle' && (
+            {/* 2. Sincronización - Solo mostrar si hay sincronización activa */}
+            {syncProgress.status === 'syncing' && (
               <>
-                <Tooltip title={syncProgress.message}>
+                <Tooltip title={syncProgress.message || 'Sincronizando datos...'}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <CircularProgress size={16} sx={{ color: '#4f46e5' }} thickness={6} />
                     <Box>
@@ -1077,7 +1077,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                         Sincro
                       </Typography>
                       <Typography variant="body2" sx={{ fontWeight: 600, color: 'white', fontSize: '0.8rem', lineHeight: 1 }}>
-                        {syncProgress.percentage}%
+                        {syncProgress.percentage || 0}%
                       </Typography>
                     </Box>
                   </Box>
