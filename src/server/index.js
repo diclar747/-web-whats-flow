@@ -4328,15 +4328,32 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         // La tabla messages usa session_id para almacenar el número de teléfono (datos históricos)
         // NO usar sessionId en la búsqueda porque causa mezcla de datos de múltiples usuarios
         const query = `
-            SELECT
-                m.chat_jid,
-                COALESCE(c.notify_name, c.name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) AS contact_name,
-                m.text_content AS last_message_text,
-                m.timestamp AS last_message_timestamp,
-                m.from_me AS last_message_from_me,
-                m.status AS last_message_status,
-                c.is_group,
-                c.avatar_url,
+                        SELECT
+                                m.chat_jid,
+                                COALESCE(
+                                        c.notify_name,
+                                        c.name,
+                                        (SELECT COALESCE(c2.notify_name, c2.name)
+                                         FROM contacts c2
+                                         WHERE c2.session_id = ?
+                                             AND SUBSTRING_INDEX(c2.jid, '@', 1) = SUBSTRING_INDEX(m.chat_jid, '@', 1)
+                                         LIMIT 1),
+                                        SUBSTRING_INDEX(m.chat_jid, '@', 1)
+                                ) AS contact_name,
+                                m.text_content AS last_message_text,
+                                m.timestamp AS last_message_timestamp,
+                                m.from_me AS last_message_from_me,
+                                m.status AS last_message_status,
+                                c.is_group,
+                                COALESCE(
+                                        c.avatar_url,
+                                        (SELECT c3.avatar_url
+                                         FROM contacts c3
+                                         WHERE c3.session_id = ?
+                                             AND c3.avatar_url IS NOT NULL AND c3.avatar_url != ''
+                                             AND SUBSTRING_INDEX(c3.jid, '@', 1) = SUBSTRING_INDEX(m.chat_jid, '@', 1)
+                                         LIMIT 1)
+                                ) AS avatar_url,
                 -- Contar mensajes no leídos (recibidos y con status != 'read')
                 (SELECT COUNT(*)
                  FROM messages m2
@@ -4371,6 +4388,8 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         console.log(`[CHATLIST] 🔎 BUSCANDO EN BD: messages WHERE session_id = "${phoneNumber}" (excluyendo ${phoneNumber}@*)`);
         const [allRows] = await connection.execute(query, [
             phoneNumber, // phone para subquery de LID
+            phoneNumber, // nombre fallback por phone
+            phoneNumber, // avatar fallback por phone
             phoneNumber, // c.session_id = ?
             phoneNumber, // m.session_id = ? (SOLO phoneNumber)
             phoneNumber  // Parámetro para CONCAT en WHERE para excluir propio número
@@ -11070,8 +11089,16 @@ app.get('/api/messages/:sessionId', async (req, res) => {
         return res.status(503).json({ success: false, error: 'DB service unavailable' });
     }
 
-    // Convención: filtrar SIEMPRE por session_id (el "phone" lógico del admin)
-    const sessionKey = sessionId;
+    // Convención: filtrar SIEMPRE por session_id (phone del admin). Mapear email/UUID→phone.
+    let sessionKey = sessionId;
+    try {
+        const mappedPhone = await getUserPhoneNumber(sessionId);
+        if (mappedPhone) {
+            sessionKey = mappedPhone;
+        }
+    } catch (mapErr) {
+        console.warn('[API-MSG] Warning al resolver phoneNumber para sessionId:', sessionId, mapErr?.message || mapErr);
+    }
 
     const connection = await pool.getConnection();
     try {
@@ -11909,136 +11936,118 @@ function emitDashboardStats(sessionId) {
 // Obtener contactos por sesión (usando el número de teléfono del usuario)
 app.get('/api/contacts/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
-    const { page = 0, limit = 999999, search = '' } = req.query; // Sin límite por defecto (999999 = todos)
+    const { page = 0, limit = 999999, search = '' } = req.query;
 
-    console.log(`[API - CONTACTS] ========================================`);
     console.log(`[API - CONTACTS] 🔍 BÚSQUEDA DE CONTACTOS`);
-    console.log(`[API - CONTACTS] SessionId: ${sessionId} `);
-    console.log(`[API - CONTACTS] Page: ${page}, Limit: ${limit} `);
-    console.log(`[API - CONTACTS] Search term: "${search}"`);
-    console.log(`[API - CONTACTS] ========================================`);
-
-    if (!pool) {
-        return res.status(503).json({
-            success: false,
-            error: 'Servicio de base de datos no disponible.'
-        });
-    }
+    console.log(`[API - CONTACTS] SessionId: ${sessionId}, Search: "${search}"`);
 
     try {
-        // Obtener todos los session_ids válidos para este usuario
-        const sessionIds = await getAllSessionIds(sessionId);
-        console.log(`[API - CONTACTS] SessionIds found: ${sessionIds.join(', ')} `);
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        const phoneSessionId = phoneNumber || sessionId;
+        const session = sessions.get(phoneSessionId) || sessions.get(sessionId);
 
-        if (!sessionIds || sessionIds.length === 0) {
-            console.log(`[API - CONTACTS] No sessionIds found for: ${sessionId} `);
-            return res.status(400).json({
-                success: false,
-                error: 'No se pudo obtener información de la sesión'
-            });
-        }
+        let allContacts = [];
 
-        const connection = await pool.getConnection();
-        try {
-            // Obtener todos los phones asociados a estos sessionIds
-            const [userSessions] = await connection.execute(
-                `SELECT DISTINCT phone FROM user_sessions
-                 WHERE phone IN(${sessionIds.map(() => '?').join(',')})
-                    OR session_id IN(${sessionIds.map(() => '?').join(',')})`,
-                [...sessionIds, ...sessionIds]
-            );
-
-            // Agregar los phones a la lista de sessionIds
-            const allSessionIds = [...sessionIds];
-            userSessions.forEach(row => {
-                if (row.phone && !allSessionIds.includes(row.phone)) {
-                    allSessionIds.push(row.phone);
+        // ✅ PRIORIDAD 1: Obtener contactos VIVOS desde WhatsApp en memoria
+        if (session && session.sock && session.sock.store && session.sock.store.contacts) {
+            console.log('[API - CONTACTS] 📱 Obteniendo contactos desde WhatsApp en vivo...');
+            
+            try {
+                let memoryContacts = [];
+                if (session.sock.store.contacts.all) {
+                    memoryContacts = session.sock.store.contacts.all();
+                } else if (session.sock.store.contacts.values) {
+                    memoryContacts = Array.from(session.sock.store.contacts.values());
+                }  else {
+                    memoryContacts = Array.from(session.sock.store.contacts || []);
                 }
-            });
 
-            console.log(`[API - CONTACTS] Expanded sessionIds: ${allSessionIds.join(', ')} `);
+                console.log(`[API - CONTACTS] ✅ ${memoryContacts.length} contactos en memoria de WhatsApp`);
 
-            // Construir placeholders para IN clause
-            const placeholders = allSessionIds.map(() => '?').join(',');
-
-            // Construir condición de búsqueda
-            let searchCondition = '';
-            let searchParams = [];
-            if (search && search.trim() !== '') {
-                searchCondition = ` AND(name LIKE ? OR notify_name LIKE ? OR jid LIKE ?)`;
-                const searchTerm = `% ${search}% `;
-                searchParams = [searchTerm, searchTerm, searchTerm];
-                console.log(`[API - CONTACTS] 🔎 Aplicando búsqueda: "${searchTerm}"`);
-            } else {
-                console.log(`[API - CONTACTS] ℹ️ Sin término de búsqueda - Listando todos`);
+                // Mapear contactos desde memoria
+                allContacts = memoryContacts
+                    .filter(contact => contact && contact.id && contact.id.endsWith('@s.whatsapp.net'))
+                    .map(contact => ({
+                        id: contact.id,
+                        jid: contact.id,
+                        name: contact.name || contact.notify_name || contact.id.split('@')[0],
+                        notify_name: contact.notify_name,
+                        phone: contact.id.split('@')[0],
+                        avatar_url: contact.imgUrl || null,
+                        sessionId: phoneSessionId,
+                        isGroup: false,
+                        source: 'whatsapp-live'
+                    }));
+            } catch (err) {
+                console.log('[API - CONTACTS] ⚠️ Error obteniendo contactos de memoria:', err.message);
             }
-
-            // Primero obtener el total de contactos (sin paginación)
-            const [totalResult] = await connection.execute(
-                `SELECT COUNT(*) as total
-                FROM contacts
-                WHERE session_id IN(${placeholders}) AND jid LIKE '%@s.whatsapp.net'${searchCondition} `,
-                [...allSessionIds, ...searchParams]
-            );
-            const totalContacts = totalResult[0].total;
-
-            // Calcular offset para paginación
-            const offset = parseInt(page) * parseInt(limit);
-
-            // Consultar SOLO contactos individuales (@s.whatsapp.net) con paginación
-            // 🆕 Ordenar por última actualización (updated_at) - Los más recientes al final, antiguos primero
-            const [contacts] = await connection.execute(
-                `SELECT
-jid,
-    name,
-    notify_name,
-    avatar_url,
-    session_id,
-    created_at,
-    updated_at
-                FROM contacts
-                WHERE session_id IN(${placeholders}) AND jid LIKE '%@s.whatsapp.net'${searchCondition}
-                ORDER BY created_at ASC, updated_at ASC, name ASC
-LIMIT ? OFFSET ? `,
-                [...allSessionIds, ...searchParams, parseInt(limit), offset]
-            );
-
-            const contactsFormatted = contacts.map(contact => ({
-                id: contact.jid,
-                jid: contact.jid,
-                name: contact.name || contact.notify_name || contact.jid.split('@')[0],
-                notify: contact.notify_name, // Alias para compatibilidad con CRM
-                notify_name: contact.notify_name,
-                phone: contact.jid.split('@')[0],
-                isGroup: false,
-                avatarUrl: contact.avatar_url,
-                sessionId: contact.session_id,
-                createdAt: contact.created_at,
-                updatedAt: contact.updated_at
-            }));
-
-            console.log(`[API - CONTACTS] ✅ Resultados encontrados: ${contacts.length} de ${totalContacts} total`);
-            if (search && search.trim() !== '' && contacts.length > 0) {
-                console.log(`[API - CONTACTS] 📋 Primeros resultados: ${contacts.slice(0, 3).map(c => c.name || c.notify_name).join(', ')} `);
-            }
-
-            res.json({
-                success: true,
-                contacts: contactsFormatted,
-                total: totalContacts,
-                page: parseInt(page),
-                limit: parseInt(limit),
-                hasMore: (offset + contacts.length) < totalContacts
-            });
-
-        } finally {
-            if (connection) connection.release();
         }
+
+        // ✅ PRIORIDAD 2: Si hay pocos contactos, complementar desde BD
+        if (allContacts.length === 0) {
+            console.log('[API - CONTACTS] 📦 Complementando desde base de datos...');
+            
+            const sessionIds = await getAllSessionIds(sessionId);
+            if (sessionIds && sessionIds.length > 0) {
+                const connection = await pool.getConnection();
+                try {
+                    const placeholders = sessionIds.map(() => '?').join(',');
+                    const [dbContacts] = await connection.execute(
+                        `SELECT jid, name, notify_name, avatar_url, session_id
+                         FROM contacts
+                         WHERE session_id IN(${placeholders}) AND jid LIKE '%@s.whatsapp.net'
+                         ORDER BY name ASC`,
+                        sessionIds
+                    );
+
+                    allContacts = dbContacts.map(c => ({
+                        id: c.jid,
+                        jid: c.jid,
+                        name: c.name || c.notify_name || c.jid.split('@')[0],
+                        notify_name: c.notify_name,
+                        phone: c.jid.split('@')[0],
+                        avatar_url: c.avatar_url,
+                        sessionId: c.session_id,
+                        isGroup: false,
+                        source: 'database'
+                    }));
+                } finally {
+                    connection.release();
+                }
+            }
+        }
+
+        // ✅ APLICAR FILTRO DE BÚSQUEDA
+        let filteredContacts = allContacts;
+        if (search && search.trim() !== '') {
+            const searchLower = search.toLowerCase();
+            filteredContacts = allContacts.filter(c => 
+                c.name.toLowerCase().includes(searchLower) || 
+                c.phone.includes(search)
+            );
+            console.log(`[API - CONTACTS] 🔎 Filtrados: ${filteredContacts.length} de ${allContacts.length}`);
+        }
+
+        // ✅ PAGINACIÓN
+        const offset = parseInt(page) * parseInt(limit);
+        const paginatedContacts = filteredContacts.slice(offset, offset + parseInt(limit));
+
+        console.log(`[API - CONTACTS] ✅ Devolviendo ${paginatedContacts.length} contactos`);
+
+        res.json({
+            success: true,
+            contacts: paginatedContacts,
+            total: filteredContacts.length,
+            page: parseInt(page),
+            limit: parseInt(limit),
+            hasMore: (offset + paginatedContacts.length) < filteredContacts.length
+        });
+
     } catch (error) {
-        console.error(`[API - CONTACTS] Error obteniendo contactos para sesión ${sessionId}: `, error);
+        console.error(`[API - CONTACTS] ❌ Error:`, error);
         res.status(500).json({
             success: false,
-            error: 'Error interno del servidor al obtener contactos'
+            error: 'Error obteniendo contactos'
         });
     }
 });
