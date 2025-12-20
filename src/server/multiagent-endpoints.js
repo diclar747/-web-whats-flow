@@ -1301,6 +1301,13 @@ module.exports = function (app, pool) {
                     console.warn('[MESSAGES-GET] ⚠️ No se pudo resolver phoneNumber para', sessionId);
                 }
 
+                // Resolver user_session_id para limitar por propietario real
+                const [sidRows] = await connection.execute(
+                    'SELECT id FROM user_sessions WHERE session_id = ? OR email = ? OR phone = ? OR owner_phone_number = ? ORDER BY updated_at DESC LIMIT 1',
+                    [sessionId, sessionId, sessionId, sessionId]
+                );
+                const userSessionId = sidRows[0]?.id || null;
+
                 let query = `
                     SELECT
                         m.id,
@@ -1320,10 +1327,10 @@ module.exports = function (app, pool) {
                     FROM messages m
                     LEFT JOIN contacts c ON m.sender_jid = c.jid AND c.session_id = ?
                     LEFT JOIN users u ON m.user_id = u.id
-                    WHERE m.session_id = ? AND m.chat_jid = ?
+                    WHERE m.user_session_id = ? AND m.chat_jid = ?
                 `;
 
-                const params = [phoneNumber, phoneNumber || sessionId, chatJid];
+                const params = [phoneNumber, userSessionId || -1, chatJid];
 
                 // Filtro por fecha (hoy)
                 if (dateFilter === 'today') {

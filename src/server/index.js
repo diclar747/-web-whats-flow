@@ -4376,7 +4376,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                 END AS phone
             FROM messages m
             LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = ?
-            WHERE m.session_id = ?
+            WHERE m.user_session_id = ?
               AND m.chat_jid NOT LIKE '%status@broadcast%'
               AND m.chat_jid NOT LIKE CONCAT(?, '@%')
               ${includeGroups ? '' : 'AND m.chat_jid NOT LIKE \'%@g.us\''}
@@ -4385,13 +4385,14 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             LIMIT 1000;
         `;
 
-        console.log(`[CHATLIST] 🔎 BUSCANDO EN BD: messages WHERE session_id = "${phoneNumber}" (excluyendo ${phoneNumber}@*)`);
+        console.log(`[CHATLIST] 🔎 BUSCANDO EN BD: messages WHERE user_session_id (aislado) (excluyendo ${phoneNumber}@*)`);
+        const userSessionId = await getUserSessionId(sessionId);
         const [allRows] = await connection.execute(query, [
             phoneNumber, // phone para subquery de LID
             phoneNumber, // nombre fallback por phone
             phoneNumber, // avatar fallback por phone
             phoneNumber, // c.session_id = ?
-            phoneNumber, // m.session_id = ? (SOLO phoneNumber)
+            userSessionId || -1, // m.user_session_id = ? (aislado por propietario)
             phoneNumber  // Parámetro para CONCAT en WHERE para excluir propio número
         ]);
 
@@ -11102,6 +11103,13 @@ app.get('/api/messages/:sessionId', async (req, res) => {
 
     const connection = await pool.getConnection();
     try {
+        // Resolver user_session_id para aislar por propietario real
+        const [sidRows] = await connection.execute(
+            'SELECT id FROM user_sessions WHERE session_id = ? OR email = ? OR phone = ? OR owner_phone_number = ? ORDER BY updated_at DESC LIMIT 1',
+            [sessionId, sessionId, sessionId, sessionId]
+        );
+        const userSessionId = sidRows[0]?.id || null;
+
         // Consulta simplificada sin join innecesario que puede causar errores
         let query = `SELECT
             m.id, m.session_id, m.user_session_id, m.chat_jid, m.sender_jid,
@@ -11111,8 +11119,8 @@ app.get('/api/messages/:sessionId', async (req, res) => {
             m.agent_id, m.agent_name,
             NULL as sentBy
         FROM messages m
-        WHERE m.session_id = ?`;
-        const queryParams = [sessionKey]; // Filtrar exclusivamente por session_id
+        WHERE m.user_session_id = ?`;
+        const queryParams = [userSessionId || -1]; // Filtrar exclusivamente por user_session_id
 
         if (number) {
             const chatJid = number.includes('@') ? number : `${number}@s.whatsapp.net`;
@@ -11161,10 +11169,10 @@ app.get('/api/messages/:sessionId', async (req, res) => {
                 await connection.execute(
                     `UPDATE messages SET is_read = true
                      WHERE chat_jid = ?
-            AND session_id = ?
+            AND user_session_id = ?
                        AND from_me = false
                        AND COALESCE(is_read, false) = false`,
-                    [chatJid, sessionKey]
+                    [chatJid, userSessionId || -1]
                 );
                 console.log(`[API - MSG] ✓ Mensajes de ${chatJid} marcados como leídos`);
             } catch (readErr) {
