@@ -20,6 +20,46 @@ function getSessions(req) {
   return req.app.get('whatsappSessions') || global.whatsappSessions || new Map();
 }
 
+// Resolver sessionId cuando viene como owner_phone_number (hex) o phone (numérico)
+async function resolveSessionId(req, rawId) {
+  if (!rawId) return rawId;
+  try {
+    const pool = getPool(req);
+    const connection = await pool.getConnection();
+    try {
+      // Si parece un owner_phone_number (16 hex)
+      if (typeof rawId === 'string' && rawId.length === 16 && /^[a-f0-9]{16}$/i.test(rawId)) {
+        const [rows] = await connection.query(
+          'SELECT session_id FROM user_sessions WHERE owner_phone_number = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
+          [rawId]
+        );
+        if (rows.length > 0 && rows[0].session_id) {
+          console.log(`[SUBSCRIPTIONS] 🔄 owner_phone_number ${rawId} → session_id ${rows[0].session_id}`);
+          return rows[0].session_id;
+        }
+      }
+
+      // Si parece un número de teléfono, mapear a session_id
+      if (/^\d{6,}$/.test(String(rawId))) {
+        const [rows] = await connection.query(
+          'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
+          [String(rawId)]
+        );
+        if (rows.length > 0 && rows[0].session_id) {
+          console.log(`[SUBSCRIPTIONS] 🔄 phone ${rawId} → session_id ${rows[0].session_id}`);
+          return rows[0].session_id;
+        }
+      }
+    } finally {
+      connection.release();
+    }
+    return rawId;
+  } catch (err) {
+    console.warn('[SUBSCRIPTIONS] ⚠️ Error resolviendo sessionId:', err.message);
+    return rawId;
+  }
+}
+
 // Función para enviar mensaje de bienvenida al activar plan
 async function sendWelcomeMessage(phone, planName, days) {
   try {
@@ -421,33 +461,31 @@ router.get('/my-subscription', async (req, res) => {
       }
     }
 
-    const rawInput = (req.query.phone || req.query.sessionId || req.headers['x-session-id'] || req.headers['x-session-token'] || req.user?.phone || '').toString();
-    let phone = rawInput.includes(':') ? rawInput.split(':')[0] : rawInput; // normalizar 595xxx:1 -> 595xxx
+      const rawInput = (req.query.phone || req.query.sessionId || req.headers['x-session-id'] || req.headers['x-session-token'] || req.user?.phone || '').toString();
+      let phone = rawInput.includes(':') ? rawInput.split(':')[0] : rawInput; // normalizar 595xxx:1 -> 595xxx
+      const resolvedId = await resolveSessionId(req, rawInput);
     console.log('[SUBSCRIPTIONS] 🔍 Phone/Session (sanitized):', phone);
 
     let sessionIdCandidate = null;
 
     // Si parece sessionId (hash largo, no numérico), intentar resolver número desde user_sessions
     if (phone && phone.length > 12 && /[a-zA-Z]/.test(phone)) {
-      sessionIdCandidate = phone;
-      phone = '';
+        sessionIdCandidate = phone;
+        // Mantener vacío para indicar que usamos sessionId resuelto
+        phone = '';
     }
 
     const connection = await pool.getConnection();
     try {
       // Resolver phone desde sessionId si no se obtuvo
-      if (!phone && sessionIdCandidate) {
-          const [sessionLookup] = await connection.execute(
-            'SELECT phone FROM user_sessions WHERE session_id = ? LIMIT 1',
-            [sessionIdCandidate]
-          );
-          if (sessionLookup.length > 0) {
-            phone = sessionLookup[0].phone;
-          }
+      // Si tenemos un sessionId resuelto, úsalo como identificador efectivo
+      let effectiveIdentifier = phone;
+      if (!effectiveIdentifier && resolvedId) {
+        effectiveIdentifier = resolvedId;
       }
 
       // ✅ Super admin NO necesita phone
-      if (!phone && !isSuperAdminFromJWT) {
+      if (!effectiveIdentifier && !isSuperAdminFromJWT) {
         connection.release();
         return res.status(401).json({ success: false, error: 'Teléfono no proporcionado' });
       }
@@ -481,7 +519,7 @@ router.get('/my-subscription', async (req, res) => {
 
       // Verificar si el phone corresponde a un usuario y si es super admin
       let isSuperAdmin = false;
-      let effectivePhone = phone;
+      let effectivePhone = effectiveIdentifier || phone;
 
       try {
         const [userRows] = await connection.execute(
@@ -497,15 +535,7 @@ router.get('/my-subscription', async (req, res) => {
       }
 
       // Aceptar tanto número como sessionId; no forzar resolución si ya es sessionId
-      if ((!effectivePhone || effectivePhone.length < 6) && phone) {
-        const [sessionLookup] = await connection.execute(
-          'SELECT session_id FROM user_sessions WHERE session_id = ? LIMIT 1',
-          [phone]
-        );
-        if (sessionLookup.length > 0) {
-          effectivePhone = sessionLookup[0].session_id;
-        }
-      }
+      // Si ya tenemos un session_id resuelto, mantenerlo
 
       console.log('[SUBSCRIPTIONS] 🔍 effectivePhone:', effectivePhone, 'isSuperAdmin:', isSuperAdmin);
 
@@ -660,7 +690,34 @@ router.get('/my-subscription', async (req, res) => {
       `, [effectivePhone]);
 
       if (users.length === 0) {
-        return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+        console.log('[SUBSCRIPTIONS] ℹ️ Usuario no encontrado, devolviendo suscripción por defecto (trial)');
+        return res.json({
+          success: true,
+          subscription: {
+            phone: effectivePhone,
+            subscription_plan: 'trial',
+            subscription_status: 'trial',
+            subscription_start_date: new Date(),
+            subscription_end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 días
+            subscription_days: 14,
+            is_admin: false,
+            is_super_admin: false,
+            days_remaining: 14,
+            plan_details: {
+              plan_name: 'trial',
+              plan_display_name: 'Plan de Prueba',
+              duration_days: 14,
+              price: 0,
+              max_users: 3,
+              max_messages_per_month: 1000,
+              max_campaigns: 1,
+              max_contacts: 100,
+              max_channels: 1,
+              bot_enabled: false,
+              api_enabled: false
+            }
+          }
+        });
       }
 
       const user = users[0];

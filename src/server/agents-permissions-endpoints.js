@@ -14,7 +14,57 @@ module.exports = function (app, pool) {
      * Obtener todos los agentes creados por el usuario actual
      * GET /api/agents/list
      */
-    app.get('/api/agents/list', authenticateToken, async (req, res) => {
+    // Middleware flexible: Requiere JWT O sessionId válido
+    const authenticateTokenOrSession = (req, res, next) => {
+        try {
+            console.log('[AGENTS-AUTH-DEBUG] Headers:', Object.keys(req.headers));
+            const authHeader = req.headers['authorization'];
+            const token = authHeader && authHeader.split(' ')[1];
+            const sessionId = req.query.sessionId;
+            
+            console.log('[AGENTS-AUTH-DEBUG] authHeader:', authHeader ? 'present' : 'missing', 'token:', token ? 'present' : 'missing', 'sessionId:', sessionId);
+            
+            // Opción 1: JWT Token
+            if (token) {
+                try {
+                    const { verifyToken } = require('./utils/tokenManager');
+                    const user = verifyToken(token);
+                    console.log('[AGENTS-AUTH] ✅ Token JWT verificado para:', user.email || user.phone);
+                    req.user = user;
+                    return next();
+                } catch (err) {
+                    console.log('[AGENTS-AUTH] ⚠️ JWT inválido:', err.message);
+                }
+            }
+            
+            // Opción 2: SessionId (QR/WhatsApp login)
+            if (sessionId) {
+                console.log('[AGENTS-AUTH] 📱 Usando sessionId para autenticación:', sessionId);
+                // Crear usuario fake con el sessionId
+                req.user = {
+                    id: 'session_' + sessionId,
+                    phone: sessionId,
+                    email: null,
+                    role: 'admin'
+                };
+                return next();
+            }
+            
+            // Sin token ni sessionId
+            return res.status(401).json({
+                success: false,
+                error: 'Token o SessionId requerido'
+            });
+        } catch (error) {
+            console.error('[AGENTS-AUTH] Error:', error);
+            return res.status(401).json({
+                success: false,
+                error: 'Error de autenticación'
+            });
+        }
+    };
+    
+    app.get('/api/agents/list', authenticateTokenOrSession, async (req, res) => {
         try {
             if (!pool) {
                 return res.status(503).json({ success: false, error: 'DB service unavailable' });
@@ -30,15 +80,19 @@ module.exports = function (app, pool) {
                 console.log('[AGENTS-LIST] 🔍 Usuario autenticado:', {
                     id: user.id,
                     phone: user.phone,
+                    email: user.email,
                     role: user.role
                 });
 
-                // Obtener teléfono del admin autenticado
+                // Obtener identificador del admin (puede ser phone o email)
+                // - Si login por QR: phone del admin
+                // - Si login por email/password: email del admin
                 const adminPhone = user.phone;
+                const adminEmail = user.email;
 
-                if (!adminPhone) {
+                if (!adminPhone && !adminEmail) {
                     connection.release();
-                    console.log('[AGENTS-LIST] ❌ Error: No se pudo obtener phone del usuario autenticado');
+                    console.log('[AGENTS-LIST] ❌ Error: No se pudo obtener phone ni email del usuario autenticado');
                     return res.status(401).json({
                         success: false,
                         error: 'Usuario no válido'
@@ -46,33 +100,34 @@ module.exports = function (app, pool) {
                 }
 
                 // Obtener agentes del admin actual
+                // Buscar donde admin_phone sea el phone O el email del admin
                 const query = `
-                SELECT
-                    id,
-                    name,
-                    email,
-                    phone,
-                    avatar_url,
-                    status,
-                    COALESCE(agent_status, 'offline') as agent_status,
-                    last_activity,
-                    COALESCE(max_concurrent_chats, 5) as max_concurrent_chats,
-                    (
-                        SELECT COUNT(*)
-                        FROM chat_assignments ca
-                        WHERE ca.user_id = users.id
-                        AND ca.status = 'active'
-                    ) as active_chats_count,
-                    created_at,
-                    updated_at
-                FROM users
-                WHERE role = 'agent'
-                AND admin_phone = ?
-                ORDER BY created_at DESC
-            `;
+                    SELECT
+                        id,
+                        name,
+                        email,
+                        phone,
+                        avatar_url,
+                        status,
+                        COALESCE(agent_status, 'offline') as agent_status,
+                        last_activity,
+                        COALESCE(max_concurrent_chats, 5) as max_concurrent_chats,
+                        (
+                            SELECT COUNT(*)
+                            FROM chat_assignments ca
+                            WHERE ca.user_id = users.id
+                            AND ca.status = 'active'
+                        ) as active_chats_count,
+                        created_at,
+                        updated_at
+                    FROM users
+                    WHERE role = 'agent'
+                    AND (admin_phone = ? OR admin_phone = ?)
+                    ORDER BY created_at DESC
+                `;
 
-                console.log('[AGENTS-LIST] 🔍 Ejecutando query para admin:', adminPhone);
-                const [agents] = await connection.execute(query, [adminPhone]);
+                console.log('[AGENTS-LIST] 🔍 Ejecutando query para admin:', { phone: adminPhone, email: adminEmail });
+                const [agents] = await connection.execute(query, [adminPhone || '', adminEmail || '']);
                 console.log('✅ [AGENTS-LIST] Agentes obtenidos para admin', adminPhone + ':', agents.length);
                 res.json({ success: true, agents });
             } finally {

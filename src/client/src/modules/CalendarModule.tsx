@@ -667,7 +667,7 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     showMore: (total: number) => `+ Ver más (${total})`
   };
 
-  if (!session) {
+  if (!sessionId) {
     return (
       <Box sx={{ p: 3 }}>
         <Alert severity="warning">Por favor inicia sesión para ver el calendario</Alert>

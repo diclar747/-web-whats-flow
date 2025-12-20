@@ -53,6 +53,42 @@ module.exports = (app, io) => {
         return pool;
     };
 
+    // Resolver sessionId cuando viene como owner_phone_number (hex) o phone (numérico)
+    const resolveSessionId = async (rawId) => {
+        if (!rawId) return rawId;
+        try {
+            // Si parece un owner_phone_number (16 hex)
+            if (typeof rawId === 'string' && rawId.length === 16 && /^[a-f0-9]{16}$/i.test(rawId)) {
+                const [rows] = await getPool().query(
+                    'SELECT session_id FROM user_sessions WHERE owner_phone_number = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
+                    [rawId]
+                );
+                if (rows.length > 0 && rows[0].session_id) {
+                    console.log(`[STATUSES] 🔄 owner_phone_number ${rawId} → session_id ${rows[0].session_id}`);
+                    return rows[0].session_id;
+                }
+            }
+
+            // Si parece un número de teléfono, mapear a session_id
+            if (/^\d{6,}$/.test(String(rawId))) {
+                const [rows] = await getPool().query(
+                    'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
+                    [String(rawId)]
+                );
+                if (rows.length > 0 && rows[0].session_id) {
+                    console.log(`[STATUSES] 🔄 phone ${rawId} → session_id ${rows[0].session_id}`);
+                    return rows[0].session_id;
+                }
+            }
+
+            // Si ya es un session_id válido, devolverlo tal cual
+            return rawId;
+        } catch (err) {
+            console.warn('[STATUSES] ⚠️ Error resolviendo sessionId:', err.message);
+            return rawId;
+        }
+    };
+
     // ==================== CREAR ESTADO ====================
     /**
      * POST /api/statuses/create
@@ -61,7 +97,8 @@ module.exports = (app, io) => {
     router.post('/create', upload.single('mediaFile'), async (req, res) => {
         try {
             const pool = getPool();
-            const { sessionId, textContent, backgroundColor, fontStyle } = req.body;
+            const { sessionId: rawSessionId, textContent, backgroundColor, fontStyle } = req.body;
+            const sessionId = await resolveSessionId(rawSessionId);
 
             if (!sessionId) {
                 return res.status(400).json({ success: false, error: 'sessionId es requerido' });
@@ -101,7 +138,8 @@ module.exports = (app, io) => {
     router.get('/:sessionId', async (req, res) => {
         try {
             const pool = getPool();
-            const { sessionId } = req.params;
+            const { sessionId: rawSessionId } = req.params;
+            const sessionId = await resolveSessionId(rawSessionId);
             const { status } = req.query;
 
             let statusQuery = `
@@ -252,7 +290,8 @@ module.exports = (app, io) => {
      */
     router.post('/schedule/create', async (req, res) => {
         try {
-            const { sessionId, name, statusIds, intervalMinutes, rotationDays } = req.body;
+            const { sessionId: rawSessionId, name, statusIds, intervalMinutes, rotationDays } = req.body;
+            const sessionId = await resolveSessionId(rawSessionId);
 
             if (!sessionId || !name || !statusIds || !Array.isArray(statusIds) || statusIds.length === 0) {
                 return res.status(400).json({

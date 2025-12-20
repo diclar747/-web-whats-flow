@@ -358,7 +358,8 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       const response = await fetch(`${getAPIBaseURL()}/api/campaign-templates/${sessionId}`);
       const data = await response.json();
       if (data.success) {
-        setTemplates(data.data);
+        // Asegurar arreglo aunque el backend no envíe data
+        setTemplates(Array.isArray(data.data) ? data.data : []);
       }
     } catch (error) {
       console.error('Error cargando plantillas:', error);
@@ -3191,7 +3192,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
         </DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
-            {templates.map((template) => (
+            {(templates || []).map((template) => (
               <Grid item xs={12} sm={6} key={template.id}>
                 <Card
                   sx={{

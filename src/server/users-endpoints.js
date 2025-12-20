@@ -3,6 +3,40 @@ const jwt = require('jsonwebtoken');
 const { generateDeviceFingerprint, getDeviceInfo } = require('./utils/deviceFingerprint');
 
 module.exports = function (app, pool) {
+    // Resolver sessionId cuando viene como owner_phone_number (hex) o phone (numérico)
+    const resolveSessionId = async (rawId) => {
+        if (!rawId) return rawId;
+        try {
+            // Si parece un owner_phone_number (16 hex)
+            if (typeof rawId === 'string' && rawId.length === 16 && /^[a-f0-9]{16}$/i.test(rawId)) {
+                const [rows] = await pool.query(
+                    'SELECT session_id FROM user_sessions WHERE owner_phone_number = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
+                    [rawId]
+                );
+                if (rows.length > 0 && rows[0].session_id) {
+                    console.log(`[USERS] 🔄 owner_phone_number ${rawId} → session_id ${rows[0].session_id}`);
+                    return rows[0].session_id;
+                }
+            }
+
+            // Si parece un número de teléfono, mapear a session_id
+            if (/^\d{6,}$/.test(String(rawId))) {
+                const [rows] = await pool.query(
+                    'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
+                    [String(rawId)]
+                );
+                if (rows.length > 0 && rows[0].session_id) {
+                    console.log(`[USERS] 🔄 phone ${rawId} → session_id ${rows[0].session_id}`);
+                    return rows[0].session_id;
+                }
+            }
+
+            return rawId;
+        } catch (err) {
+            console.warn('[USERS] ⚠️ Error resolviendo sessionId:', err.message);
+            return rawId;
+        }
+    };
 
     // ==================== AUTENTICACIÓN ====================
 
@@ -156,8 +190,9 @@ module.exports = function (app, pool) {
             if (!pool) {
                 return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
-
-            const { role, department, status, sessionId } = req.query;
+            const { role, department, status } = req.query;
+            const sessionIdRaw = req.query.sessionId;
+            const sessionId = await resolveSessionId(sessionIdRaw);
             const connection = await pool.getConnection();
 
             try {
@@ -232,8 +267,9 @@ module.exports = function (app, pool) {
             if (!pool) {
                 return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
-
-            const { name, email, password, role, department, category, phone, sessionId } = req.body;
+            const { name, email, password, role, department, category, phone } = req.body;
+            const sessionIdRaw = req.body.sessionId;
+            const sessionId = await resolveSessionId(sessionIdRaw);
 
             if (!name || !email || !password) {
                 return res.status(400).json({ success: false, error: 'Nombre, email y contraseña son requeridos' });
@@ -387,7 +423,9 @@ module.exports = function (app, pool) {
             }
 
             const { id } = req.params;
-            const { status, sessionId } = req.body;
+            const { status } = req.body;
+            const sessionIdRaw = req.body.sessionId;
+            const sessionId = await resolveSessionId(sessionIdRaw);
 
             if (!status || !sessionId) {
                 return res.status(400).json({ success: false, error: 'Status y sessionId son requeridos' });
