@@ -94,7 +94,7 @@ const checkAdmin = async (req, res, next) => {
     
     // Si no hay req.user, intentar desde headers de autenticación
     if (!phone && !userId) {
-      // Buscar en headers Authorization
+      // Buscar en headers Authorization (JWT)
       const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith('Bearer ')) {
         try {
@@ -108,15 +108,28 @@ const checkAdmin = async (req, res, next) => {
           console.log('[checkAdmin] JWT inválido:', jwtErr.message);
         }
       }
-      
-      // Si tampoco hay JWT, buscar sessionId en headers
+
+      // Si tampoco hay JWT, buscar sessionId en headers o query y resolver propietario admin
       if (!phone && !userId) {
-        const sessionId = req.headers['x-session-id'] || req.headers['sessionid'];
+        const sessionId = req.headers['x-session-id'] || req.headers['sessionid'] || req.query?.sessionId || req.body?.sessionId;
         if (sessionId) {
-          // Solo si es un teléfono (números)
-          if (/^\d+$/.test(sessionId)) {
-            phone = sessionId;
-            console.log('[checkAdmin] Usuario identificado desde sessionId header:', phone);
+          const poolHdr = req.app.get('dbPool') || req.app.parent?.get('dbPool') || global.dbPool;
+          if (!poolHdr) {
+            return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
+          }
+          const conn = await poolHdr.getConnection();
+          try {
+            const [rows] = await conn.query(
+              'SELECT owner_phone_number, phone, session_id FROM user_sessions WHERE session_id = ? AND is_active = 1 LIMIT 1',
+              [sessionId]
+            );
+            if (rows.length > 0) {
+              const owner = rows[0].owner_phone_number || rows[0].phone;
+              phone = owner;
+              console.log('[checkAdmin] Usuario identificado por sessionId → owner_phone:', owner);
+            }
+          } finally {
+            conn.release();
           }
         }
       }
@@ -153,7 +166,7 @@ const checkAdmin = async (req, res, next) => {
       // Primero buscar en user_sessions si tenemos un teléfono
       if (phone) {
         const [sessions] = await connection.query(
-          'SELECT phone_number as phone, session_id as id FROM user_sessions WHERE phone_number = ? AND is_active = 1',
+          'SELECT phone AS phone, session_id AS id FROM user_sessions WHERE phone = ? AND is_active = 1',
           [phone]
         );
 

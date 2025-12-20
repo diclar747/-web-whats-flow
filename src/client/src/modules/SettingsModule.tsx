@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { getAPIBaseURL } from '../utils/socketConfig';
+import { useSocket } from '../context/SocketContext';
 import AdminSubscriptionPanel from '../components/AdminSubscriptionPanel';
+import AdminPanel from '../pages/admin/AdminPanel';
 import APIRestSettings from '../components/APIRestSettings';
 import PlanSelector from '../components/PlanSelector';
 import {
@@ -400,6 +402,7 @@ interface BillingInfo {
 
 const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) => {
   const location = useLocation();
+  const socket = useSocket();
   const [selectedTab, setSelectedTab] = useState(0);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<UserAccount[]>([]);
@@ -524,30 +527,102 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       setLoading(true);
       const token = localStorage.getItem('token');
 
+      // 🔐 IMPORTANTE: Verificar rol del usuario autenticado (no del sessionId de WhatsApp)
+      let userIsSuperAdmin = false;
+      let userIsAdmin = false;
+      let userEmail = null;
+
+      // Obtener usuario desde localStorage
+      const savedUser = localStorage.getItem('user');
+      if (savedUser) {
+        try {
+          const userData = JSON.parse(savedUser);
+          userEmail = userData.email || userData.phone_number;
+          console.log('[SETTINGS] 👤 Usuario autenticado:', userEmail);
+
+          // Verificar si tiene rol super_admin
+          if (userData.role === 'super_admin' || userData.role === 'superadmin') {
+            userIsSuperAdmin = true;
+            userIsAdmin = true;
+            console.log('[SETTINGS] 👑 Super Admin detectado desde localStorage:', userEmail);
+          }
+
+          // También es admin si tiene phone_number específico (legacy)
+          if (userData.phone_number === '595994854167' || userData.phone === '595994854167') {
+            userIsSuperAdmin = true;
+            userIsAdmin = true;
+            console.log('[SETTINGS] 👑 Super Admin detectado por teléfono');
+          }
+
+          // También verificar por email específico (sistempar@gmail.com)
+          if (userData.email === 'sistempar@gmail.com') {
+            userIsSuperAdmin = true;
+            userIsAdmin = true;
+            console.log('[SETTINGS] 👑 Super Admin detectado por email: sistempar@gmail.com');
+          }
+        } catch (e) {
+          console.error('[SETTINGS] Error parseando usuario:', e);
+        }
+      }
+
       // Cargar suscripción actual del usuario
       try {
-        const subResponse = await fetch(`${getAPIBaseURL()}/api/subscriptions/my-subscription?phone=${sessionId}`);
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json'
+        };
+
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const subResponse = await fetch(`${getAPIBaseURL()}/api/subscriptions/my-subscription?phone=${sessionId}`, {
+          headers
+        });
         const subData = await subResponse.json();
 
         if (subData.success) {
           setMySubscription(subData.subscription);
           if (subData.subscription) {
-            setIsAdmin(subData.subscription.is_admin || sessionId?.includes('595994854167'));
-            setIsSuperAdmin(subData.subscription.is_super_admin || sessionId?.includes('595994854167'));
+            // Combinar verificación de suscripción CON rol de usuario autenticado
+            const finalIsAdmin = subData.subscription.is_admin || userIsAdmin;
+            const finalIsSuperAdmin = subData.subscription.is_super_admin || userIsSuperAdmin;
+
+            console.log('[SETTINGS] 🔍 Estableciendo roles:');
+            console.log('  - userIsAdmin:', userIsAdmin);
+            console.log('  - userIsSuperAdmin:', userIsSuperAdmin);
+            console.log('  - subData.is_admin:', subData.subscription.is_admin);
+            console.log('  - subData.is_super_admin:', subData.subscription.is_super_admin);
+            console.log('  - ✅ Final isAdmin:', finalIsAdmin);
+            console.log('  - ✅ Final isSuperAdmin:', finalIsSuperAdmin);
+
+            setIsAdmin(finalIsAdmin);
+            setIsSuperAdmin(finalIsSuperAdmin);
+
             const status = subData.subscription.subscription_status;
             const daysRemaining = subData.subscription.days_remaining ?? 0;
             if (status === 'expired' || status === 'inactive' || (status === 'trial' && daysRemaining <= 0)) {
-              setSelectedTab(3);
+              // Super admin puede ver todo aunque la suscripción esté vencida
+              if (!userIsSuperAdmin) {
+                setSelectedTab(3);
+              }
             }
           } else {
-            // Sin suscripción, verificar si es super admin por teléfono
-            setIsAdmin(sessionId?.includes('595994854167') || false);
-            setIsSuperAdmin(sessionId?.includes('595994854167') || false);
-            setSelectedTab(3);
+            // Sin suscripción - usar solo rol del usuario
+            console.log('[SETTINGS] ⚠️ Sin suscripción, usando solo rol de usuario');
+            console.log('  - userIsAdmin:', userIsAdmin);
+            console.log('  - userIsSuperAdmin:', userIsSuperAdmin);
+            setIsAdmin(userIsAdmin);
+            setIsSuperAdmin(userIsSuperAdmin);
+            if (!userIsSuperAdmin) {
+              setSelectedTab(3);
+            }
           }
         }
       } catch (error) {
         console.error('Error loading subscription:', error);
+        // En caso de error, usar rol del usuario autenticado
+        setIsAdmin(userIsAdmin);
+        setIsSuperAdmin(userIsSuperAdmin);
       }
 
       // Cargar preferencia de sincronización
@@ -826,9 +901,25 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     setWaError('');
 
     try {
-      // ✅ Enviar sessionId para filtrar sesiones del usuario autenticado
-      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active?sessionId=${encodeURIComponent(sessionId)}`);
+      // ✅ Obtener token de autenticación para identificar al usuario
+      const token = localStorage.getItem('token') || localStorage.getItem('whatsflow_token');
+
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      // ✅ CRÍTICO: Enviar token JWT para que el backend identifique al usuario por email
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // ✅ Enviar sessionId como fallback (legacy)
+      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active?sessionId=${encodeURIComponent(sessionId)}`, {
+        headers
+      });
       const data = await response.json();
+
+      console.log('[WHATSAPP] 📡 Sesiones activas recibidas:', data);
 
       if (data.success) {
         setWaSessions(data.sessions || []);
@@ -861,19 +952,19 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         if (data.success && data.isConnected && data.phoneNumber && data.sessionId === targetSessionId) {
           console.log('[WHATSAPP] ✅ Sesión NUEVA autenticada detectada');
           stopQrPolling();
-          
+
           // Guardar sessionId inmediatamente
           localStorage.setItem('whatsflow_session', targetSessionId);
           sessionStorage.setItem('whatsflow_session', targetSessionId);
-          
+
           setQrState({ sessionId: '', qrDataUrl: '', isLoading: false });
           setSnackbar({ open: true, message: `✅ WhatsApp conectado: ${data.phoneNumber}`, severity: 'success' });
-          
-          // Recargar después de 1.5 segundos
+
+          // ✅ Actualizar la lista de sesiones sin recargar la página
+          console.log('[WHATSAPP] 🔄 Actualizando lista de sesiones...');
           setTimeout(() => {
-            console.log('[WHATSAPP] 🔄 Recargando página...');
-            window.location.reload();
-          }, 1500);
+            fetchActiveSessions();
+          }, 1000);
         } else if (data.success && data.isConnected && !data.phoneNumber) {
           console.log('[WHATSAPP] ⏳ Sesión en memoria sin phoneNumber aún (esperando escaneo)');
         } else if (data.success && data.isConnected && data.sessionId !== targetSessionId) {
@@ -911,10 +1002,21 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         console.warn('[WHATSAPP] ⚠️ No se pudieron limpiar sesiones previas:', cleanErr);
       }
 
+      // ✅ Obtener token JWT para asociar sesión con usuario autenticado
+      const token = localStorage.getItem('token') || localStorage.getItem('whatsflow_token');
+
+      const qrHeaders: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+
+      if (token) {
+        qrHeaders['Authorization'] = `Bearer ${token}`;
+      }
+
       // Usar /api/qr-refresh para forzar regeneración de QR
       const response = await fetch(`${getAPIBaseURL()}/api/qr-refresh`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: qrHeaders,
         body: JSON.stringify({
           deviceId: ensuredDeviceId,
           ownerPhone: sessionId
@@ -955,14 +1057,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       const data = await response.json();
 
       if (!data.success) {
-        throw new Error(data.error || 'No se pudo desconectar la sesión');
+        throw new Error(data.error || 'No se pudo eliminar la conexión');
       }
 
-      setSnackbar({ open: true, message: 'Sesión desconectada', severity: 'success' });
-      fetchActiveSessions();
+      console.log('[WHATSAPP] ✅ Conexión eliminada:', targetSessionId);
     } catch (error: any) {
-      console.error('[WHATSAPP] Error desconectando sesión:', error);
-      setWaError(error?.message || 'No se pudo desconectar la sesión');
+      console.error('[WHATSAPP] Error eliminando conexión:', error);
+      setSnackbar({ open: true, message: error?.message || 'No se pudo eliminar la conexión', severity: 'error' });
+      throw error;
     }
   };
 
@@ -970,11 +1072,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
   const [disconnectDialog, setDisconnectDialog] = useState<{ open: boolean; targetSessionId: string; isPrimary: boolean; hasSecondaries: boolean }>({ open: false, targetSessionId: '', isPrimary: false, hasSecondaries: false });
 
   const openDisconnectDialog = (targetSessionId: string) => {
-    const targetSession = waSessions.find((s: any) => s.sessionId === targetSessionId);
-    const isPrimary = targetSession?.isPrimary || targetSessionId === sessionId;
-    const hasSecondaries = waSessions.filter((s: any) => s.ownerPhone === targetSession?.phoneNumber).length > 0;
-
-    setDisconnectDialog({ open: true, targetSessionId, isPrimary, hasSecondaries });
+    setDisconnectDialog({ open: true, targetSessionId, isPrimary: false, hasSecondaries: false });
   };
 
   const closeDisconnectDialog = () => {
@@ -982,19 +1080,17 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
   };
 
   const confirmDisconnect = async () => {
-    const { targetSessionId, isPrimary } = disconnectDialog;
+    const { targetSessionId } = disconnectDialog;
     closeDisconnectDialog();
+    
+    setSnackbar({ open: true, message: 'Eliminando conexión...', severity: 'info' });
+    
     await disconnectSession(targetSessionId);
-
-    if (isPrimary) {
-      setSnackbar({ open: true, message: 'Se desconectó la línea principal. El sistema puede cerrar sesión.', severity: 'warning' });
-      try {
-        const resp = await fetch(`${getAPIBaseURL()}/api/logout-session`, { method: 'POST' });
-        await resp.json().catch(() => { });
-      } catch (e) {
-        // Ignorar si no existe endpoint
-      }
-    }
+    
+    // ✅ Actualizar lista inmediatamente
+    await fetchActiveSessions();
+    
+    setSnackbar({ open: true, message: 'Conexión eliminada exitosamente', severity: 'success' });
   };
 
   const handleReconnectSession = async (targetSessionId: string) => {
@@ -1042,6 +1138,39 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       fetchActiveSessions();
     }
   }, [selectedTab, sessionId]);
+
+  // ✅ Socket.IO listener para actualizar la lista cuando WhatsApp se conecta
+  useEffect(() => {
+    if (!socket) return;
+
+    // Escuchar cuando una sesión de WhatsApp se conecta exitosamente
+    const handleConnectionSuccess = (data: any) => {
+      console.log('[SETTINGS] 🎉 WhatsApp conectado (socket event):', data);
+
+      // Actualizar la lista de sesiones activas automáticamente
+      if (selectedTab === 2) {
+        console.log('[SETTINGS] 🔄 Recargando lista de sesiones...');
+        fetchActiveSessions();
+      }
+
+      // Mostrar notificación
+      setSnackbar({
+        open: true,
+        message: `✅ WhatsApp conectado: ${data.phoneNumber || 'Nueva línea'}`,
+        severity: 'success'
+      });
+    };
+
+    // Escuchar eventos de conexión de WhatsApp
+    socket.on('whatsapp-connected', handleConnectionSuccess);
+    socket.on('connection-update', handleConnectionSuccess);
+
+    // Cleanup al desmontar
+    return () => {
+      socket.off('whatsapp-connected');
+      socket.off('connection-update');
+    };
+  }, [socket, selectedTab]);
 
   // ============== FUNCIONES CRUD DE USUARIOS ==============
 
@@ -2128,38 +2257,21 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       {/* Diálogo de confirmación de desconexión */}
       <Dialog open={disconnectDialog.open} onClose={closeDisconnectDialog}>
         <DialogTitle>
-          {disconnectDialog.isPrimary ? '⚠️ Desconectar línea principal' : 'Confirmar desconexión'}
+          Confirmar desconexión
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {disconnectDialog.isPrimary ? (
-              <>
-                <strong>Esta es la línea principal</strong> con la que iniciaste sesión en el sistema.
-                <br /><br />
-                Si desconectas esta línea:
-                <ul style={{ marginTop: '8px', marginBottom: '8px' }}>
-                  <li>Cerrarás tu sesión actual en el panel</li>
-                  <li>El sistema puede cerrarse completamente</li>
-                  <li>Perderás acceso hasta que vuelvas a conectar esta línea</li>
-                  {disconnectDialog.hasSecondaries && (
-                    <li><strong>Las líneas secundarias asociadas también pueden verse afectadas</strong></li>
-                  )}
-                </ul>
-                ¿Estás seguro de continuar?
-              </>
-            ) : (
-              <>
-                Esta es una línea secundaria utilizada para campañas.
-                <br /><br />
-                ¿Seguro que deseas desconectarla? Podrás reconectarla más adelante escaneando un QR.
-              </>
-            )}
+            ¿Estás seguro que deseas eliminar esta conexión de WhatsApp?
+            <br /><br />
+            <strong>Nota importante:</strong> Esto solo desconectará el número de WhatsApp.
+            Tu sesión en el panel seguirá activa y podrás reconectar esta u otras líneas
+            escaneando un nuevo código QR cuando lo necesites.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeDisconnectDialog}>Cancelar</Button>
           <Button onClick={confirmDisconnect} color="error" variant="contained">
-            {disconnectDialog.isPrimary ? 'Sí, desconectar y cerrar sesión' : 'Desconectar'}
+            Eliminar conexión
           </Button>
         </DialogActions>
       </Dialog>
@@ -2396,10 +2508,9 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         <APIRestSettings sessionId={sessionId} />
       )}
 
-      {/* Tab 8: Panel de Administrador (solo para admin) */}
-      {/* Tab 6: Panel Admin - ajustado de índice 8 a 6 */}
-      {isAdmin && selectedTab === 5 && (
-        <AdminSubscriptionPanel sessionId={sessionId} userPhone={sessionId} />
+      {/* Tab 6: Panel de Administrador (solo para admins y super admins) */}
+      {(isAdmin || isSuperAdmin) && selectedTab === 5 && (
+        isSuperAdmin ? <AdminPanel /> : <AdminSubscriptionPanel sessionId={sessionId} userPhone={sessionId} />
       )}
 
       {/* Dialogs */}

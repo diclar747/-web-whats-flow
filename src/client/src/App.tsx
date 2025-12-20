@@ -354,8 +354,50 @@ const App: React.FC = () => {
         setUserType(savedUserType as 'admin' | 'agent' || 'agent');
 
         console.log('✅ [APP-INIT] Usuario autenticado con JWT restaurado:', restoredUser.email);
+
+        // 🔧 FIX: SIEMPRE verificar y sincronizar sessionId con el backend
+        console.log('🔄 Verificando sessionId con el backend...');
+        try {
+          const sessionsResp = await fetch('/api/sessions/active', {
+            headers: {
+              'Authorization': `Bearer ${savedToken}`
+            }
+          });
+          const sessionsData = await sessionsResp.json();
+          console.log('📡 Respuesta de /api/sessions/active:', sessionsData);
+
+          if (sessionsData.success && sessionsData.sessions && sessionsData.sessions.length > 0) {
+            const activeSession = sessionsData.sessions[0];
+            const foundSessionId = activeSession.sessionId;
+
+            // Si el sessionId guardado es diferente al del backend, actualizarlo
+            if (savedSessionId !== foundSessionId) {
+              console.log(`🔄 Actualizando sessionId: ${savedSessionId} → ${foundSessionId}`);
+              sessionStorage.setItem('whatsflow_session', foundSessionId);
+              localStorage.setItem('whatsflow_session', foundSessionId);
+              setSessionId(foundSessionId);
+            } else {
+              console.log('✅ SessionId ya sincronizado:', foundSessionId);
+              setSessionId(foundSessionId);
+            }
+          } else if (savedSessionId) {
+            // Si hay sessionId guardado pero el backend no tiene sesiones activas, mantenerlo por ahora
+            console.log('⚠️ No hay sesiones activas en backend, manteniendo sessionId guardado:', savedSessionId);
+            setSessionId(savedSessionId);
+          } else {
+            console.log('⚠️ No se encontró sesión activa de WhatsApp para este usuario');
+          }
+        } catch (fetchError) {
+          console.error('❌ Error verificando sessionId:', fetchError);
+          // En caso de error, usar el sessionId guardado si existe
+          if (savedSessionId) {
+            console.log('⚠️ Usando sessionId guardado por error de red:', savedSessionId);
+            setSessionId(savedSessionId);
+          }
+        }
+
         setLoading(false);
-        return; // Sesión JWT restaurada, no necesitamos verificar WhatsApp sessionId
+        return; // Sesión JWT restaurada
       }
 
       try {
@@ -488,7 +530,36 @@ const App: React.FC = () => {
 
                 setUser(restoredUser);
                 setToken(savedToken);
-                setSessionId(savedSessionId);
+
+                // Si NO tiene sessionId, buscar automáticamente en el backend
+                if (!savedSessionId) {
+                  console.log('⚠️ Usuario sin sessionId, buscando sesión activa de WhatsApp...');
+                  try {
+                    const sessionsResp = await fetch('/api/sessions/active', {
+                      headers: {
+                        'Authorization': `Bearer ${savedToken}`
+                      }
+                    });
+                    const sessionsData = await sessionsResp.json();
+                    if (sessionsData.success && sessionsData.sessions && sessionsData.sessions.length > 0) {
+                      const activeSession = sessionsData.sessions[0];
+                      const foundSessionId = activeSession.sessionId;
+                      console.log('✅ SessionId encontrado automáticamente:', foundSessionId);
+                      sessionStorage.setItem('whatsflow_session', foundSessionId);
+                      localStorage.setItem('whatsflow_session', foundSessionId);
+                      setSessionId(foundSessionId);
+                    } else {
+                      console.log('⚠️ No se encontró sesión activa de WhatsApp');
+                      setSessionId(null);
+                    }
+                  } catch (fetchError) {
+                    console.error('Error buscando sessionId:', fetchError);
+                    setSessionId(savedSessionId);
+                  }
+                } else {
+                  setSessionId(savedSessionId);
+                }
+
                 setUserType('agent');
 
                 console.log('✅ Usuario agente restaurado:', restoredUser.name);

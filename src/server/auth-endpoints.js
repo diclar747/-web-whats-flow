@@ -113,10 +113,10 @@ function registerAuthEndpoints(app, pool) {
             const connection = await pool.getConnection();
 
             try {
-                // Buscar usuario
+                // Buscar usuario en tabla 'users' (email/password login)
                 const [users] = await connection.execute(
-                    `SELECT id, full_name, email, phone_number, password_hash, is_active 
-                     FROM user_sessions WHERE email = ?`,
+                    `SELECT id, name as full_name, email, phone as phone_number, password_hash, is_active, is_super_admin, is_admin
+                     FROM users WHERE email = ?`,
                     [email]
                 );
 
@@ -128,6 +128,7 @@ function registerAuthEndpoints(app, pool) {
                 }
 
                 const user = users[0];
+                console.log(`[AUTH] 👤 Usuario encontrado:`, email, `| Super Admin:`, user.is_super_admin === 1);
 
 
                 // Verificar contraseña
@@ -146,20 +147,52 @@ function registerAuthEndpoints(app, pool) {
                     [user.id]
                 );
 
-                // Generar token
-                const token = generateToken(user);
+                // Determinar rol del usuario ANTES de generar token
+                let userRole = 'user';
+                if (user.is_super_admin === 1 || user.is_super_admin === true) {
+                    userRole = 'super_admin';
+                } else if (user.is_admin === 1 || user.is_admin === true) {
+                    userRole = 'admin';
+                }
+
+                console.log(`[AUTH] 👤 Rol asignado para ${email}:`, userRole);
+
+                // Generar token JWT con el rol correcto
+                const token = generateToken(user, userRole);
+
+                // Buscar sesión activa de WhatsApp para este usuario
+                let whatsappSessionId = null;
+                try {
+                    const [activeSessions] = await connection.execute(
+                        `SELECT session_id, phone_number FROM user_sessions
+                         WHERE is_active = 1
+                         ORDER BY last_connection_time DESC
+                         LIMIT 1`
+                    );
+                    if (activeSessions.length > 0) {
+                        // Priorizar session_id sobre phone_number para mejor compatibilidad
+                        whatsappSessionId = activeSessions[0].session_id;
+                        if (!whatsappSessionId || whatsappSessionId.length < 10) {
+                            whatsappSessionId = activeSessions[0].phone_number;
+                        }
+                        console.log(`[AUTH] ✅ Sesión activa de WhatsApp encontrada: ${whatsappSessionId} (phone: ${activeSessions[0].phone_number})`);
+                    }
+                } catch (err) {
+                    console.log('[AUTH] ⚠️ No se pudo buscar sesión de WhatsApp:', err.message);
+                }
 
                 console.log(`[AUTH] Login exitoso: ${email}`);
 
                 res.json({
                     success: true,
                     token,
+                    whatsappSessionId, // Incluir sessionId de WhatsApp si existe
                     user: {
                         id: user.id,
                         full_name: user.full_name,
                         email: user.email,
                         phone_number: user.phone_number,
-                        role: user.phone_number === '595994854167' ? 'super_admin' : 'user'
+                        role: userRole
                     }
                 });
 
@@ -182,9 +215,10 @@ function registerAuthEndpoints(app, pool) {
             const connection = await pool.getConnection();
 
             try {
+                // Buscar usuario en tabla 'users'
                 const [users] = await connection.execute(
-                    `SELECT id, full_name, email, phone_number 
-                     FROM user_sessions WHERE id = ? AND is_active = 1`,
+                    `SELECT id, name as full_name, email, phone as phone_number, is_super_admin, is_admin
+                     FROM users WHERE id = ? AND is_active = 1`,
                     [req.user.userId]
                 );
 
@@ -197,6 +231,14 @@ function registerAuthEndpoints(app, pool) {
 
                 const user = users[0];
 
+                // Determinar rol del usuario
+                let userRole = 'user';
+                if (user.is_super_admin === 1 || user.is_super_admin === true) {
+                    userRole = 'super_admin';
+                } else if (user.is_admin === 1 || user.is_admin === true) {
+                    userRole = 'admin';
+                }
+
                 res.json({
                     success: true,
                     user: {
@@ -204,7 +246,7 @@ function registerAuthEndpoints(app, pool) {
                         full_name: user.full_name,
                         email: user.email,
                         phone_number: user.phone_number,
-                        role: user.phone_number === '595994854167' ? 'super_admin' : 'user'
+                        role: userRole
                     }
                 });
 

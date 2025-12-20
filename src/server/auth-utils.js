@@ -23,12 +23,30 @@ async function verifyPassword(password, hash) {
 /**
  * Generar JWT token
  */
-function generateToken(user) {
+function generateToken(user, customRole = null) {
+    // Determinar rol del usuario
+    let userRole = customRole; // Si se proporciona un rol custom, usarlo
+
+    if (!userRole) {
+        // Si no hay rol custom, determinar desde los campos del usuario
+        if (user.is_super_admin === 1 || user.is_super_admin === true) {
+            userRole = 'super_admin';
+        } else if (user.is_admin === 1 || user.is_admin === true) {
+            userRole = 'admin';
+        } else if (user.phone_number === '595994854167') {
+            // Legacy: por phone number
+            userRole = 'super_admin';
+        } else {
+            userRole = 'user';
+        }
+    }
+
     const payload = {
         userId: user.id,
         email: user.email,
         phoneNumber: user.phone_number,
-        role: user.phone_number === '595994854167' ? 'super_admin' : 'user'
+        phone: user.phone_number, // Agregar también como 'phone' para compatibilidad
+        role: userRole
     };
 
     return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });

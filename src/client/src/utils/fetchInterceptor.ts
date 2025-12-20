@@ -33,12 +33,39 @@ const isPublicRoute = (url: string): boolean => {
  */
 export const setupFetchInterceptor = (): void => {
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+    // Normalizar sessionId/phone que vengan con sufijos tipo ":1"
+    let normalizedUrl = rawUrl;
+    try {
+      const urlObj = new URL(rawUrl, window.location.origin);
+
+      // Normalizar query params comunes
+      ['sessionId', 'phone'].forEach((key) => {
+        const val = urlObj.searchParams.get(key);
+        if (val !== null) {
+          const clean = decodeURIComponent(val).split(':')[0] || '';
+          if (clean) {
+            urlObj.searchParams.set(key, clean);
+          } else {
+            urlObj.searchParams.delete(key);
+          }
+        }
+      });
+
+      // Limpiar sufijos ":<num>" en pathname (p.ej. /boards/:1)
+      urlObj.pathname = urlObj.pathname.replace(/\/:\d+(?=\/|$)/g, '');
+
+      normalizedUrl = urlObj.pathname + urlObj.search + urlObj.hash;
+    } catch (e) {
+      // Si falla el parseo, continuar con la URL original
+      normalizedUrl = rawUrl.replace(/%3A\d+/gi, '').replace(/:\d+(?=\?|$)/g, '');
+    }
 
     // Si es ruta pública, usar fetch original sin headers
-    if (isPublicRoute(url)) {
-      console.log('[FETCH-INTERCEPTOR] ✅ Ruta pública, sin validación:', url);
-      return originalFetch(input, init);
+    if (isPublicRoute(normalizedUrl)) {
+      console.log('[FETCH-INTERCEPTOR] ✅ Ruta pública, sin validación:', normalizedUrl);
+      return originalFetch(normalizedUrl, init);
     }
 
     // Obtener credenciales de sesión
@@ -57,7 +84,7 @@ export const setupFetchInterceptor = (): void => {
       // NO mostrar advertencias para:
       // 1. Admin por QR (con o sin token todavía)
       // 2. Endpoints públicos que no requieren autenticación
-      const url = typeof input === 'string' ? input : (input as Request).url;
+      const url = normalizedUrl;
 
       // Solo advertir si es endpoint crítico Y NO es admin Y NO tiene token
       if ((url.includes('/api/auth/') || url.includes('/api/admin/'))
@@ -69,7 +96,7 @@ export const setupFetchInterceptor = (): void => {
         console.log('[FETCH-INTERCEPTOR] ℹ️ Sin sessionToken/deviceId, pero permitido para:', url);
       }
 
-      return originalFetch(input, init);
+      return originalFetch(normalizedUrl, init);
     }
 
     // Agregar headers de autenticación
@@ -83,7 +110,7 @@ export const setupFetchInterceptor = (): void => {
 
     // Hacer petición con headers actualizados
     try {
-      const response = await originalFetch(input, {
+      const response = await originalFetch(normalizedUrl, {
         ...init,
         headers
       });

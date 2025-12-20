@@ -85,6 +85,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         if (rememberMe) {
           localStorage.setItem('token', data.token);
           localStorage.setItem('whatsflow_token', data.token);
+          localStorage.setItem('user', JSON.stringify(data.user)); // 🔐 Guardar usuario completo para verificación de rol
           localStorage.setItem('userRole', data.user.role);
           localStorage.setItem('userName', data.user.name);
           localStorage.setItem('userId', data.user.id);
@@ -97,10 +98,12 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             localStorage.setItem('permissionsByModule', JSON.stringify(data.permissionsByModule));
           }
           console.log('✅ Sesión guardada en localStorage (Persistente)');
+          console.log('👤 Usuario guardado:', data.user.email, '| Rol:', data.user.role);
         } else {
           // Si no quiere recordar, limpiar localStorage
           localStorage.removeItem('token');
           localStorage.removeItem('whatsflow_token');
+          localStorage.removeItem('user');
           localStorage.removeItem('userRole');
           localStorage.removeItem('userName');
           localStorage.removeItem('userId');
@@ -112,20 +115,25 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
         console.log('📦 Sesión única guardada en sessionStorage');
 
-        // IMPORTANTE: Si el backend devuelve sessionId, guardarlo
-        if (data.sessionId) {
-          sessionStorage.setItem('whatsflow_session', data.sessionId);
-          console.log('✅ SessionId desde BD:', data.sessionId);
+        // IMPORTANTE: Si el backend devuelve sessionId o whatsappSessionId, guardarlo
+        const whatsappSession = data.whatsappSessionId || data.sessionId;
+        if (whatsappSession) {
+          sessionStorage.setItem('whatsflow_session', whatsappSession);
+          if (rememberMe) {
+            localStorage.setItem('whatsflow_session', whatsappSession);
+          }
+          console.log('✅ WhatsApp SessionId desde BD:', whatsappSession);
         }
 
         // Llamar al callback con los datos de usuario Y sessionId
-        onLoginSuccess(data.user, data.token, data.sessionId);
+        onLoginSuccess(data.user, data.token, whatsappSession);
 
         // Verificar estado de suscripción y redirigir a Mi Plan si corresponde
         try {
-          const phone = data.user?.phone;
-          if (phone) {
-            const subResp = await fetch(`${getAPIBaseURL()}/api/subscriptions/my-subscription?phone=${encodeURIComponent(phone)}`);
+          // Usar whatsappSession si existe, sino usar phone del usuario
+          const identifierForSub = whatsappSession || data.user?.phone;
+          if (identifierForSub) {
+            const subResp = await fetch(`${getAPIBaseURL()}/api/subscriptions/my-subscription?phone=${encodeURIComponent(identifierForSub)}`);
             const subData = await subResp.json();
             const subscription = subData?.subscription || null;
             const status = subscription?.subscription_status || 'inactive';

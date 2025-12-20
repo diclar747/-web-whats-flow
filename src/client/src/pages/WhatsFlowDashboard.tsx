@@ -633,8 +633,8 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     });
 
     setAlertConfig({
-      title: 'Sesión Cerrada',
-      message: 'Sesión cerrada desde el dispositivo móvil. Será redirigido a la página principal.',
+      title: 'Conexión de WhatsApp Cerrada',
+      message: 'Tu conexión con WhatsApp se ha cerrado. Debes escanear un nuevo código QR para reconectar.',
       type: 'info',
       onConfirm: () => {
         setAlertOpen(false);
@@ -732,8 +732,9 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     socket.on(`dashboard-stats-${sessionId}`, handleStatsUpdate);
     socket.on(`connection-${sessionId}`, handleConnectionUpdate);
     socket.on('connection-update', handleConnectionUpdate);
-    socket.on('session-logged-out', handleSessionLoggedOut);
-    socket.on(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
+    // COMENTADO: Ya NO escuchamos eventos de logout de WhatsApp - No afectan la sesión web
+    // socket.on('session-logged-out', handleSessionLoggedOut);
+    // socket.on(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
     socket.on('auth_token', handleAuthToken);
     socket.on('agent-force-logout', handleAgentForceLogout);
 
@@ -761,8 +762,9 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       socket.off(`dashboard-stats-${sessionId}`, handleStatsUpdate);
       socket.off(`connection-${sessionId}`, handleConnectionUpdate);
       socket.off('connection-update', handleConnectionUpdate);
-      socket.off('session-logged-out', handleSessionLoggedOut);
-      socket.off(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
+      // COMENTADO: Ya NO escuchamos eventos de logout de WhatsApp
+      // socket.off('session-logged-out', handleSessionLoggedOut);
+      // socket.off(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
       socket.off('auth_token', handleAuthToken);
       socket.off('agent-force-logout', handleAgentForceLogout);
       socket.off('sync-progress');

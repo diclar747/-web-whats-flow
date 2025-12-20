@@ -401,18 +401,123 @@ router.get('/my-subscription', async (req, res) => {
     return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
   }
   try {
-    const phone = req.query.phone || req.user?.phone;
-    console.log('[SUBSCRIPTIONS] 🔍 Phone:', phone);
-    if (!phone) {
-      return res.status(401).json({ success: false, error: 'Teléfono no proporcionado' });
+    // ✅ Verificar si es super admin desde JWT PRIMERO
+    let isSuperAdminFromJWT = false;
+    let userEmailFromJWT = null;
+
+    const authHeader = req.headers['authorization'];
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.substring(7);
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        userEmailFromJWT = decoded.email;
+        if (decoded.role === 'super_admin' || decoded.role === 'superadmin') {
+          isSuperAdminFromJWT = true;
+          console.log('[SUBSCRIPTIONS] 👑 Super Admin detectado desde JWT:', userEmailFromJWT);
+        }
+      } catch (jwtErr) {
+        console.log('[SUBSCRIPTIONS] ⚠️ JWT inválido:', jwtErr.message);
+      }
     }
+
+    const rawInput = (req.query.phone || req.query.sessionId || req.headers['x-session-id'] || req.headers['x-session-token'] || req.user?.phone || '').toString();
+    let phone = rawInput.includes(':') ? rawInput.split(':')[0] : rawInput; // normalizar 595xxx:1 -> 595xxx
+    console.log('[SUBSCRIPTIONS] 🔍 Phone/Session (sanitized):', phone);
+
+    let sessionIdCandidate = null;
+
+    // Si parece sessionId (hash largo, no numérico), intentar resolver número desde user_sessions
+    if (phone && phone.length > 12 && /[a-zA-Z]/.test(phone)) {
+      sessionIdCandidate = phone;
+      phone = '';
+    }
+
     const connection = await pool.getConnection();
     try {
-      // Primero buscar en user_sessions (para Super Admin y clientes que inician con QR)
+      // Resolver phone desde sessionId si no se obtuvo
+      if (!phone && sessionIdCandidate) {
+          const [sessionLookup] = await connection.execute(
+            'SELECT phone FROM user_sessions WHERE session_id = ? LIMIT 1',
+            [sessionIdCandidate]
+          );
+          if (sessionLookup.length > 0) {
+            phone = sessionLookup[0].phone;
+          }
+      }
+
+      // ✅ Super admin NO necesita phone
+      if (!phone && !isSuperAdminFromJWT) {
+        connection.release();
+        return res.status(401).json({ success: false, error: 'Teléfono no proporcionado' });
+      }
+
+      // Si es super admin sin phone, devolver suscripción enterprise por defecto
+      if (isSuperAdminFromJWT && !phone) {
+        console.log('[SUBSCRIPTIONS] 👑 Super Admin sin phone, devolviendo suscripción enterprise');
+        connection.release();
+        return res.json({
+          success: true,
+          subscription: {
+            phone: userEmailFromJWT,
+            subscription_status: 'active',
+            subscription_plan: 'enterprise',
+            subscription_start_date: new Date(),
+            subscription_end_date: new Date('2099-12-31'),
+            days_remaining: 99999,
+            is_admin: true,
+            is_super_admin: true,
+            plan_features: {
+              max_contacts: 999999,
+              max_groups: 999999,
+              max_campaigns: 999999,
+              max_chatbots: 999999,
+              max_agents: 999999,
+              max_whatsapp_lines: 999999
+            }
+          }
+        });
+      }
+
+      // Verificar si el phone corresponde a un usuario y si es super admin
+      let isSuperAdmin = false;
+      let effectivePhone = phone;
+
+      try {
+        const [userRows] = await connection.execute(
+          'SELECT phone, is_super_admin FROM users WHERE phone = ? OR email = ? LIMIT 1',
+          [phone, phone]
+        );
+        if (userRows.length > 0) {
+          effectivePhone = userRows[0].phone || effectivePhone;
+          isSuperAdmin = !!userRows[0].is_super_admin;
+        }
+      } catch (uErr) {
+        console.log('[SUBSCRIPTIONS] ⚠️ No se pudo verificar usuario:', uErr.message);
+      }
+
+      // Aceptar tanto número como sessionId; no forzar resolución si ya es sessionId
+      if ((!effectivePhone || effectivePhone.length < 6) && phone) {
+        const [sessionLookup] = await connection.execute(
+          'SELECT session_id FROM user_sessions WHERE session_id = ? LIMIT 1',
+          [phone]
+        );
+        if (sessionLookup.length > 0) {
+          effectivePhone = sessionLookup[0].session_id;
+        }
+      }
+
+      console.log('[SUBSCRIPTIONS] 🔍 effectivePhone:', effectivePhone, 'isSuperAdmin:', isSuperAdmin);
+
+      if (!effectivePhone) {
+        return res.status(401).json({ success: false, error: 'Teléfono no proporcionado' });
+      }
+
+      // Primero buscar en user_sessions (aceptando phone o sessionId)
       const [userSessions] = await connection.query(`
         SELECT
-          phone_number as phone,
           session_id,
+          phone,
           created_at,
           last_connection_time,
           subscription_plan,
@@ -427,22 +532,21 @@ router.get('/my-subscription', async (req, res) => {
           messages_api,
           messages_chatbot
         FROM user_sessions
-        WHERE phone_number = ? AND is_active = 1
+        WHERE (phone = ? OR session_id = ?) AND is_active = 1
         LIMIT 1
-      `, [phone]);
+      `, [effectivePhone, effectivePhone]);
 
       if (userSessions.length > 0) {
         const session = userSessions[0];
-        const isSuperAdmin = phone === '595994854167';
 
-        console.log('[SUBSCRIPTIONS] ✅ Usuario encontrado en user_sessions:', phone, 'Super Admin:', isSuperAdmin);
+        console.log('[SUBSCRIPTIONS] ✅ Usuario encontrado en user_sessions:', effectivePhone, 'Super Admin:', isSuperAdmin);
 
         // Si es Super Admin, retornar plan ilimitado
         if (isSuperAdmin) {
           return res.json({
             success: true,
             subscription: {
-              phone: phone,
+              phone: effectivePhone,
               subscription_plan: 'enterprise',
               subscription_status: 'active',
               subscription_start_date: session.created_at,
@@ -489,7 +593,7 @@ router.get('/my-subscription', async (req, res) => {
           return res.json({
             success: true,
             subscription: {
-              phone: phone,
+              phone: session.session_id, // convención: phone lógico = sessionId
               subscription_plan: session.subscription_plan,
               subscription_status: session.subscription_status,
               subscription_start_date: session.subscription_start_date,
@@ -521,7 +625,7 @@ router.get('/my-subscription', async (req, res) => {
         }
 
         // Usuario en user_sessions sin suscripción activa
-        console.log('[SUBSCRIPTIONS] ℹ️ Usuario en user_sessions sin plan activo:', phone);
+        console.log('[SUBSCRIPTIONS] ℹ️ Usuario en user_sessions sin plan activo:', effectivePhone);
         return res.json({
           success: true,
           subscription: null
@@ -536,7 +640,7 @@ router.get('/my-subscription', async (req, res) => {
         AND (subscription_status = 'active' OR subscription_status = 'trial')
         AND subscription_end_date IS NOT NULL
         AND subscription_end_date < NOW()
-      `, [phone]);
+      `, [effectivePhone]);
 
       const [users] = await connection.query(`
         SELECT 
@@ -553,7 +657,7 @@ router.get('/my-subscription', async (req, res) => {
           DATEDIFF(subscription_end_date, NOW()) as days_remaining
         FROM users 
         WHERE phone = ?
-      `, [phone]);
+      `, [effectivePhone]);
 
       if (users.length === 0) {
         return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
@@ -575,11 +679,14 @@ router.get('/my-subscription', async (req, res) => {
           days_remaining: user.days_remaining > 0 ? user.days_remaining : 0
         }
       });
+    } catch (error) {
+      console.error('Error fetching subscription:', error);
+      res.status(500).json({ success: false, error: 'Error al obtener suscripción' });
     } finally {
       connection.release();
     }
   } catch (error) {
-    console.error('Error fetching subscription:', error);
+    console.error('Error general fetching subscription:', error);
     res.status(500).json({ success: false, error: 'Error al obtener suscripción' });
   }
 });
@@ -647,7 +754,7 @@ router.post('/users', async (req, res) => {
     try {
       // PRIMERO: Verificar si quien consulta es SUPER ADMIN en user_sessions
       const [superAdminCheck] = await connection.query(
-        'SELECT phone_number FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+        'SELECT phone FROM user_sessions WHERE phone = ? AND is_active = 1 LIMIT 1',
         [phone]
       );
 
@@ -662,7 +769,7 @@ router.post('/users', async (req, res) => {
 
         const [clientSessions] = await connection.query(`
           SELECT
-            us.phone_number as phone,
+            us.phone as phone,
             us.session_id,
             us.device_id,
             us.is_active,
@@ -673,24 +780,24 @@ router.post('/users', async (req, res) => {
             us.subscription_days,
             us.created_at,
             us.last_connection_time as last_login,
-            COALESCE(us.phone_number, 'Cliente') as name,
-            CONCAT(us.phone_number, '@whats-flow.com') as email,
+            COALESCE(us.phone, 'Cliente') as name,
+            CONCAT(us.phone, '@whats-flow.com') as email,
             DATEDIFF(us.subscription_end_date, NOW()) as days_remaining,
             COALESCE(p.name,
               CASE
-                WHEN us.phone_number = '595994854167' THEN 'Plan Administrador'
+                WHEN us.phone = '595994854167' THEN 'Plan Administrador'
                 WHEN us.subscription_status = 'active' THEN COALESCE(us.subscription_plan, 'Sin plan')
                 ELSE 'Sin plan'
               END
             ) as plan_display_name,
             COALESCE(p.price, 0) as price,
-            CASE WHEN us.phone_number = '595994854167' THEN 1 ELSE 0 END as is_admin,
-            CASE WHEN us.phone_number = '595994854167' THEN 1 ELSE 0 END as is_super_admin
+            CASE WHEN us.phone = '595994854167' THEN 1 ELSE 0 END as is_admin,
+            CASE WHEN us.phone = '595994854167' THEN 1 ELSE 0 END as is_super_admin
           FROM user_sessions us
           LEFT JOIN plans p ON us.subscription_plan = p.name
           WHERE us.is_active = 1
           ORDER BY
-            CASE WHEN us.phone_number = '595994854167' THEN 0 ELSE 1 END,
+            CASE WHEN us.phone = '595994854167' THEN 0 ELSE 1 END,
             us.subscription_status DESC,
             us.created_at DESC
         `);
@@ -798,7 +905,7 @@ router.post('/activate', checkAdmin, async (req, res) => {
 
       // PRIMERO: Intentar activar en user_sessions (para usuarios que se conectan con QR)
       if (phone) {
-        const [sessions] = await connection.query('SELECT * FROM user_sessions WHERE phone_number = ?', [phone]);
+        const [sessions] = await connection.query('SELECT * FROM user_sessions WHERE phone = ?', [phone]);
 
         if (sessions.length > 0) {
           // Usuario existe en user_sessions, actualizar ahí
@@ -809,7 +916,7 @@ router.post('/activate', checkAdmin, async (req, res) => {
               subscription_start_date = ?,
               subscription_end_date = ?,
               subscription_days = ?
-            WHERE phone_number = ?
+            WHERE phone = ?
           `, [finalPlanName, startDate, endDate, subscriptionDays, phone]);
 
           console.log('[ACTIVATE] Plan activado en user_sessions para:', phone);

@@ -26,38 +26,52 @@ const Login = () => {
         setLoading(true);
 
         try {
+            // Generar o recuperar deviceId
+            let deviceId = localStorage.getItem('deviceId') || sessionStorage.getItem('deviceId');
+            if (!deviceId) {
+                deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                localStorage.setItem('deviceId', deviceId);
+                sessionStorage.setItem('deviceId', deviceId);
+            }
+
             const response = await fetch('/api/auth/login', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(formData)
+                body: JSON.stringify({ ...formData, deviceId })
             });
 
             const data = await response.json();
 
             if (data.success) {
-                // Guardar token y datos de usuario (COMPLETO)
+                const sessionIdFromLogin = data.sessionId || data.user?.session_id || data.user?.sessionId || '';
+                const sessionToken = data.sessionToken || '';
+
+                // Guardar token, datos de usuario y sesión (persistencia en ambos storages)
                 const storageData = [
                     { key: 'token', value: data.token },
                     { key: 'user', value: JSON.stringify(data.user) },
-                    { key: 'userId', value: data.user.id.toString() },
-                    { key: 'userName', value: data.user.full_name },
-                    { key: 'userEmail', value: data.user.email },
-                    { key: 'userRole', value: data.user.role },
-                    { key: 'whatsflow_user_type', value: data.user.role === 'super_admin' ? 'admin' : 'agent' }
+                    { key: 'userId', value: data.user.id?.toString?.() || '' },
+                    { key: 'userName', value: data.user.name || data.user.full_name || '' },
+                    { key: 'userEmail', value: data.user.email || '' },
+                    { key: 'userRole', value: data.user.role || 'admin' },
+                    { key: 'whatsflow_user_type', value: data.user.role === 'super_admin' ? 'admin' : 'agent' },
+                    { key: 'whatsflow_session', value: sessionIdFromLogin },
+                    { key: 'sessionToken', value: sessionToken },
+                    { key: 'whatsflow_session_token', value: sessionToken },
+                    { key: 'whatsflow_session_device_id', value: deviceId }
                 ];
 
-                // Guardar en AMBOS storages para persistencia
                 storageData.forEach(({ key, value }) => {
-                    localStorage.setItem(key, value);
-                    sessionStorage.setItem(key, value);
+                    if (value !== undefined && value !== null) {
+                        localStorage.setItem(key, value);
+                        sessionStorage.setItem(key, value);
+                    }
                 });
 
-                console.log('✅ Login exitoso:', data.user.email);
+                console.log('✅ Login exitoso:', data.user.email, 'sessionId:', sessionIdFromLogin);
 
-                // Forzar recarga completa para que App.tsx cargue la sesión
-                // navigate() no funciona porque el estado de App no se actualiza a tiempo
                 window.location.href = '/dashboard';
             } else {
                 setError(data.error || 'Error al iniciar sesión');
