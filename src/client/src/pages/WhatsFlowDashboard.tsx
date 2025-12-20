@@ -87,6 +87,7 @@ const AgentsManagementModule = lazy(() => import('../modules/AgentsManagementMod
 const KanbanContactsModule = lazy(() => import('../modules/KanbanContactsModule'));
 const AgentPermissionsManager = lazy(() => import('../components/AgentPermissionsManager'));
 const WhatsAppStatusModule = lazy(() => import('../modules/WhatsAppStatusModule'));
+const WhatsAppConnectionModule = lazy(() => import('../modules/WhatsAppConnectionModule'));
 
 // Componente de loading para Suspense con animación mejorada
 const ModuleLoadingFallback = () => (
@@ -329,6 +330,13 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
       icon: <KanbanIcon />,
       path: '/dashboard/kanban',
       color: '#673ab7'
+    },
+    {
+      id: 'connection',
+      label: 'Conexión',
+      icon: <WhatsApp />,
+      path: '/dashboard/connection',
+      color: '#25d366'
     }
   ];
 
@@ -1293,7 +1301,11 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
               ) : (
                 <Suspense fallback={<ModuleLoadingFallback />}>
                   <Routes>
-                    <Route path="/" element={<DashboardOverview sessionId={sessionId} />} />
+                    <Route path="/" element={
+                      <ProtectedRoute module="analytics" action="view">
+                        <AnalyticsModule sessionId={sessionId} />
+                      </ProtectedRoute>
+                    } />
                     <Route path="/chat/*" element={
                       <ProtectedRoute module="chat" action="view">
                         <RequiresWhatsApp sessionId={sessionId} moduleName="Chat">
@@ -1374,6 +1386,11 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                       <ProtectedRoute module="kanban" action="view">
                         <KanbanContactsModule sessionId={sessionId} />
                       </ProtectedRoute>
+                    } />
+                    <Route path="/connection/*" element={
+                      <Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>}>
+                        <WhatsAppConnectionModule sessionId={sessionId} />
+                      </Suspense>
                     } />
                     <Route path="/settings/*" element={
                       <Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>}>
