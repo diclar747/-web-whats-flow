@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { v4: uuidv4 } = require('uuid');
 const mysql = require('mysql2/promise');
+const { resolveToUserId } = require('../helpers/sessionIdResolver');
 
 // Configurar multer para uploads
 const storage = multer.diskStorage({
@@ -39,7 +40,16 @@ const pool = mysql.createPool({
 // GET - Obtener todas las campañas de una sesión
 router.get('/:sessionId', async (req, res) => {
   try {
-    const { sessionId } = req.params;
+    let { sessionId } = req.params;
+    
+    // ✅ CRÍTICO: Resolver sessionId a user.id
+    sessionId = await resolveToUserId(sessionId);
+    if (!sessionId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Session ID inválido'
+      });
+    }
 
     // Verificar que el pool de conexiones esté disponible
     if (!pool) {

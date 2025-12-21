@@ -13,16 +13,35 @@ const dbConfig = {
 // Obtener configuración de sincronización del usuario
 router.get('/preference/:sessionId', async (req, res) => {
   try {
-    const { sessionId } = req.params;
+    let { sessionId } = req.params;
+    
+    // ✅ CRÍTICO: Resolver sessionId a user.id
+    // Si sessionId es un número de teléfono, dejarlo igual (compatible)
+    // Si sessionId es un user.id (número pequeño), usarlo directo
+    // Si sessionId es un email, resolver a user.id
+    
     const connection = await mysql.createConnection(dbConfig);
     
     try {
-      const [users] = await connection.query(
-        'SELECT auto_sync, sync_completed, last_sync_date FROM users WHERE phone = ?',
+      // Intentar resolver a user.id si no es un número de teléfono
+      if (sessionId.includes('@')) {
+        // Es un email, buscar user.id
+        const [userRows] = await connection.query(
+          'SELECT id FROM users WHERE email = ? LIMIT 1',
+          [sessionId]
+        );
+        if (userRows.length > 0) {
+          sessionId = String(userRows[0].id);
+        }
+      }
+      
+      // Buscar en user_sessions por session_id (user.id)
+      const [rows] = await connection.query(
+        'SELECT auto_sync, sync_completed, last_sync_date FROM user_sessions WHERE session_id = ? LIMIT 1',
         [sessionId]
       );
 
-      if (users.length === 0) {
+      if (rows.length === 0) {
         return res.json({
           success: true,
           auto_sync: false,
@@ -33,9 +52,9 @@ router.get('/preference/:sessionId', async (req, res) => {
 
       res.json({
         success: true,
-        auto_sync: users[0].auto_sync || false,
-        sync_completed: users[0].sync_completed || false,
-        last_sync_date: users[0].last_sync_date
+        auto_sync: rows[0].auto_sync || false,
+        sync_completed: rows[0].sync_completed || false,
+        last_sync_date: rows[0].last_sync_date
       });
     } finally {
       await connection.end();
@@ -49,7 +68,7 @@ router.get('/preference/:sessionId', async (req, res) => {
 // Actualizar preferencia de sincronización automática
 router.post('/preference/:sessionId', async (req, res) => {
   try {
-    const { sessionId } = req.params;
+    let { sessionId } = req.params;
     const { auto_sync } = req.body;
 
     console.log(`[SYNC-PREF] Actualizando auto_sync a ${auto_sync} para ${sessionId}`);
@@ -57,16 +76,27 @@ router.post('/preference/:sessionId', async (req, res) => {
     const connection = await mysql.createConnection(dbConfig);
     
     try {
-      // Solo actualizar si el usuario ya existe (admin que escaneó QR)
+      // Resolver sessionId a user.id si es necesario
+      if (sessionId.includes('@')) {
+        const [userRows] = await connection.query(
+          'SELECT id FROM users WHERE email = ? LIMIT 1',
+          [sessionId]
+        );
+        if (userRows.length > 0) {
+          sessionId = String(userRows[0].id);
+        }
+      }
+      
+      // Actualizar en user_sessions (por session_id que es user.id)
       const result = await connection.query(
-        'UPDATE users SET auto_sync = ? WHERE phone = ?',
+        'UPDATE user_sessions SET auto_sync = ? WHERE session_id = ?',
         [auto_sync, sessionId]
       );
       
       console.log(`[SYNC-PREF] Filas afectadas: ${result[0].affectedRows}`);
 
       if (result[0].affectedRows === 0) {
-        console.log(`[SYNC-PREF] Usuario no existe en BD todavía (aún no escaneó QR)`);
+        console.log(`[SYNC-PREF] Usuario no existe en BD todavía`);
       } else {
         console.log(`[SYNC-PREF] auto_sync actualizado a ${auto_sync} para ${sessionId}`);
       }

@@ -786,6 +786,9 @@ const App: React.FC = () => {
       setToken(authToken);
       setUserType(userData.role === 'super_admin' ? 'admin' : 'agent');
 
+      // ✅ CRÍTICO: Establecer sessionId = user.id (string) si no viene explícito
+      const effectiveSessionId = sessionIdFromLogin || String(userData.id);
+
       // Guardar datos en localStorage y sessionStorage
       const storageKeys = [
         { key: 'token', value: authToken },
@@ -794,7 +797,9 @@ const App: React.FC = () => {
         { key: 'userName', value: userData.full_name },
         { key: 'userId', value: userData.id.toString() },
         { key: 'userEmail', value: userData.email },
-        { key: 'whatsflow_user_type', value: userData.role === 'super_admin' ? 'admin' : 'agent' }
+        { key: 'whatsflow_user_type', value: userData.role === 'super_admin' ? 'admin' : 'agent' },
+        { key: 'whatsflow_session', value: effectiveSessionId }, // ✅ Guardar sessionId
+        { key: 'sessionId', value: effectiveSessionId } // ✅ Compatibilidad
       ];
 
       storageKeys.forEach(({ key, value }) => {
@@ -802,7 +807,9 @@ const App: React.FC = () => {
         sessionStorage.setItem(key, value);
       });
 
-      console.log('✅ Usuario autenticado con JWT:', userData.full_name);
+      setSessionId(effectiveSessionId); // ✅ Establecer en estado
+
+      console.log('✅ Usuario autenticado con JWT:', userData.full_name, '| sessionId:', effectiveSessionId);
       return;
     }
 

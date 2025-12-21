@@ -2299,23 +2299,26 @@ async function resolveLid(lid, sessionId, sock = null) {
 async function saveMessageToDB(sessionId, msg) {
     console.log(`[DB-MSG-CALL] ⭐⭐⭐ saveMessageToDB LLAMADO - sessionId: ${sessionId}, messageId: ${msg.id}, chat_jid: ${msg.chat_jid}, from_me: ${msg.from_me}, text: ${(msg.text_content || '').substring(0, 30)}`);
 
-    // Obtener el número de teléfono del usuario en lugar de la session_id temporal
+    // ✅ CAMBIO: Obtener session_id del propietario (user.id) en lugar de phoneNumber
+    const ownerSessionId = await getOwnerSessionId(sessionId);
+    
+    // También obtener phoneNumber para emisión de eventos
     const phoneNumber = await getUserPhoneNumber(sessionId);
 
-    if (!phoneNumber) {
-        console.error(`[DB-MSG] No se pudo obtener phoneNumber para sessionId ${sessionId}. No se puede guardar mensaje ${msg.id}.`);
+    if (!ownerSessionId) {
+        console.error(`[DB-MSG] No se pudo obtener ownerSessionId para sessionId ${sessionId}. No se puede guardar mensaje ${msg.id}.`);
         return null;
     }
 
     // Modo memoria si no hay DB
     if (process.env.SKIP_DB === 'true' || !pool || memoryStorage.isMemoryMode) {
-        const messageKey = `${phoneNumber || sessionId}_${msg.id}`;
+        const messageKey = `${ownerSessionId}_${msg.id}`;
         memoryStorage.messages.set(messageKey, {
             ...msg,
-            session_id: phoneNumber, // Usar número de teléfono en lugar de session_id
+            session_id: ownerSessionId, // ✅ Usar session_id del propietario
             created_at: new Date()
         });
-        console.log(`[MEMORY-MSG] Message ${msg.id} stored in memory for phone number ${phoneNumber}`);
+        console.log(`[MEMORY-MSG] Message ${msg.id} stored in memory for session_id ${ownerSessionId}`);
         return { affectedRows: 1, insertId: Date.now() };
     }
 
@@ -2506,7 +2509,7 @@ async function saveMessageToDB(sessionId, msg) {
         try {
             const [contactRows] = await connection.execute(
                 'SELECT name, notify_name, avatar_url FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
-                [chat_jid, phoneNumber]
+                [chat_jid, ownerSessionId]
             );
 
             if (contactRows.length > 0) {
@@ -2542,7 +2545,7 @@ async function saveMessageToDB(sessionId, msg) {
 
         const params = [
             messageId,
-            phoneNumber, // Usar número de teléfono en lugar de session_id temporal
+            ownerSessionId, // ✅ Usar session_id del propietario (user.id)
             userSessionId, // Agregar user_session_id
             chat_jid,
             finalSenderJid,
@@ -2572,13 +2575,13 @@ async function saveMessageToDB(sessionId, msg) {
             await connection.execute(
                 `INSERT IGNORE INTO contacts (jid, session_id, name, notify_name, is_group, created_at) 
                  VALUES (?, ?, ?, ?, ?, NOW())`,
-                [chat_jid, phoneNumber, contactName, contactNotify, chat_jid.includes('@g.us') ? 1 : 0]
+                [chat_jid, ownerSessionId, contactName, contactNotify, chat_jid.includes('@g.us') ? 1 : 0]
             );
         } catch (contactErr) {
             console.log(`[DB-MSG] ⚠️ No se pudo crear contacto ${chat_jid}: ${contactErr.message}`);
         }
 
-        console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for phone number: ${phoneNumber}, user_session_id: ${userSessionId}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[8]}, status: ${params[16]}, sender_name: ${senderName}, is_read: ${is_read}`);
+        console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for session_id: ${ownerSessionId}, user_session_id: ${userSessionId}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[8]}, status: ${params[16]}, sender_name: ${senderName}, is_read: ${is_read}`);
         const [result] = await connection.execute(
             'INSERT INTO messages (id, session_id, user_session_id, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, caption, file_name, file_size, timestamp, status, sender_name, sender_avatar, is_read) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = VALUES(agent_id), agent_name = VALUES(agent_name), sender_name = VALUES(sender_name), sender_avatar = VALUES(sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), caption = COALESCE(VALUES(caption), caption), file_name = COALESCE(VALUES(file_name), file_name), file_size = COALESCE(VALUES(file_size), file_size), text_content = COALESCE(VALUES(text_content), text_content), is_read = VALUES(is_read), updated_at = CURRENT_TIMESTAMP',
             params
@@ -2605,7 +2608,7 @@ async function saveMessageToDB(sessionId, msg) {
                 `,
                 [
                     chat_jid,
-                    phoneNumber,
+                    ownerSessionId, // ✅ Usar session_id del propietario
                     chatName,
                     unreadIncrement,
                     mysqlTimestamp, // last_message_time (ya es string en formato MySQL)
@@ -2984,6 +2987,54 @@ async function getAllSessionIds(sessionId) {
 }
 
 // Función para obtener el user_session_id a partir del session_id
+// Función para obtener el session_id (user.id) del propietario de esta conexión WhatsApp
+async function getOwnerSessionId(sessionId) {
+    // Intento 1: Buscar en user_sessions por session_id (retornar el mismo si es válido)
+    if (pool && !memoryStorage.isMemoryMode) {
+        try {
+            const connection = await pool.getConnection();
+            try {
+                // Primero buscar por session_id directo (puede ser user.id ya)
+                const [directRows] = await connection.execute(
+                    'SELECT session_id FROM user_sessions WHERE session_id = ? LIMIT 1',
+                    [sessionId]
+                );
+                if (directRows.length > 0) {
+                    return directRows[0].session_id;
+                }
+
+                // Buscar por phone (si sessionId es el número de WhatsApp)
+                const phoneNumber = await getUserPhoneNumber(sessionId);
+                if (phoneNumber) {
+                    const [phoneRows] = await connection.execute(
+                        'SELECT session_id FROM user_sessions WHERE phone = ? ORDER BY updated_at DESC LIMIT 1',
+                        [phoneNumber]
+                    );
+                    if (phoneRows.length > 0) {
+                        return phoneRows[0].session_id;
+                    }
+                }
+
+                // Buscar por owner_phone_number
+                const [ownerRows] = await connection.execute(
+                    'SELECT session_id FROM user_sessions WHERE owner_phone_number = ? ORDER BY updated_at DESC LIMIT 1',
+                    [sessionId]
+                );
+                if (ownerRows.length > 0) {
+                    return ownerRows[0].session_id;
+                }
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.warn(`[getOwnerSessionId] Error:`, error.message);
+        }
+    }
+
+    // Fallback: retornar el sessionId tal cual
+    return sessionId;
+}
+
 async function getUserSessionId(sessionId) {
     // Modo memoria
     if (process.env.SKIP_DB === 'true' || !pool || memoryStorage.isMemoryMode) {
@@ -8070,17 +8121,76 @@ console.log('[REMINDERS] Sistema de recordatorios automáticos iniciado (verific
 // POST /api/whatsapp/qr-code - Generar código QR para conexión
 app.post('/api/whatsapp/qr-code', async (req, res) => {
     try {
-        const { phone } = req.body;
-        if (!phone) {
-            return res.status(400).json({ success: false, message: 'Phone requerido' });
+        const { phone: bodyPhone, sessionId: bodySessionId } = req.body || {};
+
+        // Aceptar múltiples formas de identificar al dueño de la sesión
+        const rawIdentifier = (bodyPhone
+            || bodySessionId
+            || req.query?.sessionId
+            || req.query?.phone
+            || req.headers['x-session-id']
+            || req.user?.phone
+            || req.user?.email
+            || '').toString().trim();
+
+        let ownerIdentifier = rawIdentifier;
+
+        // Resolver a número de teléfono si es posible
+        if (global.dbPool) {
+            const conn = await global.dbPool.getConnection();
+            try {
+                // Si viene un sessionId (ej. user.id), buscar su phone/email en user_sessions
+                if (ownerIdentifier && !ownerIdentifier.includes('@') && !/^\d{6,}$/.test(ownerIdentifier)) {
+                    const [rows] = await conn.execute(
+                        'SELECT phone, email FROM user_sessions WHERE session_id = ? ORDER BY updated_at DESC LIMIT 1',
+                        [ownerIdentifier]
+                    );
+                    if (rows.length > 0) {
+                        ownerIdentifier = rows[0].phone || rows[0].email || ownerIdentifier;
+                        console.log(`[QR-ENDPOINT] 🔄 session_id ${bodySessionId || ownerIdentifier} → ${ownerIdentifier}`);
+                    }
+                }
+
+                // Si viene email, resolver a phone
+                if (ownerIdentifier && ownerIdentifier.includes('@')) {
+                    const [userRows] = await conn.execute(
+                        'SELECT phone FROM users WHERE email = ? LIMIT 1',
+                        [ownerIdentifier]
+                    );
+                    if (userRows.length > 0 && userRows[0].phone) {
+                        console.log(`[QR-ENDPOINT] 🔄 email ${ownerIdentifier} → phone ${userRows[0].phone}`);
+                        ownerIdentifier = userRows[0].phone;
+                    }
+                }
+
+                // Si no hay nada aún y tenemos userId en el token, usarlo
+                if (!ownerIdentifier && req.user?.userId) {
+                    const [userRows] = await conn.execute(
+                        'SELECT phone, email FROM users WHERE id = ? LIMIT 1',
+                        [req.user.userId]
+                    );
+                    if (userRows.length > 0) {
+                        ownerIdentifier = userRows[0].phone || userRows[0].email || '';
+                    }
+                }
+            } catch (resolveErr) {
+                console.warn('[QR-ENDPOINT] ⚠️ No se pudo resolver phone:', resolveErr.message);
+            } finally {
+                conn.release();
+            }
+        }
+
+        // Último recurso: si sigue vacío, usar un marcador para no romper el flujo
+        if (!ownerIdentifier) {
+            ownerIdentifier = rawIdentifier || `session-${Date.now()}`;
         }
 
         // Generar nuevo sessionId
         const sessionId = crypto.randomBytes(8).toString('hex');
-        console.log(`[QR-ENDPOINT] 🆕 Generando QR para ${phone}, sessionId: ${sessionId}`);
+        console.log(`[QR-ENDPOINT] 🆕 Generando QR para ${ownerIdentifier}, sessionId: ${sessionId}`);
 
-        // Mapear owner phone
-        sessionOwnerMap.set(sessionId, phone);
+        // Mapear owner phone/email con la sesión
+        sessionOwnerMap.set(sessionId, ownerIdentifier);
 
         // Crear sesión
         const sessionInfo = await createSession(sessionId, true);
@@ -17453,395 +17563,11 @@ app.delete('/api/appointments/:id', async (req, res) => {
 // ============= FIN ENDPOINTS DE CALENDARIO =============
 
 // ============= ENDPOINTS DE AUTENTICACIÓN =============
-
-// POST - Login de usuarios/agentes
-app.post('/api/auth/login', async (req, res) => {
-    const { email, phone, password, deviceId } = req.body;
-    const identifier = email || phone; // Priorizar email sobre teléfono
-
-    console.log('[LOGIN] 🔐 Intento de login:', { identifier: identifier?.substring(0, 10) + '...', hasPassword: !!password, deviceId: deviceId?.substring(0, 10) });
-
-    if (!identifier || !password) {
-        return res.status(400).json({ success: false, error: 'Email y contraseña son requeridos' });
-    }
-
-    if (!deviceId) {
-        return res.status(400).json({ success: false, error: 'Device ID requerido para sesión única' });
-    }
-
-    if (!pool) {
-        return res.status(503).json({ success: false, error: 'Database not available' });
-    }
-
-    try {
-        const bcrypt = require('bcrypt');
-        const connection = await pool.getConnection();
-
-        try {
-            // Buscar usuario por email (o phone si se envía)
-            const [users] = await connection.execute(
-                'SELECT id, name, email, password, role, department, category, status, phone, avatar_url, is_super_admin, is_admin FROM users WHERE email = ? OR phone = ?',
-                [identifier, identifier]
-            );
-
-            if (users.length === 0) {
-                console.log('[LOGIN] ❌ Usuario no encontrado:', identifier);
-                return res.status(401).json({ success: false, error: 'Email o contraseña inválidos' });
-            }
-
-            console.log('[LOGIN] ✅ Usuario encontrado:', { name: users[0].name, email: users[0].email });
-
-            const user = users[0];
-
-            // Verificar si está activo
-            if (user.status !== 'active') {
-                return res.status(403).json({ success: false, error: 'Account is inactive or suspended' });
-            }
-
-            // Verificar contraseña
-            const passwordMatch = await bcrypt.compare(password, user.password);
-
-            if (!passwordMatch) {
-                console.log('[LOGIN] ❌ Contraseña incorrecta');
-                return res.status(401).json({ success: false, error: 'Email o contraseña inválidos' });
-            }
-
-            console.log('[LOGIN] ✅ Contraseña correcta');
-
-            // Actualizar último login y estado si es agente
-            if (user.role === 'agent' || user.role === 'supervisor') {
-                await connection.execute(
-                    'UPDATE users SET last_login = NOW(), agent_status = "online" WHERE id = ?',
-                    [user.id]
-                );
-
-                // Emitir evento de cambio de estado
-                if (global.io) {
-                    global.io.emit('agent-status-changed', {
-                        agentId: user.id,
-                        status: 'online',
-                        agentName: user.name
-                    });
-                }
-            } else {
-                await connection.execute(
-                    'UPDATE users SET last_login = NOW() WHERE id = ?',
-                    [user.id]
-                );
-            }
-
-            // No enviar password en la respuesta
-            delete user.password;
-
-            // Determinar rol correcto considerando is_super_admin e is_admin
-            if (user.is_super_admin === 1 || user.is_super_admin === true) {
-                user.role = 'super_admin';
-                console.log('[LOGIN] 👑 Super Admin detectado:', user.email);
-            } else if (user.is_admin === 1 || user.is_admin === true) {
-                user.role = 'admin';
-                console.log('[LOGIN] 👤 Admin detectado:', user.email);
-            }
-
-            // Asignar período de prueba de 24h
-            // Obtener suscripción desde user_sessions (tabla principal)
-            // Para agentes/supervisores, la suscripción se basa en la sesión del admin_phone
-            // Para admins, se basa en su propia sesión
-            let sub = {};
-            let userPhoneForSubscription = user.phone; // Default to user's phone
-
-            if (user.role === 'agent' || user.role === 'supervisor') {
-                const [adminData] = await connection.execute(
-                    'SELECT admin_phone FROM users WHERE id = ?',
-                    [user.id]
-                );
-                if (adminData.length > 0 && adminData[0].admin_phone) {
-                    userPhoneForSubscription = adminData[0].admin_phone;
-                }
-            }
-
-            const [subscriptionRows] = await connection.execute(
-                'SELECT subscription_status, subscription_plan, subscription_start_date, subscription_end_date, plan_id, messages_sent_this_month FROM user_sessions WHERE phone = ? ORDER BY last_activity DESC LIMIT 1',
-                [userPhoneForSubscription]
-            );
-            sub = subscriptionRows[0] || {};
-
-            const hasActivePlan = sub.subscription_status === 'active';
-            const hasTrial = sub.subscription_status === 'trial';
-            const trialExpired = hasTrial && sub.subscription_end_date && new Date(sub.subscription_end_date) < new Date();
-            const neverHadTrial = !sub.subscription_start_date;
-
-            try {
-                if ((user.role === 'agent' || user.role === 'supervisor') && !hasActivePlan && !hasTrial && neverHadTrial) {
-                    await connection.execute(
-                        `UPDATE users SET 
-                            subscription_status = 'trial',
-                            subscription_plan = COALESCE(subscription_plan, 'free'),
-                            subscription_start_date = NOW(),
-                            subscription_end_date = DATE_ADD(NOW(), INTERVAL 1 DAY),
-                            subscription_days = 1
-                         WHERE id = ?`,
-                        [user.id]
-                    );
-                    console.log(`[SUBSCRIPTION] ✅ Trial de 24h asignado al usuario ID ${user.id}`);
-                } else if (hasTrial && trialExpired) {
-                    await connection.execute(
-                        `UPDATE users SET subscription_status = 'expired' WHERE id = ?`,
-                        [user.id]
-                    );
-                    console.log(`[SUBSCRIPTION] ⏰ Trial expirado marcado como 'expired' para usuario ID ${user.id}`);
-                }
-            } catch (e) {
-                console.warn('[SUBSCRIPTION] ⚠️ No se pudo evaluar/crear trial en login:', e?.message || e);
-            }
-
-            // Crear sesión única por dispositivo usando el nuevo sistema
-            // IMPORTANTE: Esto cerrará automáticamente cualquier sesión previa del mismo usuario
-            const sessionToken = createUniqueSession(user.id, deviceId, email, user.role, io);
-            const token = Buffer.from(`${user.id}:${user.email}:${Date.now()}:${sessionToken}`).toString('base64');
-
-            // Para TODOS los usuarios (admin, agente, supervisor), obtener el sessionId activo del sistema
-            let sessionId = null;
-
-            // ✅ PRIORIDAD 1: Si es AGENTE o SUPERVISOR, SIEMPRE usar session_id del ADMIN
-            // El agente NO debe usar su propio session_id
-            if (user.role === 'agent' || user.role === 'supervisor') {
-                console.log(`[AUTH] 🔍 ${user.role.toUpperCase()} ${email} - buscando sesión de su admin...`);
-
-                const [agentData] = await connection.execute(
-                    'SELECT admin_phone FROM users WHERE id = ?',
-                    [user.id]
-                );
-
-                if (agentData.length > 0 && agentData[0].admin_phone) {
-                    const adminPhone = agentData[0].admin_phone;
-                    console.log(`[AUTH] 🔍 ${user.role} ${email} pertenece al admin: ${adminPhone}`);
-
-                    // Buscar el session_id del admin específico
-                    const [adminUser] = await connection.execute(
-                        'SELECT session_id, name FROM users WHERE phone = ? AND role = "admin" AND session_id IS NOT NULL',
-                        [adminPhone]
-                    );
-
-                    if (adminUser.length > 0 && adminUser[0].session_id) {
-                        sessionId = adminUser[0].session_id;
-                        console.log(`[AUTH] ✅ ${user.role} ${email} usando sesión de su admin: ${adminUser[0].name} (${sessionId})`);
-
-                        // Verificar que la sesión esté activa
-                        const [sessionCheck] = await connection.execute(
-                            'SELECT is_active, phone FROM user_sessions WHERE session_id = ?',
-                            [sessionId]
-                        );
-
-                        if (sessionCheck.length > 0 && sessionCheck[0].is_active) {
-                            console.log(`[AUTH] ✅ Sesión ${sessionId} del admin está ACTIVA con número: ${sessionCheck[0].phone}`);
-                        } else {
-                            console.log(`[AUTH] ⚠️ Sesión ${sessionId} del admin NO está activa - agente debe esperar que admin conecte WhatsApp`);
-                            sessionId = null;
-                        }
-                    } else {
-                        console.log(`[AUTH] ❌ Admin ${adminPhone} no tiene session_id activo - admin debe conectar WhatsApp primero`);
-                    }
-                } else {
-                    console.log(`[AUTH] ❌ ${user.role} ${email} no tiene admin_phone asignado`);
-                }
-            }
-
-            // (sincronización de is_active movida a ámbito global)
-            // ✅ PRIORIDAD 2: Si es ADMIN, usar su propio session_id
-            else if (user.role === 'admin') {
-                const [userSessionData] = await connection.execute(
-                    'SELECT session_id FROM users WHERE id = ? AND session_id IS NOT NULL',
-                    [user.id]
-                );
-
-                if (userSessionData.length > 0 && userSessionData[0].session_id) {
-                    sessionId = userSessionData[0].session_id;
-                    console.log(`[AUTH] ✅ Admin ${email} usando su sesión asignada: ${sessionId}`);
-
-                    // Verificar que la sesión esté activa
-                    const [sessionCheck] = await connection.execute(
-                        'SELECT session_id, phone, is_active FROM user_sessions WHERE session_id = ?',
-                        [sessionId]
-                    );
-
-                    if (sessionCheck.length > 0) {
-                        if (!sessionCheck[0].is_active) {
-                            console.log(`[AUTH] ⚠️ La sesión ${sessionId} existe pero no está activa`);
-                        } else {
-                            console.log(`[AUTH] ✅ Sesión ${sessionId} está activa con número: ${sessionCheck[0].phone || 'sin vincular'}`);
-                        }
-                    } else {
-                        console.log(`[AUTH] ⚠️ Sesión ${sessionId} no encontrada en user_sessions`);
-                    }
-                } else {
-                    console.log(`[AUTH] ⚠️ Admin ${email} no tiene session_id asignado - debe escanear QR`);
-                }
-            }
-            // ✅ PRIORIDAD 3: Si es SUPER ADMIN, puede usar cualquier sesión disponible
-            else if (user.role === 'super_admin' || user.role === 'superadmin') {
-                const [anySessions] = await connection.execute(
-                    `SELECT session_id, phone FROM user_sessions
-                     WHERE is_active = true
-                     ORDER BY last_activity DESC
-                     LIMIT 1`
-                );
-
-                if (anySessions.length > 0) {
-                    sessionId = anySessions[0].session_id;
-                    console.log(`[AUTH] ✅ Super Admin ${email} - sesión activa disponible: ${sessionId} (${anySessions[0].phone})`);
-                }
-            }
-
-            console.log(`[AUTH] ✅ Login exitoso: ${email} (${user.role}) - Dispositivo: ${deviceId.substr(0, 20)}...`);
-
-            // Obtener permisos del usuario
-            const [permissions] = await connection.execute(`
-                SELECT 
-                    p.id as permission_id,
-                    p.name as permission_name,
-                    p.module,
-                    COALESCE(up.can_view, 0) as can_view,
-                    COALESCE(up.can_create, 0) as can_create,
-                    COALESCE(up.can_edit, 0) as can_edit,
-                    COALESCE(up.can_delete, 0) as can_delete
-                FROM permissions p
-                LEFT JOIN user_permissions up ON p.id = up.permission_id AND up.user_id = ?
-                WHERE (up.can_view = 1 OR up.can_create = 1 OR up.can_edit = 1 OR up.can_delete = 1)
-                ORDER BY p.module, p.name
-            `, [user.id]);
-
-            // Agrupar permisos por módulo
-            const permissionsByModule = {};
-            permissions.forEach(perm => {
-                if (!permissionsByModule[perm.module]) {
-                    permissionsByModule[perm.module] = {
-                        view: false,
-                        create: false,
-                        edit: false,
-                        delete: false
-                    };
-                }
-                if (perm.can_view) permissionsByModule[perm.module].view = true;
-                if (perm.can_create) permissionsByModule[perm.module].create = true;
-                if (perm.can_edit) permissionsByModule[perm.module].edit = true;
-                if (perm.can_delete) permissionsByModule[perm.module].delete = true;
-            });
-
-            // Log detallado para debugging
-            sessionLogger.log(sessionId || 'NO_SESSION', 'LOGIN_SUCCESS', {
-                userId: user.id,
-                email: user.email,
-                role: user.role,
-                deviceId: deviceId.substr(0, 30),
-                sessionId: sessionId,
-                permissionsCount: permissions.length,
-                timestamp: new Date().toISOString()
-            });
-
-            res.json({
-                success: true,
-                user,
-                token,
-                sessionToken, // Token único de sesión
-                sessionId, // Agregar sessionId a la respuesta
-                permissions: permissions, // Lista completa de permisos
-                permissionsByModule: permissionsByModule, // Permisos agrupados por módulo
-                message: 'Login successful'
-            });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[AUTH] Error en login:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// POST - Register new user
-app.post('/api/auth/register', async (req, res) => {
-    const { name, full_name, email, phone, password, confirm_password } = req.body;
-    const userName = name || full_name; // Aceptar ambos formatos
-
-    console.log('[REGISTER] 📝 Intento de registro:', { name: userName, email: email?.substring(0, 10) + '...', phone });
-
-    // Validaciones
-    if (!userName || !email || !password) {
-        return res.status(400).json({ success: false, error: 'Nombre, email y contraseña son requeridos' });
-    }
-
-    if (password !== confirm_password) {
-        return res.status(400).json({ success: false, error: 'Las contraseñas no coinciden' });
-    }
-
-    if (password.length < 6) {
-        return res.status(400).json({ success: false, error: 'La contraseña debe tener al menos 6 caracteres' });
-    }
-
-    // Validar formato de email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-        return res.status(400).json({ success: false, error: 'Email inválido' });
-    }
-
-    if (!pool) {
-        return res.status(503).json({ success: false, error: 'Database not available' });
-    }
-
-    try {
-        const bcrypt = require('bcrypt');
-        const connection = await pool.getConnection();
-
-        try {
-            // Verificar si el email ya existe
-            const [existingUsers] = await connection.execute(
-                'SELECT id FROM users WHERE email = ?',
-                [email]
-            );
-
-            if (existingUsers.length > 0) {
-                console.log('[REGISTER] ❌ Email ya existe:', email);
-                return res.status(409).json({ success: false, error: 'Este email ya está registrado' });
-            }
-
-            // Hash de la contraseña
-            const hashedPassword = await bcrypt.hash(password, 10);
-
-            // Insertar nuevo usuario con rol 'admin' y trial de 7 días
-            const [result] = await connection.execute(
-                `INSERT INTO users (name, email, password, phone, role, status, is_admin, 
-                 subscription_status, subscription_plan, subscription_start_date, subscription_end_date, subscription_days)
-                 VALUES (?, ?, ?, ?, 'admin', 'active', 1, 'trial', 'free', NOW(), DATE_ADD(NOW(), INTERVAL 7 DAY), 7)`,
-                [userName, email, hashedPassword, phone || null]
-            );
-
-            const newUserId = result.insertId;
-
-            console.log('[REGISTER] ✅ Usuario registrado exitosamente:', { id: newUserId, name: userName, email });
-
-            // Retornar datos del usuario (sin contraseña)
-            res.json({
-                success: true,
-                message: 'Usuario registrado exitosamente. Inicia sesión para comenzar.',
-                user: {
-                    id: newUserId,
-                    name: userName,
-                    email,
-                    phone: phone || null,
-                    role: 'admin',
-                    status: 'active',
-                    subscription_status: 'trial',
-                    subscription_plan: 'free',
-                    subscription_days: 7
-                }
-            });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[REGISTER] Error en registro:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+// Los endpoints de autenticación se cargan desde auth-endpoints.js
+// POST /api/auth/login - Endpoint de login
+// POST /api/auth/register - Endpoint de registro
+// GET /api/auth/verify - Verificar token
+// POST /api/auth/logout - Logout
 
 // GET - Obtener planes públicos (sin autenticación)
 app.get('/api/public/plans', async (req, res) => {
@@ -23398,7 +23124,7 @@ console.log('🔥 [INDEX.JS] registerAPIRestEndpoints ejecutado');
 // ============= ENDPOINTS DE AUTENTICACIÓN =============
 const { registerAuthEndpoints } = require('./auth-endpoints');
 console.log('🔐 [INDEX.JS] Registrando endpoints de autenticación...');
-registerAuthEndpoints(app, pool);
+registerAuthEndpoints(app, poolProxy);
 console.log('🔐 [INDEX.JS] Endpoints de autenticación registrados');
 
 // ============= FIN ENDPOINTS DE API REST =============

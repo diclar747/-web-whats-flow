@@ -25,27 +25,14 @@ async function verifyPassword(password, hash) {
  */
 function generateToken(user, customRole = null) {
     // Determinar rol del usuario
-    let userRole = customRole; // Si se proporciona un rol custom, usarlo
-
-    if (!userRole) {
-        // Si no hay rol custom, determinar desde los campos del usuario
-        if (user.is_super_admin === 1 || user.is_super_admin === true) {
-            userRole = 'super_admin';
-        } else if (user.is_admin === 1 || user.is_admin === true) {
-            userRole = 'admin';
-        } else if (user.phone_number === '595994854167') {
-            // Legacy: por phone number
-            userRole = 'super_admin';
-        } else {
-            userRole = 'user';
-        }
-    }
+    let userRole = customRole || user.role || 'admin';
 
     const payload = {
+        id: user.id,
         userId: user.id,
         email: user.email,
-        phoneNumber: user.phone_number,
-        phone: user.phone_number, // Agregar también como 'phone' para compatibilidad
+        phone: user.phone_number || user.phone,
+        phoneNumber: user.phone_number || user.phone,
         role: userRole
     };
 

@@ -46,6 +46,14 @@ interface WhatsAppSession {
 }
 
 const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ sessionId }) => {
+  const resolvedSessionId = React.useMemo(() => (
+    sessionId
+    || sessionStorage.getItem('whatsflow_session')
+    || localStorage.getItem('whatsflow_session')
+    || sessionStorage.getItem('sessionId')
+    || localStorage.getItem('sessionId')
+  ), [sessionId]);
+
   const [qrState, setQrState] = useState<{ sessionId: string; qrDataUrl: string; isLoading: boolean }>({ 
     sessionId: '', 
     qrDataUrl: '', 
@@ -65,8 +73,12 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
   // Cargar plan de suscripción y límites
   useEffect(() => {
     const fetchSubscriptionLimits = async () => {
+      if (!resolvedSessionId) {
+        setNormalizedMaxChannels(1);
+        return;
+      }
       try {
-        const response = await sessionFetch(`/api/subscriptions/my-subscription?phone=${sessionId}`, {
+        const response = await sessionFetch(`/api/subscriptions/my-subscription?phone=${resolvedSessionId}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -89,14 +101,19 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
     };
 
     fetchSubscriptionLimits();
-  }, [sessionId]);
+  }, [resolvedSessionId]);
 
   // Cargar sesiones activas
   const fetchActiveSessions = async () => {
+    if (!resolvedSessionId) {
+      setWaError('No hay sessionId disponible. Intenta volver a iniciar sesión.');
+      setWaLoading(false);
+      return;
+    }
     setWaLoading(true);
     setWaError('');
     try {
-      const response = await sessionFetch(`/api/sessions/active?sessionId=${encodeURIComponent(sessionId)}`, {
+      const response = await sessionFetch(`/api/sessions/active?sessionId=${encodeURIComponent(resolvedSessionId || '')}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -136,7 +153,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       stopQrPolling();
       clearInterval(pollInterval);
     };
-  }, [sessionId]);
+  }, [resolvedSessionId]);
 
   const stopQrPolling = () => {
     if (qrPollRef.current) {
@@ -146,6 +163,11 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
   };
 
   const startQrFlow = async () => {
+    if (!resolvedSessionId) {
+      setWaError('No hay sessionId disponible. Vuelve a iniciar sesión.');
+      return;
+    }
+
     setWaError('');
     stopQrPolling();
     setQrState({ sessionId: '', qrDataUrl: '', isLoading: true });
@@ -154,7 +176,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       const response = await sessionFetch(`/api/whatsapp/qr-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: sessionId })
+        body: JSON.stringify({ sessionId: resolvedSessionId })
       });
 
       if (!response.ok) {
@@ -173,7 +195,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       // Iniciar polling para detectar cuando se escanea el QR (más frecuente para detección rápida)
       qrPollRef.current = setInterval(async () => {
         try {
-          const statusResponse = await sessionFetch(`/api/sessions/active?sessionId=${encodeURIComponent(sessionId)}`, {
+          const statusResponse = await sessionFetch(`/api/sessions/active?sessionId=${encodeURIComponent(resolvedSessionId)}`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
           });

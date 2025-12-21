@@ -67,19 +67,19 @@ function registerAuthEndpoints(app, pool) {
                 // Hash de contraseña
                 const password_hash = await hashPassword(password);
 
-                // Insertar usuario en tabla users con role=agent (cliente)
+                // Insertar usuario en tabla users con role=admin (clientes se manejan como admin aquí)
                 const [result] = await connection.execute(
-                    `INSERT INTO users (name, email, phone, password_hash, role, status) 
-                     VALUES (?, ?, ?, ?, 'agent', 'active')`,
+                    `INSERT INTO users (name, email, phone, password, role, status) 
+                     VALUES (?, ?, ?, ?, 'admin', 'active')`,
                     [full_name, email, phone, password_hash]
                 );
 
-                const newUserId = result.insertId;
+                const newUserId = result.insertId || result[0]?.id;
                 console.log(`[AUTH] Nuevo cliente registrado: ${email} (ID: ${newUserId})`);
 
                 res.json({
                     success: true,
-                    message: 'Usuario registrado exitosamente',
+                    message: 'Usuario registrado exitosamente. Inicia sesión para comenzar.',
                     userId: newUserId
                 });
 
@@ -113,7 +113,7 @@ function registerAuthEndpoints(app, pool) {
             try {
                 // Buscar usuario en tabla 'users' (email/password login)
                 const [users] = await connection.execute(
-                    `SELECT id, name as full_name, email, phone as phone_number, password_hash, is_active, is_super_admin, is_admin
+                    `SELECT id, name as full_name, email, phone as phone_number, password, role, status
                      FROM users WHERE email = ?`,
                     [email]
                 );
@@ -126,11 +126,11 @@ function registerAuthEndpoints(app, pool) {
                 }
 
                 const user = users[0];
-                console.log(`[AUTH] 👤 Usuario encontrado:`, email, `| Super Admin:`, user.is_super_admin === 1);
+                console.log(`[AUTH] 👤 Usuario encontrado:`, email, `| Role:`, user.role);
 
 
                 // Verificar contraseña
-                const isValid = await verifyPassword(password, user.password_hash);
+                const isValid = await verifyPassword(password, user.password);
 
                 if (!isValid) {
                     return res.status(401).json({
@@ -145,21 +145,15 @@ function registerAuthEndpoints(app, pool) {
                     [user.id]
                 );
 
-                // Determinar rol del usuario ANTES de generar token
-                let userRole = 'user';
-                if (user.is_super_admin === 1 || user.is_super_admin === true) {
-                    userRole = 'super_admin';
-                } else if (user.is_admin === 1 || user.is_admin === true) {
-                    userRole = 'admin';
-                }
-
-                console.log(`[AUTH] 👤 Rol asignado para ${email}:`, userRole);
+                // Usar rol de la BD
+                const userRole = user.role || 'admin';
+                console.log(`[AUTH] 👤 Rol de ${email}:`, userRole);
 
                 // Generar token JWT con el rol correcto
                 const token = generateToken(user, userRole);
 
                 // Crear/actualizar user_sessions con session_id = user.id (como string)
-                let whatsappSessionId = null;
+                let whatsappSessionId = String(user.id); // SIEMPRE asignar sessionId = user.id
                 try {
                     const sessionId = String(user.id);
                     
@@ -191,15 +185,18 @@ function registerAuthEndpoints(app, pool) {
                         );
                         console.log(`[AUTH] ✅ Sesión actualizada para usuario: ${email} (session_id: ${sessionId})`);
                     }
+                    
+                    whatsappSessionId = sessionId; // Asegurar que se devuelva
                 } catch (err) {
                     console.log('[AUTH] ⚠️ Error al crear/actualizar sesión:', err.message);
                 }
 
-                console.log(`[AUTH] Login exitoso: ${email}`);
+                console.log(`[AUTH] Login exitoso: ${email} | sessionId: ${whatsappSessionId}`);
 
                 res.json({
                     success: true,
                     token,
+                    sessionId: whatsappSessionId, // ✅ Devolver sessionId al frontend
                     user: {
                         id: user.id,
                         full_name: user.full_name,
@@ -208,16 +205,15 @@ function registerAuthEndpoints(app, pool) {
                         role: userRole
                     }
                 });
-
             } finally {
                 connection.release();
             }
 
         } catch (error) {
-            console.error('[AUTH] Error en login:', error);
+            console.error('[AUTH] Error en login:', error.message, error.stack);
             res.status(500).json({
                 success: false,
-                error: 'Error al iniciar sesión'
+                error: 'Error al iniciar sesión: ' + error.message
             });
         }
     });
