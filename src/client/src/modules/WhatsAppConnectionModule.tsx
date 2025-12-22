@@ -27,6 +27,7 @@ import {
   QrCode,
   Refresh,
   Delete,
+  DeleteForever,
   Phone,
   WhatsApp
 } from '@mui/icons-material';
@@ -66,6 +67,10 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
   const [disconnectDialog, setDisconnectDialog] = useState<{ open: boolean; sessionId: string }>({ 
     open: false, 
     sessionId: '' 
+  });
+  const [purgeDialog, setPurgeDialog] = useState<{ open: boolean; sessionId: string }>({
+    open: false,
+    sessionId: ''
   });
 
   const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -257,28 +262,73 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
     setDisconnectDialog({ open: false, sessionId: '' });
   };
 
+  const openPurgeDialog = (targetSessionId: string) => {
+    setPurgeDialog({ open: true, sessionId: targetSessionId });
+  };
+
+  const closePurgeDialog = () => {
+    setPurgeDialog({ open: false, sessionId: '' });
+  };
+
   const confirmDisconnect = async () => {
-    const targetSessionId = disconnectDialog.sessionId;
+    const targetSessionId = resolvedSessionId || disconnectDialog.sessionId;
     closeDisconnectDialog();
 
     setWaError('');
     setWaLoading(true);
 
     try {
-      const response = await sessionFetch(`/api/whatsapp/disconnect/${targetSessionId}`, {
+      // Eliminar SOLO la conexión (user_sessions + auth), sin tocar datos
+      const response = await sessionFetch(`/api/sessions/${targetSessionId}/disconnect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Error al desconectar');
+        throw new Error(errorData.error || errorData.message || 'Error al desconectar');
       }
 
       await fetchActiveSessions();
     } catch (err: any) {
       console.error('[WHATSAPP] Error al desconectar:', err);
       setWaError(err.message || 'Error al desconectar sesión');
+    } finally {
+      setWaLoading(false);
+    }
+  };
+
+  const confirmPurge = async () => {
+    const targetSessionId = purgeDialog.sessionId;
+    closePurgeDialog();
+
+    setWaError('');
+    setWaLoading(true);
+
+    try {
+      // 1) Intentar desconectar por si sigue activa
+      try {
+        await sessionFetch(`/api/whatsApp/disconnect/${targetSessionId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (_) {}
+
+      // 2) Purga total: borra user_sessions, datos y credenciales locales
+      const purgeResponse = await sessionFetch(`/api/sync/purge/${targetSessionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!purgeResponse.ok) {
+        const errorData = await purgeResponse.json();
+        throw new Error(errorData.error || errorData.message || 'Error al eliminar conexión y datos');
+      }
+
+      await fetchActiveSessions();
+    } catch (err: any) {
+      console.error('[WHATSAPP] Error en purga:', err);
+      setWaError(err.message || 'Error al eliminar conexión y datos');
     } finally {
       setWaLoading(false);
     }
@@ -522,6 +572,15 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                         >
                           {session.isConnected ? 'Desconectar' : 'Eliminar'}
                         </Button>
+                        <Button
+                          size="small"
+                          color="error"
+                          variant="contained"
+                           onClick={() => openPurgeDialog(resolvedSessionId || session.sessionId)}
+                           startIcon={<DeleteForever />}
+                         >
+                           Eliminar conexión y datos (total)
+                        </Button>
                       </Stack>
                     </ListItem>
                   );
@@ -545,6 +604,23 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
           <Button onClick={closeDisconnectDialog}>Cancelar</Button>
           <Button onClick={confirmDisconnect} color="error" variant="contained">
             Desconectar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog de confirmación de purga */}
+      <Dialog open={purgeDialog.open} onClose={closePurgeDialog}>
+        <DialogTitle>Eliminar conexión y todos los datos</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Esto eliminará la conexión, credenciales guardadas y TODO el historial (contactos, mensajes, grupos, broadcasts).
+            Deberás volver a escanear un QR para reconectar. ¿Deseas continuar?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closePurgeDialog}>Cancelar</Button>
+          <Button onClick={confirmPurge} color="error" variant="contained">
+            Eliminar definitivamente
           </Button>
         </DialogActions>
       </Dialog>

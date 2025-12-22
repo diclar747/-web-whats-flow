@@ -41,8 +41,7 @@ import {
   CheckCircle,
   Error as ErrorIcon,
   Settings as SettingsIcon,
-  Notifications as NotificationsIcon,
-  Category as CategoryIcon
+  Notifications as NotificationsIcon
 } from '@mui/icons-material';
 import { useWhatsApp } from '../context/WhatsAppContext';
 import ModernAlert from '../components/ModernAlert';
@@ -64,7 +63,6 @@ interface Appointment {
   notes?: string;
   reminder_time?: number;
   notification_template?: string;
-  category_id?: number;
   created_at: string;
   updated_at: string;
 }
@@ -74,14 +72,6 @@ interface NotificationTemplate {
   name: string;
   message: string;
   is_default: boolean;
-}
-
-interface AppointmentCategory {
-  id: number;
-  name: string;
-  color: string;
-  icon: string;
-  is_active: boolean;
 }
 
 interface CalendarModuleProps {
@@ -153,9 +143,6 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     { value: 2880, label: '2 días antes' }
   ]);
 
-  // Estados para categorías
-  const [categories, setCategories] = useState<AppointmentCategory[]>([]);
-  const [newCategory, setNewCategory] = useState({ name: '', color: '#1a73e8', icon: '📋' });
   const [searchingContact, setSearchingContact] = useState(false);
 
   // Estados para búsqueda de contactos por nombre
@@ -180,22 +167,6 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
       appointment.status !== 'completed' &&
       appointment.status !== 'cancelled';
   };
-
-  // Cargar categorías
-  const loadCategories = useCallback(async () => {
-    if (!sessionId) return;
-
-    try {
-      const response = await fetch(`/api/appointment-categories/${sessionId}`);
-      const data = await response.json();
-
-      if (data.success) {
-        setCategories(data.categories);
-      }
-    } catch (error) {
-      console.error('Error cargando categorías:', error);
-    }
-  }, [sessionId]);
 
   const loadAppointments = useCallback(async () => {
     if (!sessionId) {
@@ -232,15 +203,12 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
 
           console.log(`[CALENDAR] Loading event: ${apt.patient_name} - ${dateStr} ${timeStr} -> ${startDateTime.toLocaleString()} (Day: ${startDateTime.getDate()})`);
 
-          // Obtener categoría si existe
-          const category = categories.find(c => c.id === apt.category_id);
-
           // ⚡ FIX: Manejar patient_name NULL o vacío
           const displayName = apt.patient_name || apt.patient_phone || 'Sin nombre';
 
           return {
             id: apt.id,
-            title: `${category ? category.icon + ' ' : ''}${displayName}`,
+            title: displayName,
             start: startDateTime,
             end: endDateTime,
             resource: apt,
@@ -258,19 +226,14 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     } finally {
       setLoading(false);
     }
-  }, [sessionId, categories]);
+  }, [sessionId]);
 
-  // ⚡ OPTIMIZACIÓN: Cargar categorías solo al montar
+  // ⚡ OPTIMIZACIÓN: Cargar appointments solo cuando cambia sessionId
   useEffect(() => {
-    loadCategories();
-  }, [loadCategories]);
-
-  // ⚡ OPTIMIZACIÓN: Cargar appointments solo cuando cambia sessionId o se cargan categorías por primera vez
-  useEffect(() => {
-    if (sessionId && categories.length > 0) {
+    if (sessionId) {
       loadAppointments();
     }
-  }, [sessionId, categories.length]); // Cambiar de 'categories' a 'categories.length' para evitar recargas
+  }, [sessionId, loadAppointments]);
 
   // Buscar contacto por teléfono
   const searchContactByPhone = async (phone: string) => {
@@ -383,14 +346,8 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     const appointment = event.resource;
     const status = isOverdue(appointment) ? 'overdue' : appointment.status;
 
-    // Usar color de la categoría si existe
-    let backgroundColor = getStatusColor(status);
-    if (appointment.category_id) {
-      const category = categories.find(c => c.id === appointment.category_id);
-      if (category) {
-        backgroundColor = category.color;
-      }
-    }
+    // Usar color según el estado
+    const backgroundColor = getStatusColor(status);
 
     return {
       style: {
@@ -431,8 +388,7 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
       appointment_time: selectedTime,
       status: 'scheduled',
       reminder_time: 60,
-      notification_template: 'default',
-      category_id: categories.length > 0 ? categories[0].id : undefined
+      notification_template: 'default'
     });
     setSelectedEvent(null);
     setShowDialog(true);
@@ -584,62 +540,6 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     showSuccess('Plantilla eliminada', '✅ Eliminado');
   };
 
-  // Manejo de categorías
-  const handleAddCategory = async () => {
-    if (!newCategory.name) {
-      showError('Por favor ingresa el nombre de la categoría', '⚠️ Campo requerido');
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/appointment-categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          ...newCategory
-        })
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        showSuccess('Categoría creada exitosamente', '✅ Creado');
-        setNewCategory({ name: '', color: '#1a73e8', icon: '📋' });
-        loadCategories();
-      }
-    } catch (error) {
-      console.error('Error creando categoría:', error);
-      showError('Error al crear categoría', '❌ Error');
-    }
-  };
-
-  const handleDeleteCategory = async (categoryId: number) => {
-    showConfirm(
-      '¿Eliminar categoría?',
-      '¿Estás seguro de que deseas eliminar esta categoría?',
-      async () => {
-        try {
-          const response = await fetch(`/api/appointment-categories/${categoryId}`, {
-            method: 'DELETE'
-          });
-
-          const data = await response.json();
-
-          if (data.success) {
-            showSuccess('Categoría eliminada', '✅ Eliminado');
-            loadCategories();
-          }
-        } catch (error) {
-          console.error('Error eliminando categoría:', error);
-          showError('Error al eliminar categoría', '❌ Error');
-        }
-      },
-      'Sí, eliminar',
-      'Cancelar'
-    );
-  };
-
   const previewTemplate = (templateId: string) => {
     const template = templates.find(t => t.id === templateId);
     if (!template) return '';
@@ -745,8 +645,7 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
                 appointment_date: `${year}-${month}-${day}`,
                 appointment_time: `${hour}:${minute}`,
                 reminder_time: 60,
-                notification_template: 'default',
-                category_id: categories.length > 0 ? categories[0].id : undefined
+                notification_template: 'default'
               });
               setSelectedEvent(null);
               setShowDialog(true);
@@ -965,21 +864,6 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
               helperText={searchingContact ? "Buscando contacto..." : "Número de teléfono del paciente"}
             />
 
-            <FormControl fullWidth disabled={saving}>
-              <InputLabel>Categoría de Consulta *</InputLabel>
-              <Select
-                value={formData.category_id || ''}
-                onChange={(e) => setFormData({ ...formData, category_id: e.target.value as number })}
-                label="Categoría de Consulta *"
-              >
-                {categories.map((category) => (
-                  <MenuItem key={category.id} value={category.id}>
-                    {category.icon} {category.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
             <Grid container spacing={2}>
               <Grid item xs={6}>
                 <TextField
@@ -1162,7 +1046,6 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
 
         <Tabs value={settingsTab} onChange={(e, v) => setSettingsTab(v)} sx={{ borderBottom: 1, borderColor: 'divider', px: 3 }}>
           <Tab label="📝 Plantillas" />
-          <Tab label="📁 Categorías" />
           <Tab label="⏰ Recordatorios" />
         </Tabs>
 
@@ -1237,97 +1120,8 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
             </Box>
           )}
 
-          {/* Tab 2: Categorías */}
+          {/* Tab 2: Recordatorios */}
           {settingsTab === 1 && (
-            <Box>
-              <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
-                Categorías de Consultas
-              </Typography>
-
-              <Alert severity="info" sx={{ mb: 2 }}>
-                Crea categorías personalizadas para organizar tus citas
-              </Alert>
-
-              <List>
-                {categories.map((category) => (
-                  <React.Fragment key={category.id}>
-                    <ListItem>
-                      <Box
-                        sx={{
-                          width: 20,
-                          height: 20,
-                          borderRadius: '50%',
-                          backgroundColor: category.color,
-                          mr: 2
-                        }}
-                      />
-                      <ListItemText
-                        primary={`${category.icon} ${category.name}`}
-                      />
-                      <ListItemSecondaryAction>
-                        <IconButton
-                          edge="end"
-                          onClick={() => handleDeleteCategory(category.id)}
-                          color="error"
-                        >
-                          <Delete />
-                        </IconButton>
-                      </ListItemSecondaryAction>
-                    </ListItem>
-                    <Divider />
-                  </React.Fragment>
-                ))}
-              </List>
-
-              <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
-                Nueva Categoría
-              </Typography>
-
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <TextField
-                  label="Nombre de la categoría"
-                  value={newCategory.name}
-                  onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
-                  fullWidth
-                  placeholder="Ej: Consulta General, Control, Urgencia"
-                />
-
-                <Grid container spacing={2}>
-                  <Grid item xs={6}>
-                    <TextField
-                      label="Color"
-                      type="color"
-                      value={newCategory.color}
-                      onChange={(e) => setNewCategory({ ...newCategory, color: e.target.value })}
-                      fullWidth
-                    />
-                  </Grid>
-
-                  <Grid item xs={6}>
-                    <TextField
-                      label="Icono (emoji)"
-                      value={newCategory.icon}
-                      onChange={(e) => setNewCategory({ ...newCategory, icon: e.target.value })}
-                      fullWidth
-                      placeholder="📋"
-                    />
-                  </Grid>
-                </Grid>
-
-                <Button
-                  variant="contained"
-                  startIcon={<Add />}
-                  onClick={handleAddCategory}
-                  sx={{ alignSelf: 'flex-start' }}
-                >
-                  Agregar Categoría
-                </Button>
-              </Box>
-            </Box>
-          )}
-
-          {/* Tab 3: Recordatorios */}
-          {settingsTab === 2 && (
             <Box>
               <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
                 Configuración de Recordatorios

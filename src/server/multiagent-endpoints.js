@@ -1328,32 +1328,10 @@ module.exports = function (app, pool) {
 
             const connection = await pool.getConnection();
             try {
-                // Resolver phoneNumber a partir de sessionId (email/UUID/phone)
-                let phoneNumber = null;
-                // 1) Intentar resolver por user_sessions.session_id (UUID)
-                const [sessionInfo] = await connection.execute(
-                    `SELECT phone_number FROM user_sessions WHERE session_id = ? LIMIT 1`,
-                    [sessionId]
-                );
-                phoneNumber = sessionInfo[0]?.phone_number || null;
-
-                // 2) Si no hay, intentar si es email
-                if (!phoneNumber && sessionId && sessionId.includes('@')) {
-                    const [byEmail] = await connection.execute(
-                        `SELECT phone_number FROM user_sessions WHERE email = ? ORDER BY last_connection_time DESC LIMIT 1`,
-                        [sessionId]
-                    );
-                    phoneNumber = byEmail[0]?.phone_number || phoneNumber;
-                }
-
-                // 3) Si sigue sin haber, asumir que es phoneNumber ya
-                if (!phoneNumber && sessionId && /^\d{6,}$/.test(sessionId)) {
-                    phoneNumber = sessionId;
-                }
-
-                if (!phoneNumber) {
-                    console.warn('[MESSAGES-GET] ⚠️ No se pudo resolver phoneNumber para', sessionId);
-                }
+                // ✅ FIX: Usar getOwnerSessionId para obtener el user.id correcto
+                // Importar desde index.js (asumiendo que está disponible en el scope)
+                const ownerSessionId = await getOwnerSessionId(sessionId);
+                console.log('[MESSAGES-GET] 🔑 Using ownerSessionId (users.id):', ownerSessionId);
 
                 let query = `
                     SELECT
@@ -1377,7 +1355,7 @@ module.exports = function (app, pool) {
                     WHERE m.session_id = ? AND m.chat_jid = ?
                 `;
 
-                const params = [phoneNumber, phoneNumber || sessionId, chatJid];
+                const params = [ownerSessionId, ownerSessionId, chatJid];
 
                 // Filtro por fecha (hoy)
                 if (dateFilter === 'today') {

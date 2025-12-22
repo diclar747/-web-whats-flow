@@ -712,6 +712,24 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     localStorage.setItem('whatsflow_session', sessionId);
     sessionStorage.setItem('whatsflow_session', sessionId);
     loadChats(sessionId);
+
+    // 🔄 Forzar sincronización inicial para poblar BD tras conexión por QR
+    (async () => {
+      try {
+        console.log(`🔄 Forzando sincronización inicial para la sesión ${sessionId}...`);
+        const resp = await fetch(`${API_BASE}/api/force-sync/${sessionId}`, { method: 'POST' });
+        const data = await resp.json();
+        if (data.success) {
+          console.log('✅ Sincronización inicial completada:', data.stats || {});
+          // Cargar chats nuevamente por si cambió el orden
+          loadChats(sessionId);
+        } else {
+          console.warn('⚠️ Falló la sincronización inicial:', data.error || 'Error desconocido');
+        }
+      } catch (err) {
+        console.warn('⚠️ Error forzando sincronización inicial:', err);
+      }
+    })();
   };
 
   const disconnectSession = () => {
@@ -735,8 +753,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     try {
       setIsLoading(true);
       console.log(`🔄 Cargando mensajes para chat: ${chatId}`);
-
-      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&limit=25`);
+      // Cargar histórico completo por defecto para evitar lista vacía tras QR
+      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&limit=100&dateFilter=all`);
       const data = await response.json();
 
       if (data.success && data.messages) {

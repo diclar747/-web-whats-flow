@@ -809,6 +809,17 @@ const App: React.FC = () => {
 
       setSessionId(effectiveSessionId); // ✅ Establecer en estado
 
+      try {
+        window.dispatchEvent(new CustomEvent('whatsflow-session-established', {
+          detail: {
+            sessionId: effectiveSessionId,
+            userId: userData.id,
+            userRole: userData.role
+          }
+        }));
+        console.log('📣 Evento whatsflow-session-established emitido (login)');
+      } catch {}
+
       console.log('✅ Usuario autenticado con JWT:', userData.full_name, '| sessionId:', effectiveSessionId);
       return;
     }
@@ -846,6 +857,16 @@ const App: React.FC = () => {
       localStorage.setItem('whatsflow_session', sessionIdFromLogin);
       setSessionId(sessionIdFromLogin);
       console.log('✅ SessionId recibido del backend:', sessionIdFromLogin);
+      try {
+        window.dispatchEvent(new CustomEvent('whatsflow-session-established', {
+          detail: {
+            sessionId: sessionIdFromLogin,
+            userId: userData.id,
+            userRole: userData.role
+          }
+        }));
+        console.log('📣 Evento whatsflow-session-established emitido (login compat)');
+      } catch {}
     } else {
       // Verificar si hay sessionId guardado previamente
       const savedSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
@@ -942,6 +963,16 @@ const App: React.FC = () => {
       sessionStorage.setItem(key, value);
       localStorage.setItem(key, value);
     });
+
+    try {
+      window.dispatchEvent(new CustomEvent('whatsflow-session-established', {
+        detail: {
+          sessionId: newSessionId,
+          userRole: 'admin'
+        }
+      }));
+      console.log('📣 Evento whatsflow-session-established emitido (QR)');
+    } catch {}
 
     console.log('✅ [APP] Sesión guardada, datos listos para redirección');
     // La navegación la maneja LandingPage.tsx, pero confirmamos que el estado está listo

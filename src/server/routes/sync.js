@@ -2,6 +2,12 @@ const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2/promise');
 require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
+const { resolveToUserId } = require('../helpers/sessionIdResolver');
+
+// Alinear con index.js
+const BASE_AUTH_DIR = path.join(__dirname, '../../auth_info_multi');
 
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
@@ -329,25 +335,47 @@ router.post('/force/:sessionId', async (req, res) => {
 // Limpiar todos los datos de sincronización de un usuario
 router.delete('/clear/:sessionId', async (req, res) => {
   try {
-    const { sessionId } = req.params;
+    const { sessionId: rawSessionId } = req.params;
     const connection = await mysql.createConnection(dbConfig);
 
-    console.log(`[SYNC-CLEAR] Limpiando datos de sincronización para ${sessionId}`);
+    // Resolver a user.id (canónico) pero manteniendo compatibilidad con datos legados por phone
+    const canonicalUserId = await resolveToUserId(String(rawSessionId));
+
+    console.log(`[SYNC-CLEAR] Limpiando datos de sincronización para ${rawSessionId} (canonico=${canonicalUserId})`);
 
     try {
       // Desactivar verificaciones de llaves foráneas
       await connection.query('SET FOREIGN_KEY_CHECKS = 0');
 
-      // Limpiar mensajes del usuario
+      // Recopilar identificadores relacionados (user.id canónico + posibles phones asociados en user_sessions)
+      const idsToMatch = new Set([String(canonicalUserId)]);
+      const phonesToMatch = new Set();
+
+      const [sessRows] = await connection.query(
+        'SELECT session_id, phone, owner_phone_number FROM user_sessions WHERE session_id = ? OR phone = ? OR owner_phone_number = ? ORDER BY updated_at DESC',
+        [canonicalUserId, rawSessionId, rawSessionId]
+      );
+      for (const r of sessRows) {
+        if (r.session_id) idsToMatch.add(String(r.session_id));
+        if (r.phone) phonesToMatch.add(String(r.phone));
+        if (r.owner_phone_number) phonesToMatch.add(String(r.owner_phone_number));
+      }
+
+      // Para compatibilidad, algunos registros antiguos usan el phone en session_id
+      for (const p of phonesToMatch) idsToMatch.add(p);
+
+      const idsArray = Array.from(idsToMatch);
+
+      // Limpiar mensajes del usuario (session_id puede ser user.id o phone legado)
       const [messagesResult] = await connection.query(
-        'DELETE FROM messages WHERE session_id = ?',
-        [sessionId]
+        'DELETE FROM messages WHERE session_id IN (?)',
+        [idsArray]
       );
 
       // Obtener IDs de grupos del usuario para limpiar miembros
       const [groups] = await connection.query(
-        'SELECT id FROM contact_groups WHERE session_id = ?',
-        [sessionId]
+        'SELECT id FROM contact_groups WHERE session_id IN (?)',
+        [idsArray]
       );
       const groupIds = groups.map(g => g.id);
 
@@ -362,30 +390,30 @@ router.delete('/clear/:sessionId', async (req, res) => {
 
       // Limpiar grupos del usuario
       const [groupsResult] = await connection.query(
-        'DELETE FROM contact_groups WHERE session_id = ?',
-        [sessionId]
+        'DELETE FROM contact_groups WHERE session_id IN (?)',
+        [idsArray]
       );
 
       // Limpiar contactos del usuario
       const [contactsResult] = await connection.query(
-        'DELETE FROM contacts WHERE session_id = ?',
-        [sessionId]
+        'DELETE FROM contacts WHERE session_id IN (?)',
+        [idsArray]
       );
 
       // Limpiar broadcasts del usuario
       const [broadcastsResult] = await connection.query(
-        'DELETE FROM broadcasts WHERE session_id = ?',
-        [sessionId]
+        'DELETE FROM broadcasts WHERE session_id IN (?)',
+        [idsArray]
       );
 
-      // Resetear flags de sincronización del usuario
+      // Resetear flags de sincronización del usuario (por id o phone)
       await connection.query(
         `UPDATE users
          SET auto_sync = FALSE,
              sync_completed = FALSE,
              last_sync_date = NULL
-         WHERE phone = ?`,
-        [sessionId]
+         WHERE id = ? OR phone IN (?)`,
+        [canonicalUserId, Array.from(phonesToMatch)]
       );
 
       // Reactivar verificaciones de llaves foráneas
@@ -417,6 +445,107 @@ router.delete('/clear/:sessionId', async (req, res) => {
   } catch (error) {
     console.error('[SYNC-CLEAR] Error:', error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Purga total: limpia datos + elimina user_sessions y credenciales locales de auth
+router.post('/purge/:sessionId', async (req, res) => {
+  try {
+    const { sessionId: rawSessionId } = req.params;
+    const connection = await mysql.createConnection(dbConfig);
+
+    let canonicalUserId = await resolveToUserId(String(rawSessionId));
+
+    // Validar identificador: requerimos user.id numérico o phone numérico
+    const isNumericId = /^\d+$/.test(String(canonicalUserId));
+
+    if (!isNumericId) {
+      // Intentar resolver buscando en user_sessions por phone/owner_phone_number
+      const [probeRows] = await connection.query(
+        'SELECT session_id FROM user_sessions WHERE phone = ? OR owner_phone_number = ? ORDER BY updated_at DESC LIMIT 1',
+        [rawSessionId, rawSessionId]
+      );
+      if (probeRows.length > 0) {
+        canonicalUserId = String(probeRows[0].session_id);
+      } else {
+        await connection.end();
+        return res.status(400).json({ success: false, error: 'Identificador no válido. Usa user.id (numérico) o phone.' });
+      }
+    }
+
+    console.log(`[SYNC-PURGE] Purga completa para ${rawSessionId} (canonico=${canonicalUserId})`);
+
+    let stats = { messages: 0, contacts: 0, groups: 0, members: 0, broadcasts: 0, sessionsRemoved: 0, authDirsRemoved: 0 };
+
+    try {
+      await connection.query('SET FOREIGN_KEY_CHECKS = 0');
+
+      const idsToMatch = new Set([String(canonicalUserId)]);
+      const phonesToMatch = new Set();
+      const [sessRows] = await connection.query(
+        'SELECT session_id, phone, owner_phone_number FROM user_sessions WHERE session_id = ? OR phone = ? OR owner_phone_number = ? ORDER BY updated_at DESC',
+        [canonicalUserId, rawSessionId, rawSessionId]
+      );
+      for (const r of sessRows) {
+        if (r.session_id) idsToMatch.add(String(r.session_id));
+        if (r.phone) phonesToMatch.add(String(r.phone));
+        if (r.owner_phone_number) phonesToMatch.add(String(r.owner_phone_number));
+      }
+      // Incluir solo valores numéricos en idsArray para evitar errores DECIMAL
+      const idsArray = Array.from(idsToMatch).filter(v => /^\d+$/.test(v));
+
+      // Borrado de datos
+      const [mRes] = await connection.query('DELETE FROM messages WHERE session_id IN (?)', [idsArray]);
+      stats.messages = mRes.affectedRows;
+
+      const [grpRows] = await connection.query('SELECT id FROM contact_groups WHERE session_id IN (?)', [idsArray]);
+      const groupIds = grpRows.map(g => g.id);
+      if (groupIds.length) {
+        const [memRes] = await connection.query('DELETE FROM contact_group_members WHERE group_id IN (?)', [groupIds]);
+        stats.members = memRes.affectedRows;
+      }
+      const [gRes] = await connection.query('DELETE FROM contact_groups WHERE session_id IN (?)', [idsArray]);
+      stats.groups = gRes.affectedRows;
+      const [cRes] = await connection.query('DELETE FROM contacts WHERE session_id IN (?)', [idsArray]);
+      stats.contacts = cRes.affectedRows;
+      const [bRes] = await connection.query('DELETE FROM broadcasts WHERE session_id IN (?)', [idsArray]);
+      stats.broadcasts = bRes.affectedRows;
+
+      await connection.query(
+        `UPDATE users SET auto_sync = FALSE, sync_completed = FALSE, last_sync_date = NULL WHERE id = ?`,
+        [canonicalUserId]
+      );
+
+      // Eliminar sesiones de BD sin importar is_active (por id o phones)
+      const [delSess] = await connection.query('DELETE FROM user_sessions WHERE session_id = ? OR phone IN (?) OR owner_phone_number IN (?)', [canonicalUserId, Array.from(phonesToMatch), Array.from(phonesToMatch)]);
+      stats.sessionsRemoved = delSess.affectedRows || 0;
+
+      await connection.query('SET FOREIGN_KEY_CHECKS = 1');
+    } finally {
+      await connection.end();
+    }
+
+    // Eliminar carpetas de autenticación locales (por user.id y raw id)
+    let authRemoved = 0;
+    const candidates = new Set([String(canonicalUserId), String(rawSessionId)]);
+    try {
+      for (const dir of candidates) {
+        const authPath = path.join(BASE_AUTH_DIR, dir);
+        if (fs.existsSync(authPath)) {
+          fs.rmSync(authPath, { recursive: true, force: true });
+          authRemoved++;
+          console.log(`[SYNC-PURGE] 🔥 Eliminado auth dir: ${authPath}`);
+        }
+      }
+    } catch (e) {
+      console.warn('[SYNC-PURGE] No se pudo eliminar algún auth dir:', e.message);
+    }
+    stats.authDirsRemoved = authRemoved;
+
+    return res.json({ success: true, message: 'Purga completada', stats });
+  } catch (error) {
+    console.error('[SYNC-PURGE] Error:', error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 
