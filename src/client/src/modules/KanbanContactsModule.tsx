@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import {
   Box,
@@ -75,6 +75,11 @@ interface KanbanBoard {
   is_default: boolean;
 }
 
+// Layout constants for Kanban board columns
+const MAX_BOARDS_FULL_WIDTH = 5;
+const FIXED_COLUMN_WIDTH_PERCENT = 20;
+const MIN_COLUMN_WIDTH = '250px';
+
 const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }) => {
   const [boards, setBoards] = useState<KanbanBoard[]>([]);
   const [contacts, setContacts] = useState<{ [key: string]: Contact[] }>({});
@@ -126,6 +131,21 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
 
   // Menu contextual
   const [menuAnchor, setMenuAnchor] = useState<{ element: HTMLElement; board: KanbanBoard } | null>(null);
+
+  // Calculate column styles based on number of boards
+  const columnStyles = useMemo(() => {
+    const boardCount = Math.max(boards.length, 1);
+    const useFullWidth = boardCount <= MAX_BOARDS_FULL_WIDTH;
+    const columnWidthPercent = useFullWidth 
+      ? Math.max(100 / boardCount, FIXED_COLUMN_WIDTH_PERCENT) 
+      : FIXED_COLUMN_WIDTH_PERCENT;
+    
+    return {
+      flex: `0 0 ${columnWidthPercent}%`,
+      maxWidth: `${columnWidthPercent}%`,
+      minWidth: MIN_COLUMN_WIDTH,
+    };
+  }, [boards.length]);
 
   useEffect(() => {
     loadBoards();
@@ -729,7 +749,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
     const boardContacts = filterContacts(contacts[board.id] || []);
 
     return (
-      <Grid item xs={12} sm={6} md={4} lg={2.4} key={board.id}>
+      <Grid item key={board.id}>
         <Box
           onDragOver={handleDragOver}
           onDrop={() => handleDrop(board.id)}
@@ -895,8 +915,21 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
         </Tooltip>
       </Stack>
 
-      {/* Columnas Kanban */}
-      <Grid container spacing={2} sx={{ width: '100%', maxWidth: '100%', m: 0 }}>
+      {/* Columnas Kanban - Diseño responsivo para ocupar 100% del ancho */}
+      <Grid 
+        container 
+        spacing={2} 
+        sx={{ 
+          width: '100%', 
+          maxWidth: '100%', 
+          m: 0,
+          display: 'flex',
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
+          pb: 2,
+          '& > .MuiGrid-item': columnStyles
+        }}
+      >
         {boards.map(board => renderColumn(board))}
       </Grid>
 
