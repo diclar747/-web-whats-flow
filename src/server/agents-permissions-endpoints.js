@@ -182,6 +182,7 @@ module.exports = function (app, pool) {
 
             try {
                 let adminPhone = null;
+                let adminUserId = null; // ✅ NUEVO: ID del usuario admin
 
                 // Intentar autenticación por JWT token
                 const authHeader = req.headers.authorization;
@@ -201,16 +202,27 @@ module.exports = function (app, pool) {
                         if (decoded.phone) {
                             adminPhone = decoded.phone;
                             console.log('✅ [AGENT-CREATE] Autenticación por JWT exitosa. Admin:', adminPhone);
+
+                            // ✅ NUEVO: Obtener el ID del usuario admin
+                            const [adminUser] = await connection.execute(
+                                'SELECT id FROM users WHERE phone = ?',
+                                [decoded.phone]
+                            );
+                            if (adminUser.length > 0) {
+                                adminUserId = String(adminUser[0].id);
+                                console.log('✅ [AGENT-CREATE] Admin user ID obtenido:', adminUserId);
+                            }
                         } else if (decoded.id) {
                             // Fallback: Si tiene ID, buscar el phone
                             const [users] = await connection.execute(
-                                'SELECT phone FROM users WHERE id = ?',
+                                'SELECT id, phone FROM users WHERE id = ?',
                                 [decoded.id]
                             );
 
                             if (users.length > 0) {
                                 adminPhone = users[0].phone;
-                                console.log('✅ [AGENT-CREATE] Autenticación por JWT (ID) exitosa. Admin:', adminPhone);
+                                adminUserId = String(users[0].id); // ✅ NUEVO
+                                console.log('✅ [AGENT-CREATE] Autenticación por JWT (ID) exitosa. Admin:', adminPhone, 'ID:', adminUserId);
                             }
                         }
                     } catch (jwtError) {
@@ -222,12 +234,13 @@ module.exports = function (app, pool) {
                 if (!adminPhone && req.headers['x-admin-phone']) {
                     const headerPhone = req.headers['x-admin-phone'];
                     const [users] = await connection.execute(
-                        'SELECT phone FROM users WHERE phone = ? AND role IN ("admin", "supervisor")',
+                        'SELECT id, phone FROM users WHERE phone = ? AND role IN ("admin", "supervisor")',
                         [headerPhone]
                     );
                     if (users.length > 0) {
                         adminPhone = users[0].phone;
-                        console.log('✅ [AGENT-CREATE] Autenticación por header X-Admin-Phone exitosa. Admin:', adminPhone);
+                        adminUserId = String(users[0].id); // ✅ NUEVO
+                        console.log('✅ [AGENT-CREATE] Autenticación por header X-Admin-Phone exitosa. Admin:', adminPhone, 'ID:', adminUserId);
                     }
                 }
 
@@ -235,33 +248,56 @@ module.exports = function (app, pool) {
                 if (!adminPhone && userSessionId) {
                     console.log('🔍 [AGENT-CREATE] Buscando admin por sessionId:', userSessionId);
 
-                    // Primero, intentar buscar por phone (sessionId puede ser el phone del admin)
-                    let [users] = await connection.execute(
-                        'SELECT phone FROM users WHERE (phone = ? OR id = ?) AND role IN ("admin", "supervisor")',
-                        [userSessionId, parseInt(userSessionId) || 0]
-                    );
-
-                    if (users.length > 0) {
-                        adminPhone = users[0].phone;
-                        console.log('✅ Autenticación por sessionId (phone/id) exitosa. Admin:', adminPhone);
+                    // ✅ NUEVO: Si sessionId es un email, mapear a user ID
+                    if (userSessionId.includes('@')) {
+                        const [emailUser] = await connection.execute(
+                            'SELECT id, phone FROM users WHERE email = ? AND role IN ("admin", "supervisor")',
+                            [userSessionId]
+                        );
+                        if (emailUser.length > 0) {
+                            adminPhone = emailUser[0].phone;
+                            adminUserId = String(emailUser[0].id);
+                            console.log('✅ [AGENT-CREATE] Email mapeado a admin. Phone:', adminPhone, 'ID:', adminUserId);
+                        }
                     } else {
-                        // Intentar buscar en user_sessions por session_id UUID
-                        const [sessionRows] = await connection.execute(
-                            'SELECT phone_number FROM user_sessions WHERE session_id = ? OR phone_number = ?',
-                            [userSessionId, userSessionId]
+                        // Intentar buscar por phone o ID
+                        let [users] = await connection.execute(
+                            'SELECT id, phone FROM users WHERE (phone = ? OR id = ?) AND role IN ("admin", "supervisor")',
+                            [userSessionId, parseInt(userSessionId) || 0]
                         );
 
-                        if (sessionRows.length > 0) {
-                            adminPhone = sessionRows[0].phone_number;
-                            console.log('✅ Autenticación por user_sessions exitosa. Admin:', adminPhone);
+                        if (users.length > 0) {
+                            adminPhone = users[0].phone;
+                            adminUserId = String(users[0].id); // ✅ NUEVO
+                            console.log('✅ Autenticación por sessionId (phone/id) exitosa. Admin:', adminPhone, 'ID:', adminUserId);
                         } else {
-                            // Si aún no encuentra, buscar cualquier admin activo (como fallback)
-                            [users] = await connection.execute(
-                                'SELECT phone FROM users WHERE role = "admin" AND status = "active" LIMIT 1'
+                            // Intentar buscar en user_sessions por session_id UUID
+                            const [sessionRows] = await connection.execute(
+                                'SELECT phone FROM user_sessions WHERE session_id = ? OR phone = ?',
+                                [userSessionId, userSessionId]
                             );
-                            if (users.length > 0) {
-                                adminPhone = users[0].phone;
-                                console.log('⚠️ [AGENT-CREATE] Usando primer admin disponible:', adminPhone);
+
+                            if (sessionRows.length > 0) {
+                                adminPhone = sessionRows[0].phone;
+                                // Obtener el ID del usuario
+                                const [adminUser] = await connection.execute(
+                                    'SELECT id FROM users WHERE phone = ?',
+                                    [adminPhone]
+                                );
+                                if (adminUser.length > 0) {
+                                    adminUserId = String(adminUser[0].id);
+                                }
+                                console.log('✅ Autenticación por user_sessions exitosa. Admin:', adminPhone, 'ID:', adminUserId);
+                            } else {
+                                // Si aún no encuentra, buscar cualquier admin activo (como fallback)
+                                [users] = await connection.execute(
+                                    'SELECT id, phone FROM users WHERE role = "admin" AND status = "active" LIMIT 1'
+                                );
+                                if (users.length > 0) {
+                                    adminPhone = users[0].phone;
+                                    adminUserId = String(users[0].id); // ✅ NUEVO
+                                    console.log('⚠️ [AGENT-CREATE] Usando primer admin disponible:', adminPhone, 'ID:', adminUserId);
+                                }
                             }
                         }
                     }
@@ -296,7 +332,7 @@ module.exports = function (app, pool) {
                 // Hashear contraseña
                 const hashedPassword = await bcrypt.hash(finalPassword, 12);
 
-                // Crear agente en tabla users
+                // ✅ Crear agente en tabla users (usando adminUserId como session_id)
                 const [result] = await connection.execute(`
                 INSERT INTO users (
                     name, email, phone, password, role,
@@ -313,11 +349,29 @@ module.exports = function (app, pool) {
                     adminPhone,
                     null, // department
                     null, // category
-                    userSessionId || null, // session_id - Asegurar que sea null si undefined
+                    adminUserId || null, // ✅ session_id = ID del usuario admin
                     avatar_url || null // avatar_url
                 ]);
 
                 const agentId = result.insertId;
+
+                // ✅ NUEVO: Insertar también en la tabla agents
+                await connection.execute(`
+                    INSERT INTO agents (
+                        session_id, name, email, phone, status,
+                        max_concurrent_chats, current_chats, is_active,
+                        avatar_url, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 'offline', ?, 0, 1, ?, NOW(), NOW())
+                `, [
+                    adminUserId || null, // session_id = ID del usuario admin
+                    name,
+                    email,
+                    phone || null,
+                    req.body.max_concurrent_chats || 5,
+                    avatar_url || null
+                ]);
+
+                console.log(`✅ Agente insertado en tabla users (ID: ${agentId}) y tabla agents (session_id: ${adminUserId})`);
 
                 await connection.commit();
 

@@ -935,8 +935,8 @@ const AgentDashboardPro: React.FC = () => {
           sessionStorage.clear();
           localStorage.removeItem('agentDashboardTheme');
 
-          // Redirigir al login
-          window.location.href = '/login';
+          // Redirigir al login usando navigate
+          navigate('/login');
         }, 3000);
       }
     });

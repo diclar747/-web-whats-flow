@@ -733,6 +733,11 @@ const App: React.FC = () => {
           // No hay sessionId guardado, el usuario debe hacer login nuevamente
           console.log('⚠️ No hay sessionId guardado, requiere login');
         }
+      } else if (data.requiresReauth || data.sessionClosed) {
+        // ✅ Sesión cerrada (session=0) o token inválido - redirigir a login
+        console.log('❌ Sesión cerrada o token inválido, redirigiendo...');
+        handleLogout();
+        window.location.href = 'https://web.whats-flow.com/';
       } else {
         // Token inválido, limpiar
         sessionStorage.removeItem('token');
@@ -818,7 +823,7 @@ const App: React.FC = () => {
           }
         }));
         console.log('📣 Evento whatsflow-session-established emitido (login)');
-      } catch {}
+      } catch { }
 
       console.log('✅ Usuario autenticado con JWT:', userData.full_name, '| sessionId:', effectiveSessionId);
       return;
@@ -866,7 +871,7 @@ const App: React.FC = () => {
           }
         }));
         console.log('📣 Evento whatsflow-session-established emitido (login compat)');
-      } catch {}
+      } catch { }
     } else {
       // Verificar si hay sessionId guardado previamente
       const savedSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
@@ -880,24 +885,22 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    const savedSessionId = sessionStorage.getItem('whatsflow_session');
-    const savedSessionToken = sessionStorage.getItem('whatsflow_session_token');
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
 
-    // Notificar al servidor para eliminar la sesión
-    if (savedSessionId && savedSessionToken) {
-      fetch('/api/logout-session', {
+    console.log('[LOGOUT] 🔴 Cerrando sesión...');
+
+    // ✅ Llamar al endpoint correcto con autenticación
+    if (token) {
+      fetch('/api/auth/logout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          sessionId: savedSessionId,
-          sessionToken: savedSessionToken
-        })
-      }).then(() => {
-        console.log('✅ Sesión eliminada del servidor');
+          'Authorization': `Bearer ${token}`
+        }
+      }).then(res => res.json()).then(data => {
+        console.log('✅ Logout exitoso:', data);
       }).catch(err => {
-        console.error('❌ Error al eliminar sesión del servidor:', err);
+        console.error('❌ Error en logout:', err);
       });
     }
 
@@ -924,12 +927,8 @@ const App: React.FC = () => {
 
     console.log('✅ Logout completado, todas las sesiones limpiadas');
 
-    // Redirigir a la página principal (QR) no al login (sin recarga)
-    const nav = (window as any).__reactNavigate;
-    if (nav) {
-      nav('/');
-    }
-    // ✅ ELIMINADO: window.location.href - Usar solo navigate de React Router
+    // ✅ Redirigir a la página principal
+    window.location.href = '/';
   };
 
   const handleQRSuccess = (newSessionId: string) => {
@@ -972,7 +971,7 @@ const App: React.FC = () => {
         }
       }));
       console.log('📣 Evento whatsflow-session-established emitido (QR)');
-    } catch {}
+    } catch { }
 
     console.log('✅ [APP] Sesión guardada, datos listos para redirección');
     // La navegación la maneja LandingPage.tsx, pero confirmamos que el estado está listo

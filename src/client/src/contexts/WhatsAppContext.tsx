@@ -708,10 +708,34 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       lastActivity: new Date().toISOString()
     };
     setSession(newSession);
-    // Guardar en ambos para compatibilidad (admin por QR necesita localStorage)
-    localStorage.setItem('whatsflow_session', sessionId);
-    sessionStorage.setItem('whatsflow_session', sessionId);
-    loadChats(sessionId);
+
+    // 🔒 CRÍTICO: NO sobrescribir whatsflow_session si el usuario ya está autenticado con email
+    // Para usuarios con login email/password, whatsflow_session SIEMPRE debe ser user.id
+    const existingUserId = localStorage.getItem('userId') || sessionStorage.getItem('userId');
+    const existingToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+
+    if (existingUserId && existingToken) {
+      // Usuario autenticado con email/password - mantener user.id como sessionId principal
+      console.log('✅ [WhatsApp] Usuario ya autenticado con email - manteniendo sessionId=user.id:', existingUserId);
+      console.log('📱 [WhatsApp] Conexión de WhatsApp establecida:', sessionId);
+
+      // Guardar el phone de WhatsApp por separado para referencia, pero NO como sessionId principal
+      localStorage.setItem('whatsapp_phone', sessionId);
+      sessionStorage.setItem('whatsapp_phone', sessionId);
+
+      // Mantener el user.id como sessionId principal (NO sobrescribir)
+      // Ya está guardado desde el login, no tocar
+
+      // Cargar chats con el sessionId correcto (user.id, no phone)
+      const correctSessionId = localStorage.getItem('whatsflow_session') || sessionStorage.getItem('whatsflow_session') || existingUserId;
+      loadChats(correctSessionId);
+    } else {
+      // Usuario NO autenticado (login por QR directo) - usar el sessionId de WhatsApp
+      console.log('✅ [WhatsApp] Login directo por QR - usando sessionId de WhatsApp:', sessionId);
+      localStorage.setItem('whatsflow_session', sessionId);
+      sessionStorage.setItem('whatsflow_session', sessionId);
+      loadChats(sessionId);
+    }
 
     // 🔄 Forzar sincronización inicial para poblar BD tras conexión por QR
     (async () => {

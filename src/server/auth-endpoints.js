@@ -145,6 +145,13 @@ function registerAuthEndpoints(app, pool) {
                     [user.id]
                 );
 
+                // Marcar users.session = 1 al iniciar sesión
+                await connection.execute(
+                    'UPDATE users SET session = 1, last_login = NOW() WHERE id = ?',
+                    [user.id]
+                );
+                console.log(`[AUTH] ✅ users.session=1 para user_id=${user.id}`);
+
                 // Usar rol de la BD
                 const userRole = user.role || 'admin';
                 console.log(`[AUTH] 👤 Rol de ${email}:`, userRole);
@@ -172,15 +179,15 @@ function registerAuthEndpoints(app, pool) {
                     if (checkSession.length === 0) {
                         // Insertar nueva sesión
                         await connection.execute(
-                            `INSERT INTO user_sessions (session_id, email, phone, full_name, is_active, status) 
-                             VALUES (?, ?, ?, ?, 1, 'active')`,
+                            `INSERT INTO user_sessions (session_id, email, phone, full_name, is_active) 
+                             VALUES (?, ?, ?, ?, 1)`,
                             [sessionId, email, user.phone_number, user.full_name]
                         );
                         console.log(`[AUTH] ✅ Sesión creada para usuario: ${email} (session_id: ${sessionId})`);
                     } else {
                         // Actualizar sesión existente
                         await connection.execute(
-                            `UPDATE user_sessions SET email = ?, phone = ?, full_name = ?, is_active = 1, status = 'active' WHERE session_id = ?`,
+                            `UPDATE user_sessions SET email = ?, phone = ?, full_name = ?, is_active = 1 WHERE session_id = ?`,
                             [email, user.phone_number, user.full_name, sessionId]
                         );
                         console.log(`[AUTH] ✅ Sesión actualizada para usuario: ${email} (session_id: ${sessionId})`);
@@ -224,21 +231,33 @@ function registerAuthEndpoints(app, pool) {
             const connection = await pool.getConnection();
 
             try {
-                // Buscar usuario en tabla 'users'
+                // Buscar usuario en tabla 'users' y verificar campo session
                 const [users] = await connection.execute(
-                    `SELECT id, name as full_name, email, phone as phone_number, is_super_admin, is_admin
-                     FROM users WHERE id = ? AND is_active = 1`,
+                    `SELECT id, name as full_name, email, phone as phone_number, is_super_admin, is_admin, session
+                     FROM users WHERE id = ?`,
                     [req.user.userId]
                 );
 
                 if (users.length === 0) {
                     return res.status(401).json({
                         success: false,
-                        error: 'Usuario no encontrado'
+                        error: 'Usuario no encontrado',
+                        requiresReauth: true
                     });
                 }
 
                 const user = users[0];
+
+                // ✅ VERIFICAR CAMPO SESSION - Si es 0, la sesión fue cerrada
+                if (user.session === 0 || user.session === '0') {
+                    console.log(`[AUTH-VERIFY] ❌ Sesión cerrada para usuario ${user.email} (session=0)`);
+                    return res.status(401).json({
+                        success: false,
+                        error: 'Sesión cerrada. Por favor, inicia sesión nuevamente.',
+                        requiresReauth: true,
+                        sessionClosed: true
+                    });
+                }
 
                 // Determinar rol del usuario
                 let userRole = 'user';
@@ -273,10 +292,57 @@ function registerAuthEndpoints(app, pool) {
     });
 
     // ==================== LOGOUT ====================
-    app.post('/api/auth/logout', authenticateJWT, (req, res) => {
+    app.post('/api/auth/logout', authenticateJWT, async (req, res) => {
         // En JWT, el logout es del lado del cliente (eliminar token)
-        // Aquí solo confirmamos
-        console.log(`[AUTH] Logout: ${req.user.email}`);
+        // Pero también debemos marcar users.session = 0 en la BD
+        console.log(`[AUTH-LOGOUT] 🔴 Iniciando logout para:`, req.user);
+
+        try {
+            if (pool) {
+                const connection = await pool.getConnection();
+                try {
+                    // Usar userId o id, lo que esté disponible
+                    const userId = req.user.userId || req.user.id;
+                    const userEmail = req.user.email;
+                    
+                    if (!userId) {
+                        console.error('[AUTH-LOGOUT] ❌ No se pudo obtener userId del token');
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Token inválido'
+                        });
+                    }
+                    
+                    console.log(`[AUTH-LOGOUT] 📝 Actualizando session=0 para userId=${userId}, email=${userEmail}`);
+                    
+                    // 1. Actualizar users.session = 0
+                    const [result1] = await connection.query(
+                        'UPDATE users SET session = 0 WHERE id = ?',
+                        [userId]
+                    );
+                    console.log(`[AUTH-LOGOUT] ✅ users.session=0 afectó ${result1.affectedRows} filas`);
+
+                    // 2. Actualizar user_sessions.is_active = 0 si existe
+                    const [result2] = await connection.query(
+                        'UPDATE user_sessions SET is_active = 0, last_activity = NOW() WHERE session_id = ? OR email = ?',
+                        [String(userId), userEmail]
+                    );
+                    console.log(`[AUTH-LOGOUT] ✅ user_sessions.is_active=0 afectó ${result2.affectedRows} filas`);
+                    
+                    // 3. Verificar que se actualizó
+                    const [verify] = await connection.query(
+                        'SELECT id, email, session FROM users WHERE id = ?',
+                        [userId]
+                    );
+                    console.log(`[AUTH-LOGOUT] 🔍 Verificación - Usuario después de logout:`, verify[0]);
+                    
+                } finally {
+                    connection.release();
+                }
+            }
+        } catch (err) {
+            console.error('[AUTH-LOGOUT] ❌ Error marcando session=0:', err.message, err.stack);
+        }
 
         res.json({
             success: true,

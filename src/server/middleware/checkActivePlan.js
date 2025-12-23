@@ -44,17 +44,17 @@ async function checkActivePlan(req, res, next) {
         const connection = await dbPool.getConnection();
         try {
             const [users] = await connection.execute(
-                `SELECT 
+                `SELECT
                     id,
                     email,
                     subscription_status,
                     subscription_end_date,
                     subscription_plan,
                     plan_id
-                FROM users 
+                FROM users
                 WHERE id = ? OR email = ?
                 LIMIT 1`,
-                [userId, userEmail]
+                [userId || null, userEmail || null] // ✅ Convertir undefined a null
             );
 
             if (!users || users.length === 0) {

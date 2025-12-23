@@ -32,7 +32,12 @@ import {
   Grow,
   Slide,
   Zoom,
-  Button
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText
 } from '@mui/material';
 import {
   WhatsApp,
@@ -238,6 +243,9 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     type: 'info' as 'info' | 'success' | 'warning' | 'error',
     onConfirm: () => { }
   });
+
+  // Estado para diálogo de confirmación de logout
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
 
   // Calcular mensajes no leídos totales
   const totalUnreadMessages = chats.reduce((total, chat) => total + (chat.unreadCount || 0), 0);
@@ -795,6 +803,18 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     setAnchorEl(null);
   };
 
+  // Handler para mostrar diálogo de confirmación de logout
+  const handleLogoutClick = () => {
+    handleMenuClose();
+    setLogoutDialogOpen(true);
+  };
+
+  // Handler para confirmar logout
+  const handleLogoutConfirm = () => {
+    setLogoutDialogOpen(false);
+    onLogout();
+  };
+
   const drawerWidth = drawerMinimized ? 72 : 280;
 
   return (
@@ -1044,23 +1064,35 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
           }}>
             {/* 1. Estado Conexión */}
             <Tooltip title="Estado de WhatsApp">
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Box sx={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: '50%',
-                  bgcolor: whatsappStatus === 'connected' ? '#10b981' : '#ef4444',
-                  boxShadow: whatsappStatus === 'connected' ? '0 0 10px #10b981' : 'none',
-                  animation: whatsappStatus === 'connected' ? 'pulse 2s infinite' : 'none'
-                }} />
-                <Box>
-                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)', display: 'block', lineHeight: 0.8, mb: 0.3 }}>
-                    Estado
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600, color: 'white', fontSize: '0.8rem', lineHeight: 1 }}>
-                    {whatsappStatus === 'connected' ? 'Conectado' : 'Offline'}
-                  </Typography>
-                </Box>
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  px: 2,
+                  py: 0.5,
+                  borderRadius: 2,
+                  bgcolor: 'background.paper',
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  cursor: 'pointer',
+                }}
+              >
+                <Box
+                  component="span"
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    bgcolor: dashboardStats.activeLines > 0 ? 'success.main' : 'error.main',
+                  }}
+                />
+                <Typography variant="caption" sx={{ fontWeight: 500 }}>
+                  Estado
+                </Typography>
+                <Typography variant="caption" sx={{ fontWeight: 700, color: dashboardStats.activeLines > 0 ? 'success.main' : 'error.main' }}>
+                  {dashboardStats.activeLines > 0 ? 'Conectado' : 'Desconectado'}
+                </Typography>
               </Box>
             </Tooltip>
 
@@ -1243,7 +1275,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
             <ListItemIcon sx={{ color: '#94a3b8' }}><SettingsIcon fontSize="small" /></ListItemIcon>
             Configuración
           </MenuItem>
-          <MenuItem onClick={onLogout} sx={{ color: '#ef4444 !important' }}>
+          <MenuItem onClick={handleLogoutClick} sx={{ color: '#ef4444 !important' }}>
             <ListItemIcon sx={{ color: '#ef4444' }}><LogoutIcon fontSize="small" /></ListItemIcon>
             Cerrar Sesión
           </MenuItem>
@@ -1419,6 +1451,66 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
         }}
         onConfirm={alertConfig.onConfirm}
       />
+
+      {/* Diálogo de Confirmación de Logout */}
+      <Dialog
+        open={logoutDialogOpen}
+        onClose={() => setLogoutDialogOpen(false)}
+        PaperProps={{
+          sx: {
+            bgcolor: '#1e293b',
+            backgroundImage: 'linear-gradient(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.05))',
+            borderRadius: 3,
+            border: '1px solid rgba(255,255,255,0.1)',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.4)'
+          }
+        }}
+      >
+        <DialogTitle sx={{
+          color: 'white',
+          fontSize: '1.25rem',
+          fontWeight: 600,
+          pb: 1
+        }}>
+          Confirmar Cierre de Sesión
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ color: 'rgba(255,255,255,0.7)' }}>
+            ¿Está seguro que desea cerrar sesión?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+          <Button
+            onClick={() => setLogoutDialogOpen(false)}
+            sx={{
+              color: 'rgba(255,255,255,0.7)',
+              textTransform: 'none',
+              fontWeight: 500,
+              '&:hover': {
+                bgcolor: 'rgba(255,255,255,0.05)'
+              }
+            }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleLogoutConfirm}
+            variant="contained"
+            sx={{
+              bgcolor: '#ef4444',
+              textTransform: 'none',
+              fontWeight: 600,
+              boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)',
+              '&:hover': {
+                bgcolor: '#dc2626',
+                boxShadow: '0 6px 16px rgba(239, 68, 68, 0.4)'
+              }
+            }}
+          >
+            Cerrar Sesión
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box >
   );
 };

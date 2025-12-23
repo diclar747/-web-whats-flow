@@ -658,16 +658,16 @@ module.exports = function (app, pool) {
 
             const connection = await pool.getConnection();
             try {
-                // 🔄 Si recibimos un email, mapear a phone number
+                // 🔄 Si recibimos un email, mapear a USER ID (NO phone)
                 if (sessionId.includes('@')) {
                     const [userRows] = await connection.execute(
-                        'SELECT phone FROM users WHERE email = ? OR admin_phone = ? LIMIT 1',
+                        'SELECT id, phone FROM users WHERE email = ? OR admin_phone = ? LIMIT 1',
                         [sessionId, sessionId]
                     );
-                    
-                    if (userRows.length > 0 && userRows[0].phone) {
-                        console.log(`[ANALYTICS-DASHBOARD] 📧 Email ${sessionId} mapeado a phone: ${userRows[0].phone}`);
-                        sessionId = userRows[0].phone;
+
+                    if (userRows.length > 0 && userRows[0].id) {
+                        console.log(`[ANALYTICS-DASHBOARD] 📧 Email ${sessionId} mapeado a user ID: ${userRows[0].id} (phone: ${userRows[0].phone})`);
+                        sessionId = String(userRows[0].id);
                     }
                 }
 

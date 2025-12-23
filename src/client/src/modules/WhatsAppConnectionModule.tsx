@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { sessionFetch } from '../utils/sessionFetch';
+import io from 'socket.io-client';
 import {
   Box,
   Card,
@@ -27,7 +28,6 @@ import {
   QrCode,
   Refresh,
   Delete,
-  DeleteForever,
   Phone,
   WhatsApp
 } from '@mui/icons-material';
@@ -55,20 +55,16 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
     || localStorage.getItem('sessionId')
   ), [sessionId]);
 
-  const [qrState, setQrState] = useState<{ sessionId: string; qrDataUrl: string; isLoading: boolean }>({ 
-    sessionId: '', 
-    qrDataUrl: '', 
-    isLoading: false 
+  const [qrState, setQrState] = useState<{ sessionId: string; qrDataUrl: string; isLoading: boolean }>({
+    sessionId: '',
+    qrDataUrl: '',
+    isLoading: false
   });
   const [waSessions, setWaSessions] = useState<WhatsAppSession[]>([]);
   const [waLoading, setWaLoading] = useState(false);
   const [waError, setWaError] = useState('');
   const [normalizedMaxChannels, setNormalizedMaxChannels] = useState<number>(Infinity);
-  const [disconnectDialog, setDisconnectDialog] = useState<{ open: boolean; sessionId: string }>({ 
-    open: false, 
-    sessionId: '' 
-  });
-  const [purgeDialog, setPurgeDialog] = useState<{ open: boolean; sessionId: string }>({
+  const [disconnectDialog, setDisconnectDialog] = useState<{ open: boolean; sessionId: string }>({
     open: false,
     sessionId: ''
   });
@@ -148,15 +144,31 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
 
   useEffect(() => {
     fetchActiveSessions();
-    
-    // ✅ Polling cada 5 segundos para mantener estado actualizado en tiempo real
-    const pollInterval = setInterval(() => {
-      fetchActiveSessions();
-    }, 5000);
-    
+
+    // ✅ Conectar Socket.IO para actualizaciones en tiempo real
+    const socket = io();
+
+    // Escuchar eventos de desconexión de WhatsApp
+    socket.on('whatsapp-disconnected', (data: any) => {
+      console.log('[WA-CONNECTION] WhatsApp desconectado:', data);
+      fetchActiveSessions(); // Refrescar lista
+    });
+
+    // Escuchar eventos de cambio de estado de sesión
+    socket.on('session-status', (data: any) => {
+      console.log('[WA-CONNECTION] Cambio de estado:', data);
+      fetchActiveSessions(); // Refrescar lista
+    });
+
+    // Escuchar evento de conexión exitosa
+    socket.on('connection-update', (data: any) => {
+      console.log('[WA-CONNECTION] Actualización de conexión:', data);
+      fetchActiveSessions(); // Refrescar lista
+    });
+
     return () => {
       stopQrPolling();
-      clearInterval(pollInterval);
+      socket.disconnect();
     };
   }, [resolvedSessionId]);
 
@@ -208,7 +220,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
           if (statusResponse.ok) {
             const statusData = await statusResponse.json();
             const foundSession = (statusData.sessions || []).find(
-              (s: WhatsAppSession) => 
+              (s: WhatsAppSession) =>
                 (s.sessionId === qrData.sessionId || s.phoneNumber === qrData.sessionId) && s.isConnected
             );
 
@@ -262,14 +274,6 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
     setDisconnectDialog({ open: false, sessionId: '' });
   };
 
-  const openPurgeDialog = (targetSessionId: string) => {
-    setPurgeDialog({ open: true, sessionId: targetSessionId });
-  };
-
-  const closePurgeDialog = () => {
-    setPurgeDialog({ open: false, sessionId: '' });
-  };
-
   const confirmDisconnect = async () => {
     const targetSessionId = resolvedSessionId || disconnectDialog.sessionId;
     closeDisconnectDialog();
@@ -298,41 +302,6 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
     }
   };
 
-  const confirmPurge = async () => {
-    const targetSessionId = purgeDialog.sessionId;
-    closePurgeDialog();
-
-    setWaError('');
-    setWaLoading(true);
-
-    try {
-      // 1) Intentar desconectar por si sigue activa
-      try {
-        await sessionFetch(`/api/whatsApp/disconnect/${targetSessionId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-      } catch (_) {}
-
-      // 2) Purga total: borra user_sessions, datos y credenciales locales
-      const purgeResponse = await sessionFetch(`/api/sync/purge/${targetSessionId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (!purgeResponse.ok) {
-        const errorData = await purgeResponse.json();
-        throw new Error(errorData.error || errorData.message || 'Error al eliminar conexión y datos');
-      }
-
-      await fetchActiveSessions();
-    } catch (err: any) {
-      console.error('[WHATSAPP] Error en purga:', err);
-      setWaError(err.message || 'Error al eliminar conexión y datos');
-    } finally {
-      setWaLoading(false);
-    }
-  };
 
   return (
     <Box sx={{ p: 3 }}>
@@ -473,8 +442,8 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                   const displayName = session.name || session.phoneNumber || session.sessionId;
 
                   return (
-                    <ListItem 
-                      key={session.sessionId} 
+                    <ListItem
+                      key={session.sessionId}
                       divider
                       sx={{
                         bgcolor: session.isConnected ? 'transparent' : 'rgba(255, 0, 0, 0.05)',
@@ -486,7 +455,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                       <ListItemAvatar>
                         <Avatar
                           src={session.avatar || undefined}
-                          sx={{ 
+                          sx={{
                             bgcolor: !session.avatar ? iconBg : undefined,
                             width: 56,
                             height: 56
@@ -517,16 +486,16 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                               />
                             )}
                             {session.isConnected ? (
-                              <Chip 
-                                label="🟢 Conectado" 
-                                color="success" 
-                                size="small" 
+                              <Chip
+                                label="🟢 Conectado"
+                                color="success"
+                                size="small"
                                 sx={{ fontWeight: 600 }}
                               />
                             ) : (
-                              <Chip 
-                                label="🔴 Desconectado" 
-                                color="error" 
+                              <Chip
+                                label="🔴 Desconectado"
+                                color="error"
                                 size="small"
                                 sx={{ fontWeight: 600 }}
                               />
@@ -570,16 +539,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                           onClick={() => openDisconnectDialog(session.sessionId)}
                           startIcon={<Delete />}
                         >
-                          {session.isConnected ? 'Desconectar' : 'Eliminar'}
-                        </Button>
-                        <Button
-                          size="small"
-                          color="error"
-                          variant="contained"
-                           onClick={() => openPurgeDialog(resolvedSessionId || session.sessionId)}
-                           startIcon={<DeleteForever />}
-                         >
-                           Eliminar conexión y datos (total)
+                          Desconectar
                         </Button>
                       </Stack>
                     </ListItem>
@@ -596,31 +556,14 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
         <DialogTitle>Confirmar desconexión</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            ¿Estás seguro de que deseas desconectar esta sesión de WhatsApp? 
-            Perderás el acceso a los mensajes y tendrás que volver a escanear el código QR para reconectar.
+            ¿Estás seguro de que deseas desconectar esta sesión de WhatsApp?
+            Podrás reconectar en cualquier momento escaneando el código QR nuevamente.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeDisconnectDialog}>Cancelar</Button>
           <Button onClick={confirmDisconnect} color="error" variant="contained">
             Desconectar
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Dialog de confirmación de purga */}
-      <Dialog open={purgeDialog.open} onClose={closePurgeDialog}>
-        <DialogTitle>Eliminar conexión y todos los datos</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Esto eliminará la conexión, credenciales guardadas y TODO el historial (contactos, mensajes, grupos, broadcasts).
-            Deberás volver a escanear un QR para reconectar. ¿Deseas continuar?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closePurgeDialog}>Cancelar</Button>
-          <Button onClick={confirmPurge} color="error" variant="contained">
-            Eliminar definitivamente
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { storageManager } from '../utils/storageManager';
 
 interface User {
@@ -41,6 +42,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Verificar token guardado al inicializar
@@ -213,17 +215,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
-    const sessionToken = sessionStorage.getItem('sessionToken');
+    // Obtener el token JWT para enviar al servidor
+    const token = sessionStorage.getItem('token') ||
+      localStorage.getItem('token') ||
+      sessionStorage.getItem('whatsflow_token') ||
+      localStorage.getItem('whatsflow_token');
 
-    // Notificar al servidor para destruir la sesión
-    if (sessionToken) {
+    // Notificar al servidor para destruir la sesión y marcar users.session = 0
+    if (token) {
       fetch('/api/auth/logout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Session-Token': sessionToken
+          'Authorization': `Bearer ${token}`
         }
-      }).catch(err => console.error('Error en logout:', err));
+      }).then(() => {
+        console.log('✅ Logout exitoso en servidor');
+      }).catch(err => console.error('❌ Error en logout:', err));
+    } else {
+      console.warn('⚠️ No hay token, logout solo local');
     }
 
     setUser(null);
@@ -236,9 +246,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.removeItem('userId');
     localStorage.removeItem('whatsflow_session');
 
-    // O limpiar todo localStorage si es seguro:
-    // localStorage.clear();
     console.log('👋 Sesión cerrada correctamente');
+
+    // ✅ Redireccionar a la página principal después del logout
+    navigate('/');
   };
 
   const updateUser = (userData: Partial<User>) => {

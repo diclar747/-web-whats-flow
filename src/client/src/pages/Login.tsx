@@ -72,7 +72,8 @@ const Login = () => {
 
                 console.log('✅ Login exitoso:', data.user.email, 'sessionId:', sessionIdFromLogin);
 
-                window.location.href = '/dashboard';
+                // ✅ Usar navigate en lugar de window.location para NO perder el sessionStorage
+                navigate('/dashboard');
             } else {
                 setError(data.error || 'Error al iniciar sesión');
             }
