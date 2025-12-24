@@ -45,6 +45,7 @@ module.exports = function (app, pool) {
      * Returns overall message statistics
      */
     app.get('/api/analytics/messages/overview', async (req, res) => {
+        res.header('Cache-Control', 'no-store');
         try {
             const sessionId = req.query.sessionId;
             const { startDate, endDate } = getDateRange(req);
@@ -416,6 +417,7 @@ module.exports = function (app, pool) {
      * Returns agent statistics
      */
     app.get('/api/analytics/agents/overview', async (req, res) => {
+        res.header('Cache-Control', 'no-store');
         try {
             const sessionId = req.query.sessionId;
 
@@ -426,13 +428,14 @@ module.exports = function (app, pool) {
             const query = `
                 SELECT 
                     COUNT(*) as total_agents,
-                    SUM(CASE WHEN status = 'available' OR status = 'online' THEN 1 ELSE 0 END) as online_agents,
-                    SUM(CASE WHEN status = 'busy' THEN 1 ELSE 0 END) as busy_agents,
-                    SUM(CASE WHEN status = 'offline' THEN 1 ELSE 0 END) as offline_agents,
-                    SUM(CASE WHEN status = 'away' THEN 1 ELSE 0 END) as away_agents
-                FROM agents
+                    SUM(CASE WHEN agent_status = 'online' THEN 1 ELSE 0 END) as online_agents,
+                    SUM(CASE WHEN agent_status = 'busy' THEN 1 ELSE 0 END) as busy_agents,
+                    SUM(CASE WHEN agent_status = 'offline' OR agent_status IS NULL THEN 1 ELSE 0 END) as offline_agents,
+                    SUM(CASE WHEN agent_status = 'paused' THEN 1 ELSE 0 END) as away_agents
+                FROM users
                 WHERE session_id = ?
-                AND is_active = 1
+                AND status = 'active'
+                AND role IN ('agent', 'supervisor', 'admin')
             `;
 
             const [results] = await pool.query(query, [sessionId]);
@@ -465,17 +468,18 @@ module.exports = function (app, pool) {
                 SELECT 
                     a.id,
                     a.name,
-                    a.status,
+                    a.agent_status as status,
                     a.email,
                     COUNT(DISTINCT ach.id) as total_conversations,
                     SUM(CASE WHEN ach.status = 'closed' THEN 1 ELSE 0 END) as conversations_closed,
                     SUM(ach.messages_count) as total_messages,
-                    a.last_activity
-                FROM agents a
+                    a.last_login as last_activity
+                FROM users a
                 LEFT JOIN agent_chat_history ach ON a.id = ach.agent_id
                     AND DATE(ach.assigned_at) BETWEEN ? AND ?
                 WHERE a.session_id = ?
-                AND a.is_active = 1
+                AND a.status = 'active'
+                AND a.role IN ('agent', 'supervisor')
                 GROUP BY a.id
                 ORDER BY total_conversations DESC
             `;
@@ -527,8 +531,9 @@ module.exports = function (app, pool) {
                     COUNT(DISTINCT ach.agent_id) as active_agents,
                     COUNT(ach.id) as total_assignments
                 FROM agent_chat_history ach
-                JOIN agents a ON ach.agent_id = a.id
+                JOIN users a ON ach.agent_id = a.id
                 WHERE a.session_id = ?
+                AND a.role IN ('agent', 'supervisor')
                 AND DATE(ach.assigned_at) BETWEEN ? AND ?
                 GROUP BY DATE(ach.assigned_at)
                 ORDER BY date ASC
@@ -634,6 +639,7 @@ module.exports = function (app, pool) {
      * Returns combined KPIs and metrics for main dashboard
      */
     app.get('/api/analytics/dashboard', async (req, res) => {
+        res.header('Cache-Control', 'no-store');
         try {
             let sessionId = req.query.sessionId;
             const { startDate, endDate } = getDateRange(req);
@@ -673,13 +679,13 @@ module.exports = function (app, pool) {
 
                 // Obtener todos los sessionIds relacionados (incluyendo por owner_phone_number)
                 let sessionIds = [sessionId];
-                
+
                 // Búsqueda por owner_phone_number
                 const [ownerRows] = await connection.execute(
                     'SELECT DISTINCT session_id FROM user_sessions WHERE owner_phone_number = ?',
                     [sessionId]
                 );
-                
+
                 for (const row of ownerRows) {
                     if (row.session_id && !sessionIds.includes(row.session_id)) {
                         sessionIds.push(row.session_id);
@@ -871,14 +877,14 @@ module.exports = function (app, pool) {
                     let connectionStatus = 'Desconectado';
                     let displayName = conn.full_name || conn.name || 'Sin nombre';
                     let displayAvatar = conn.avatar_url;
-                    
+
                     // ✅ Si la sesión está en memoria, obtener nombre y avatar de WhatsApp
                     const sessionData = sessions.get(conn.session_id);
                     if (sessionData && sessionData.user) {
                         displayName = sessionData.user.name || sessionData.user.pushname || displayName;
                         displayAvatar = sessionData.user.imgUrl || displayAvatar;
                     }
-                    
+
                     if (conn.is_active === 1) {
                         connectionStatus = 'Conectado';
                         if (conn.last_connection_time) {

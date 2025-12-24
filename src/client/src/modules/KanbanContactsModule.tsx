@@ -498,7 +498,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId,
-          contactJid: contact.jid,
+          contactJid: contact.jid || contact.id || `${contact.phone?.replace('@s.whatsapp.net', '')}@s.whatsapp.net`,
           contactName: contact.name,
           contactAvatar: contact.avatarUrl,
           boardId: boardId,

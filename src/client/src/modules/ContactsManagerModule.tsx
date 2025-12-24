@@ -1774,7 +1774,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Avatar
-              src={quickChatContact?.avatar ? `${getAPIBaseURL()}${quickChatContact.avatar}` : undefined}
+              src={quickChatContact?.avatar || (quickChatContact?.jid ? `${getAPIBaseURL()}/api/avatar/${sessionId}/${quickChatContact.jid}` : undefined)}
               sx={{
                 width: 56,
                 height: 56,
@@ -1786,7 +1786,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
               }}
             >
               {!quickChatContact?.avatar && (
-                quickChatContact?.name 
+                quickChatContact?.name
                   ? quickChatContact.name.substring(0, 2).toUpperCase()
                   : <Person sx={{ fontSize: 32 }} />
               )}

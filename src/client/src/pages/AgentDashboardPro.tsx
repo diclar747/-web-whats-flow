@@ -1194,41 +1194,76 @@ const AgentDashboardPro: React.FC = () => {
   const handleLogout = async () => {
     console.log('🚪 [AGENT-PRO] Cerrando sesión del agente...');
 
-    // Intentar cambiar estado a offline antes de salir
     try {
+      // 1. Obtener token antes de limpiar
+      const token = sessionStorage.getItem('token') || localStorage.getItem('agent_token_backup');
+
+      // 2. Cambiar estado a offline
       if (agentId) {
-        await handleChangeStatus('offline');
+        try {
+          await handleChangeStatus('offline');
+        } catch (error) {
+          console.error('Error al cambiar estado a offline:', error);
+        }
       }
+
+      // 3. Llamar al endpoint de logout en el backend
+      if (token) {
+        try {
+          const response = await fetch('/api/auth/logout', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          const data = await response.json();
+          console.log('✅ [AGENT-PRO] Logout en servidor:', data);
+        } catch (error) {
+          console.error('❌ [AGENT-PRO] Error en logout del servidor:', error);
+        }
+      }
+
+      // 4. Desconectar socket
+      if (socket && isConnected) {
+        socket.disconnect();
+        console.log('🔌 [AGENT-PRO] Socket desconectado');
+      }
+
+      // 5. Limpiar todo el almacenamiento
+      sessionStorage.clear();
+      localStorage.removeItem('token');
+      localStorage.removeItem('whatsflow_token');
+      localStorage.removeItem('userId');
+      localStorage.removeItem('userName');
+      localStorage.removeItem('userRole');
+      localStorage.removeItem('sessionToken');
+      localStorage.removeItem('whatsflow_session');
+      localStorage.removeItem('agent_token_backup');
+      localStorage.removeItem('agent_userId_backup');
+      localStorage.removeItem('agent_userName_backup');
+      localStorage.removeItem('agent_userRole_backup');
+      console.log('🗑️ [AGENT-PRO] Sesión limpiada completamente');
+
+      // 6. Resetear estados
+      setChats([]);
+      setSelectedChat(null);
+      setMessages([]);
+      setAgentId(null);
+      setSessionId(null);
+      setPhoneNumber(null);
+
+      console.log('✅ [AGENT-PRO] Sesión cerrada correctamente');
+
+      // 7. Redirigir a login
+      navigate('/login', { replace: true });
     } catch (error) {
-      console.error('Error al cambiar estado a offline:', error);
+      console.error('❌ [AGENT-PRO] Error durante logout:', error);
+      // Forzar limpieza y redirección incluso si hay error
+      sessionStorage.clear();
+      localStorage.clear();
+      navigate('/login', { replace: true });
     }
-
-    // Desconectar socket si está conectado
-    if (socket && isConnected) {
-      socket.disconnect();
-    }
-
-    // Limpiar todo el almacenamiento (incluyendo backup)
-    sessionStorage.clear();
-    localStorage.removeItem('agentDashboardTheme'); // Mantener preferencia de tema
-    localStorage.removeItem('agent_token_backup');
-    localStorage.removeItem('agent_userId_backup');
-    localStorage.removeItem('agent_userName_backup');
-    localStorage.removeItem('agent_userRole_backup');
-    console.log('🗑️ [AGENT-PRO] Backup de sesión eliminado de localStorage');
-
-    // Resetear estados
-    setChats([]);
-    setSelectedChat(null);
-    setMessages([]);
-    setAgentId(null);
-    setSessionId(null);
-    setPhoneNumber(null);
-
-    console.log('✅ [AGENT-PRO] Sesión cerrada correctamente');
-
-    // Redirigir a login
-    navigate('/login', { replace: true });
   };
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {

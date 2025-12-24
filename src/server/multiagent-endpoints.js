@@ -140,10 +140,10 @@ module.exports = function (app, pool) {
                     'SELECT is_super_admin, is_admin FROM users WHERE id = ? OR email = ?',
                     [userId, req.user.email]
                 );
-                
+
                 const isSuperAdmin = userCheck.length > 0 && userCheck[0].is_super_admin === 1;
                 const isAdmin = userCheck.length > 0 && userCheck[0].is_admin === 1;
-                
+
                 if (isSuperAdmin || isAdmin) {
                     console.log('[PERMISSIONS] Super admin/admin detectado en BD - Retornando permisos totales');
                     // Super admin tiene acceso a TODO
@@ -158,16 +158,16 @@ module.exports = function (app, pool) {
                         { permission_name: 'kanban', module: 'kanban', can_view: 1, can_create: 1, can_edit: 1, can_delete: 1 },
                         { permission_name: 'calendar', module: 'calendar', can_view: 1, can_create: 1, can_edit: 1, can_delete: 1 }
                     ];
-                    
+
                     const grouped = allPermissions.reduce((acc, perm) => {
                         if (!acc[perm.module]) acc[perm.module] = [];
                         acc[perm.module].push(perm);
                         return acc;
                     }, {});
-                    
+
                     return res.json({ success: true, permissions: allPermissions, grouped });
                 }
-                
+
                 // Para agentes normales, usar la vista de permisos
                 const [permissions] = await connection.execute(`
                     SELECT 
@@ -211,9 +211,9 @@ module.exports = function (app, pool) {
                     'SELECT is_super_admin, is_admin FROM users WHERE id = ? OR email = ?',
                     [userId, req.user.email]
                 );
-                
+
                 const isSuperAdmin = userCheck.length > 0 && userCheck[0].is_super_admin === 1;
-                
+
                 // Si es super admin, siempre retornar permiso = true
                 if (isSuperAdmin) {
                     console.log(`[CHECK-PERMISSION] Super admin - Permiso ${permission}/${action} = GRANTED`);
@@ -1422,12 +1422,12 @@ module.exports = function (app, pool) {
                 if (sessionId) {
                     // Intentar obtener phoneNumber desde user_sessions usando el UUID
                     const [sessionInfo] = await connection.execute(
-                        `SELECT phone_number FROM user_sessions WHERE session_id = ? AND is_active = 1 LIMIT 1`,
+                        `SELECT phone FROM user_sessions WHERE session_id = ? AND is_active = 1 LIMIT 1`,
                         [sessionId]
                     );
 
                     if (sessionInfo.length > 0) {
-                        phoneNumberForQuery = sessionInfo[0].phone_number;
+                        phoneNumberForQuery = sessionInfo[0].phone;
                         console.log('[AGENT-CHATS-BY-ID] ✅ SessionId UUID resuelto a phoneNumber:', phoneNumberForQuery);
                     } else {
                         // Si no se encuentra, asumir que sessionId ya es el phoneNumber

@@ -280,23 +280,23 @@ app.options('*', cors(corsOptions));
 // 🔄 Middleware para resolver owner_phone_number a session_id automáticamente
 app.use(async (req, res, next) => {
     const sessionIdParam = req.params?.sessionId || req.query?.sessionId || req.query?.phone;
-
+    
     // Solo procesar si parece un owner_phone_number (no es número de teléfono ni sessionId corto)
     if (sessionIdParam && sessionIdParam.length === 16 && /^[a-f0-9]{16}$/.test(sessionIdParam)) {
         try {
             if (!global.dbPool) return next();
-
+            
             const connection = await global.dbPool.getConnection();
             try {
                 const [rows] = await connection.execute(
                     'SELECT session_id FROM user_sessions WHERE owner_phone_number = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
                     [sessionIdParam]
                 );
-
+                
                 if (rows.length > 0) {
                     const realSessionId = rows[0].session_id;
                     console.log(`[SESSIONID-RESOLVE] 🔄 ${sessionIdParam} → ${realSessionId}`);
-
+                    
                     // Reemplazar en params y query
                     if (req.params?.sessionId) req.params.sessionId = realSessionId;
                     if (req.query?.sessionId) req.query.sessionId = realSessionId;
@@ -309,7 +309,7 @@ app.use(async (req, res, next) => {
             console.warn('[SESSIONID-RESOLVE] Error resolviendo:', err.message);
         }
     }
-
+    
     next();
 });
 
@@ -345,14 +345,14 @@ console.log('✅ Sistema Multi-Agente cargado (EXPLICIT CHECK)');
 require('./agents-permissions-endpoints')(app, poolProxy);
 console.log('✅ Sistema Permisos Agentes cargado');
 
-require('./routes/plans')(app, poolProxy);
-console.log('✅ Rutas de Planes cargadas');
+// require('./routes/plans')(app, poolProxy);
+// console.log('✅ Rutas de Planes cargadas');
 
 require('./routes/planRequests')(app, poolProxy);
 console.log('✅ Rutas de Solicitudes de Planes cargadas');
 
-require('./routes/clients')(app, poolProxy);
-console.log('✅ Rutas de Clientes cargadas');
+// require('./routes/clients')(app, poolProxy);
+// console.log('✅ Rutas de Clientes cargadas');
 
 require('./analytics-endpoints')(app, poolProxy);
 console.log('✅ Analytics endpoints cargados');
@@ -1971,13 +1971,6 @@ async function getOrInsertWhatsAppGroup(jid, name = null, subject = null, phoneN
         console.warn(`[DB-GROUP-WARN] Called getOrInsertWhatsAppGroup without phone for jid: ${jid}.`);
     }
 
-    // ✅ Convertir phoneNumber a users.id (ownerSessionId)
-    let ownerSessionId = null;
-    if (phoneNumber) {
-        ownerSessionId = await getOwnerSessionId(phoneNumber);
-        console.log(`[DB-GROUP] 🔄 Converted phoneNumber ${phoneNumber} to ownerSessionId: ${ownerSessionId}`);
-    }
-
     // Modo memoria si no hay DB
     if (process.env.SKIP_DB === 'true' || !pool) {
         let groupName = name || subject || jid.split('@')[0];
@@ -2004,7 +1997,7 @@ async function getOrInsertWhatsAppGroup(jid, name = null, subject = null, phoneN
                 jid,
                 name: groupName,
                 subject: groupSubject,
-                session_id: ownerSessionId || phoneNumber,
+                session_id: phoneNumber,
                 created_at: new Date()
             };
             memoryStorage.groups.set(jid, groupData);
@@ -2055,7 +2048,7 @@ async function getOrInsertWhatsAppGroup(jid, name = null, subject = null, phoneN
                 is_announcement = VALUES(is_announcement),
                 is_restricted = VALUES(is_restricted),
                 updated_at = CURRENT_TIMESTAMP`,
-            [jid, groupName, ownerSessionId, description, participantCount, isAnnouncement, isRestricted]
+            [jid, groupName, phoneNumber, description, participantCount, isAnnouncement, isRestricted]
         );
         console.log(`[DB-GROUP-SUCCESS] WhatsApp group ${jid} saved to contact_groups with name: ${groupName}`);
 
@@ -2065,7 +2058,7 @@ async function getOrInsertWhatsAppGroup(jid, name = null, subject = null, phoneN
         } else {
             let [rows] = await connection.execute(
                 'SELECT id FROM contact_groups WHERE jid = ? AND session_id = ?',
-                [jid, ownerSessionId]
+                [jid, phoneNumber]
             );
             return rows[0]?.id || null;
         }
@@ -2105,13 +2098,6 @@ async function insertGroupMembers(groupJid, participants = [], phoneNumber = nul
 
     const connection = await pool.getConnection();
     try {
-        // ✅ Convertir phoneNumber a users.id (ownerSessionId)
-        let ownerSessionId = null;
-        if (phoneNumber) {
-            ownerSessionId = await getOwnerSessionId(phoneNumber);
-            console.log(`[DB-GROUP-MEMBERS] 🔄 Converted phoneNumber ${phoneNumber} to ownerSessionId: ${ownerSessionId}`);
-        }
-
         for (const participant of participants) {
             const contactJid = participant.id || participant;
             const isAdmin = participant.admin === 'admin' || participant.admin === 'superadmin';
@@ -2150,7 +2136,7 @@ async function insertGroupMembers(groupJid, participants = [], phoneNumber = nul
             try {
                 const [contactRows] = await connection.execute(
                     'SELECT name, notify_name FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
-                    [contactJid, ownerSessionId]
+                    [contactJid, phoneNumber]
                 );
                 if (contactRows.length > 0) {
                     participantName = contactRows[0].name;
@@ -2173,11 +2159,10 @@ async function insertGroupMembers(groupJid, participants = [], phoneNumber = nul
                  ON DUPLICATE KEY UPDATE
                     is_admin = VALUES(is_admin),
                     is_super_admin = VALUES(is_super_admin),
-                    phone = COALESCE(VALUES(phone), phone),
-                    name = COALESCE(VALUES(name), name),
-                    notify_name = COALESCE(VALUES(notify_name), notify_name),
-                    session_id = VALUES(session_id)`,
-                [contactJid, groupJid, isAdmin, isSuperAdmin, ownerSessionId, participantPhone, participantName, participantNotifyName]
+                    phone = IF(VALUES(phone) IS NOT NULL, VALUES(phone), phone),
+                    name = IF(VALUES(name) IS NOT NULL, VALUES(name), name),
+                    notify_name = IF(VALUES(notify_name) IS NOT NULL, VALUES(notify_name), notify_name)`,
+                [contactJid, groupJid, isAdmin, isSuperAdmin, phoneNumber, participantPhone, participantName, participantNotifyName]
             );
         }
         console.log(`[DB-GROUP-MEMBERS-SUCCESS] Inserted ${participants.length} members for group ${groupJid} into contact_group_members`);
@@ -2196,13 +2181,6 @@ async function getOrInsertBroadcast(jid, name = null, phoneNumber = null, broadc
         console.warn(`[DB-BROADCAST-WARN] Called getOrInsertBroadcast without phone for jid: ${jid}.`);
     }
 
-    // ✅ Convertir phoneNumber a users.id (ownerSessionId)
-    let ownerSessionId = null;
-    if (phoneNumber) {
-        ownerSessionId = await getOwnerSessionId(phoneNumber);
-        console.log(`[DB-BROADCAST] 🔄 Converted phoneNumber ${phoneNumber} to ownerSessionId: ${ownerSessionId}`);
-    }
-
     // Modo memoria si no hay DB
     if (process.env.SKIP_DB === 'true' || !pool) {
         if (!memoryStorage.broadcasts) memoryStorage.broadcasts = new Map();
@@ -2211,7 +2189,7 @@ async function getOrInsertBroadcast(jid, name = null, phoneNumber = null, broadc
                 id: Date.now() + Math.random(),
                 jid,
                 name: name || jid,
-                session_id: ownerSessionId || phoneNumber,
+                session_id: phoneNumber,
                 broadcast_type: broadcastType,
                 created_at: new Date()
             };
@@ -2235,7 +2213,7 @@ async function getOrInsertBroadcast(jid, name = null, phoneNumber = null, broadc
              ON DUPLICATE KEY UPDATE
                 name = IF(VALUES(name) IS NOT NULL AND VALUES(name) != '', VALUES(name), name),
                 updated_at = CURRENT_TIMESTAMP`,
-            [jid, broadcastName, ownerSessionId, broadcastType]
+            [jid, broadcastName, phoneNumber, broadcastType]
         );
         console.log(`[DB-BROADCAST-SUCCESS] Broadcast ${jid} saved.`);
 
@@ -2244,7 +2222,7 @@ async function getOrInsertBroadcast(jid, name = null, phoneNumber = null, broadc
         } else {
             let [rows] = await connection.execute(
                 'SELECT id FROM broadcasts WHERE jid = ? AND session_id = ?',
-                [jid, ownerSessionId]
+                [jid, phoneNumber]
             );
             return rows[0]?.id || null;
         }
@@ -2328,7 +2306,7 @@ async function saveMessageToDB(sessionId, msg) {
 
     // ✅ CAMBIO: Obtener session_id del propietario (user.id) en lugar de phoneNumber
     const ownerSessionId = await getOwnerSessionId(sessionId);
-
+    
     // También obtener phoneNumber para emisión de eventos
     const phoneNumber = await getUserPhoneNumber(sessionId);
 
@@ -2790,12 +2768,6 @@ async function getUserPhoneNumber(sessionId) {
         return phoneNumberCache.get(sessionId);
     }
 
-    // ✅ Si sessionId es un ID numérico pequeño (usuario sin WhatsApp), devolver null
-    if (/^\d+$/.test(sessionId) && parseInt(sessionId) < 100) {
-        console.log(`[${sessionId}] ⚠️ ID de usuario sin WhatsApp, no buscar phone`);
-        return null;
-    }
-
     // Intento 1: Obtener de la sesión activa de WhatsApp
     const session = sessions.get(sessionId);
     if (session && session.sock && session.sock.user) {
@@ -3026,67 +2998,56 @@ async function getAllSessionIds(sessionId) {
 // Función para obtener el user_session_id a partir del session_id
 // Función para obtener el session_id (user.id) del propietario de esta conexión WhatsApp
 async function getOwnerSessionId(sessionId) {
-    // ✅ SIMPLIFICADO: Para claudio@cnid.com.py SIEMPRE devolver '1'
+    // ✅ NUEVO: session_id debe ser users.id, NO hex ni phone
     if (pool && !memoryStorage.isMemoryMode) {
         try {
             const connection = await pool.getConnection();
             try {
-                // 1. Si sessionId es '1' directamente, retornar
-                if (sessionId === '1' || sessionId === 1) {
-                    console.log(`[getOwnerSessionId] ✅ sessionId is '1' directly`);
-                    return '1';
-                }
-
-                // 2. HARDCODED: Si es phone 595985768793 → retornar '1'
-                if (sessionId === '595985768793' || sessionId.includes('595985768793')) {
-                    console.log(`[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'`);
-                    return '1';
-                }
-
-                // 3. Buscar por email en user_sessions → si es claudio@cnid.com.py → '1'
-                const [emailRows] = await connection.execute(
-                    'SELECT us.email, u.id FROM user_sessions us LEFT JOIN users u ON u.email = us.email WHERE us.session_id = ? LIMIT 1',
-                    [sessionId]
-                );
-                if (emailRows.length > 0) {
-                    if (emailRows[0].email === 'claudio@cnid.com.py') {
-                        console.log(`[getOwnerSessionId] ✅ HARDCODED: email claudio@cnid.com.py → user_id='1'`);
-                        return '1';
-                    }
-                    if (emailRows[0].id) {
-                        console.log(`[getOwnerSessionId] ✅ Found users.id: ${emailRows[0].id}`);
-                        return String(emailRows[0].id);
-                    }
-                }
-
-                // 4. Si sessionId es numérico pequeño, verificar en users
+                // 1. Si sessionId es numérico pequeño (1-999999), asumir que ya es users.id
                 const numericId = parseInt(sessionId);
-                if (!isNaN(numericId) && numericId > 0 && numericId < 1000000) {
+                if (!isNaN(numericId) && numericId > 0 && numericId < 1000000 && sessionId == numericId) {
+                    // Verificar que existe en users
                     const [userCheck] = await connection.execute(
                         'SELECT id FROM users WHERE id = ? LIMIT 1',
                         [numericId]
                     );
                     if (userCheck.length > 0) {
-                        console.log(`[getOwnerSessionId] ✅ Using users.id: ${numericId}`);
+                        console.log(`[getOwnerSessionId] ✅ Using users.id directly: ${numericId}`);
                         return String(numericId);
                     }
                 }
 
-                // 5. Buscar por phone en user_sessions
+                // 2. Buscar en user_sessions por session_id (puede ser hex antiguo)
+                const [sessionRows] = await connection.execute(
+                    'SELECT us.session_id, u.id as user_id FROM user_sessions us LEFT JOIN users u ON u.phone = us.phone WHERE us.session_id = ? LIMIT 1',
+                    [sessionId]
+                );
+                if (sessionRows.length > 0 && sessionRows[0].user_id) {
+                    console.log(`[getOwnerSessionId] ✅ Found users.id from session_id: ${sessionRows[0].user_id}`);
+                    return String(sessionRows[0].user_id);
+                }
+
+                // 3. Si sessionId es un teléfono, buscar users.id por phone
+                if (sessionId.match(/^\+?\d{10,15}$/)) {
+                    const [phoneRows] = await connection.execute(
+                        'SELECT id FROM users WHERE phone LIKE ? LIMIT 1',
+                        [`%${sessionId.replace(/\+/g, '')}%`]
+                    );
+                    if (phoneRows.length > 0) {
+                        console.log(`[getOwnerSessionId] ✅ Found users.id by phone: ${phoneRows[0].id}`);
+                        return String(phoneRows[0].id);
+                    }
+                }
+
+                // 4. Buscar por phone en user_sessions y obtener users.id
                 const phoneNumber = await getUserPhoneNumber(sessionId);
                 if (phoneNumber) {
-                    // HARDCODED: Si es el phone conocido → '1'
-                    if (phoneNumber === '595985768793' || phoneNumber.includes('595985768793')) {
-                        console.log(`[getOwnerSessionId] ✅ HARDCODED: resolved phone 595985768793 → user_id='1'`);
-                        return '1';
-                    }
-
                     const [userRows] = await connection.execute(
                         'SELECT id FROM users WHERE phone LIKE ? LIMIT 1',
                         [`%${phoneNumber.replace(/\+/g, '')}%`]
                     );
                     if (userRows.length > 0) {
-                        console.log(`[getOwnerSessionId] ✅ Found users.id by phone: ${userRows[0].id}`);
+                        console.log(`[getOwnerSessionId] ✅ Found users.id by user_sessions.phone: ${userRows[0].id}`);
                         return String(userRows[0].id);
                     }
                 }
@@ -3098,8 +3059,8 @@ async function getOwnerSessionId(sessionId) {
         }
     }
 
-    // Fallback final: Si nada funciona, para sessionId sospechoso devolver '1'
-    console.warn(`[getOwnerSessionId] ⚠️ Could not resolve, using fallback. SessionId: ${sessionId}`);
+    // Fallback: retornar el sessionId tal cual (puede causar problemas)
+    console.warn(`[getOwnerSessionId] ⚠️ Could not resolve users.id, returning sessionId as-is: ${sessionId}`);
     return sessionId;
 }
 
@@ -3121,7 +3082,7 @@ async function getUserSessionId(sessionId) {
     try {
         // ✅ Primero intentar obtener users.id real
         const ownerSessionId = await getOwnerSessionId(sessionId);
-
+        
         // Buscar user_sessions por session_id (que ahora debería ser users.id)
         const [rows] = await connection.execute(
             'SELECT id FROM user_sessions WHERE session_id = ? ORDER BY last_activity DESC LIMIT 1',
@@ -3321,13 +3282,6 @@ async function updateContactNames(sessionId) {
     let errorCount = 0;
 
     try {
-        // ✅ Convertir sessionId a users.id
-        const ownerSessionId = await getOwnerSessionId(sessionId);
-        if (!ownerSessionId) {
-            console.error(`[UPDATE-NAMES] ❌ No se pudo obtener el ownerSessionId para: ${sessionId}`);
-            return { updated: 0, errors: 0 };
-        }
-
         const connection = await pool.getConnection();
         try {
             // Obtener todos los contactos individuales para esta sesión
@@ -3335,10 +3289,10 @@ async function updateContactNames(sessionId) {
                 `SELECT jid, name, notify_name 
                  FROM contacts 
                  WHERE session_id = ? AND jid LIKE '%@s.whatsapp.net'`,
-                [ownerSessionId]
+                [phoneNumber]
             );
 
-            console.log(`[UPDATE-NAMES] 📋 Encontrados ${existingContacts.length} contactos para actualizar (user_id=${ownerSessionId})`);
+            console.log(`[UPDATE-NAMES] 📋 Encontrados ${existingContacts.length} contactos para actualizar`);
 
             for (const contact of existingContacts) {
                 try {
@@ -3353,7 +3307,7 @@ async function updateContactNames(sessionId) {
                             `UPDATE contacts 
                              SET name = ?, notify_name = ?, updated_at = CURRENT_TIMESTAMP 
                              WHERE jid = ? AND session_id = ?`,
-                            [displayName, displayName, contact.jid, ownerSessionId]
+                            [displayName, displayName, contact.jid, phoneNumber]
                         );
 
                         console.log(`[UPDATE-NAMES] ✅ Actualizado: ${contact.jid} -> ${displayName}`);
@@ -3546,13 +3500,8 @@ async function forceFullSync(sessionId, sock, userSessionId) {
             console.log(`[FORCE-SYNC] ✅ ${stats.messages} mensajes recientes sincronizados`);
 
             // Actualizar tableros Kanban con contactos nuevos
-            const ownerSessionId = await getOwnerSessionId(sessionId);
-            if (ownerSessionId) {
-                await loadContactsToDefaultBoard(ownerSessionId);
-                console.log(`[FORCE-SYNC] 📋 Contactos cargados en tableros Kanban para user_id=${ownerSessionId}`);
-            } else {
-                console.warn(`[FORCE-SYNC] ⚠️ No se pudo obtener ownerSessionId para cargar Kanban`);
-            }
+            await loadContactsToDefaultBoard(phoneNumber);
+            console.log(`[FORCE-SYNC] 📋 Contactos cargados en tableros Kanban`);
 
             // Descargar avatares
             await downloadAllAvatars(sessionId, sock);
@@ -3578,23 +3527,22 @@ async function forceFullSync(sessionId, sock, userSessionId) {
 }
 
 // Función para crear tableros Kanban por defecto
-async function createDefaultKanbanBoards(userId) {
+async function createDefaultKanbanBoards(phoneNumber) {
     if (!pool) {
         console.log(`[KANBAN-DEFAULT] Base de datos no disponible`);
         return;
     }
 
-    let connection = null;
+    const connection = await pool.getConnection();
     try {
-        connection = await pool.getConnection();
         // Verificar si ya existen tableros para este usuario
         const [existing] = await connection.execute(
             'SELECT COUNT(*) as count FROM kanban_boards WHERE session_id = ?',
-            [userId]
+            [phoneNumber]
         );
 
         if (existing[0].count > 0) {
-            console.log(`[KANBAN-DEFAULT] Usuario ${userId} ya tiene ${existing[0].count} tableros. No se crean tableros por defecto.`);
+            console.log(`[KANBAN-DEFAULT] Usuario ${phoneNumber} ya tiene ${existing[0].count} tableros. No se crean tableros por defecto.`);
             return;
         }
 
@@ -3607,7 +3555,7 @@ async function createDefaultKanbanBoards(userId) {
             { name: 'Varios', color: '#9c27b0', order: 4, is_default: 0 }
         ];
 
-        console.log(`[KANBAN-DEFAULT] Creando ${defaultBoards.length} tableros por defecto para user_id=${userId}...`);
+        console.log(`[KANBAN-DEFAULT] Creando ${defaultBoards.length} tableros por defecto para ${phoneNumber}...`);
 
         let sinCategoriaBoardId = null;
 
@@ -3615,7 +3563,7 @@ async function createDefaultKanbanBoards(userId) {
             const boardId = `board_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             await connection.execute(
                 'INSERT INTO kanban_boards (id, session_id, name, color, board_order, is_default) VALUES (?, ?, ?, ?, ?, ?)',
-                [boardId, userId, board.name, board.color, board.order, board.is_default]
+                [boardId, phoneNumber, board.name, board.color, board.order, board.is_default]
             );
             console.log(`[KANBAN-DEFAULT] ✅ Tablero "${board.name}" creado`);
 
@@ -3625,33 +3573,32 @@ async function createDefaultKanbanBoards(userId) {
             }
         }
 
-        console.log(`[KANBAN-DEFAULT] ✅ Tableros por defecto creados exitosamente para user_id=${userId}`);
+        console.log(`[KANBAN-DEFAULT] ✅ Tableros por defecto creados exitosamente para ${phoneNumber}`);
 
     } catch (error) {
         console.error(`[KANBAN-DEFAULT] Error creando tableros por defecto:`, error);
     } finally {
-        if (connection) connection.release();
+        connection.release();
     }
 }
 
 // Función para cargar contactos en el tablero "Sin Categoría"
-async function loadContactsToDefaultBoard(userId) {
+async function loadContactsToDefaultBoard(phoneNumber) {
     if (!pool) {
         console.log(`[KANBAN-LOAD] Base de datos no disponible`);
         return;
     }
 
-    let connection = null;
+    const connection = await pool.getConnection();
     try {
-        connection = await pool.getConnection();
         // Obtener el tablero "Sin Categoría" (is_default = 1)
         const [boards] = await connection.execute(
             'SELECT id FROM kanban_boards WHERE session_id = ? AND is_default = 1 LIMIT 1',
-            [userId]
+            [phoneNumber]
         );
 
         if (boards.length === 0) {
-            console.log(`[KANBAN-LOAD] No se encontró tablero "Sin Categoría" para user_id=${userId}`);
+            console.log(`[KANBAN-LOAD] No se encontró tablero "Sin Categoría" para usuario ${phoneNumber}`);
             return;
         }
 
@@ -3671,13 +3618,11 @@ async function loadContactsToDefaultBoard(userId) {
         // Obtener todos los contactos individuales del usuario
         const [contacts] = await connection.execute(
             'SELECT jid FROM contacts WHERE session_id = ? AND jid LIKE "%@s.whatsapp.net"',
-            [userId]
+            [phoneNumber]
         );
 
-        console.log(`[KANBAN-LOAD] Contactos encontrados en DB para user_id=${userId}: ${contacts.length}`);
-
         if (contacts.length > 0) {
-            console.log(`[KANBAN-LOAD] Cargando ${contacts.length} contactos en tablero "Sin Categoría" (board_id=${sinCategoriaBoardId})...`);
+            console.log(`[KANBAN-LOAD] Cargando ${contacts.length} contactos en tablero "Sin Categoría"...`);
 
             let loadedCount = 0;
             for (const contact of contacts) {
@@ -3703,7 +3648,7 @@ async function loadContactsToDefaultBoard(userId) {
     } catch (error) {
         console.error(`[KANBAN-LOAD] Error cargando contactos en tablero por defecto:`, error);
     } finally {
-        if (connection) connection.release();
+        connection.release();
     }
 }
 
@@ -3736,10 +3681,10 @@ async function downloadAllAvatars(sessionId, sock) {
 
     const connection = await pool.getConnection();
     try {
-        // ✅ Convertir sessionId (phone si viene de sincronización) a users.id
-        const ownerSessionId = await getOwnerSessionId(sessionId);
-        if (!ownerSessionId) {
-            console.log(`[${sessionId}] ⚠️ No se pudo obtener el ownerSessionId, saltando descarga de avatares`);
+        // Obtener el número de teléfono del usuario
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            console.log(`[${sessionId}] ⚠️ No se pudo obtener el número de teléfono, saltando descarga de avatares`);
             return;
         }
 
@@ -3749,18 +3694,18 @@ async function downloadAllAvatars(sessionId, sock) {
         // Obtener contactos sin avatar (limitado)
         const [contacts] = await connection.execute(
             'SELECT jid, name FROM contacts WHERE session_id = ? AND jid LIKE "%@s.whatsapp.net" AND (avatar_url IS NULL OR avatar_url = "") LIMIT ?',
-            [ownerSessionId, MAX_AVATARS]
+            [phoneNumber, MAX_AVATARS]
         );
 
         // Obtener grupos sin avatar (limitado)
         const remainingLimit = MAX_AVATARS - contacts.length;
         const [groups] = await connection.execute(
             'SELECT jid, name FROM contact_groups WHERE session_id = ? AND (avatar_url IS NULL OR avatar_url = "") LIMIT ?',
-            [ownerSessionId, Math.max(remainingLimit, 0)]
+            [phoneNumber, Math.max(remainingLimit, 0)]
         );
 
         const totalToDownload = contacts.length + groups.length;
-        console.log(`[${sessionId}] 🖼️ Iniciando descarga de avatares para ${contacts.length} contactos y ${groups.length} grupos (total: ${totalToDownload})... (user_id=${ownerSessionId})`);
+        console.log(`[${sessionId}] 🖼️ Iniciando descarga de avatares para ${contacts.length} contactos y ${groups.length} grupos (total: ${totalToDownload})...`);
 
         if (totalToDownload === 0) {
             console.log(`[${sessionId}] ✅ No hay avatares pendientes de descargar`);
@@ -3792,7 +3737,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     if (profilePicUrl) {
                         await pool.execute(
                             'UPDATE contacts SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                            [profilePicUrl, contact.jid, ownerSessionId]
+                            [profilePicUrl, contact.jid, phoneNumber]
                         );
                         downloadedCount++;
                         consecutiveErrors = 0; // Reset contador de errores consecutivos
@@ -3801,7 +3746,7 @@ async function downloadAllAvatars(sessionId, sock) {
                         if (previewUrl) {
                             await pool.execute(
                                 'UPDATE contacts SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                                [previewUrl, contact.jid, ownerSessionId]
+                                [previewUrl, contact.jid, phoneNumber]
                             );
                             downloadedCount++;
                             consecutiveErrors = 0; // Reset contador
@@ -3845,7 +3790,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     if (profilePicUrl) {
                         await pool.execute(
                             'UPDATE contact_groups SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                            [profilePicUrl, group.jid, ownerSessionId]
+                            [profilePicUrl, group.jid, phoneNumber]
                         );
                         downloadedCount++;
                         consecutiveErrors = 0; // Reset contador
@@ -3854,7 +3799,7 @@ async function downloadAllAvatars(sessionId, sock) {
                         if (previewUrl) {
                             await pool.execute(
                                 'UPDATE contact_groups SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                                [previewUrl, group.jid, ownerSessionId]
+                                [previewUrl, group.jid, phoneNumber]
                             );
                             downloadedCount++;
                             consecutiveErrors = 0; // Reset contador
@@ -5314,23 +5259,18 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         }
 
                         // 🔄 POLLING: Verificar mensajes propios cada 15 segundos
+                        // Esto captura mensajes enviados desde el teléfono que emitOwnEvents no detecta
                         if (!sessionInfo.ownMessagePolling) {
                             sessionInfo.ownMessagePolling = setInterval(async () => {
                                 try {
-                                    if (!pool) return;
-
-                                    // ✅ Obtener userId (ownerSessionId)
-                                    const ownerSessionId = await getOwnerSessionId(sessionId);
-                                    if (!ownerSessionId) return;
-
+                                    // Obtener los últimos 3 mensajes de cada chat activo
                                     const connection = await pool.getConnection();
                                     try {
-                                        // Obtener los últimos 10 mensajes de cada chat activo para este usuario
                                         const [recentChats] = await connection.execute(
                                             `SELECT DISTINCT chat_jid FROM messages 
                                              WHERE session_id = ? AND timestamp > DATE_SUB(NOW(), INTERVAL 1 HOUR)
                                              ORDER BY timestamp DESC LIMIT 10`,
-                                            [ownerSessionId]
+                                            [userPhoneNumber]
                                         );
 
                                         for (const chat of recentChats) {
@@ -5346,11 +5286,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                                             // Verificar si ya existe en BD
                                                             const [existing] = await connection.execute(
                                                                 'SELECT id FROM messages WHERE id = ? AND session_id = ?',
-                                                                [msg.key.id, ownerSessionId]
+                                                                [msg.key.id, userPhoneNumber]
                                                             );
 
                                                             if (existing.length === 0) {
-                                                                console.log(`[${sessionId}] 📱 Mensaje propio detectado por polling (user_id=${ownerSessionId}): ${msg.key.id.substring(0, 20)}`);
+                                                                console.log(`[${sessionId}] 📱 Mensaje propio detectado por polling: ${msg.key.id.substring(0, 20)}`);
                                                                 // Simular evento messages.upsert
                                                                 sock.ev.emit('messages.upsert', {
                                                                     messages: [msg],
@@ -5454,65 +5394,37 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 console.error(`[${sessionId}] ❌ Error en migración de sesión:`, userErr.message);
                             }
                         }
-                    } // FIN DEL BLOQUE POOL
 
-                    // 🔥 MOVER CREACIÓN DE TABLEROS KANBAN FUERA DEL BLOQUE CONDICIONAL
-                    // Crear tableros Kanban por defecto si es la primera vez
-                    console.log(`[${sessionId}] 📋 Intentando crear tableros Kanban para ${userPhoneNumber}...`);
-                    if (pool) {
-                        let connection = null;
-                        try {
-                            connection = await pool.getConnection();
-                            const [userRow] = await connection.execute(
-                                'SELECT id FROM users WHERE phone = ? LIMIT 1',
-                                [userPhoneNumber]
-                            );
+                        // CRÍTICO: Si el sessionId es temporal, mover la sesión al número de teléfono
+                        if (sessionId !== userPhoneNumber) {
+                            console.log(`[${sessionId}] Moviendo sesión de ${sessionId} a ${userPhoneNumber}`);
 
-                            const userId = userRow.length > 0 ? userRow[0].id : null;
-                            console.log(`[${sessionId}] 🔍 Resultado búsqueda userId para ${userPhoneNumber}: ${userId}`);
+                            // Copiar sesión al nuevo ID (número de teléfono)
+                            sessions.set(userPhoneNumber, sessionInfo);
 
-                            if (userId) {
-                                console.log(`[${sessionId}] ✅ userId encontrado: ${userId}, llamando createDefaultKanbanBoards...`);
-                                await createDefaultKanbanBoards(userId);
-
-                                console.log(`[${sessionId}] 📋 userId encontrado: ${userId}, llamando loadContactsToDefaultBoard...`);
-                                await loadContactsToDefaultBoard(userId);
+                            // Mover también la preferencia de sincronización
+                            const syncPref = sessionSyncPreferences.get(sessionId);
+                            if (syncPref !== undefined) {
+                                sessionSyncPreferences.set(userPhoneNumber, syncPref);
+                                sessionSyncPreferences.delete(sessionId);
+                                console.log(`[${sessionId}] ✅ Preferencia de sincronización movida de ${sessionId} a ${userPhoneNumber}: ${syncPref}`);
                             } else {
-                                console.log(`[${sessionId}] ❌ No se encontró userId para phone ${userPhoneNumber} en tabla users`);
+                                // Por defecto FALSE si no existe
+                                sessionSyncPreferences.set(userPhoneNumber, false);
+                                console.log(`[${sessionId}] ⚠️ No había preferencia definida, estableciendo FALSE por defecto para ${userPhoneNumber}`);
                             }
-                        } catch (kanbanErr) {
-                            console.error(`[${sessionId}] ❌ Error en flujo Kanban de conexión:`, kanbanErr);
-                        } finally {
-                            if (connection) connection.release();
-                        }
-                    }
 
-                    // CRÍTICO: Si el sessionId es temporal, mover la sesión al número de teléfono
-                    if (sessionId !== userPhoneNumber) {
-                        console.log(`[${sessionId}] Moviendo sesión de ${sessionId} a ${userPhoneNumber}`);
+                            // Eliminar sesión temporal
+                            sessions.delete(sessionId);
 
-                        // Copiar sesión al nuevo ID (número de teléfono)
-                        sessions.set(userPhoneNumber, sessionInfo);
+                            // Actualizar newSessionId para usar en eventos
+                            newSessionId = userPhoneNumber;
 
-                        // Mover también la preferencia de sincronización
-                        const syncPref = sessionSyncPreferences.get(sessionId);
-                        if (syncPref !== undefined) {
-                            sessionSyncPreferences.set(userPhoneNumber, syncPref);
-                            sessionSyncPreferences.delete(sessionId);
-                            console.log(`[${sessionId}] ✅ Preferencia de sincronización movida de ${sessionId} a ${userPhoneNumber}: ${syncPref}`);
-                        } else {
-                            // Por defecto FALSE si no existe
-                            sessionSyncPreferences.set(userPhoneNumber, false);
-                            console.log(`[${sessionId}] ⚠️ No había preferencia definida, estableciendo FALSE por defecto para ${userPhoneNumber}`);
+                            console.log(`[${userPhoneNumber}] Sesión movida exitosamente`);
                         }
 
-                        // Eliminar sesión temporal
-                        sessions.delete(sessionId);
-
-                        // Actualizar newSessionId para usar en eventos
-                        newSessionId = userPhoneNumber;
-
-                        console.log(`[${userPhoneNumber}] Sesión movida exitosamente`);
+                        // Crear tableros Kanban por defecto si es la primera vez
+                        await createDefaultKanbanBoards(userPhoneNumber);
                     }
 
                     // Emitir estadísticas iniciales después de conectar
@@ -5690,16 +5602,16 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     status: 'disconnected',
                     reason: reason || 'unknown'
                 });
-         
+ 
                 if (reason === DisconnectReason.loggedOut) {
                     console.log(`[${sessionId}] 🚫 Logout detectado desde dispositivo móvil. Forzando cierre de sesión de agentes.`);
-         
+ 
                     io.to(`session-${sessionId}`).emit('agent-force-logout', {
                         sessionId,
                         reason: 'logged_out_from_device',
                         timestamp: Date.now()
                     });
-         
+ 
                     io.emit(`session-logged-out-${sessionId}`, {
                         sessionId,
                         reason: 'logged_out_from_device'
@@ -6135,7 +6047,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     case DisconnectReason.loggedOut:
                         // ⚠️ IMPORTANTE: Cerrar sesión de WhatsApp NO debe cerrar la sesión del usuario web
                         // La sesión web es independiente (login con email/contraseña)
-                        // Solo registramos que WhatsApp se desconectó y actualizamos la BD
+                        // Solo registramos que WhatsApp se desconectó
                         console.log(`[${sessionId}] WhatsApp desconectado (logged out) - La sesión web permanece activa`);
 
                         sessionLogger.log(sessionId, 'WHATSAPP_DISCONNECTED', {
@@ -6143,25 +6055,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             phoneNumber: userPhoneNumber,
                             timestamp: new Date().toISOString(),
                             statusCode: statusCode,
-                            note: 'Sesión web NO afectada, solo actualizando is_active=0'
+                            note: 'Sesión web NO afectada'
                         });
-
-                        // ✅ Actualizar BD para marcar WhatsApp como desconectado (is_active = 0)
-                        // pero SIN emitir eventos que cierren la sesión web del usuario
-                        if (userPhoneNumber) {
-                            await deactivateUserSession(userPhoneNumber);
-                            console.log(`[${sessionId}] ✅ user_sessions.is_active = 0 para ${userPhoneNumber}`);
-                        }
-
-                        // ✅ Emitir evento de desconexión de WhatsApp (NO de sesión web)
-                        const whatsappDisconnectedData = {
-                            sessionId,
-                            phoneNumber: userPhoneNumber,
-                            message: 'WhatsApp desconectado - Sesión web activa',
-                            type: 'whatsapp_disconnected'
-                        };
-                        io.emit(`whatsapp-disconnected-${sessionId}`, whatsappDisconnectedData);
-                        io.to(`session-${sessionId}`).emit('whatsapp-disconnected', whatsappDisconnectedData);
 
                         // COMENTADO: Ya NO emitimos eventos que cierren la sesión del usuario web
                         /* ANTES ESTO CAUSABA PROBLEMAS - CERRABA LA SESIÓN WEB
@@ -6176,6 +6071,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         if (userPhoneNumber) {
                             io.emit(`session-logged-out-${userPhoneNumber}`, logoutData);
                             io.to(`session-${userPhoneNumber}`).emit('session-logged-out', logoutData);
+                            await deactivateUserSession(userPhoneNumber);
                         }
                         */
                         break;
@@ -6284,17 +6180,17 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     const lid = msg.key.participant;
                     const pushName = msg.pushName;
                     const verifiedName = msg.verifiedBizName;
-         
+ 
                     // Intentar obtener número real desde el mensaje
                     let realPhone = null;
                     if (msg.participant) {
                         realPhone = msg.participant.split('@')[0];
                     }
-         
+ 
                     // Guardar mapeo
                     await saveLidMapping(lid, msg.participant, realPhone, pushName || verifiedName, pushName, phoneNumber);
                     console.log(`[LID-CAPTURE] Capturado LID de mensaje: ${lid} -> ${pushName || realPhone || 'sin info'}`);
-         
+ 
                     // Si tenemos el número real, actualizar la tabla de miembros del grupo
                     if (realPhone && msg.participant) {
                         console.log(`[LID-UPDATE] Actualizando miembro de grupo para LID ${lid} con número ${realPhone}`);
@@ -7719,18 +7615,13 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
             // Cargar contactos en tablero "Sin Categoría" después de procesar contactos
             setTimeout(async () => {
-                if (!pool) return;
-                let connection = null;
                 try {
                     console.log(`[${sessionId}] 📋 Cargando contactos en tablero Kanban "Sin Categoría"...`);
-                    const ownerSessionId = await getOwnerSessionId(sessionId);
-                    if (ownerSessionId) {
-                        await loadContactsToDefaultBoard(ownerSessionId);
+                    if (phoneNumber && pool) {
+                        await loadContactsToDefaultBoard(phoneNumber);
                     }
                 } catch (err) {
                     console.error(`[${sessionId}] Error cargando contactos a tablero:`, err.message);
-                } finally {
-                    if (connection) connection.release();
                 }
             }, 2000);
 
@@ -8073,18 +7964,14 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
             // Cargar contactos en tablero "Sin Categoría" después de sincronizar
             setTimeout(async () => {
-                if (!pool) return;
-                let connection = null;
                 try {
                     console.log(`[${sessionId}] 📋 Verificando tableros Kanban para cargar contactos...`);
-                    const ownerSessionId = await getOwnerSessionId(sessionId);
-                    if (ownerSessionId) {
-                        await loadContactsToDefaultBoard(ownerSessionId);
+                    const phoneNumber = await getUserPhoneNumber(sessionId);
+                    if (phoneNumber && pool) {
+                        await loadContactsToDefaultBoard(phoneNumber);
                     }
                 } catch (err) {
                     console.error(`[${sessionId}] Error cargando contactos a tablero por defecto:`, err.message);
-                } finally {
-                    if (connection) connection.release();
                 }
             }, 2000);
 
@@ -9091,32 +8978,10 @@ app.post('/api/register-session', (req, res) => {
 app.post('/api/logout-session', async (req, res) => {
     const { sessionId, sessionToken } = req.body;
 
-    console.log(`[SESSION-LOGOUT] 🔴 LLAMADO /api/logout-session - sessionId: ${sessionId}, hasToken: ${!!sessionToken}`);
-
-    // ✅ FORZAR session=0 SIEMPRE, incluso sin validación
-    if (sessionId && global.dbPool) {
-        try {
-            const connection = await global.dbPool.getConnection();
-            try {
-                // Actualizar session=0 para CUALQUIER usuario que coincida con sessionId
-                const [result] = await connection.query(
-                    'UPDATE users SET session = 0 WHERE id = ? OR phone = ? OR email = ?',
-                    [sessionId, sessionId, sessionId]
-                );
-                console.log(`[SESSION-LOGOUT] ✅ FORZADO session=0, filas afectadas: ${result.affectedRows}`);
-            } finally {
-                connection.release();
-            }
-        } catch (err) {
-            console.error('[SESSION-LOGOUT] Error forzando session=0:', err);
-        }
-    }
-
     if (!sessionId || !sessionToken) {
-        console.log(`[SESSION-LOGOUT] ❌ Faltan parámetros pero session=0 ya fue aplicado`);
-        return res.json({
-            success: true,
-            message: 'Sesión cerrada (sin validación completa pero session=0 aplicado)'
+        return res.status(400).json({
+            success: false,
+            error: 'Faltan parámetros requeridos'
         });
     }
 
@@ -9232,7 +9097,7 @@ app.get('/api/session/discover', async (req, res) => {
             if (rows.length > 0) {
                 const sessionId = rows[0].session_id;
                 const phoneNumber = rows[0].phone;
-
+                
                 // Verificar si está conectado en memoria
                 const session = sessions.get(sessionId) || sessions.get(phoneNumber);
                 const isConnected = !!(session && session.isConnected);
@@ -9264,7 +9129,7 @@ app.get('/api/session/discover', async (req, res) => {
 app.get('/api/session/bootstrap', async (req, res) => {
     try {
         const sessionIdInput = req.query.sessionId;
-
+        
         if (!sessionIdInput) {
             return res.status(400).json({ success: false, error: 'sessionId requerido' });
         }
@@ -9279,7 +9144,7 @@ app.get('/api/session/bootstrap', async (req, res) => {
                 [sessionId]
             );
             connection.release();
-
+            
             if (rows.length > 0) {
                 sessionId = rows[0].session_id;
             }
@@ -9288,11 +9153,11 @@ app.get('/api/session/bootstrap', async (req, res) => {
         // Obtener estado de la sesión (buscar por sessionId o por phone)
         let phoneNumber = null;
         let isConnected = false;
-
+        
         // Primero buscar en memoria por sessionId
         let session = sessions.get(sessionId);
         console.log(`[BOOTSTRAP] sessions.get(${sessionId}) → ${!!session}`);
-
+        
         // Si no está, buscar phone en BD y luego en memoria
         if (!session && pool) {
             const connection = await pool.getConnection();
@@ -9301,14 +9166,14 @@ app.get('/api/session/bootstrap', async (req, res) => {
                 [sessionId]
             );
             connection.release();
-
+            
             if (rows.length > 0 && rows[0].phone) {
                 phoneNumber = rows[0].phone;
                 session = sessions.get(phoneNumber);
                 console.log(`[BOOTSTRAP] BD devolvió phone=${phoneNumber}, sessions.get(phone) → ${!!session}`);
             }
         }
-
+        
         if (session) {
             isConnected = !!session.isConnected;
             if (!phoneNumber && session.sock?.user?.id) {
@@ -9359,7 +9224,7 @@ app.get('/api/session/:sessionId/status', async (req, res) => {
                 [sessionId]
             );
             connection.release();
-
+            
             if (userRows.length > 0) {
                 const mappedSessionId = String(userRows[0].id);
                 console.log(`[SESSION-STATUS] 📧 Email ${sessionId} (${userRows[0].email}) mapeado a sessionId: ${mappedSessionId}`);
@@ -9381,7 +9246,7 @@ app.get('/api/session/:sessionId/status', async (req, res) => {
                 [sessionId]
             );
             connection.release();
-
+            
             if (rows.length > 0) {
                 const resolvedSessionId = rows[0].session_id;
                 console.log(`[SESSION-STATUS] 🔄 Resolviendo ${sessionId} → ${resolvedSessionId}`);
@@ -9399,7 +9264,7 @@ app.get('/api/session/:sessionId/status', async (req, res) => {
         // Buscar por sessionId O por phoneNumber (las sesiones se mueven a phoneNumber al autenticarse)
         let inMemorySession = sessions.get(sessionId);
         let searchedByPhone = false;
-
+        
         // Si no se encuentra por sessionId, buscar por phoneNumber desde BD
         if (!inMemorySession && pool) {
             try {
@@ -9409,7 +9274,7 @@ app.get('/api/session/:sessionId/status', async (req, res) => {
                     [sessionId]
                 );
                 connection.release();
-
+                
                 if (rows.length > 0 && rows[0].phone) {
                     const phoneNumber = rows[0].phone;
                     inMemorySession = sessions.get(phoneNumber);
@@ -9420,7 +9285,7 @@ app.get('/api/session/:sessionId/status', async (req, res) => {
                 console.warn(`[SESSION-STATUS] Error buscando phoneNumber en BD:`, dbErr.message);
             }
         }
-
+        
         if (inMemorySession && inMemorySession.sock) {
             const phoneNumber = inMemorySession.sock?.user?.id?.split(':')[0];
 
@@ -9494,7 +9359,7 @@ app.get('/api/session/:sessionId/status', async (req, res) => {
             // is_active en BD solo indica que no fue eliminada, NO que esté conectada
             const actualSessionId = sessionRow.session_id || sessionRow.phone;
             const isConnectedInMemory = sessions.has(actualSessionId);
-
+            
             console.log(`[SESSION-STATUS] Estado real: BD_active=${isActive}, EN_MEMORIA=${isConnectedInMemory}`);
 
             // Si is_active=0, la sesión fue eliminada
@@ -9783,7 +9648,7 @@ app.post('/api/sessions/:sessionId/disconnect', async (req, res) => {
                     'DELETE FROM user_sessions WHERE session_id = ?',
                     [sessionId]
                 );
-
+                
                 // Si no se eliminó nada y tenemos phoneNumber, intentar por phone
                 if (result.affectedRows === 0 && phoneNumber) {
                     [result] = await connection.execute(
@@ -9900,7 +9765,7 @@ app.post('/api/sessions/cleanup-device', async (req, res) => {
                     [deviceId]
                 );
                 console.log(`[CLEANUP-DEVICE] ✅ ${result.affectedRows} sesiones desactivadas para deviceId`);
-
+                
                 return res.json({
                     success: true,
                     message: `${result.affectedRows} sesiones desactivadas`,
@@ -9956,7 +9821,7 @@ app.post('/api/reconnect-session', async (req, res) => {
 
         if (sessionInfo && sessionInfo.isConnected) {
             console.log(`[SESSION-RECONNECT] ✅ Sesión reconectada: ${sessionId}`);
-
+            
             // ✅ Actualizar BD para marcar como activa
             if (pool) {
                 const connection = await pool.getConnection();
@@ -9971,7 +9836,7 @@ app.post('/api/reconnect-session', async (req, res) => {
                     connection.release();
                 }
             }
-
+            
             return res.json({
                 success: true,
                 message: 'Sesión reconectada exitosamente',
@@ -10256,7 +10121,7 @@ app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
     try {
         // ✅ Obtener ownerSessionId (users.id)
         const ownerSessionId = await getOwnerSessionId(sessionId);
-
+        
         // Obtener el número de teléfono del sessionId
         let phoneNumber = await getUserPhoneNumber(sessionId);
         if (!phoneNumber) {
@@ -11885,35 +11750,18 @@ app.get('/api/messages', async (req, res) => {
 
 // Obtener historial de mensajes (con paginación)
 app.get('/api/history/messages', async (req, res) => {
-    const { limit = 10000, offset = 0, sessionId, chatJid, startDate, endDate, direction, status: filterStatus } = req.query;
+    const { limit = 10000, offset = 0, sessionId, chatJid, startDate, endDate, direction, status: filterStatus } = req.query; // LÍMITE: 10,000 por defecto para cargar historial completo
 
-    console.log(`[API - HISTORY] Request for sessionId: ${sessionId}`);
+    console.log(`[API - HISTORY] Request for sessionId: ${sessionId} `);
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible.' });
     }
 
-    // ✅ CORRECTO: Extraer user info del JWT token
-    let userId = null;
-    let userEmail = null;
-
-    if (req.headers.authorization) {
-        try {
-            const token = req.headers.authorization.split(' ')[1];
-            const jwt = require('jsonwebtoken');
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-            userId = decoded.userId || decoded.id;
-            userEmail = decoded.email;
-            console.log(`[API - HISTORY] 🔐 JWT decoded - userId: ${userId}, email: ${userEmail}`);
-        } catch (jwtErr) {
-            console.log(`[API - HISTORY] ⚠️ JWT verification failed:`, jwtErr.message);
-        }
-    }
-
-    // ✅ PRIORIDAD 1: Usar userId del JWT directamente
-    // PRIORIDAD 2: Si no hay JWT, intentar getOwnerSessionId con sessionId
-    const ownerSessionId = userId ? String(userId) : await getOwnerSessionId(sessionId);
-    console.log(`[API - HISTORY] OwnerSessionId resolved: ${ownerSessionId} (from userId=${userId} or sessionId=${sessionId})`);
+    // ✅ FIX: Usar getOwnerSessionId para obtener el user.id correcto
+    // Esto resuelve email/phone/UUID → user.id que es lo que está en la BD
+    const ownerSessionId = await getOwnerSessionId(sessionId);
+    console.log(`[API - HISTORY] OwnerSessionId resolved: ${ownerSessionId} (from ${sessionId})`);
 
     const connection = await pool.getConnection();
     try {
@@ -12288,33 +12136,7 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
     console.log(`[API - CONTACTS] SessionId: ${sessionId}, Search: "${search}"`);
 
     try {
-        // JWT extraction
-        let userId = null;
-        if (req.headers.authorization) {
-            try {
-                const token = req.headers.authorization.split(' ')[1];
-                const jwt = require('jsonwebtoken');
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-                userId = decoded.userId || decoded.id;
-            } catch (jwtErr) { }
-        }
-        const ownerSessionId = userId ? String(userId) : await getOwnerSessionId(sessionId);
-
-        // Query users table directly
-        const connection = await pool.getConnection();
-        let phoneNumber = null;
-        try {
-            const [userRows] = await connection.execute(
-                'SELECT phone FROM users WHERE id = ? LIMIT 1',
-                [ownerSessionId]
-            );
-            if (userRows.length > 0) {
-                phoneNumber = userRows[0].phone;
-            }
-        } finally {
-            connection.release();
-        }
-
+        const phoneNumber = await getUserPhoneNumber(sessionId);
         const phoneSessionId = phoneNumber || sessionId;
         const session = sessions.get(phoneSessionId) || sessions.get(sessionId);
 
@@ -12323,14 +12145,14 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
         // ✅ PRIORIDAD 1: Obtener contactos VIVOS desde WhatsApp en memoria
         if (session && session.sock && session.sock.store && session.sock.store.contacts) {
             console.log('[API - CONTACTS] 📱 Obteniendo contactos desde WhatsApp en vivo...');
-
+            
             try {
                 let memoryContacts = [];
                 if (session.sock.store.contacts.all) {
                     memoryContacts = session.sock.store.contacts.all();
                 } else if (session.sock.store.contacts.values) {
                     memoryContacts = Array.from(session.sock.store.contacts.values());
-                } else {
+                }  else {
                     memoryContacts = Array.from(session.sock.store.contacts || []);
                 }
 
@@ -12358,18 +12180,18 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
         // ✅ PRIORIDAD 2: Si hay pocos contactos, complementar desde BD
         if (allContacts.length === 0) {
             console.log('[API - CONTACTS] 📦 Complementando desde base de datos...');
-            console.log('[API - CONTACTS] 🔍 Using ownerSessionId (user_id):', ownerSessionId);
-
-            if (ownerSessionId) {
+            
+            const sessionIds = await getAllSessionIds(sessionId);
+            if (sessionIds && sessionIds.length > 0) {
                 const connection = await pool.getConnection();
                 try {
-                    // Buscar contactos donde session_id = user_id
+                    const placeholders = sessionIds.map(() => '?').join(',');
                     const [dbContacts] = await connection.execute(
                         `SELECT jid, name, notify_name, avatar_url, session_id
                          FROM contacts
-                         WHERE session_id = ? AND jid LIKE '%@s.whatsapp.net'
+                         WHERE session_id IN(${placeholders}) AND jid LIKE '%@s.whatsapp.net'
                          ORDER BY name ASC`,
-                        [ownerSessionId]
+                        sessionIds
                     );
 
                     allContacts = dbContacts.map(c => ({
@@ -12393,8 +12215,8 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
         let filteredContacts = allContacts;
         if (search && search.trim() !== '') {
             const searchLower = search.toLowerCase();
-            filteredContacts = allContacts.filter(c =>
-                c.name.toLowerCase().includes(searchLower) ||
+            filteredContacts = allContacts.filter(c => 
+                c.name.toLowerCase().includes(searchLower) || 
                 c.phone.includes(search)
             );
             console.log(`[API - CONTACTS] 🔎 Filtrados: ${filteredContacts.length} de ${allContacts.length}`);
@@ -13586,7 +13408,7 @@ VALUES(?, ?, ?, ?, ?, NOW())
     `, [sessionId, phoneNumber, currentStatus.text_content, currentStatus.media_url, currentStatus.media_type]);
  
                             console.log(`[STATUS - PUBLISH] ✅ Estado ${ i + 1 }/${statuses.length} publicado`);
- 
+
 // Emitir evento
 io.to(`session-${sessionId}`).emit('status-published', {
     statusId: status.id,
@@ -13604,11 +13426,11 @@ io.to(`session-${sessionId}`).emit('status-published', {
     conn.release();
 }
                     }, delay);
- 
+
 console.log(`[STATUS-PUBLISH] ⏰ Estado ${i + 1} programado para ${scheduledTime.toLocaleString()}`);
                 }
             }
- 
+
 res.json({
     success: true,
     message: `${statuses.length} ${statuses.length === 1 ? 'estado publicado' : 'estados programados'}`,
@@ -14073,7 +13895,7 @@ io.on('connection', async (socket) => {
                 [sessionId]
             );
             connection.release();
-
+            
             if (rows.length > 0) {
                 const resolvedSessionId = rows[0].session_id;
                 console.log(`[SOCKET.IO] 🔄 Resolviendo owner ${sessionId} → ${resolvedSessionId}`);
@@ -14496,84 +14318,6 @@ app.post('/api/kanban/boards', async (req, res) => {
 });
 
 // Obtener contactos por categoría/tablero
-app.get('/api/kanban/search-all-contacts/:sessionId', async (req, res) => {
-    try {
-        const { sessionId } = req.params;
-        const { search } = req.query;
-
-        // Extract userId from JWT
-        let userId = null;
-        if (req.headers.authorization) {
-            try {
-                const token = req.headers.authorization.split(' ')[1];
-                const jwt = require('jsonwebtoken');
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-                userId = decoded.userId || decoded.id;
-            } catch (jwtErr) { }
-        }
-        const ownerSessionId = userId ? String(userId) : await getOwnerSessionId(sessionId);
-
-        if (!pool) {
-            return res.json({ success: true, data: { contacts: [] } });
-        }
-
-        const connection = await pool.getConnection();
-        try {
-            let query = `
-                SELECT
-                    c.jid,
-                    c.name,
-                    c.notify_name,
-                    c.avatar_url,
-                    c.is_group,
-                    kc.board_id,
-                    kb.name as board_name,
-                    kb.color as board_color,
-                    kc.notes,
-                    kc.created_at as added_to_board_at
-                FROM contacts c
-                LEFT JOIN kanban_contacts kc ON c.jid = kc.contact_jid
-                LEFT JOIN kanban_boards kb ON kc.board_id = kb.id
-                WHERE c.session_id = ?
-            `;
-            const params = [ownerSessionId];
-
-            if (search) {
-                query += ` AND (c.name LIKE ? OR c.notify_name LIKE ? OR c.jid LIKE ?)`;
-                const searchTerm = `%${search}%`;
-                params.push(searchTerm, searchTerm, searchTerm);
-                console.log(`[KANBAN-SEARCH] Buscando "${search}" para user_id=${ownerSessionId}`);
-            }
-
-            query += ` ORDER BY c.name ASC LIMIT 50`;
-
-            const [contactsRaw] = await connection.execute(query, params);
-            console.log(`[KANBAN-SEARCH] Query params:`, params);
-            console.log(`[KANBAN-SEARCH] Encontrados: ${contactsRaw.length} contactos`);
-
-            const contacts = contactsRaw.map(contact => ({
-                id: contact.jid,
-                name: contact.name || contact.notify_name || contact.jid.split('@')[0],
-                phone: contact.jid.split('@')[0],
-                avatar: contact.avatar_url,
-                category: contact.board_id,
-                board_name: contact.board_name,
-                board_color: contact.board_color,
-                notes: contact.notes,
-                last_message_time: contact.added_to_board_at
-            }));
-
-            res.json({ success: true, data: { contacts } });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[KANBAN] Error buscando contactos:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// Obtener contactos por categoría/tablero
 app.get('/api/contacts/by-category/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
     const { boardId } = req.query;
@@ -14628,8 +14372,8 @@ app.get('/api/contacts/by-category/:sessionId', async (req, res) => {
                 JOIN contacts c ON kc.contact_jid = c.jid
                 JOIN kanban_boards kb ON kc.board_id = kb.id
                 WHERE kb.session_id = ?
-                ORDER BY kb.is_default DESC, kb.created_at DESC`;
-                params = [ownerSessionId];
+                ORDER BY kc.created_at DESC`;
+                params = [phoneNumber];
             }
 
             const [contactsRaw] = await connection.execute(query, params);
@@ -14860,10 +14604,9 @@ app.post('/api/kanban/move-contact', async (req, res) => {
             }
 
             // PASO 2: Insertar el contacto en el nuevo tablero
-            // Use REPLACE INTO instead of INSERT to handle duplicates
-            const [result] = await connection.execute(
-                `REPLACE INTO kanban_contacts (board_id, contact_jid, notes, created_at, updated_at)
-                 VALUES (?, ?, ?, NOW(), NOW())`,
+            await connection.execute(
+                `INSERT INTO kanban_contacts (board_id, contact_jid, notes)
+                 VALUES (?, ?, ?)`,
                 [boardId, contactJid, '']
             );
             console.log(`[KANBAN] ✅ Contacto ${contactJid} movido al tablero ${boardId}`);
@@ -15095,40 +14838,40 @@ app.delete('/api/kanban/boards/:boardId', async (req, res) => {
 });
 
 // Endpoint para buscar contactos en toda la base de datos (no solo en Kanban)
-app.get('/api/contacts/by-category/:sessionId', async (req, res) => {
+app.get('/api/kanban/search-all-contacts/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
-    const { searchTerm } = req.query;
+    const { search } = req.query;
 
-    if (!searchTerm) {
-        return res.status(400).json({
+    console.log(`[KANBAN-SEARCH-ALL] Buscando en toda la BD: "${search}"`);
+
+    if (!pool) {
+        return res.status(503).json({
             success: false,
-            error: 'El término de búsqueda es requerido'
+            error: 'Base de datos no disponible'
         });
     }
 
     try {
-        if (!pool) {
-            return res.status(500).json({
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(400).json({
                 success: false,
-                error: 'Base de datos no disponible'
+                error: 'No se pudo obtener el número de teléfono para esta sesión'
             });
         }
 
-        // Extract userId from JWT
-        let userId = null;
-        if (req.headers.authorization) {
-            try {
-                const token = req.headers.authorization.split(' ')[1];
-                const jwt = require('jsonwebtoken');
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-                userId = decoded.userId || decoded.id;
-            } catch (jwtErr) { }
-        }
-        const ownerSessionId = userId ? String(userId) : await getOwnerSessionId(sessionId);
-
         const connection = await pool.getConnection();
         try {
-            const searchPattern = `%${searchTerm}%`;
+            if (!search || search.trim() === '') {
+                return res.json({
+                    success: true,
+                    contacts: [],
+                    totalContacts: 0
+                });
+            }
+
+            // Buscar en TODA la tabla contacts, no solo en kanban_contacts
+            const searchTerm = `%${search.trim()}%`;
             const [contacts] = await connection.execute(`
                 SELECT
                     c.jid,
@@ -15148,17 +14891,17 @@ app.get('/api/contacts/by-category/:sessionId', async (req, res) => {
                 LEFT JOIN kanban_contacts kc ON c.jid = kc.contact_jid
                 LEFT JOIN kanban_boards kb ON kc.board_id = kb.id AND kb.session_id = c.session_id
                 WHERE c.session_id = ?
-        AND c.jid LIKE '%@s.whatsapp.net'
-    AND(
-        c.name LIKE ? OR
+                AND c.jid LIKE '%@s.whatsapp.net'
+                AND (
+                    c.name LIKE ? OR
                     c.notify_name LIKE ? OR
                     c.jid LIKE ?
                 )
                 ORDER BY c.created_at DESC
                 LIMIT 100
-        `, [ownerSessionId, searchPattern, searchPattern, searchPattern]);
+            `, [phoneNumber, searchTerm, searchTerm, searchTerm]);
 
-            console.log(`[KANBAN - SEARCH - ALL] ✅ ${contacts.length} contactos encontrados en toda la BD`);
+            console.log(`[KANBAN-SEARCH-ALL] ✅ ${contacts.length} contactos encontrados en toda la BD`);
 
             const formattedContacts = contacts.map(c => ({
                 jid: c.jid,
@@ -15226,24 +14969,24 @@ app.post('/api/kanban/sync-all-contacts/:sessionId', async (req, res) => {
             }
 
             const defaultBoardId = boards[0].id;
-            console.log(`[KANBAN - SYNC] Tablero por defecto ID: ${defaultBoardId} `);
+            console.log(`[KANBAN-SYNC] Tablero por defecto ID: ${defaultBoardId}`);
 
             // 2. Obtener todos los contactos que NO están en kanban_contacts
             const [contactsToSync] = await connection.execute(`
                 SELECT c.jid, c.name, c.avatar_url
                 FROM contacts c
                 WHERE c.session_id = ?
-        AND c.jid LIKE '%@s.whatsapp.net'
-                AND NOT EXISTS(
-            SELECT 1 FROM kanban_contacts kc
+                AND c.jid LIKE '%@s.whatsapp.net'
+                AND NOT EXISTS (
+                    SELECT 1 FROM kanban_contacts kc
                     INNER JOIN kanban_boards kb ON kc.board_id = kb.id
                     WHERE kc.contact_jid = c.jid
                     AND kb.session_id = ?
                 )
                 LIMIT 5000
-        `, [phoneNumber, phoneNumber]);
+            `, [phoneNumber, phoneNumber]);
 
-            console.log(`[KANBAN - SYNC] Contactos a sincronizar: ${contactsToSync.length} `);
+            console.log(`[KANBAN-SYNC] Contactos a sincronizar: ${contactsToSync.length}`);
 
             if (contactsToSync.length === 0) {
                 return res.json({
@@ -15263,13 +15006,13 @@ app.post('/api/kanban/sync-all-contacts/:sessionId', async (req, res) => {
                 const values = batch.map(c => `(${connection.escape(defaultBoardId)}, ${connection.escape(c.jid)}, '')`).join(',');
 
                 await connection.query(`
-                    INSERT INTO kanban_contacts(board_id, contact_jid, notes)
+                    INSERT INTO kanban_contacts (board_id, contact_jid, notes)
                     VALUES ${values}
                     ON DUPLICATE KEY UPDATE board_id = VALUES(board_id)
-        `);
+                `);
 
                 syncedCount += batch.length;
-                console.log(`[KANBAN - SYNC] Sincronizados ${syncedCount}/${contactsToSync.length}...`);
+                console.log(`[KANBAN-SYNC] Sincronizados ${syncedCount}/${contactsToSync.length}...`);
             }
 
             console.log(`[KANBAN-SYNC] ✅ Sincronización completada: ${syncedCount} contactos`);
@@ -15864,18 +15607,6 @@ app.get('/api/kanban/boards/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
     const cacheKey = `kanban_boards_${sessionId}`;
 
-    // ✅ JWT userId extraction
-    let userId = null;
-    if (req.headers.authorization) {
-        try {
-            const token = req.headers.authorization.split(' ')[1];
-            const jwt = require('jsonwebtoken');
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-            userId = decoded.userId || decoded.id;
-        } catch (jwtErr) { }
-    }
-    const ownerSessionId = userId ? String(userId) : await getOwnerSessionId(sessionId);
-
     // Verificar si hay datos en caché
     if (kanbanCache.has(cacheKey)) {
         const cachedData = kanbanCache.get(cacheKey);
@@ -15897,11 +15628,18 @@ app.get('/api/kanban/boards/:sessionId', async (req, res) => {
         });
     }
 
-    let connection; // Declare connection outside try block for finally access
     try {
-        connection = await pool.getConnection();
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(400).json({
+                success: false,
+                error: 'No se pudo obtener el número de teléfono para esta sesión'
+            });
+        }
 
+        const connection = await pool.getConnection();
         try {
+            // Consulta optimizada con timeout
             const queryPromise = connection.execute(
                 `SELECT
                     kb.id,
@@ -15919,7 +15657,7 @@ app.get('/api/kanban/boards/:sessionId', async (req, res) => {
                 GROUP BY kb.id
                 ORDER BY kb.board_order ASC, kb.created_at ASC
                 LIMIT 20`,  // Reducir límite para evitar sobrecarga de recursos
-                [ownerSessionId]
+                [phoneNumber]
             );
 
             // Agregar timeout para evitar bloqueos
@@ -15975,17 +15713,13 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
     }
 
     try {
-        // JWT extraction
-        let userId = null;
-        if (req.headers.authorization) {
-            try {
-                const token = req.headers.authorization.split(' ')[1];
-                const jwt = require('jsonwebtoken');
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-                userId = decoded.userId || decoded.id;
-            } catch (jwtErr) { }
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(400).json({
+                success: false,
+                error: 'No se pudo obtener el número de teléfono para esta sesión'
+            });
         }
-        const ownerSessionId = userId ? String(userId) : await getOwnerSessionId(sessionId);
 
         const connection = await pool.getConnection();
         try {
@@ -16005,7 +15739,7 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
                 LEFT JOIN contacts c ON kc.contact_jid = c.jid AND c.session_id = kb.session_id
                 WHERE kb.session_id = ?`;
 
-            const params = [ownerSessionId];
+            const params = [phoneNumber];
 
             // Si hay búsqueda, agregar filtro
             if (search && search.trim()) {
@@ -16493,44 +16227,18 @@ app.get('/api/campaigns/:sessionId', async (req, res) => {
     }
 
     try {
-        // ✅ JWT userId extraction
-        let userId = null;
-        if (req.headers.authorization) {
-            try {
-                const token = req.headers.authorization.split(' ')[1];
-                const jwt = require('jsonwebtoken');
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-                userId = decoded.userId || decoded.id;
-            } catch (jwtErr) { }
-        }
-        const ownerSessionId = userId ? String(userId) : await getOwnerSessionId(sessionId);
-
-        // ✅ Obtener phone directamente de users table por user_id
-        const connection = await pool.getConnection();
-        let phoneNumber = null;
-        try {
-            const [userRows] = await connection.execute(
-                'SELECT phone FROM users WHERE id = ? LIMIT 1',
-                [ownerSessionId]
-            );
-            if (userRows.length > 0) {
-                phoneNumber = userRows[0].phone;
-            }
-        } catch (err) {
-            console.error('[CAMPAIGNS] Error getting phone:', err);
-        }
-
+        const phoneNumber = await getUserPhoneNumber(sessionId);
         if (!phoneNumber) {
-            connection.release();
             return res.status(400).json({
                 success: false,
                 error: 'No se pudo obtener el número de teléfono para esta sesión'
             });
         }
 
-        // Continuar con la query de campaigns usando la misma conexión
-        const [campaigns] = await connection.execute(
-            `SELECT
+        const connection = await pool.getConnection();
+        try {
+            const [campaigns] = await connection.execute(
+                `SELECT
                     c.id,
                     c.name,
                     c.message_template,
@@ -16553,15 +16261,16 @@ app.get('/api/campaigns/:sessionId', async (req, res) => {
                 WHERE c.session_id = ?
                 GROUP BY c.id
                 ORDER BY c.created_at DESC`,
-            [phoneNumber]
-        );
+                [phoneNumber]
+            );
 
-        res.json({ success: true, data: { campaigns } });
-    } catch (err) {
-        console.error('[CAMPAIGNS] Error in query:', err);
-        res.status(500).json({ success: false, error: err.message });
-    } finally {
-        connection.release();
+            res.json({ success: true, data: { campaigns } });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[CAMPAIGNS] Error obteniendo campañas:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
@@ -17944,7 +17653,7 @@ app.get('/api/public/plans', async (req, res) => {
 
     try {
         const connection = await pool.getConnection();
-
+        
         try {
             const [plans] = await connection.execute(
                 `SELECT id, name, description, price, modules, max_agents, max_sessions, 
@@ -19960,7 +19669,7 @@ app.put('/api/agents/:id/status', async (req, res) => {
     const { id } = req.params;
     const { agent_status, status } = req.body;
     const finalStatus = agent_status || status;
- 
+
     // agent_status = online/offline/paused/busy
     if (!finalStatus || !['online', 'offline', 'paused', 'busy'].includes(finalStatus)) {
         return res.status(400).json({
@@ -19968,11 +19677,11 @@ app.put('/api/agents/:id/status', async (req, res) => {
             error: 'Estado inválido. Use: online, offline, paused, busy'
         });
     }
- 
+
     if (!pool) {
         return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible' });
     }
- 
+
     try {
         const connection = await pool.getConnection();
         try {
@@ -19982,17 +19691,17 @@ app.put('/api/agents/:id/status', async (req, res) => {
                 'UPDATE users SET agent_status = ? WHERE id = ?',
                 [finalStatus, id]
             );
- 
+
             // Emitir evento Socket.IO para actualizar en tiempo real
             io.emit('agent-status-changed', { agentId: id, agent_status: finalStatus });
- 
+
             const statusLabels = {
                 online: 'En línea',
                 offline: 'Desconectado',
                 paused: 'En pausa',
                 busy: 'Ocupado'
             };
- 
+
             res.json({
                 success: true,
                 message: `Estado cambiado a: ${statusLabels[finalStatus]} `
@@ -21414,17 +21123,10 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
         const { sessionId } = req.params;
         const { startDate, endDate, status } = req.query;
 
-        // Extract userId from JWT
-        let userId = null;
-        if (req.headers.authorization) {
-            try {
-                const token = req.headers.authorization.split(' ')[1];
-                const jwt = require('jsonwebtoken');
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-                userId = decoded.userId || decoded.id;
-            } catch (jwtErr) { }
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
         }
-        const ownerSessionId = userId ? String(userId) : await getOwnerSessionId(sessionId);
 
         const connection = await pool.getConnection();
         try {
@@ -21437,7 +21139,7 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
                 status, reminder_sent, notes, reminder_time, notification_template, category_id,
                 created_at, updated_at
                 FROM appointments WHERE session_id = ?`;
-            const params = [ownerSessionId];
+            const params = [phoneNumber];
 
             if (startDate && endDate) {
                 query += ` AND appointment_date BETWEEN ? AND ?`;
@@ -22674,40 +22376,40 @@ const verifyAdminToken = (req, res, next) => {
     const token = authHeader && authHeader.split(' ')[1];
     const sessionToken = req.headers['x-session-token'];
     const deviceId = req.headers['x-device-id'];
- 
+
     if (!token) {
         return res.status(401).json({ success: false, error: 'Token no proporcionado', requiresReauth: true });
     }
- 
+
     // VALIDAR SESSION TOKEN Y DEVICE ID (sesión única)
     if (!sessionToken || !deviceId) {
         console.log('[AUTH-VERIFY] ❌ Falta sessionToken o deviceId');
         return res.status(401).json({ success: false, error: 'Sesión no válida', requiresReauth: true });
     }
- 
+
     const { activeSessions } = require('./middleware/sessionValidator');
     const session = activeSessions.get(sessionToken);
- 
+
     if (!session) {
         console.log('[AUTH-VERIFY] ❌ SessionToken no encontrado en sesiones activas');
         return res.status(401).json({ success: false, error: 'Sesión expirada o no válida', requiresReauth: true });
     }
- 
+
     if (session.deviceId !== deviceId) {
         console.log('[AUTH-VERIFY] ❌ DeviceId no coincide - sesión en otro dispositivo');
         return res.status(403).json({ success: false, error: 'Sesión activa en otro dispositivo', requiresReauth: true });
     }
- 
+
     // Actualizar última actividad
     session.lastActivity = Date.now();
- 
+
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
- 
+
         if (!pool) {
             return res.json({ success: true, user: decoded });
         }
- 
+
         // Verificar que el usuario siga existiendo y activo
         const connection = await pool.getConnection();
         try {
@@ -22715,12 +22417,12 @@ const verifyAdminToken = (req, res, next) => {
                 'SELECT id, email, name, role, department, status FROM users WHERE id = ?',
                 [decoded.id]
             );
- 
+
             if (users.length === 0 || users[0].status !== 'active') {
                 console.log('[AUTH-VERIFY] ❌ Usuario no válido o inactivo');
                 return res.status(401).json({ success: false, error: 'Usuario no válido', requiresReauth: true });
             }
- 
+
             console.log(`[AUTH-VERIFY] ✅ Sesión válida para ${users[0].email}`);
             res.json({ success: true, user: users[0] });
         } finally {
@@ -23498,11 +23200,6 @@ console.log('🔥 [INDEX.JS] registerAPIRestEndpoints ejecutado');
 // ============= ENDPOINTS DE AUTENTICACIÓN =============
 const { registerAuthEndpoints } = require('./auth-endpoints');
 console.log('🔐 [INDEX.JS] Registrando endpoints de autenticación...');
-
-// ✅ INSTALAR MIDDLEWARE DE LOGOUT FIX
-const setupLogoutFix = require('./logout-fix');
-setupLogoutFix(app, poolProxy);
-
 registerAuthEndpoints(app, poolProxy);
 console.log('🔐 [INDEX.JS] Endpoints de autenticación registrados');
 
@@ -24605,3 +24302,209 @@ app.post('/api/sessions/update-profile/:sessionId', async (req, res) => {
     }
 });
 
+// ============================================
+// ADMIN PANEL ENDPOINTS
+// ============================================
+
+// Middleware para verificar super admin
+const verifySuperAdmin = (req, res, next) => {
+    console.log('[VERIFY-SUPER-ADMIN] Verificando acceso super admin...');
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        console.log('[VERIFY-SUPER-ADMIN] ❌ Token no proporcionado');
+        return res.status(401).json({ success: false, error: 'Token no proporcionado' });
+    }
+    const token = authHeader.substring(7);
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        console.log('[VERIFY-SUPER-ADMIN] Token decodificado:', { role: decoded.role, is_super_admin: decoded.is_super_admin, email: decoded.email });
+        if (decoded.role === 'super_admin' || decoded.role === 'superadmin' || decoded.is_super_admin) {
+            console.log('[VERIFY-SUPER-ADMIN] ✅ Acceso permitido');
+            req.user = decoded;
+            next();
+        } else {
+            console.log('[VERIFY-SUPER-ADMIN] ❌ No es super admin');
+            return res.status(403).json({ success: false, error: 'Acceso denegado. Solo super admins.' });
+        }
+    } catch (err) {
+        console.log('[VERIFY-SUPER-ADMIN] ❌ Token inválido:', err.message);
+        return res.status(401).json({ success: false, error: 'Token inválido' });
+    }
+};
+
+// GET /api/clients - Obtener todos los clientes
+app.get('/api/clients', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const connection = await pool.getConnection();
+        try {
+            const [clients] = await connection.execute(`
+                SELECT u.id, u.name, u.email, u.phone, u.status, u.is_blocked, u.last_seen,
+                       p.name as plan_name, p.id as plan_id,
+                       (SELECT COUNT(*) FROM user_sessions us WHERE us.phone = u.phone AND us.is_active = 1) as is_connected
+                FROM users u
+                LEFT JOIN plans p ON u.plan_id = p.id
+                WHERE u.role != 'super_admin' AND u.is_super_admin != 1
+                ORDER BY u.created_at DESC
+            `);
+            res.json({ success: true, clients });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN CLIENTS] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error obteniendo clientes' });
+    }
+});
+
+// GET /api/plans
+app.get('/api/plans', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const connection = await pool.getConnection();
+        try {
+            const [plans] = await connection.execute('SELECT * FROM plans ORDER BY price ASC');
+            res.json({ success: true, plans });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN PLANS] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error obteniendo planes' });
+    }
+});
+
+// GET /api/subscriptions/plans
+app.get('/api/subscriptions/plans', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const connection = await pool.getConnection();
+        try {
+            const [plans] = await connection.execute(`
+                SELECT id, name as plan_name, name as plan_display_name, description, price,
+                       max_agents as max_users, max_channels, max_messages as max_messages_per_month,
+                       100 as max_campaigns, 10000 as max_contacts, 30 as duration_days,
+                       bot_enabled, api_enabled, 'active' as status
+                FROM plans ORDER BY price ASC
+            `);
+            res.json({ success: true, plans });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN SUBSCRIPTION PLANS] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error obteniendo planes' });
+    }
+});
+
+// POST /api/subscriptions/plans
+app.post('/api/subscriptions/plans', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const { plan_name, plan_display_name, description, price, max_users, max_channels, max_messages_per_month, bot_enabled, api_enabled } = req.body;
+        if (!plan_name || !price) return res.status(400).json({ success: false, error: 'Faltan campos requeridos' });
+        const connection = await pool.getConnection();
+        try {
+            const [result] = await connection.execute(
+                `INSERT INTO plans (name, description, price, max_agents, max_channels, max_messages, bot_enabled, api_enabled, max_sessions)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [plan_name, description || plan_display_name, price, max_users || 1, max_channels || 1, max_messages_per_month || 1000, bot_enabled ? 1 : 0, api_enabled ? 1 : 0, max_users || 1]
+            );
+            res.json({ success: true, plan_id: result.insertId });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN CREATE PLAN] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error creando plan' });
+    }
+});
+
+// PUT /api/subscriptions/plans/:id
+app.put('/api/subscriptions/plans/:id', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const { id } = req.params;
+        const { plan_name, plan_display_name, description, price, max_users, max_channels, max_messages_per_month, bot_enabled, api_enabled } = req.body;
+        const connection = await pool.getConnection();
+        try {
+            const [result] = await connection.execute(
+                `UPDATE plans SET name=?, description=?, price=?, max_agents=?, max_channels=?, max_messages=?, bot_enabled=?, api_enabled=?, max_sessions=? WHERE id=?`,
+                [plan_name, description, price, max_users, max_channels, max_messages_per_month, bot_enabled ? 1 : 0, api_enabled ? 1 : 0, max_users, id]
+            );
+            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+            res.json({ success: true });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN UPDATE PLAN] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error actualizando plan' });
+    }
+});
+
+// DELETE /api/subscriptions/plans/:id
+app.delete('/api/subscriptions/plans/:id', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const { id } = req.params;
+        const connection = await pool.getConnection();
+        try {
+            const [users] = await connection.execute('SELECT COUNT(*) as count FROM users WHERE plan_id=?', [id]);
+            if (users[0].count > 0) return res.status(400).json({ success: false, error: `Hay ${users[0].count} usuarios con este plan` });
+            const [result] = await connection.execute('DELETE FROM plans WHERE id=?', [id]);
+            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+            res.json({ success: true });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN DELETE PLAN] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error eliminando plan' });
+    }
+});
+
+// POST /api/clients/:id/block
+app.post('/api/clients/:id/block', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const { id } = req.params;
+        const { blocked } = req.body;
+        const connection = await pool.getConnection();
+        try {
+            const [result] = await connection.execute('UPDATE users SET is_blocked=? WHERE id=?', [blocked ? 1 : 0, id]);
+            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Cliente no encontrado' });
+            res.json({ success: true });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN BLOCK CLIENT] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error actualizando cliente' });
+    }
+});
+
+// POST /api/clients/:id/assign-plan
+app.post('/api/clients/:id/assign-plan', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const { id } = req.params;
+        const { plan_id } = req.body;
+        if (!plan_id) return res.status(400).json({ success: false, error: 'plan_id es requerido' });
+        const connection = await pool.getConnection();
+        try {
+            const [plans] = await connection.execute('SELECT id FROM plans WHERE id=?', [plan_id]);
+            if (plans.length === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+            const [result] = await connection.execute('UPDATE users SET plan_id=? WHERE id=?', [plan_id, id]);
+            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Cliente no encontrado' });
+            res.json({ success: true });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN ASSIGN PLAN] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error asignando plan' });
+    }
+});
+
+console.log('[ADMIN PANEL ENDPOINTS] ✅ Endpoints del panel de administración registrados');

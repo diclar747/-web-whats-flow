@@ -21,9 +21,9 @@ module.exports = function (app, pool) {
             const authHeader = req.headers['authorization'];
             const token = authHeader && authHeader.split(' ')[1];
             const sessionId = req.query.sessionId;
-            
+
             console.log('[AGENTS-AUTH-DEBUG] authHeader:', authHeader ? 'present' : 'missing', 'token:', token ? 'present' : 'missing', 'sessionId:', sessionId);
-            
+
             // Opción 1: JWT Token
             if (token) {
                 try {
@@ -36,7 +36,7 @@ module.exports = function (app, pool) {
                     console.log('[AGENTS-AUTH] ⚠️ JWT inválido:', err.message);
                 }
             }
-            
+
             // Opción 2: SessionId (QR/WhatsApp login)
             if (sessionId) {
                 console.log('[AGENTS-AUTH] 📱 Usando sessionId para autenticación:', sessionId);
@@ -49,7 +49,7 @@ module.exports = function (app, pool) {
                 };
                 return next();
             }
-            
+
             // Sin token ni sessionId
             return res.status(401).json({
                 success: false,
@@ -63,7 +63,7 @@ module.exports = function (app, pool) {
             });
         }
     };
-    
+
     app.get('/api/agents/list', authenticateTokenOrSession, async (req, res) => {
         try {
             if (!pool) {
@@ -122,12 +122,12 @@ module.exports = function (app, pool) {
                         updated_at
                     FROM users
                     WHERE role = 'agent'
-                    AND (admin_phone = ? OR admin_phone = ?)
+                    AND (admin_phone = ? OR admin_phone = ? OR session_id = ?)
                     ORDER BY created_at DESC
                 `;
 
-                console.log('[AGENTS-LIST] 🔍 Ejecutando query para admin:', { phone: adminPhone, email: adminEmail });
-                const [agents] = await connection.execute(query, [adminPhone || '', adminEmail || '']);
+                console.log('[AGENTS-LIST] 🔍 Ejecutando query para admin:', { phone: adminPhone, email: adminEmail, id: user.id });
+                const [agents] = await connection.execute(query, [adminPhone || '', adminEmail || '', user.id || null]);
                 console.log('✅ [AGENTS-LIST] Agentes obtenidos para admin', adminPhone + ':', agents.length);
                 res.json({ success: true, agents });
             } finally {
@@ -486,7 +486,13 @@ module.exports = function (app, pool) {
                                             if (sessionData.sock) {
                                                 activeSock = sessionData.sock;
                                                 activeSessionId = sid;
-                                                console.log(`✅ [AGENT-CREATE] Usando sesión activa: ${sid}`);
+                                                console.log(`✅ [AGENT-CREATE] Usando sesión activa encontrada (Fallback): ${sid}`);
+                                                // Priorizar la sesión que coincida con el admin si es posible, si no, cualquiera sirve.
+                                                if (sid === adminUserId || sid === adminPhone) {
+                                                    break; // Encontramos una ideal
+                                                }
+                                                // Si no es la ideal, seguimos buscando pero ya tenemos una "activeSock" por si acaso.
+                                                // O mejor, hacemos break en la primera que funcione para no demorar.
                                                 break;
                                             }
                                         }
@@ -1149,7 +1155,7 @@ module.exports = function (app, pool) {
      * Cambiar estado de un agente
      * PUT /api/agents/:agentId/status
      */
-    app.put('/api/agents/:agentId/status', async (req, res) => {
+    app.put('/api/agents/:agentId/status', authenticateToken, async (req, res) => {
         try {
             console.log('[AGENT-STATUS] 📥 Request recibido:', {
                 agentId: req.params.agentId,

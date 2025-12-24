@@ -1,0 +1,605 @@
+[1m[90m[TAILING] Tailing last 300 lines for [2] process (change the value with --lines option)[39m[22m
+[90m/root/.pm2/logs/whatsflow-server-error.log last 300 lines:[39m
+[31m2|whatsflo | [39m  sqlMessage: "Unknown column 'phone_number' in 'WHERE'"
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39m[REMINDERS] ❌ Error enviando recordatorio para cita 5: Error: Unknown column 'phone_number' in 'WHERE'
+[31m2|whatsflo | [39m    at PromisePoolConnection.execute (/var/www/web.whats-flow.com/src/server/node_modules/mysql2/lib/promise/connection.js:47:22)
+[31m2|whatsflo | [39m    at sendReminder (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:65:52)
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async checkAndSendReminders (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:174:30) {
+[31m2|whatsflo | [39m  code: 'ER_BAD_FIELD_ERROR',
+[31m2|whatsflo | [39m  errno: 1054,
+[31m2|whatsflo | [39m  sql: 'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+[31m2|whatsflo | [39m  sqlState: '42S22',
+[31m2|whatsflo | [39m  sqlMessage: "Unknown column 'phone_number' in 'WHERE'"
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39m[REMINDERS] ❌ Error enviando recordatorio para cita 5: Error: Unknown column 'phone_number' in 'WHERE'
+[31m2|whatsflo | [39m    at PromisePoolConnection.execute (/var/www/web.whats-flow.com/src/server/node_modules/mysql2/lib/promise/connection.js:47:22)
+[31m2|whatsflo | [39m    at sendReminder (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:65:52)
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async checkAndSendReminders (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:174:30) {
+[31m2|whatsflo | [39m  code: 'ER_BAD_FIELD_ERROR',
+[31m2|whatsflo | [39m  errno: 1054,
+[31m2|whatsflo | [39m  sql: 'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+[31m2|whatsflo | [39m  sqlState: '42S22',
+[31m2|whatsflo | [39m  sqlMessage: "Unknown column 'phone_number' in 'WHERE'"
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39m[REMINDERS] ❌ Error enviando recordatorio para cita 5: Error: Unknown column 'phone_number' in 'WHERE'
+[31m2|whatsflo | [39m    at PromisePoolConnection.execute (/var/www/web.whats-flow.com/src/server/node_modules/mysql2/lib/promise/connection.js:47:22)
+[31m2|whatsflo | [39m    at sendReminder (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:65:52)
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async checkAndSendReminders (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:174:30) {
+[31m2|whatsflo | [39m  code: 'ER_BAD_FIELD_ERROR',
+[31m2|whatsflo | [39m  errno: 1054,
+[31m2|whatsflo | [39m  sql: 'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+[31m2|whatsflo | [39m  sqlState: '42S22',
+[31m2|whatsflo | [39m  sqlMessage: "Unknown column 'phone_number' in 'WHERE'"
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39mCliente wV76MMIHAAnUvRArAAAE conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m⚠️ Cliente wV76MMIHAAnUvRArAAAE sin sessionId después de 30s, desconectando...
+[31m2|whatsflo | [39m[REMINDERS] ❌ Error enviando recordatorio para cita 5: Error: Unknown column 'phone_number' in 'WHERE'
+[31m2|whatsflo | [39m    at PromisePoolConnection.execute (/var/www/web.whats-flow.com/src/server/node_modules/mysql2/lib/promise/connection.js:47:22)
+[31m2|whatsflo | [39m    at sendReminder (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:65:52)
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async checkAndSendReminders (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:174:30) {
+[31m2|whatsflo | [39m  code: 'ER_BAD_FIELD_ERROR',
+[31m2|whatsflo | [39m  errno: 1054,
+[31m2|whatsflo | [39m  sql: 'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+[31m2|whatsflo | [39m  sqlState: '42S22',
+[31m2|whatsflo | [39m  sqlMessage: "Unknown column 'phone_number' in 'WHERE'"
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39m[REMINDERS] ❌ Error enviando recordatorio para cita 5: Error: Unknown column 'phone_number' in 'WHERE'
+[31m2|whatsflo | [39m    at PromisePoolConnection.execute (/var/www/web.whats-flow.com/src/server/node_modules/mysql2/lib/promise/connection.js:47:22)
+[31m2|whatsflo | [39m    at sendReminder (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:65:52)
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async checkAndSendReminders (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:174:30) {
+[31m2|whatsflo | [39m  code: 'ER_BAD_FIELD_ERROR',
+[31m2|whatsflo | [39m  errno: 1054,
+[31m2|whatsflo | [39m  sql: 'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+[31m2|whatsflo | [39m  sqlState: '42S22',
+[31m2|whatsflo | [39m  sqlMessage: "Unknown column 'phone_number' in 'WHERE'"
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39m[REMINDERS] ❌ Error enviando recordatorio para cita 5: Error: Unknown column 'phone_number' in 'WHERE'
+[31m2|whatsflo | [39m    at PromisePoolConnection.execute (/var/www/web.whats-flow.com/src/server/node_modules/mysql2/lib/promise/connection.js:47:22)
+[31m2|whatsflo | [39m    at sendReminder (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:65:52)
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async checkAndSendReminders (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:174:30) {
+[31m2|whatsflo | [39m  code: 'ER_BAD_FIELD_ERROR',
+[31m2|whatsflo | [39m  errno: 1054,
+[31m2|whatsflo | [39m  sql: 'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+[31m2|whatsflo | [39m  sqlState: '42S22',
+[31m2|whatsflo | [39m  sqlMessage: "Unknown column 'phone_number' in 'WHERE'"
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39m[REMINDERS] ❌ Error enviando recordatorio para cita 5: Error: Unknown column 'phone_number' in 'WHERE'
+[31m2|whatsflo | [39m    at PromisePoolConnection.execute (/var/www/web.whats-flow.com/src/server/node_modules/mysql2/lib/promise/connection.js:47:22)
+[31m2|whatsflo | [39m    at sendReminder (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:65:52)
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async checkAndSendReminders (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:174:30) {
+[31m2|whatsflo | [39m  code: 'ER_BAD_FIELD_ERROR',
+[31m2|whatsflo | [39m  errno: 1054,
+[31m2|whatsflo | [39m  sql: 'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+[31m2|whatsflo | [39m  sqlState: '42S22',
+[31m2|whatsflo | [39m  sqlMessage: "Unknown column 'phone_number' in 'WHERE'"
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39m[REMINDERS] ❌ Error enviando recordatorio para cita 5: Error: Unknown column 'phone_number' in 'WHERE'
+[31m2|whatsflo | [39m    at PromisePoolConnection.execute (/var/www/web.whats-flow.com/src/server/node_modules/mysql2/lib/promise/connection.js:47:22)
+[31m2|whatsflo | [39m    at sendReminder (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:65:52)
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async checkAndSendReminders (/var/www/web.whats-flow.com/src/server/calendar-reminders.js:174:30) {
+[31m2|whatsflo | [39m  code: 'ER_BAD_FIELD_ERROR',
+[31m2|whatsflo | [39m  errno: 1054,
+[31m2|whatsflo | [39m  sql: 'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+[31m2|whatsflo | [39m  sqlState: '42S22',
+[31m2|whatsflo | [39m  sqlMessage: "Unknown column 'phone_number' in 'WHERE'"
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39mValidationError: The Express 'trust proxy' setting is true, which allows anyone to trivially bypass IP-based rate limiting. See https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/ for more information.
+[31m2|whatsflo | [39m    at Object.trustProxy (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:167:13)
+[31m2|whatsflo | [39m    at wrappedValidations.<computed> [as trustProxy] (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:397:22)
+[31m2|whatsflo | [39m    at Object.keyGenerator (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:657:20)
+[31m2|whatsflo | [39m    at /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:710:32
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:691:5 {
+[31m2|whatsflo | [39m  code: 'ERR_ERL_PERMISSIVE_TRUST_PROXY',
+[31m2|whatsflo | [39m  help: 'https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/'
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39mValidationError: The Express 'trust proxy' setting is true, which allows anyone to trivially bypass IP-based rate limiting. See https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/ for more information.
+[31m2|whatsflo | [39m    at Object.trustProxy (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:167:13)
+[31m2|whatsflo | [39m    at wrappedValidations.<computed> [as trustProxy] (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:397:22)
+[31m2|whatsflo | [39m    at Object.keyGenerator (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:657:20)
+[31m2|whatsflo | [39m    at /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:710:32
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:691:5 {
+[31m2|whatsflo | [39m  code: 'ERR_ERL_PERMISSIVE_TRUST_PROXY',
+[31m2|whatsflo | [39m  help: 'https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/'
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39mCliente PlsyyB5v9UqvOUoeAAAD conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m[2ed663bf340dff20] ⚠️ No se pudo determinar phoneNumber, usando sessionId como fallback
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m⚠️ Cliente PlsyyB5v9UqvOUoeAAAD sin sessionId después de 30s, desconectando...
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39mValidationError: The Express 'trust proxy' setting is true, which allows anyone to trivially bypass IP-based rate limiting. See https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/ for more information.
+[31m2|whatsflo | [39m    at Object.trustProxy (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:167:13)
+[31m2|whatsflo | [39m    at wrappedValidations.<computed> [as trustProxy] (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:397:22)
+[31m2|whatsflo | [39m    at Object.keyGenerator (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:657:20)
+[31m2|whatsflo | [39m    at /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:710:32
+[31m2|whatsflo | [39m    at async /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:691:5 {
+[31m2|whatsflo | [39m  code: 'ERR_ERL_PERMISSIVE_TRUST_PROXY',
+[31m2|whatsflo | [39m  help: 'https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/'
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39mCliente VULEM5npdzgul7R1AAAH conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m⚠️ Cliente VULEM5npdzgul7R1AAAH sin sessionId después de 30s, desconectando...
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39mCliente aZM29R1e9k2zA6S8AAAE conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39mValidationError: The Express 'trust proxy' setting is true, which allows anyone to trivially bypass IP-based rate limiting. See https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/ for more information.
+[31m2|whatsflo | [39m    at Object.trustProxy (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:167:13)
+[31m2|whatsflo | [39m    at wrappedValidations.<computed> [as trustProxy] (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:397:22)
+[31m2|whatsflo | [39m    at Object.keyGenerator (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:657:20)
+[31m2|whatsflo | [39m    at /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:710:32
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:691:5 {
+[31m2|whatsflo | [39m  code: 'ERR_ERL_PERMISSIVE_TRUST_PROXY',
+[31m2|whatsflo | [39m  help: 'https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/'
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39mCliente qhhwwGT_BXU2qqwEAAAJ conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m[156fb5b4d1bd5a0a] ⚠️ No se pudo determinar phoneNumber, usando sessionId como fallback
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39mCliente 0QkM4Au0NNZlHQcAAAAL conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m⚠️ Cliente 0QkM4Au0NNZlHQcAAAAL sin sessionId después de 30s, desconectando...
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39mValidationError: The Express 'trust proxy' setting is true, which allows anyone to trivially bypass IP-based rate limiting. See https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/ for more information.
+[31m2|whatsflo | [39m    at Object.trustProxy (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:167:13)
+[31m2|whatsflo | [39m    at wrappedValidations.<computed> [as trustProxy] (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:397:22)
+[31m2|whatsflo | [39m    at Object.keyGenerator (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:657:20)
+[31m2|whatsflo | [39m    at /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:710:32
+[31m2|whatsflo | [39m    at async /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:691:5 {
+[31m2|whatsflo | [39m  code: 'ERR_ERL_PERMISSIVE_TRUST_PROXY',
+[31m2|whatsflo | [39m  help: 'https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/'
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39mCliente XjoHhne8vdoTI_tKAAAP conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39mCliente 0x6gN-IRavSb3oE7AAAR conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39mCliente xutIOCv6AQvYZub5AAAF conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39mCliente Nv0CexEtAIyOifoMAAAJ conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m[SESSION-DISCONNECT] Error al cerrar sesión en WhatsApp 156fb5b4d1bd5a0a: Connection Closed
+[31m2|whatsflo | [39m[660f973a299c5697] ⚠️ No se pudo determinar phoneNumber, usando sessionId como fallback
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m⚠️ Cliente Nv0CexEtAIyOifoMAAAJ sin sessionId después de 30s, desconectando...
+[31m2|whatsflo | [39mValidationError: The Express 'trust proxy' setting is true, which allows anyone to trivially bypass IP-based rate limiting. See https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/ for more information.
+[31m2|whatsflo | [39m    at Object.trustProxy (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:167:13)
+[31m2|whatsflo | [39m    at wrappedValidations.<computed> [as trustProxy] (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:397:22)
+[31m2|whatsflo | [39m    at Object.keyGenerator (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:657:20)
+[31m2|whatsflo | [39m    at /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:710:32
+[31m2|whatsflo | [39m    at async /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:691:5 {
+[31m2|whatsflo | [39m  code: 'ERR_ERL_PERMISSIVE_TRUST_PROXY',
+[31m2|whatsflo | [39m  help: 'https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/'
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39mCliente KYzTEQ_V2Q7Z8MxgAAAN conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m⚠️ Cliente KYzTEQ_V2Q7Z8MxgAAAN sin sessionId después de 30s, desconectando...
+[31m2|whatsflo | [39mCliente Z4TweX2mwZPfIwTTAAAP conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39mCliente tmVhiTibstvLi6zDAAAD conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m⚠️ Cliente tmVhiTibstvLi6zDAAAD sin sessionId después de 30s, desconectando...
+[31m2|whatsflo | [39mValidationError: The Express 'trust proxy' setting is true, which allows anyone to trivially bypass IP-based rate limiting. See https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/ for more information.
+[31m2|whatsflo | [39m    at Object.trustProxy (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:167:13)
+[31m2|whatsflo | [39m    at wrappedValidations.<computed> [as trustProxy] (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:397:22)
+[31m2|whatsflo | [39m    at Object.keyGenerator (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:657:20)
+[31m2|whatsflo | [39m    at /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:710:32
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:691:5 {
+[31m2|whatsflo | [39m  code: 'ERR_ERL_PERMISSIVE_TRUST_PROXY',
+[31m2|whatsflo | [39m  help: 'https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/'
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39mValidationError: The Express 'trust proxy' setting is true, which allows anyone to trivially bypass IP-based rate limiting. See https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/ for more information.
+[31m2|whatsflo | [39m    at Object.trustProxy (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:167:13)
+[31m2|whatsflo | [39m    at wrappedValidations.<computed> [as trustProxy] (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:397:22)
+[31m2|whatsflo | [39m    at Object.keyGenerator (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:657:20)
+[31m2|whatsflo | [39m    at /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:710:32
+[31m2|whatsflo | [39m    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+[31m2|whatsflo | [39m    at async /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:691:5 {
+[31m2|whatsflo | [39m  code: 'ERR_ERL_PERMISSIVE_TRUST_PROXY',
+[31m2|whatsflo | [39m  help: 'https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/'
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39mCliente d0eURzoBY1TjXP4lAAAD conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m[c93d1e91cd64eebe] ⚠️ No se pudo determinar phoneNumber, usando sessionId como fallback
+[31m2|whatsflo | [39m⚠️ Cliente d0eURzoBY1TjXP4lAAAD sin sessionId después de 30s, desconectando...
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39mValidationError: The Express 'trust proxy' setting is true, which allows anyone to trivially bypass IP-based rate limiting. See https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/ for more information.
+[31m2|whatsflo | [39m    at Object.trustProxy (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:167:13)
+[31m2|whatsflo | [39m    at wrappedValidations.<computed> [as trustProxy] (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:397:22)
+[31m2|whatsflo | [39m    at Object.keyGenerator (/var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:657:20)
+[31m2|whatsflo | [39m    at /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:710:32
+[31m2|whatsflo | [39m    at async /var/www/web.whats-flow.com/src/server/node_modules/express-rate-limit/dist/index.cjs:691:5 {
+[31m2|whatsflo | [39m  code: 'ERR_ERL_PERMISSIVE_TRUST_PROXY',
+[31m2|whatsflo | [39m  help: 'https://express-rate-limit.github.io/ERR_ERL_PERMISSIVE_TRUST_PROXY/'
+[31m2|whatsflo | [39m}
+[31m2|whatsflo | [39mCliente KuYy3Zu_yZNXQMwhAAAH conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m⚠️ Cliente KuYy3Zu_yZNXQMwhAAAH sin sessionId después de 30s, desconectando...
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39mCliente 4Y_sG8DhDsSBNG3GAAAN conectado sin sessionId inicial, esperando join-session (timeout: 30s)
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+[31m2|whatsflo | [39m[DB-CONTACT-WARN] Attempted to save own number as contact: 595985768793@s.whatsapp.net. Skipping.
+
+[90m/root/.pm2/logs/whatsflow-server-out.log last 300 lines:[39m
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 187166370042074@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 187166370042074@lid
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 123398839611605@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 123398839611605@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 123398839611605@lid
+[32m2|whatsflo | [39m[DB-GROUP-CALL] Called getOrInsertWhatsAppGroup for jid: 120363198646353674@g.us, name: Servicios Generales 🤝, subject: Servicios Generales 🤝
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-GROUP] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-GROUP-SUCCESS] WhatsApp group 120363198646353674@g.us saved to contact_groups with name: Servicios Generales 🤝
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 595984253587
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595982210720@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: 595982210720
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: 595982210720
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 595982210720@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595982210720@s.whatsapp.net saved with name: 595982210720 (NUMBER ONLY)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 595982210720
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 919313870570@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: 919313870570
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: 919313870570
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 919313870570@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 919313870570@s.whatsapp.net saved with name: 919313870570 (NUMBER ONLY)
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595981962930@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: 595981962930
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: 595981962930
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 595981962930@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595981962930@s.whatsapp.net saved with name: 595981962930 (NUMBER ONLY)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para grupo: Servicios Generales 🤝
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 239651038220418@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 239651038220418@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 239651038220418@lid
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595982727270@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: null
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: null
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 595982727270@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595982727270@s.whatsapp.net saved with name: 595982727270 (NUMBER ONLY)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 919313870570
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 555599202861@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: 555599202861
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: 555599202861
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 555599202861@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 555599202861@s.whatsapp.net saved with name: 555599202861 (NUMBER ONLY)
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595985722240@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: null
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: Ceramica Schmid S.A
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595985722240@s.whatsapp.net saved with name: Ceramica Schmid S.A (REAL NAME)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 555599202861
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595981278156@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: 595981278156
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: 595981278156
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 595981278156@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595981278156@s.whatsapp.net saved with name: 595981278156 (NUMBER ONLY)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: Ceramica Schmid S.A
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595984211879@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: null
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: Silvina
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595984211879@s.whatsapp.net saved with name: Silvina (REAL NAME)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 595981278156
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595994491657@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: 595994491657
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: 595994491657
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 595994491657@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595994491657@s.whatsapp.net saved with name: 595994491657 (NUMBER ONLY)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 595994491657
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 918082352140@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: 918082352140
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: 918082352140
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 918082352140@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 918082352140@s.whatsapp.net saved with name: 918082352140 (NUMBER ONLY)
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595971767472@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: null
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: Club El Porvenir Guaireño
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595971767472@s.whatsapp.net saved with name: Club El Porvenir Guaireño (REAL NAME)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 595981962930
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 91676177637589@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 91676177637589@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 91676177637589@lid
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 93419900784799@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 93419900784799@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 93419900784799@lid
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 179834693124213@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 179834693124213@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 179834693124213@lid
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] ✅ Chats del historial guardados
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 💾 Guardando 260 contactos del historial...
+[32m2|whatsflo | [39m[DB-GROUP-CALL] Called getOrInsertWhatsAppGroup for jid: 120363144588649928@g.us, name: SE VENDE DE TODO , subject: SE VENDE DE TODO 
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-GROUP] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-GROUP-SUCCESS] WhatsApp group 120363144588649928@g.us saved to contact_groups with name: SE VENDE DE TODO 
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 595982727270
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 197074607960276@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 197074607960276@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 197074607960276@lid
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 111093775134910@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 111093775134910@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 111093775134910@lid
+[32m2|whatsflo | [39m[DB-GROUP-CALL] Called getOrInsertWhatsAppGroup for jid: 120363380391046835@g.us, name: CERO A PROGRAMADOR #159, subject: CERO A PROGRAMADOR #159
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-GROUP] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-GROUP-SUCCESS] WhatsApp group 120363380391046835@g.us saved to contact_groups with name: CERO A PROGRAMADOR #159
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para grupo: SE VENDE DE TODO 
+[32m2|whatsflo | [39m[DB-GROUP-CALL] Called getOrInsertWhatsAppGroup for jid: 595972596219-1625950737@g.us, name: Itapua compra ventas libre🤩, subject: Itapua compra ventas libre🤩
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-GROUP] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-GROUP-SUCCESS] WhatsApp group 595972596219-1625950737@g.us saved to contact_groups with name: Itapua compra ventas libre🤩
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Procesando lote 3/50 de contactos...
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para grupo: CERO A PROGRAMADOR #159
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 39775759282370@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 39775759282370@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 39775759282370@lid
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 225434260213965@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 225434260213965@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 225434260213965@lid
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 65906323529855@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 65906323529855@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 65906323529855@lid
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 194072543293542@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 194072543293542@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 194072543293542@lid
+[32m2|whatsflo | [39m[DB-GROUP-CALL] Called getOrInsertWhatsAppGroup for jid: 595981227483-1629428874@g.us, name: 7.- FRENVIFA Itapúa, subject: 7.- FRENVIFA Itapúa
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-GROUP] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-GROUP-SUCCESS] WhatsApp group 595981227483-1629428874@g.us saved to contact_groups with name: 7.- FRENVIFA Itapúa
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: Club El Porvenir Guaireño
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595985733056@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: null
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: 👍
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595985733056@s.whatsapp.net saved with name: 👍 (REAL NAME)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para grupo: Itapua compra ventas libre🤩
+[32m2|whatsflo | [39m[DB-GROUP-CALL] Called getOrInsertWhatsAppGroup for jid: 120363220484118333@g.us, name: Empleos Colonias Unidas N°1☘️, subject: Empleos Colonias Unidas N°1☘️
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-GROUP] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-GROUP-SUCCESS] WhatsApp group 120363220484118333@g.us saved to contact_groups with name: Empleos Colonias Unidas N°1☘️
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para grupo: 7.- FRENVIFA Itapúa
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595985723723@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: null
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: null
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 595985723723@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595985723723@s.whatsapp.net saved with name: 595985723723 (NUMBER ONLY)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 👍
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595985752505@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: null
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: Jonathan
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595985752505@s.whatsapp.net saved with name: Jonathan (REAL NAME)
+[32m2|whatsflo | [39m[REQUEST] GET /api/session/1/status - IP: 170.84.172.52
+[32m2|whatsflo | [39m[DEBUG-HEADERS] Host: web.whats-flow.com, Content-Type: undefined, Content-Length: undefined
+[32m2|whatsflo | [39m[SESSION-STATUS] 🔄 Resolviendo id/phone 1 → session_id: c93d1e91cd64eebe
+[32m2|whatsflo | [39m[SESSION-STATUS] 🔍 Verificando sesión WhatsApp: c93d1e91cd64eebe, deviceId: undefined...
+[32m2|whatsflo | [39m[SESSION-STATUS] 🔍 Buscando por phoneNumber: 595985768793, encontrado: true
+[32m2|whatsflo | [39m[SESSION-STATUS] ✅ Sesión WhatsApp CONECTADA en memoria: 595985768793
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para grupo: Empleos Colonias Unidas N°1☘️
+[32m2|whatsflo | [39m[DB-GROUP-CALL] Called getOrInsertWhatsAppGroup for jid: 595985768793-1631280256@g.us, name: Fútbol Colonias Unidas⚽, subject: Fútbol Colonias Unidas⚽
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-GROUP] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-GROUP-SUCCESS] WhatsApp group 595985768793-1631280256@g.us saved to contact_groups with name: Fútbol Colonias Unidas⚽
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 918082352140
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 5493754528428@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: 5493754528428
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: 5493754528428
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 5493754528428@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 5493754528428@s.whatsapp.net saved with name: 5493754528428 (NUMBER ONLY)
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 554137950507@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: 554137950507
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: 554137950507
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 554137950507@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 554137950507@s.whatsapp.net saved with name: 554137950507 (NUMBER ONLY)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 595985723723
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 53249038135333@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 53249038135333@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 53249038135333@lid
+[32m2|whatsflo | [39m[DB-BROADCAST-CALL] Called getOrInsertBroadcast for jid: 260056109060282@lid, type: newsletter
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-BROADCAST] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-BROADCAST-SUCCESS] Broadcast 260056109060282@lid saved.
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 📰 Newsletter guardado: 260056109060282@lid
+[32m2|whatsflo | [39m[DB-GROUP-CALL] Called getOrInsertWhatsAppGroup for jid: 120363140217141380@g.us, name: Reflexión I Donald Franz, subject: Reflexión I Donald Franz
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-GROUP] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-GROUP-SUCCESS] WhatsApp group 120363140217141380@g.us saved to contact_groups with name: Reflexión I Donald Franz
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para contacto: 554137950507
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] JID: 595984514388@s.whatsapp.net
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Name: 595984514388
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Notify Name: 595984514388
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] Phone Number: 595985768793
+[32m2|whatsflo | [39m[DIAGNÓSTICO-DB-WRITE] -------------------------
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-CONTACT] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[NAME-RESOLVE] ⚠ Sin nombre real para 595984514388@s.whatsapp.net, usando número
+[32m2|whatsflo | [39m[DB-CONTACT-SUCCESS] Individual contact 595984514388@s.whatsapp.net saved with name: 595984514388 (NUMBER ONLY)
+[32m2|whatsflo | [39m[c93d1e91cd64eebe] 🖼️ Avatar descargado para grupo: Fútbol Colonias Unidas⚽
+[32m2|whatsflo | [39m[DB-GROUP-CALL] Called getOrInsertWhatsAppGroup for jid: 595972673838-1603833662@g.us, name: NO VACUNACIÓN OBLIGATORIA, subject: NO VACUNACIÓN OBLIGATORIA
+[32m2|whatsflo | [39m[getOwnerSessionId] ✅ HARDCODED: phone 595985768793 → user_id='1'
+[32m2|whatsflo | [39m[DB-GROUP] 🔄 Converted phoneNumber 595985768793 to ownerSessionId: 1
+[32m2|whatsflo | [39m[DB-GROUP-SUCCESS] WhatsApp group 595972673838-1603833662@g.us saved to contact_groups with name: NO VACUNACIÓN OBLIGATORIA
+

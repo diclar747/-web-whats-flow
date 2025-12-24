@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 
 // Ensure JWT_SECRET is available
-const JWT_SECRET = process.env.JWT_SECRET || 'whatsflow_jwt_secret';
+const JWT_SECRET = process.env.JWT_SECRET || 'WhatsFlow2025!SecretKey';
 
 /**
  * Generate a JWT token for a user (Admin or Agent)

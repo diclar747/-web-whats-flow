@@ -376,10 +376,18 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
         sessionStorage.setItem('whatsflow_device_id', deviceId);
       }
 
+      // ✅ CRÍTICO: Obtener userId del usuario logueado para vincular la sesión
+      const userId = localStorage.getItem('userId') || sessionStorage.getItem('userId');
+      console.log('👤 Usuario logueado (userId):', userId);
+
       const response = await fetch(`${baseURL}/api/create-session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ syncHistory, deviceId })
+        body: JSON.stringify({
+          syncHistory,
+          deviceId,
+          ownerPhone: userId // ✅ Vincular sesión con el usuario logueado
+        })
       });
 
       const data = await response.json();

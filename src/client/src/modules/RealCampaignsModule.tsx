@@ -378,8 +378,16 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
       console.log('[CAMPAIGNS] Cargando sesiones para:', currentSessionId);
 
-      // ✅ Pasar sessionId en el query
-      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active?sessionId=${currentSessionId}`);
+      // ✅ Pasar sessionId en el query y token en headers
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const headers: any = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active?sessionId=${currentSessionId}`, {
+        headers
+      });
       const data = await response.json();
 
       console.log('[CAMPAIGNS] Sesiones recibidas:', data.sessions?.length || 0);

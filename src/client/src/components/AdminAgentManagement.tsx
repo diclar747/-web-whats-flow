@@ -89,14 +89,14 @@ const AdminAgentManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(0);
-  
+
   // ✅ OBTENER SESIÓN REAL DEL USUARIO CONECTADO
   const [sessionId] = useState(() => {
-    return sessionStorage.getItem('whatsflow_session') || 
-           localStorage.getItem('whatsflow_session') || 
-           sessionStorage.getItem('sessionId') ||
-           localStorage.getItem('sessionId') ||
-           'default';
+    return sessionStorage.getItem('whatsflow_session') ||
+      localStorage.getItem('whatsflow_session') ||
+      sessionStorage.getItem('sessionId') ||
+      localStorage.getItem('sessionId') ||
+      'default';
   });
 
   // Dialogs
@@ -124,7 +124,7 @@ const AdminAgentManagement: React.FC = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [loadingContacts, setLoadingContacts] = useState(false);
-  
+
   // ✅ Ref para el debounce timer
   const searchTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
@@ -207,23 +207,23 @@ const AdminAgentManagement: React.FC = () => {
   const loadContacts = async (searchTerm: string = '') => {
     try {
       setLoadingContacts(true);
-      
+
       // ✅ OBTENER SESIÓN ACTUAL DEL USUARIO CONECTADO
-      const currentSessionId = sessionStorage.getItem('whatsflow_session') || 
-                               localStorage.getItem('whatsflow_session') || 
-                               sessionStorage.getItem('sessionId') ||
-                               localStorage.getItem('sessionId') ||
-                               sessionId;
-      
+      const currentSessionId = sessionStorage.getItem('whatsflow_session') ||
+        localStorage.getItem('whatsflow_session') ||
+        sessionStorage.getItem('sessionId') ||
+        localStorage.getItem('sessionId') ||
+        sessionId;
+
       console.log('[LOAD-CONTACTS] 🔍 Buscando contactos para sesión:', currentSessionId);
       console.log('[LOAD-CONTACTS] 🔎 Término de búsqueda:', searchTerm || 'TODOS');
-      
+
       // ✅ Siempre usar búsqueda, incluso si está vacío
       const searchParam = `&search=${encodeURIComponent(searchTerm || '')}`;
       const url = `${apiUrl}/api/contacts/${currentSessionId}?limit=100${searchParam}`;
-      
+
       console.log('[LOAD-CONTACTS] 📡 URL:', url);
-      
+
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -242,7 +242,7 @@ const AdminAgentManagement: React.FC = () => {
         totalContactos: data.contacts?.length || 0,
         mensaje: data.message || 'Sin mensaje'
       });
-      
+
       if (data.success && data.contacts) {
         // Filtrar solo contactos individuales (no grupos)
         const individualContacts = data.contacts.filter((c: any) => c.jid && c.jid.endsWith('@s.whatsapp.net'));
@@ -354,7 +354,8 @@ const AdminAgentManagement: React.FC = () => {
       // Intentar obtener sessionId del storage si no está en estado
       const adminSessionId = sessionStorage.getItem('whatsflow_session') || sessionId;
 
-      const response = await fetch(`${apiUrl}/api/agents/create`, {
+      // ✅ Usar ruta plana para evitar redirecciones 301 a GET y conflictos con :id
+      const response = await fetch(`${apiUrl}/api/agents-create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -850,11 +851,11 @@ const AdminAgentManagement: React.FC = () => {
               inputValue={newAgentName}
               loading={loadingContacts}
               noOptionsText={
-                newAgentName.length < 2 
-                  ? "Escribe al menos 2 letras para buscar" 
-                  : loadingContacts 
-                  ? "Buscando..." 
-                  : "No se encontraron contactos"
+                newAgentName.length < 2
+                  ? "Escribe al menos 2 letras para buscar"
+                  : loadingContacts
+                    ? "Buscando..."
+                    : "No se encontraron contactos"
               }
               getOptionLabel={(option) => {
                 if (typeof option === 'string') return option;
@@ -864,12 +865,12 @@ const AdminAgentManagement: React.FC = () => {
               onInputChange={(event, value, reason) => {
                 console.log('[AUTOCOMPLETE] onInputChange:', { value, reason, length: value.length });
                 setNewAgentName(value);
-                
+
                 // Limpiar timeout anterior
                 if (searchTimeoutRef.current) {
                   clearTimeout(searchTimeoutRef.current);
                 }
-                
+
                 // Búsqueda con debounce
                 if (value && value.length >= 2) {
                   // Usar setTimeout para debounce
@@ -888,9 +889,9 @@ const AdminAgentManagement: React.FC = () => {
                   const name = value.name || value.notify_name || '';
                   const phone = value.jid?.split('@')[0] || '';
                   const avatar = value.avatar_url || '';
-                  
+
                   console.log('[AUTOCOMPLETE] Contacto seleccionado:', { name, phone });
-                  
+
                   setNewAgentName(name);
                   setNewAgentPhone(phone);
                   setNewAgentAvatar(avatar);
@@ -906,13 +907,13 @@ const AdminAgentManagement: React.FC = () => {
                   label="Nombre Completo *"
                   required
                   helperText={
-                    loadingContacts 
-                      ? "🔍 Buscando contactos..." 
-                      : contacts.length > 0 
-                      ? `✅ ${contacts.length} contacto(s) encontrado(s)` 
-                      : newAgentName.length >= 2 
-                      ? "⚠️ No se encontraron contactos con ese nombre"
-                      : "💡 Escribe al menos 2 letras para buscar en tus contactos"
+                    loadingContacts
+                      ? "🔍 Buscando contactos..."
+                      : contacts.length > 0
+                        ? `✅ ${contacts.length} contacto(s) encontrado(s)`
+                        : newAgentName.length >= 2
+                          ? "⚠️ No se encontraron contactos con ese nombre"
+                          : "💡 Escribe al menos 2 letras para buscar en tus contactos"
                   }
                   InputProps={{
                     ...params.InputProps,

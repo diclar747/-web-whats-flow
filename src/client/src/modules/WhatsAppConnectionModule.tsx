@@ -179,8 +179,10 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
     }
   };
 
-  const startQrFlow = async () => {
-    if (!resolvedSessionId) {
+  const startQrFlow = async (targetSessionId?: string) => {
+    const sessionToUse = targetSessionId || resolvedSessionId;
+
+    if (!sessionToUse) {
       setWaError('No hay sessionId disponible. Vuelve a iniciar sesión.');
       return;
     }
@@ -193,7 +195,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       const response = await sessionFetch(`/api/whatsapp/qr-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: resolvedSessionId })
+        body: JSON.stringify({ sessionId: sessionToUse })
       });
 
       if (!response.ok) {
@@ -212,7 +214,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       // Iniciar polling para detectar cuando se escanea el QR (más frecuente para detección rápida)
       qrPollRef.current = setInterval(async () => {
         try {
-          const statusResponse = await sessionFetch(`/api/sessions/active?sessionId=${encodeURIComponent(resolvedSessionId)}`, {
+          const statusResponse = await sessionFetch(`/api/sessions/active?sessionId=${encodeURIComponent(sessionToUse)}`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
           });
@@ -257,7 +259,14 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
         throw new Error(errorData.message || 'Error al reconectar');
       }
 
-      await fetchActiveSessions();
+      const data = await response.json();
+
+      if (!data.isConnected) {
+        console.log('[RECONNECT] Sesión no conectada automáticamente, iniciando flujo QR para:', targetSessionId);
+        startQrFlow(targetSessionId);
+      } else {
+        await fetchActiveSessions();
+      }
     } catch (err: any) {
       console.error('[WHATSAPP] Error al reconectar:', err);
       setWaError(err.message || 'Error al reconectar sesión');
@@ -351,7 +360,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                 <Button
                   variant="contained"
                   startIcon={<QrCode />}
-                  onClick={startQrFlow}
+                  onClick={() => startQrFlow()}
                   disabled={qrState.isLoading || (Number.isFinite(normalizedMaxChannels) && waSessions.length >= normalizedMaxChannels)}
                   sx={{
                     bgcolor: '#25d366',
@@ -398,7 +407,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                   <Button
                     variant="outlined"
                     startIcon={<Refresh />}
-                    onClick={startQrFlow}
+                    onClick={() => startQrFlow()}
                     sx={{ mt: 2 }}
                     disabled={qrState.isLoading}
                   >
@@ -539,7 +548,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                           onClick={() => openDisconnectDialog(session.sessionId)}
                           startIcon={<Delete />}
                         >
-                          Desconectar
+                          Eliminar
                         </Button>
                       </Stack>
                     </ListItem>
@@ -553,17 +562,17 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
 
       {/* Dialog de confirmación de desconexión */}
       <Dialog open={disconnectDialog.open} onClose={closeDisconnectDialog}>
-        <DialogTitle>Confirmar desconexión</DialogTitle>
+        <DialogTitle>Confirmar eliminación</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            ¿Estás seguro de que deseas desconectar esta sesión de WhatsApp?
-            Podrás reconectar en cualquier momento escaneando el código QR nuevamente.
+            ¿Estás seguro de que deseas eliminar esta sesión de WhatsApp?
+            Esto eliminará la conexión y los archivos de autenticación. Podrás reconectar en cualquier momento escaneando el código QR nuevamente.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeDisconnectDialog}>Cancelar</Button>
           <Button onClick={confirmDisconnect} color="error" variant="contained">
-            Desconectar
+            Eliminar
           </Button>
         </DialogActions>
       </Dialog>

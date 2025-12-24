@@ -21,7 +21,11 @@ import {
   VisibilityOff
 } from '@mui/icons-material';
 
-const AgentLogin: React.FC = () => {
+interface AgentLoginProps {
+  onLoginSuccess?: (userData: any, authToken: string, sessionId?: string) => void;
+}
+
+const AgentLogin: React.FC<AgentLoginProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -57,14 +61,14 @@ const AgentLogin: React.FC = () => {
         sessionStorage.setItem('userName', data.user.name);
         sessionStorage.setItem('userId', data.user.id);
         sessionStorage.setItem('sessionToken', data.sessionToken); // Token único de sesión
-        
+
         // Si es agente o supervisor y viene sessionId, guardarlo
         if ((data.user.role === 'agent' || data.user.role === 'supervisor') && data.sessionId) {
           sessionStorage.setItem('whatsflow_session', data.sessionId);
           sessionStorage.setItem('whatsflow_user_type', 'agent');
           console.log('✅ SessionId asignado:', data.sessionId);
         }
-        
+
         // 🔄 PERSISTENCIA: Para AGENTES, guardar backup en localStorage
         if (data.user.role === 'agent' || data.user.role === 'supervisor') {
           localStorage.setItem('agent_token_backup', data.token);
@@ -81,9 +85,13 @@ const AgentLogin: React.FC = () => {
           localStorage.removeItem('whatsflow_session');
           localStorage.removeItem('whatsflow_user_type');
         }
-        
+
         console.log('✅ Login exitoso (sesión única):', data.user);
-        
+
+        if (onLoginSuccess) {
+          onLoginSuccess(data.user, data.token, data.sessionId);
+        }
+
         // Redirigir al dashboard principal (no a rutas separadas)
         navigate('/dashboard');
       } else {

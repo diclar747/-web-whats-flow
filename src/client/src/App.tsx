@@ -88,7 +88,7 @@ const AppContent: React.FC<{
           (sessionId || (token && user)) ? (
             <Navigate to="/dashboard" replace />
           ) : (
-            <Login />
+            <Login onLoginSuccess={handleLoginSuccess} />
           )
         } />
 
@@ -355,8 +355,15 @@ const App: React.FC = () => {
 
         console.log('✅ [APP-INIT] Usuario autenticado con JWT restaurado:', restoredUser.email);
 
-        // 🔧 FIX: SIEMPRE verificar y sincronizar sessionId con el backend
-        console.log('🔄 Verificando sessionId con el backend...');
+        // 🔧 FIX: Priorizar sessionId guardado, luego verificar con backend
+        // Si hay sessionId guardado, usarlo inmediatamente para evitar pantalla en blanco
+        if (savedSessionId) {
+          console.log('✅ Usando sessionId guardado:', savedSessionId);
+          setSessionId(savedSessionId);
+        }
+
+        // Luego verificar en background si hay una sesión más reciente
+        console.log('🔄 Verificando sessionId con el backend en background...');
         try {
           const sessionsResp = await fetch('/api/sessions/active', {
             headers: {
@@ -370,30 +377,23 @@ const App: React.FC = () => {
             const activeSession = sessionsData.sessions[0];
             const foundSessionId = activeSession.sessionId;
 
-            // Si el sessionId guardado es diferente al del backend, actualizarlo
+            // Si el sessionId del backend es diferente, actualizarlo
             if (savedSessionId !== foundSessionId) {
               console.log(`🔄 Actualizando sessionId: ${savedSessionId} → ${foundSessionId}`);
               sessionStorage.setItem('whatsflow_session', foundSessionId);
               localStorage.setItem('whatsflow_session', foundSessionId);
               setSessionId(foundSessionId);
             } else {
-              console.log('✅ SessionId ya sincronizado:', foundSessionId);
-              setSessionId(foundSessionId);
+              console.log('✅ SessionId confirmado con backend:', foundSessionId);
             }
-          } else if (savedSessionId) {
-            // Si hay sessionId guardado pero el backend no tiene sesiones activas, mantenerlo por ahora
-            console.log('⚠️ No hay sesiones activas en backend, manteniendo sessionId guardado:', savedSessionId);
-            setSessionId(savedSessionId);
           } else {
-            console.log('⚠️ No se encontró sesión activa de WhatsApp para este usuario');
+            // Backend no tiene sesiones activas, pero mantenemos el guardado
+            console.log('⚠️ Backend sin sesiones activas, manteniendo sessionId guardado:', savedSessionId);
           }
         } catch (fetchError) {
           console.error('❌ Error verificando sessionId:', fetchError);
-          // En caso de error, usar el sessionId guardado si existe
-          if (savedSessionId) {
-            console.log('⚠️ Usando sessionId guardado por error de red:', savedSessionId);
-            setSessionId(savedSessionId);
-          }
+          // En caso de error, ya tenemos el sessionId guardado establecido
+          console.log('⚠️ Manteniendo sessionId guardado por error de red:', savedSessionId);
         }
 
         setLoading(false);
@@ -826,6 +826,19 @@ const App: React.FC = () => {
       } catch { }
 
       console.log('✅ Usuario autenticado con JWT:', userData.full_name, '| sessionId:', effectiveSessionId);
+
+      // ✅ NAVEGACIÓN: Redirigir al dashboard después del login exitoso
+      setTimeout(() => {
+        const nav = (window as any).__reactNavigate;
+        if (nav) {
+          console.log('🔄 Redirigiendo a /dashboard...');
+          nav('/dashboard');
+        } else {
+          console.warn('⚠️ __reactNavigate no disponible, usando window.location');
+          window.location.href = '/dashboard';
+        }
+      }, 100); // Pequeño delay para asegurar que el estado se actualice primero
+
       return;
     }
 

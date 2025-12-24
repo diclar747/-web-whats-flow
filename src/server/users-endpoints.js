@@ -3,6 +3,11 @@ const jwt = require('jsonwebtoken');
 const { generateDeviceFingerprint, getDeviceInfo } = require('./utils/deviceFingerprint');
 
 module.exports = function (app, pool) {
+    // FIX: Fallback to global.dbPool if pool is not passed correctly
+    if (!pool && global.dbPool) {
+        pool = global.dbPool;
+        console.log('[USERS] ⚠️ Using global.dbPool fallback');
+    }
     // Resolver sessionId cuando viene como owner_phone_number (hex) o phone (numérico)
     const resolveSessionId = async (rawId) => {
         if (!rawId) return rawId;
@@ -53,7 +58,9 @@ module.exports = function (app, pool) {
                 return res.status(400).json({ success: false, error: 'Email y contraseña son requeridos' });
             }
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // Buscar usuario por email
@@ -148,7 +155,9 @@ module.exports = function (app, pool) {
                 return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // Buscar usuario por ID
@@ -193,7 +202,9 @@ module.exports = function (app, pool) {
             const { role, department, status } = req.query;
             const sessionIdRaw = req.query.sessionId;
             const sessionId = await resolveSessionId(sessionIdRaw);
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 let query = 'SELECT id, name, email, role, department, category, status, agent_status, avatar_url, phone, last_login, created_at, session_id FROM users WHERE 1=1';
@@ -234,12 +245,10 @@ module.exports = function (app, pool) {
     // Obtener perfil de un usuario específico
     app.get('/api/users/:id/profile', async (req, res) => {
         try {
-            if (!pool) {
-                return res.status(503).json({ success: false, error: 'DB service unavailable' });
-            }
-
             const { id } = req.params;
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 const [users] = await connection.execute(
@@ -279,7 +288,9 @@ module.exports = function (app, pool) {
                 return res.status(400).json({ success: false, error: 'sessionId es requerido' });
             }
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // Verificar si el email ya existe para este sessionId
@@ -340,7 +351,9 @@ module.exports = function (app, pool) {
             const { id } = req.params;
             const { name, email, password, role, department, category, status, phone } = req.body;
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // Verificar si el usuario existe
@@ -436,7 +449,9 @@ module.exports = function (app, pool) {
                 return res.status(400).json({ success: false, error: 'Status inválido' });
             }
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // Verificar si el usuario existe
@@ -492,7 +507,9 @@ module.exports = function (app, pool) {
             const { id } = req.params;
             console.log(`🔍 Intentando eliminar usuario con ID: ${id}`);
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // Primero verificar si el usuario existe
@@ -526,7 +543,9 @@ module.exports = function (app, pool) {
             }
 
             const { userId } = req.params;
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // Obtener chats asignados al usuario con información de contacto y mensajes
@@ -579,7 +598,9 @@ module.exports = function (app, pool) {
                 return res.status(400).json({ success: false, error: 'Faltan parámetros requeridos' });
             }
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // Verificar que el chat esté asignado al usuario de origen
@@ -641,7 +662,9 @@ module.exports = function (app, pool) {
                 return res.status(400).json({ success: false, error: 'chatJid, sessionId y userId son requeridos' });
             }
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // Cerrar asignación anterior si existe
@@ -685,7 +708,9 @@ module.exports = function (app, pool) {
                 return res.status(400).json({ success: false, error: 'Estado inválido' });
             }
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // Actualizar estado en chat_assignments
@@ -722,7 +747,9 @@ module.exports = function (app, pool) {
                 return res.status(400).json({ success: false, error: 'Faltan parámetros requeridos' });
             }
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // Registrar transferencia
@@ -765,7 +792,9 @@ module.exports = function (app, pool) {
             const { userId } = req.params;
             const { sessionId } = req.query;
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 let query = `
@@ -813,7 +842,9 @@ module.exports = function (app, pool) {
                 return res.status(503).json({ success: false, error: 'DB service unavailable' });
             }
 
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 // 1. Obtener todos los usuarios
@@ -887,7 +918,9 @@ module.exports = function (app, pool) {
             }
 
             const { sessionId } = req.query;
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 let query = `
@@ -938,7 +971,9 @@ module.exports = function (app, pool) {
             }
 
             const { sessionId } = req.params;
-            const connection = await pool.getConnection();
+            const dbPool = pool || global.dbPool;
+            if (!dbPool) return res.status(503).json({ success: false, error: 'Database not initialized' });
+            const connection = await dbPool.getConnection();
 
             try {
                 const [assignments] = await connection.execute(`

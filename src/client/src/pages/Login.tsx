@@ -2,7 +2,11 @@ import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import './AuthPages.css';
 
-const Login = () => {
+interface LoginProps {
+    onLoginSuccess?: (userData: any, authToken: string, sessionId?: string) => void;
+}
+
+const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const [formData, setFormData] = useState({
@@ -71,6 +75,11 @@ const Login = () => {
                 });
 
                 console.log('✅ Login exitoso:', data.user.email, 'sessionId:', sessionIdFromLogin);
+
+                // Actualizar estado global en App.tsx antes de navegar
+                if (onLoginSuccess) {
+                    onLoginSuccess(data.user, data.token, sessionIdFromLogin);
+                }
 
                 // ✅ Usar navigate en lugar de window.location para NO perder el sessionStorage
                 navigate('/dashboard');
