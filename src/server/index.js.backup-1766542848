@@ -23709,218 +23709,6 @@ app.use('/api/statuses', statusesRouter);
 console.log('✅ Router de Estados de WhatsApp cargado');
 
 // Ruta catch-all para servir index.html (debe estar al final, después de todas las rutas API)
-// ============================================
-// ADMIN PANEL ENDPOINTS
-// ============================================
-
-// Middleware para verificar super admin
-const verifySuperAdmin = (req, res, next) => {
-    console.log('[VERIFY-SUPER-ADMIN] Verificando acceso super admin...');
-    const authHeader = req.headers['authorization'];
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        console.log('[VERIFY-SUPER-ADMIN] ❌ Token no proporcionado');
-        return res.status(401).json({ success: false, error: 'Token no proporcionado' });
-    }
-    const token = authHeader.substring(7);
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
-        console.log('[VERIFY-SUPER-ADMIN] Token decodificado:', { role: decoded.role, is_super_admin: decoded.is_super_admin, email: decoded.email });
-        if (decoded.role === 'super_admin' || decoded.role === 'superadmin' || decoded.is_super_admin) {
-            console.log('[VERIFY-SUPER-ADMIN] ✅ Acceso permitido');
-            req.user = decoded;
-            next();
-        } else {
-            console.log('[VERIFY-SUPER-ADMIN] ❌ No es super admin');
-            return res.status(403).json({ success: false, error: 'Acceso denegado. Solo super admins.' });
-        }
-    } catch (err) {
-        console.log('[VERIFY-SUPER-ADMIN] ❌ Token inválido:', err.message);
-        return res.status(401).json({ success: false, error: 'Token inválido' });
-    }
-};
-
-// GET /api/clients - Obtener todos los clientes
-app.get('/api/clients', verifySuperAdmin, async (req, res) => {
-    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
-    try {
-        const connection = await pool.getConnection();
-        try {
-            const [clients] = await connection.execute(`
-                SELECT u.id, u.name, u.email, u.phone, u.status, u.is_blocked, u.last_seen,
-                       p.name as plan_name, p.id as plan_id,
-                       (SELECT COUNT(*) FROM user_sessions us WHERE us.phone = u.phone AND us.is_active = 1) as is_connected
-                FROM users u
-                LEFT JOIN plans p ON u.plan_id = p.id
-                WHERE u.role != 'super_admin' AND u.is_super_admin != 1
-                ORDER BY u.created_at DESC
-            `);
-            res.json({ success: true, clients });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[ADMIN CLIENTS] ❌ Error:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo clientes' });
-    }
-});
-
-// GET /api/plans
-app.get('/api/plans', verifySuperAdmin, async (req, res) => {
-    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
-    try {
-        const connection = await pool.getConnection();
-        try {
-            const [plans] = await connection.execute('SELECT * FROM plans ORDER BY price ASC');
-            res.json({ success: true, plans });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[ADMIN PLANS] ❌ Error:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo planes' });
-    }
-});
-
-// GET /api/subscriptions/plans
-app.get('/api/subscriptions/plans', verifySuperAdmin, async (req, res) => {
-    console.log('[ADMIN SUBSCRIPTION PLANS] 📥 Petición recibida');
-    if (!pool) {
-        console.log('[ADMIN SUBSCRIPTION PLANS] ❌ Pool no disponible');
-        return res.status(503).json({ success: false, error: 'Database not available' });
-    }
-    try {
-        const connection = await pool.getConnection();
-        console.log('[ADMIN SUBSCRIPTION PLANS] ✅ Conexión obtenida');
-        try {
-            const [plans] = await connection.execute(`
-                SELECT id, name as plan_name, name as plan_display_name, description, price,
-                       max_agents as max_users, max_channels, max_messages as max_messages_per_month,
-                       100 as max_campaigns, 10000 as max_contacts, 30 as duration_days,
-                       bot_enabled, api_enabled, 'active' as status
-                FROM plans ORDER BY price ASC
-            `);
-            console.log(`[ADMIN SUBSCRIPTION PLANS] ✅ ${plans.length} planes encontrados`);
-            res.json({ success: true, plans });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[ADMIN SUBSCRIPTION PLANS] ❌ Error:', error);
-        res.status(500).json({ success: false, error: 'Error obteniendo planes' });
-    }
-});
-
-// POST /api/subscriptions/plans
-app.post('/api/subscriptions/plans', verifySuperAdmin, async (req, res) => {
-    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
-    try {
-        const { plan_name, plan_display_name, description, price, max_users, max_channels, max_messages_per_month, bot_enabled, api_enabled } = req.body;
-        if (!plan_name || !price) return res.status(400).json({ success: false, error: 'Faltan campos requeridos' });
-        const connection = await pool.getConnection();
-        try {
-            const [result] = await connection.execute(
-                `INSERT INTO plans (name, description, price, max_agents, max_channels, max_messages, bot_enabled, api_enabled, max_sessions)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [plan_name, description || plan_display_name, price, max_users || 1, max_channels || 1, max_messages_per_month || 1000, bot_enabled ? 1 : 0, api_enabled ? 1 : 0, max_users || 1]
-            );
-            res.json({ success: true, plan_id: result.insertId });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[ADMIN CREATE PLAN] ❌ Error:', error);
-        res.status(500).json({ success: false, error: 'Error creando plan' });
-    }
-});
-
-// PUT /api/subscriptions/plans/:id
-app.put('/api/subscriptions/plans/:id', verifySuperAdmin, async (req, res) => {
-    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
-    try {
-        const { id } = req.params;
-        const { plan_name, plan_display_name, description, price, max_users, max_channels, max_messages_per_month, bot_enabled, api_enabled } = req.body;
-        const connection = await pool.getConnection();
-        try {
-            const [result] = await connection.execute(
-                `UPDATE plans SET name=?, description=?, price=?, max_agents=?, max_channels=?, max_messages=?, bot_enabled=?, api_enabled=?, max_sessions=? WHERE id=?`,
-                [plan_name, description, price, max_users, max_channels, max_messages_per_month, bot_enabled ? 1 : 0, api_enabled ? 1 : 0, max_users, id]
-            );
-            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
-            res.json({ success: true });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[ADMIN UPDATE PLAN] ❌ Error:', error);
-        res.status(500).json({ success: false, error: 'Error actualizando plan' });
-    }
-});
-
-// DELETE /api/subscriptions/plans/:id
-app.delete('/api/subscriptions/plans/:id', verifySuperAdmin, async (req, res) => {
-    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
-    try {
-        const { id } = req.params;
-        const connection = await pool.getConnection();
-        try {
-            const [users] = await connection.execute('SELECT COUNT(*) as count FROM users WHERE plan_id=?', [id]);
-            if (users[0].count > 0) return res.status(400).json({ success: false, error: `Hay ${users[0].count} usuarios con este plan` });
-            const [result] = await connection.execute('DELETE FROM plans WHERE id=?', [id]);
-            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
-            res.json({ success: true });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[ADMIN DELETE PLAN] ❌ Error:', error);
-        res.status(500).json({ success: false, error: 'Error eliminando plan' });
-    }
-});
-
-// POST /api/clients/:id/block
-app.post('/api/clients/:id/block', verifySuperAdmin, async (req, res) => {
-    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
-    try {
-        const { id } = req.params;
-        const { blocked } = req.body;
-        const connection = await pool.getConnection();
-        try {
-            const [result] = await connection.execute('UPDATE users SET is_blocked=? WHERE id=?', [blocked ? 1 : 0, id]);
-            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Cliente no encontrado' });
-            res.json({ success: true });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[ADMIN BLOCK CLIENT] ❌ Error:', error);
-        res.status(500).json({ success: false, error: 'Error actualizando cliente' });
-    }
-});
-
-// POST /api/clients/:id/assign-plan
-app.post('/api/clients/:id/assign-plan', verifySuperAdmin, async (req, res) => {
-    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
-    try {
-        const { id } = req.params;
-        const { plan_id } = req.body;
-        if (!plan_id) return res.status(400).json({ success: false, error: 'plan_id es requerido' });
-        const connection = await pool.getConnection();
-        try {
-            const [plans] = await connection.execute('SELECT id FROM plans WHERE id=?', [plan_id]);
-            if (plans.length === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
-            const [result] = await connection.execute('UPDATE users SET plan_id=? WHERE id=?', [plan_id, id]);
-            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Cliente no encontrado' });
-            res.json({ success: true });
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[ADMIN ASSIGN PLAN] ❌ Error:', error);
-        res.status(500).json({ success: false, error: 'Error asignando plan' });
-    }
-});
-
-console.log('[ADMIN PANEL ENDPOINTS] ✅ Endpoints del panel de administración registrados');
 app.get('*', (req, res) => {
     // Si la ruta empieza con /api/, devolver un error JSON en lugar de index.html
     if (req.path.startsWith('/api/')) {
@@ -24514,3 +24302,215 @@ app.post('/api/sessions/update-profile/:sessionId', async (req, res) => {
     }
 });
 
+// ============================================
+// ADMIN PANEL ENDPOINTS
+// ============================================
+
+// Middleware para verificar super admin
+const verifySuperAdmin = (req, res, next) => {
+    console.log('[VERIFY-SUPER-ADMIN] Verificando acceso super admin...');
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        console.log('[VERIFY-SUPER-ADMIN] ❌ Token no proporcionado');
+        return res.status(401).json({ success: false, error: 'Token no proporcionado' });
+    }
+    const token = authHeader.substring(7);
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        console.log('[VERIFY-SUPER-ADMIN] Token decodificado:', { role: decoded.role, is_super_admin: decoded.is_super_admin, email: decoded.email });
+        if (decoded.role === 'super_admin' || decoded.role === 'superadmin' || decoded.is_super_admin) {
+            console.log('[VERIFY-SUPER-ADMIN] ✅ Acceso permitido');
+            req.user = decoded;
+            next();
+        } else {
+            console.log('[VERIFY-SUPER-ADMIN] ❌ No es super admin');
+            return res.status(403).json({ success: false, error: 'Acceso denegado. Solo super admins.' });
+        }
+    } catch (err) {
+        console.log('[VERIFY-SUPER-ADMIN] ❌ Token inválido:', err.message);
+        return res.status(401).json({ success: false, error: 'Token inválido' });
+    }
+};
+
+// GET /api/clients - Obtener todos los clientes
+app.get('/api/clients', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const connection = await pool.getConnection();
+        try {
+            const [clients] = await connection.execute(`
+                SELECT u.id, u.name, u.email, u.phone, u.status, u.is_blocked, u.last_seen,
+                       p.name as plan_name, p.id as plan_id,
+                       (SELECT COUNT(*) FROM user_sessions us WHERE us.phone = u.phone AND us.is_active = 1) as is_connected
+                FROM users u
+                LEFT JOIN plans p ON u.plan_id = p.id
+                WHERE u.role != 'super_admin' AND u.is_super_admin != 1
+                ORDER BY u.created_at DESC
+            `);
+            res.json({ success: true, clients });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN CLIENTS] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error obteniendo clientes' });
+    }
+});
+
+// GET /api/plans
+app.get('/api/plans', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const connection = await pool.getConnection();
+        try {
+            const [plans] = await connection.execute('SELECT * FROM plans ORDER BY price ASC');
+            res.json({ success: true, plans });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN PLANS] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error obteniendo planes' });
+    }
+});
+
+// GET /api/subscriptions/plans
+app.get('/api/subscriptions/plans', verifySuperAdmin, async (req, res) => {
+    console.log('[ADMIN SUBSCRIPTION PLANS] 📥 Petición recibida');
+    if (!pool) {
+        console.log('[ADMIN SUBSCRIPTION PLANS] ❌ Pool no disponible');
+        return res.status(503).json({ success: false, error: 'Database not available' });
+    }
+    try {
+        const connection = await pool.getConnection();
+        console.log('[ADMIN SUBSCRIPTION PLANS] ✅ Conexión obtenida');
+        try {
+            const [plans] = await connection.execute(`
+                SELECT id, name as plan_name, name as plan_display_name, description, price,
+                       max_agents as max_users, max_channels, max_messages as max_messages_per_month,
+                       100 as max_campaigns, 10000 as max_contacts, 30 as duration_days,
+                       bot_enabled, api_enabled, 'active' as status
+                FROM plans ORDER BY price ASC
+            `);
+            console.log(`[ADMIN SUBSCRIPTION PLANS] ✅ ${plans.length} planes encontrados`);
+            res.json({ success: true, plans });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN SUBSCRIPTION PLANS] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error obteniendo planes' });
+    }
+});
+
+// POST /api/subscriptions/plans
+app.post('/api/subscriptions/plans', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const { plan_name, plan_display_name, description, price, max_users, max_channels, max_messages_per_month, bot_enabled, api_enabled } = req.body;
+        if (!plan_name || !price) return res.status(400).json({ success: false, error: 'Faltan campos requeridos' });
+        const connection = await pool.getConnection();
+        try {
+            const [result] = await connection.execute(
+                `INSERT INTO plans (name, description, price, max_agents, max_channels, max_messages, bot_enabled, api_enabled, max_sessions)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [plan_name, description || plan_display_name, price, max_users || 1, max_channels || 1, max_messages_per_month || 1000, bot_enabled ? 1 : 0, api_enabled ? 1 : 0, max_users || 1]
+            );
+            res.json({ success: true, plan_id: result.insertId });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN CREATE PLAN] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error creando plan' });
+    }
+});
+
+// PUT /api/subscriptions/plans/:id
+app.put('/api/subscriptions/plans/:id', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const { id } = req.params;
+        const { plan_name, plan_display_name, description, price, max_users, max_channels, max_messages_per_month, bot_enabled, api_enabled } = req.body;
+        const connection = await pool.getConnection();
+        try {
+            const [result] = await connection.execute(
+                `UPDATE plans SET name=?, description=?, price=?, max_agents=?, max_channels=?, max_messages=?, bot_enabled=?, api_enabled=?, max_sessions=? WHERE id=?`,
+                [plan_name, description, price, max_users, max_channels, max_messages_per_month, bot_enabled ? 1 : 0, api_enabled ? 1 : 0, max_users, id]
+            );
+            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+            res.json({ success: true });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN UPDATE PLAN] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error actualizando plan' });
+    }
+});
+
+// DELETE /api/subscriptions/plans/:id
+app.delete('/api/subscriptions/plans/:id', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const { id } = req.params;
+        const connection = await pool.getConnection();
+        try {
+            const [users] = await connection.execute('SELECT COUNT(*) as count FROM users WHERE plan_id=?', [id]);
+            if (users[0].count > 0) return res.status(400).json({ success: false, error: `Hay ${users[0].count} usuarios con este plan` });
+            const [result] = await connection.execute('DELETE FROM plans WHERE id=?', [id]);
+            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+            res.json({ success: true });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN DELETE PLAN] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error eliminando plan' });
+    }
+});
+
+// POST /api/clients/:id/block
+app.post('/api/clients/:id/block', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const { id } = req.params;
+        const { blocked } = req.body;
+        const connection = await pool.getConnection();
+        try {
+            const [result] = await connection.execute('UPDATE users SET is_blocked=? WHERE id=?', [blocked ? 1 : 0, id]);
+            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Cliente no encontrado' });
+            res.json({ success: true });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN BLOCK CLIENT] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error actualizando cliente' });
+    }
+});
+
+// POST /api/clients/:id/assign-plan
+app.post('/api/clients/:id/assign-plan', verifySuperAdmin, async (req, res) => {
+    if (!pool) return res.status(503).json({ success: false, error: 'Database not available' });
+    try {
+        const { id } = req.params;
+        const { plan_id } = req.body;
+        if (!plan_id) return res.status(400).json({ success: false, error: 'plan_id es requerido' });
+        const connection = await pool.getConnection();
+        try {
+            const [plans] = await connection.execute('SELECT id FROM plans WHERE id=?', [plan_id]);
+            if (plans.length === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+            const [result] = await connection.execute('UPDATE users SET plan_id=? WHERE id=?', [plan_id, id]);
+            if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Cliente no encontrado' });
+            res.json({ success: true });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[ADMIN ASSIGN PLAN] ❌ Error:', error);
+        res.status(500).json({ success: false, error: 'Error asignando plan' });
+    }
+});
+
+console.log('[ADMIN PANEL ENDPOINTS] ✅ Endpoints del panel de administración registrados');
