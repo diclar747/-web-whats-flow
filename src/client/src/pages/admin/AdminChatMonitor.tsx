@@ -192,15 +192,16 @@ const AdminChatMonitor: React.FC = () => {
   return (
     <Box sx={{ display: 'flex', gap: 2, p: 2 }}>
       <Box sx={{ width: 360 }}>
-        <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold' }}>
+        <Typography variant="h6" sx={{ mb: 1, fontWeight: 'bold', color: 'white' }}>
           Chats en tiempo real {isConnected ? '· Conectado' : '· Desconectado'}
         </Typography>
         <Paper
           variant="outlined"
-          sx={theme => ({
-            bgcolor: theme.palette.background.paper,
-            borderColor: theme.palette.divider
-          })}
+          sx={{
+            bgcolor: '#1a1a2e',
+            borderColor: 'rgba(255,255,255,0.1)',
+            color: 'white'
+          }}
         >
           <List dense>
             {chats.map(chat => (
@@ -227,15 +228,22 @@ const AdminChatMonitor: React.FC = () => {
                   </ListItemAvatar>
                   <ListItemText
                     primary={chat.name || chat.id}
+                    secondaryTypographyProps={{ sx: { color: 'rgba(255,255,255,0.6)' } }}
+                    primaryTypographyProps={{ sx: { color: 'white', fontWeight: 600 } }}
                     secondary={`${chat.lastMessage || ''} · ${chat.updatedAt ? formatDistanceToNow(new Date(chat.updatedAt), { locale: es }) : ''}`}
                   />
                 </ListItem>
-                <Divider />
+                <Divider sx={{ borderColor: 'rgba(255,255,255,0.05)' }} />
               </React.Fragment>
             ))}
             {chats.length === 0 && (
               <ListItem>
-                <ListItemText primary="Sin actividad reciente" secondary="Conecte WhatsApp para iniciar el monitoreo" />
+                <ListItemText
+                  primary="Sin actividad reciente"
+                  secondary="Conecte WhatsApp para iniciar el monitoreo"
+                  primaryTypographyProps={{ sx: { color: 'white' } }}
+                  secondaryTypographyProps={{ sx: { color: 'rgba(255,255,255,0.6)' } }}
+                />
               </ListItem>
             )}
           </List>
@@ -249,17 +257,17 @@ const AdminChatMonitor: React.FC = () => {
             onChange={(_, i) => setTab((['all', 'sent', 'received', 'statuses'] as any)[i])}
             variant="scrollable"
             scrollButtons="auto"
-            sx={theme => ({
+            sx={{
               '& .MuiTab-root': {
-                color: theme.palette.text.secondary
+                color: 'rgba(255,255,255,0.6)'
               },
               '& .MuiTab-root.Mui-selected': {
-                color: theme.palette.primary.light
+                color: 'primary.light'
               },
               '& .MuiTabs-indicator': {
-                backgroundColor: theme.palette.primary.main
+                backgroundColor: 'primary.main'
               }
-            })}
+            }}
           >
             <Tab label="Todos" />
             <Tab label="Enviados" />
@@ -271,17 +279,27 @@ const AdminChatMonitor: React.FC = () => {
             placeholder="Buscar mensaje, JID o agente..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            sx={{ ml: 'auto', width: 360 }}
+            sx={{
+              ml: 'auto',
+              width: 360,
+              '& .MuiOutlinedInput-root': {
+                color: 'white',
+                '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.2)' }
+              },
+              '& .MuiInputBase-input::placeholder': { color: 'rgba(255,255,255,0.5)', opacity: 1 }
+            }}
           />
         </Box>
         <Paper
           variant="outlined"
-          sx={theme => ({
+          sx={{
             p: 2,
             minHeight: 520,
-            bgcolor: theme.palette.background.paper,
-            borderColor: theme.palette.divider
-          })}
+            bgcolor: '#1a1a2e',
+            borderColor: 'rgba(255,255,255,0.1)',
+            color: 'white'
+          }}
         >
           {tab === 'statuses' ? (
             <Box sx={{ minHeight: 480 }}>

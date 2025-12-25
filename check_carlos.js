@@ -10,7 +10,7 @@ async function check() {
     });
 
     try {
-        const [rows] = await pool.execute('DESCRIBE users');
+        const [rows] = await pool.execute('SELECT email, phone, is_admin, is_super_admin, subscription_plan, subscription_status FROM users WHERE email = "claudio@cnid.com.py"');
         console.log(JSON.stringify(rows, null, 2));
     } catch (err) {
         console.error(err);

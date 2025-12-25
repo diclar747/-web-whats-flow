@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
+const { requireSuperAdmin } = require('../auth-utils');
 const { checkAdmin } = require('../middleware/subscriptionMiddleware');
 
 module.exports = function (app, pool) {
@@ -85,7 +86,7 @@ module.exports = function (app, pool) {
 
                     // Buscar sesión activa del super admin para enviar el mensaje
                     const [adminSession] = await connection.execute(
-                        'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+                        'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 LIMIT 1',
                         ['595994854167']
                     );
 
@@ -186,7 +187,7 @@ module.exports = function (app, pool) {
     // ============================================
 
     // GET /api/plan-requests - Admin obtiene todas las solicitudes
-    app.get('/api/plan-requests', async (req, res) => {
+    app.get('/api/plan-requests', authenticateToken, requireSuperAdmin, async (req, res) => {
         const status = req.query.status; // 'pending', 'approved', 'rejected', o undefined para todas
 
         console.log('[PLAN-REQUEST] GET /api/plan-requests - status:', status);
@@ -237,7 +238,7 @@ module.exports = function (app, pool) {
     });
 
     // PUT /api/plan-requests/:id/approve - Admin aprueba una solicitud
-    app.put('/api/plan-requests/:id/approve', async (req, res) => {
+    app.put('/api/plan-requests/:id/approve', authenticateToken, requireSuperAdmin, async (req, res) => {
         const { id } = req.params;
         const adminPhone = req.user?.phone || req.body?.adminPhone || '595994854167';
 
@@ -281,18 +282,17 @@ module.exports = function (app, pool) {
                     WHERE id = ?
                 `, [adminPhone, id]);
 
-                // Activar plan en user_sessions
+                // Activar plan en user_sessions y users
                 const startDate = new Date();
                 const endDate = new Date(startDate.getTime() + request.duration_days * 24 * 60 * 60 * 1000);
 
-                // Verificar si el usuario existe en user_sessions
+                // 1. Actualizar user_sessions
                 const [sessions] = await connection.execute(
-                    'SELECT * FROM user_sessions WHERE phone_number = ?',
+                    'SELECT * FROM user_sessions WHERE phone = ?',
                     [request.phone_number]
                 );
 
                 if (sessions.length > 0) {
-                    // Actualizar user_sessions
                     await connection.execute(`
                         UPDATE user_sessions
                         SET
@@ -301,33 +301,39 @@ module.exports = function (app, pool) {
                             subscription_start_date = ?,
                             subscription_end_date = ?,
                             subscription_days = ?
-                        WHERE phone_number = ?
-                    `, [
-                        request.plan_name,
-                        startDate,
-                        endDate,
-                        request.duration_days,
-                        request.phone_number
-                    ]);
-
+                        WHERE phone = ?
+                    `, [request.plan_name, startDate, endDate, request.duration_days, request.phone_number]);
                     console.log('[PLAN-REQUEST] Plan activado en user_sessions para:', request.phone_number);
                 } else {
-                    // Si no existe en user_sessions, crear entrada
                     await connection.execute(`
                         INSERT INTO user_sessions
-                        (phone_number, session_id, subscription_plan, subscription_status, subscription_start_date, subscription_end_date, subscription_days, is_active)
+                        (phone, session_id, subscription_plan, subscription_status, subscription_start_date, subscription_end_date, subscription_days, is_active)
                         VALUES (?, ?, ?, 'active', ?, ?, ?, 0)
-                    `, [
-                        request.phone_number,
-                        `session_${request.phone_number}`,
-                        request.plan_name,
-                        startDate,
-                        endDate,
-                        request.duration_days
-                    ]);
-
-                    console.log('[PLAN-REQUEST] Nuevo usuario creado en user_sessions:', request.phone_number);
+                    `, [request.phone_number, `session_${request.phone_number}`, request.plan_name, startDate, endDate, request.duration_days]);
                 }
+
+                // 2. Actualizar tabla users (SINCRONIZACIÓN CRÍTICA)
+                // Buscamos al usuario por su teléfono tanto en 'phone' como en 'admin_phone' (si es el admin quien solicitó para sí mismo)
+                await connection.execute(`
+                    UPDATE users 
+                    SET 
+                        subscription_plan = ?,
+                        subscription_status = 'active',
+                        subscription_start_date = ?,
+                        subscription_end_date = ?,
+                        subscription_days = ?,
+                        plan_id = ?
+                    WHERE phone = ? OR email = ?
+                `, [
+                    request.plan_name,
+                    startDate,
+                    endDate,
+                    request.duration_days,
+                    request.plan_id,
+                    request.phone_number,
+                    request.phone_number // Por si el teléfono está en el campo email (viejos registros)
+                ]);
+                console.log('[PLAN-REQUEST] Plan sincronizado en tabla users para:', request.phone_number);
 
                 await connection.commit();
 
@@ -345,7 +351,7 @@ module.exports = function (app, pool) {
 
                     // Buscar sesión activa del super admin para enviar el mensaje
                     const [adminSession] = await connection.execute(
-                        'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+                        'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 LIMIT 1',
                         ['595994854167']
                     );
 
@@ -389,7 +395,7 @@ module.exports = function (app, pool) {
     });
 
     // PUT /api/plan-requests/:id/reject - Admin rechaza una solicitud
-    app.put('/api/plan-requests/:id/reject', async (req, res) => {
+    app.put('/api/plan-requests/:id/reject', authenticateToken, requireSuperAdmin, async (req, res) => {
         const { id } = req.params;
         const { reason } = req.body;
         const adminPhone = req.user?.phone || req.body?.adminPhone || '595994854167';
@@ -449,7 +455,7 @@ module.exports = function (app, pool) {
     });
 
     // DELETE /api/plan-requests/:id - Admin elimina una solicitud
-    app.delete('/api/plan-requests/:id', checkAdmin, async (req, res) => {
+    app.delete('/api/plan-requests/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
         const { id } = req.params;
 
         try {

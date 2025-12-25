@@ -10,6 +10,7 @@ const generalLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { trustProxy: false }, // Desactivar validación estricta de proxy
     skip: (req) => {
         // Permitir requests desde localhost y IPs privadas
         const ip = req.ip || req.connection.remoteAddress;
@@ -32,6 +33,7 @@ const authLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { trustProxy: false }, // Desactivar validación estricta de proxy
     skipSuccessfulRequests: true // No contar requests exitosos
 });
 
@@ -44,7 +46,8 @@ const apiMessageLimiter = rateLimit({
         error: 'Límite de envío de mensajes alcanzado. Máximo 120 mensajes por minuto.'
     },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    validate: { trustProxy: false } // Desactivar validación estricta de proxy
 });
 
 // Rate limiter para webhooks
@@ -56,7 +59,8 @@ const webhookLimiter = rateLimit({
         error: 'Límite de webhooks alcanzado.'
     },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    validate: { trustProxy: false } // Desactivar validación estricta de proxy
 });
 
 // Rate limiter para QR code generation
@@ -68,7 +72,8 @@ const qrLimiter = rateLimit({
         error: 'Demasiadas solicitudes de código QR. Intenta más tarde.'
     },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    validate: { trustProxy: false } // Desactivar validación estricta de proxy
 });
 
 module.exports = {

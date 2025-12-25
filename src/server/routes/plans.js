@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
+const { requireSuperAdmin } = require('../auth-utils');
 const { requireAdmin } = require('../middleware/permissions');
 
 module.exports = function (app, pool) {
@@ -8,21 +9,21 @@ module.exports = function (app, pool) {
     // Para planes, solo Super Admin debería poder crear/editar? El usuario dijo "el super admin es el que se conecta con el 595994854167".
     // "dentro de panel admin vamos crear los planes precios" -> Solo accesible por Super Admin.
 
-    const requireSuperAdmin = async (req, res, next) => {
-        const user = req.user;
-        if (user && (user.phone === '595994854167' || user.email?.includes('595994854167') || user.is_super_admin)) {
-            next();
-        } else {
-            res.status(403).json({ success: false, error: 'Acceso denegado: Se requiere Super Admin' });
-        }
-    };
 
     // GET /api/plans - Listar todos los planes (sin autenticación requerida)
     app.get('/api/plans', async (req, res) => {
         try {
             const connection = await pool.getConnection();
             try {
-                const [plans] = await connection.execute('SELECT * FROM plans ORDER BY price ASC');
+                const [plans] = await connection.execute(`
+                    SELECT id, name, name as plan_name, name as plan_display_name, description, price, 
+                           max_agents, max_agents as max_users, 
+                           max_sessions, max_channels, 
+                           max_messages, max_messages as max_messages_per_month,
+                           100 as max_campaigns, 10000 as max_contacts, 30 as duration_days,
+                           bot_enabled, api_enabled, 'active' as status
+                    FROM plans ORDER BY price ASC
+                `);
                 res.json({ success: true, plans });
             } finally {
                 connection.release();
@@ -35,9 +36,26 @@ module.exports = function (app, pool) {
 
     // POST /api/plans - Crear plan
     app.post('/api/plans', authenticateToken, requireSuperAdmin, async (req, res) => {
-        const { name, description, price, modules, max_agents, max_sessions, max_channels, max_messages, bot_enabled, api_enabled } = req.body;
+        let {
+            name, plan_name,
+            description, plan_display_name,
+            price,
+            modules,
+            max_agents, max_users,
+            max_sessions,
+            max_channels,
+            max_messages, max_messages_per_month,
+            bot_enabled,
+            api_enabled
+        } = req.body;
 
-        if (!name || price === undefined) {
+        // Normalizar nombres de campos para compatibilidad con diferentes frontends
+        const finalName = name || plan_name;
+        const finalDescription = description || plan_display_name;
+        const finalMaxAgents = max_agents || max_users || 1;
+        const finalMaxMessages = max_messages || max_messages_per_month || 1000;
+
+        if (!finalName || price === undefined) {
             return res.status(400).json({ success: false, error: 'Nombre y precio son requeridos' });
         }
 
@@ -48,16 +66,16 @@ module.exports = function (app, pool) {
                     INSERT INTO plans (name, description, price, modules, max_agents, max_sessions, max_channels, max_messages, bot_enabled, api_enabled)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 `, [
-                    name,
-                    description,
+                    finalName,
+                    finalDescription,
                     price,
                     JSON.stringify(modules || []),
-                    max_agents || 1,
-                    max_sessions || 1,
+                    finalMaxAgents,
+                    max_sessions || finalMaxAgents,
                     max_channels || 1,
-                    max_messages || 1000,
-                    bot_enabled || false,
-                    api_enabled || false
+                    finalMaxMessages,
+                    bot_enabled ? 1 : 0,
+                    api_enabled ? 1 : 0
                 ]);
 
                 res.json({ success: true, message: 'Plan creado', id: result.insertId });
@@ -73,7 +91,24 @@ module.exports = function (app, pool) {
     // PUT /api/plans/:id - Editar plan
     app.put('/api/plans/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
         const { id } = req.params;
-        const { name, description, price, modules, max_agents, max_sessions, max_channels, max_messages, bot_enabled, api_enabled } = req.body;
+        let {
+            name, plan_name,
+            description, plan_display_name,
+            price,
+            modules,
+            max_agents, max_users,
+            max_sessions,
+            max_channels,
+            max_messages, max_messages_per_month,
+            bot_enabled,
+            api_enabled
+        } = req.body;
+
+        // Normalizar nombres de campos
+        const finalName = name || plan_name;
+        const finalDescription = description || plan_display_name;
+        const finalMaxAgents = max_agents || max_users;
+        const finalMaxMessages = max_messages || max_messages_per_month;
 
         try {
             const connection = await pool.getConnection();
@@ -83,16 +118,16 @@ module.exports = function (app, pool) {
                     SET name = ?, description = ?, price = ?, modules = ?, max_agents = ?, max_sessions = ?, max_channels = ?, max_messages = ?, bot_enabled = ?, api_enabled = ?
                     WHERE id = ?
                 `, [
-                    name,
-                    description,
+                    finalName,
+                    finalDescription,
                     price,
                     JSON.stringify(modules || []),
-                    max_agents,
-                    max_sessions,
+                    finalMaxAgents,
+                    max_sessions || finalMaxAgents,
                     max_channels,
-                    max_messages,
-                    bot_enabled,
-                    api_enabled,
+                    finalMaxMessages,
+                    bot_enabled ? 1 : 0,
+                    api_enabled ? 1 : 0,
                     id
                 ]);
 

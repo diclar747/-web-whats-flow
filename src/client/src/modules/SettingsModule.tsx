@@ -575,7 +575,29 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const subResponse = await fetch(`${getAPIBaseURL()}/api/subscriptions/my-subscription?phone=${sessionId}`, {
+        // Determinar el mejor identificador para la suscripción
+        let subscriptionIdentifier = sessionId;
+
+        // Si no hay sessionId, buscar en localStorage
+        if (!subscriptionIdentifier) {
+          const storedSession = sessionStorage.getItem('whatsflow_session') || sessionStorage.getItem('sessionId');
+          if (storedSession) subscriptionIdentifier = storedSession;
+        }
+
+        // Si tenemos un usuario guardado con teléfono, usar ese teléfono (es más confiable para planes)
+        if (savedUser) {
+          try {
+            const userData = JSON.parse(savedUser);
+            if (userData.phone || userData.phone_number) {
+              subscriptionIdentifier = userData.phone || userData.phone_number;
+              console.log('[SETTINGS] Usando teléfono del usuario guardado para suscripción:', subscriptionIdentifier);
+            }
+          } catch (e) { }
+        }
+
+        console.log('[SETTINGS] Fetching subscription for identifier:', subscriptionIdentifier);
+
+        const subResponse = await fetch(`${getAPIBaseURL()}/api/subscriptions/my-subscription?phone=${subscriptionIdentifier}`, {
           headers
         });
         const subData = await subResponse.json();
@@ -1082,14 +1104,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
   const confirmDisconnect = async () => {
     const { targetSessionId } = disconnectDialog;
     closeDisconnectDialog();
-    
+
     setSnackbar({ open: true, message: 'Eliminando conexión...', severity: 'info' });
-    
+
     await disconnectSession(targetSessionId);
-    
+
     // ✅ Actualizar lista inmediatamente
     await fetchActiveSessions();
-    
+
     setSnackbar({ open: true, message: 'Conexión eliminada exitosamente', severity: 'success' });
   };
 

@@ -221,7 +221,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [selectedDirection, setSelectedDirection] = useState<string>('all');
   const [page, setPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(15);
+  const [rowsPerPage, setRowsPerPage] = useState(15); // ⚡ Reducido a 15 líneas por página
   const [selectedMessages, setSelectedMessages] = useState<string[]>([]);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [selectedTab, setSelectedTab] = useState(0);
@@ -696,7 +696,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
             };
             localStorage.setItem(cacheKey, JSON.stringify(updatedCache));
           }
-        } catch {}
+        } catch { }
       }
     };
 

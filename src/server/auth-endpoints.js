@@ -132,7 +132,7 @@ function registerAuthEndpoints(app, pool) {
             try {
                 // Buscar usuario en tabla 'users' (email/password login)
                 const [users] = await connection.execute(
-                    `SELECT id, name as full_name, email, phone as phone_number, password, role, status
+                    `SELECT id, name as full_name, email, phone as phone_number, password, role, status, is_super_admin
                      FROM users WHERE email = ?`,
                     [email]
                 );
@@ -181,6 +181,39 @@ function registerAuthEndpoints(app, pool) {
                 const token = generateToken(user, userRole);
 
                 console.log(`[AUTH] Login exitoso: ${email} | Role: ${userRole}`);
+
+                // 🔥 AUTO-LEVANTAR SESIÓN: Si el usuario tiene sesión guardada, levantarla automáticamente
+                const sessions = global.sessions;
+                if (sessions && user.phone_number) {
+                    const userSessionId = String(user.id);
+                    
+                    // Verificar si ya existe en memoria
+                    if (!sessions.has(userSessionId)) {
+                        // Buscar si tiene archivos de credenciales guardados
+                        const path = require('path');
+                        const fs = require('fs');
+                        const authPath = path.join(process.cwd(), 'auth_info_multi', userSessionId);
+                        const credsPath = path.join(authPath, 'creds.json');
+                        
+                        if (fs.existsSync(credsPath)) {
+                            console.log(`[AUTH] 🚀 Levantando sesión automáticamente para usuario ${user.id} (${user.phone_number})`);
+                            
+                            // Levantar sesión de forma asíncrona (no esperar para responder rápido)
+                            const createSession = global.createSession;
+                            if (createSession) {
+                                createSession(userSessionId, false, true).then(() => {
+                                    console.log(`[AUTH] ✅ Sesión ${userSessionId} levantada exitosamente`);
+                                }).catch(err => {
+                                    console.error(`[AUTH] ❌ Error levantando sesión ${userSessionId}:`, err.message);
+                                });
+                            }
+                        } else {
+                            console.log(`[AUTH] ℹ️ Usuario ${user.id} no tiene sesión guardada (necesitará escanear QR)`);
+                        }
+                    } else {
+                        console.log(`[AUTH] ✅ Sesión ${userSessionId} ya está activa en memoria`);
+                    }
+                }
 
                 res.json({
                     success: true,
@@ -366,20 +399,8 @@ function registerAuthEndpoints(app, pool) {
             const connection = await dbPool.getConnection();
 
             try {
-                let userId = req.user.id;
-
-                // Buscar usuario por email si no hay ID
-                if (!userId && req.user.email) {
-                    console.log('[AUTH] 🔍 Buscando usuario por email:', req.user.email);
-                    const [users] = await connection.execute(
-                        'SELECT id FROM user_sessions WHERE email = ? LIMIT 1',
-                        [req.user.email]
-                    );
-
-                    if (users.length > 0) {
-                        userId = users[0].id;
-                    }
-                }
+                // El userId viene del JWT (users.id)
+                const userId = req.user.id;
 
                 if (!userId) {
                     connection.release();
@@ -389,16 +410,37 @@ function registerAuthEndpoints(app, pool) {
                     });
                 }
 
-                // Actualizar session_id en user_sessions
-                const [result] = await connection.execute(
-                    `UPDATE user_sessions 
-                     SET session_id = ?, 
-                         is_active = 1,
-                         updated_at = NOW(),
-                         last_activity = NOW()
-                     WHERE id = ?`,
-                    [whatsappSessionId, userId]
+                // 🔥 LÓGICA CORRECTA:
+                // - session_id en user_sessions = users.id (userId) ← CRÍTICO
+                // - is_active = 1 mientras hay conexión WhatsApp activa en memoria
+
+                // Buscar si ya existe user_sessions para este usuario
+                const [existingRows] = await connection.execute(
+                    'SELECT id FROM user_sessions WHERE session_id = ? LIMIT 1',
+                    [userId]
                 );
+
+                let result;
+                if (existingRows.length > 0) {
+                    // Actualizar existente: marcar como activo
+                    [result] = await connection.execute(
+                        `UPDATE user_sessions 
+                         SET is_active = 1,
+                             updated_at = NOW(),
+                             last_activity = NOW()
+                         WHERE session_id = ?`,
+                        [userId]
+                    );
+                    console.log(`[AUTH-LINK] ✅ Sesión WhatsApp activada para usuario ${userId}`);
+                } else {
+                    // Crear nueva entrada con session_id = user.id
+                    [result] = await connection.execute(
+                        `INSERT INTO user_sessions (session_id, email, is_active, updated_at, last_activity)
+                         VALUES (?, ?, 1, NOW(), NOW())`,
+                        [userId, req.user.email]
+                    );
+                    console.log(`[AUTH-LINK] ✅ Nueva sesión creada para usuario ${userId}`);
+                }
 
                 if (result.affectedRows === 0) {
                     connection.release();
@@ -408,15 +450,48 @@ function registerAuthEndpoints(app, pool) {
                     });
                 }
 
-                console.log(`[AUTH] ✅ WhatsApp vinculado para usuario ${userId}`);
                 connection.release();
 
-                // Responder SIN RECARGAR - el cliente continuará el polling
+                // 🔥 ACTUALIZAR SESIÓN EN MEMORIA
+                // Buscar la sesión en memoria por el whatsappSessionId y guardar el userId
+                const sessions = global.sessions || new Map();
+                const sessionInfo = sessions.get(whatsappSessionId);
+                if (sessionInfo) {
+                    sessionInfo.userId = userId;  // ← Guardar userId en la sesión de memoria
+                    
+                    // Obtener el teléfono de la BD (users.phone)
+                    const dbPool = pool || global.dbPool;
+                    if (dbPool) {
+                        try {
+                            const userConn = await dbPool.getConnection();
+                            const [userRows] = await userConn.execute(
+                                'SELECT phone FROM users WHERE id = ? LIMIT 1',
+                                [userId]
+                            );
+                            userConn.release();
+                            
+                            if (userRows.length > 0 && userRows[0].phone) {
+                                sessionInfo.phoneNumber = userRows[0].phone;
+                                console.log(`[AUTH-LINK] ✅ phoneNumber guardado: ${userRows[0].phone}`);
+                            }
+                        } catch (phoneErr) {
+                            console.warn('[AUTH-LINK] ⚠️ Error obteniendo teléfono:', phoneErr.message);
+                        }
+                    }
+                    
+                    console.log(`[AUTH-LINK] 🔄 Sesión en memoria actualizada: sessionId=${whatsappSessionId}, userId=${userId}, isConnected=${sessionInfo.isConnected}`);
+                } else {
+                    console.warn(`[AUTH-LINK] ⚠️ Sesión en memoria NO encontrada para ${whatsappSessionId}`);
+                }
+
+                // Responder confirmando que la sesión está lista
                 return res.json({
                     success: true,
-                    message: 'WhatsApp vinculado',
-                    sessionId: whatsappSessionId,
-                    shouldReload: false // Indicar explícitamente NO recargar
+                    message: 'WhatsApp sesión activada',
+                    sessionId: userId,  // ← Devolver user.id, no el hex de Baileys
+                    userId: userId,
+                    userEmail: req.user.email,
+                    shouldReload: false
                 });
 
             } catch (dbError) {

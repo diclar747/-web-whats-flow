@@ -10,8 +10,13 @@ async function check() {
     });
 
     try {
-        const [rows] = await pool.execute('DESCRIBE users');
-        console.log(JSON.stringify(rows, null, 2));
+        console.log('--- plans ---');
+        const [rows1] = await pool.execute('SELECT * FROM plans');
+        console.log(JSON.stringify(rows1, null, 2));
+
+        console.log('--- subscription_plans ---');
+        const [rows2] = await pool.execute('SELECT * FROM subscription_plans');
+        console.log(JSON.stringify(rows2, null, 2));
     } catch (err) {
         console.error(err);
     } finally {

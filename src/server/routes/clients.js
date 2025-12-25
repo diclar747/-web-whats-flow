@@ -2,14 +2,7 @@ const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
 
 module.exports = function (app, pool) {
-    const requireSuperAdmin = async (req, res, next) => {
-        const user = req.user;
-        if (user && (user.phone === '595994854167' || user.email?.includes('595994854167') || user.is_super_admin)) {
-            next();
-        } else {
-            res.status(403).json({ success: false, error: 'Acceso denegado: Se requiere Super Admin' });
-        }
-    };
+    const { requireSuperAdmin } = require('../auth-utils');
 
     // GET /api/clients - Listar todos los clientes (usuarios que no son super admin)
     app.get('/api/clients', authenticateToken, requireSuperAdmin, async (req, res) => {

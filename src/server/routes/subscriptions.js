@@ -226,7 +226,7 @@ router.get('/plans', async (req, res) => {
 
     try {
       const [plans] = await connection.query(
-        'SELECT * FROM subscription_plans WHERE status = "active" ORDER BY price ASC'
+        'SELECT id, name as plan_name, name as plan_display_name, description, price, max_agents as max_users, max_messages as max_messages_per_month, max_channels, bot_enabled, api_enabled, 30 as duration_days FROM plans ORDER BY price ASC'
       );
 
       res.json({ success: true, plans });
@@ -435,13 +435,12 @@ router.delete('/plans/:id', checkAdmin, async (req, res) => {
 router.get('/my-subscription', async (req, res) => {
   console.log('[SUBSCRIPTIONS] 🔍 GET /my-subscription llamado, query:', req.query);
   const pool = getPool(req);
-  console.log('[SUBSCRIPTIONS] 🔍 Pool obtenido:', !!pool);
   if (!pool) {
-    console.log('[SUBSCRIPTIONS] ❌ Pool no disponible');
     return res.status(503).json({ success: false, error: 'Base de datos no disponible' });
   }
+
   try {
-    // ✅ Verificar si es super admin desde JWT PRIMERO
+    // 1. Identificar al usuario
     let isSuperAdminFromJWT = false;
     let userEmailFromJWT = null;
 
@@ -454,45 +453,26 @@ router.get('/my-subscription', async (req, res) => {
         userEmailFromJWT = decoded.email;
         if (decoded.role === 'super_admin' || decoded.role === 'superadmin') {
           isSuperAdminFromJWT = true;
-          console.log('[SUBSCRIPTIONS] 👑 Super Admin detectado desde JWT:', userEmailFromJWT);
         }
       } catch (jwtErr) {
         console.log('[SUBSCRIPTIONS] ⚠️ JWT inválido:', jwtErr.message);
       }
     }
 
-      const rawInput = (req.query.phone || req.query.sessionId || req.headers['x-session-id'] || req.headers['x-session-token'] || req.user?.phone || '').toString();
-      let phone = rawInput.includes(':') ? rawInput.split(':')[0] : rawInput; // normalizar 595xxx:1 -> 595xxx
-      const resolvedId = await resolveSessionId(req, rawInput);
-    console.log('[SUBSCRIPTIONS] 🔍 Phone/Session (sanitized):', phone);
+    const rawInput = (req.query.phone || req.query.sessionId || req.headers['x-session-id'] || req.headers['x-session-token'] || req.user?.phone || '').toString();
+    let phone = rawInput.includes(':') ? rawInput.split(':')[0] : rawInput;
+    const resolvedId = await resolveSessionId(req, rawInput);
 
-    let sessionIdCandidate = null;
+    let effectiveIdentifier = phone || resolvedId;
 
-    // Si parece sessionId (hash largo, no numérico), intentar resolver número desde user_sessions
-    if (phone && phone.length > 12 && /[a-zA-Z]/.test(phone)) {
-        sessionIdCandidate = phone;
-        // Mantener vacío para indicar que usamos sessionId resuelto
-        phone = '';
+    if (!effectiveIdentifier && !isSuperAdminFromJWT) {
+      return res.status(401).json({ success: false, error: 'Identificador no proporcionado' });
     }
 
     const connection = await pool.getConnection();
     try {
-      // Resolver phone desde sessionId si no se obtuvo
-      // Si tenemos un sessionId resuelto, úsalo como identificador efectivo
-      let effectiveIdentifier = phone;
-      if (!effectiveIdentifier && resolvedId) {
-        effectiveIdentifier = resolvedId;
-      }
-
-      // ✅ Super admin NO necesita phone
-      if (!effectiveIdentifier && !isSuperAdminFromJWT) {
-        connection.release();
-        return res.status(401).json({ success: false, error: 'Teléfono no proporcionado' });
-      }
-
-      // Si es super admin sin phone, devolver suscripción enterprise por defecto
-      if (isSuperAdminFromJWT && !phone) {
-        console.log('[SUBSCRIPTIONS] 👑 Super Admin sin phone, devolviendo suscripción enterprise');
+      // Si es super admin sin phone, devolver suscripción enterprise
+      if (isSuperAdminFromJWT && !effectiveIdentifier) {
         connection.release();
         return res.json({
           success: true,
@@ -500,105 +480,57 @@ router.get('/my-subscription', async (req, res) => {
             phone: userEmailFromJWT,
             subscription_status: 'active',
             subscription_plan: 'enterprise',
-            subscription_start_date: new Date(),
-            subscription_end_date: new Date('2099-12-31'),
             days_remaining: 99999,
             is_admin: true,
             is_super_admin: true,
-            plan_features: {
-              max_contacts: 999999,
-              max_groups: 999999,
-              max_campaigns: 999999,
-              max_chatbots: 999999,
-              max_agents: 999999,
-              max_whatsapp_lines: 999999
+            plan_details: {
+              plan_name: 'enterprise',
+              plan_display_name: 'Plan Administrador',
+              max_users: 999999,
+              max_messages_per_month: 999999,
+              max_channels: 999999,
+              bot_enabled: true,
+              api_enabled: true
             }
           }
         });
       }
 
-      // Verificar si el phone corresponde a un usuario y si es super admin
-      let isSuperAdmin = false;
-      let effectivePhone = effectiveIdentifier || phone;
-
-      try {
-        const [userRows] = await connection.execute(
-          'SELECT phone, is_super_admin FROM users WHERE phone = ? OR email = ? LIMIT 1',
-          [phone, phone]
-        );
-        if (userRows.length > 0) {
-          effectivePhone = userRows[0].phone || effectivePhone;
-          isSuperAdmin = !!userRows[0].is_super_admin;
-        }
-      } catch (uErr) {
-        console.log('[SUBSCRIPTIONS] ⚠️ No se pudo verificar usuario:', uErr.message);
+      // Buscar usuario para ver si es super admin
+      let isUserSuperAdmin = false;
+      const [userRows] = await connection.execute(
+        'SELECT phone, is_super_admin FROM users WHERE phone = ? OR email = ? LIMIT 1',
+        [effectiveIdentifier, effectiveIdentifier]
+      );
+      if (userRows.length > 0) {
+        isUserSuperAdmin = !!userRows[0].is_super_admin;
       }
 
-      // Aceptar tanto número como sessionId; no forzar resolución si ya es sessionId
-      // Si ya tenemos un session_id resuelto, mantenerlo
-
-      console.log('[SUBSCRIPTIONS] 🔍 effectivePhone:', effectivePhone, 'isSuperAdmin:', isSuperAdmin);
-
-      if (!effectivePhone) {
-        return res.status(401).json({ success: false, error: 'Teléfono no proporcionado' });
-      }
-
-      // Primero buscar en user_sessions (aceptando phone o sessionId)
+      // 2. Buscar en user_sessions (Clientes/Líneas)
       const [userSessions] = await connection.query(`
-        SELECT
-          session_id,
-          phone,
-          created_at,
-          last_connection_time,
-          subscription_plan,
-          subscription_status,
-          subscription_start_date,
-          subscription_end_date,
-          subscription_days,
-          plan_id,
-          messages_sent_this_month,
-          messages_scheduled,
-          messages_personalized,
-          messages_api,
-          messages_chatbot
-        FROM user_sessions
-        WHERE (phone = ? OR session_id = ?) AND is_active = 1
-        LIMIT 1
-      `, [effectivePhone, effectivePhone]);
+        SELECT * FROM user_sessions WHERE (phone = ? OR session_id = ?) AND is_active = 1 LIMIT 1
+      `, [effectiveIdentifier, effectiveIdentifier]);
 
       if (userSessions.length > 0) {
         const session = userSessions[0];
 
-        console.log('[SUBSCRIPTIONS] ✅ Usuario encontrado en user_sessions:', effectivePhone, 'Super Admin:', isSuperAdmin);
-
-        // Si es Super Admin, retornar plan ilimitado
-        if (isSuperAdmin) {
+        if (isUserSuperAdmin || isSuperAdminFromJWT) {
+          // Si es admin, darle todo
           return res.json({
             success: true,
             subscription: {
-              phone: effectivePhone,
+              phone: effectiveIdentifier,
               subscription_plan: 'enterprise',
               subscription_status: 'active',
-              subscription_start_date: session.created_at,
-              subscription_end_date: null,
-              subscription_days: 999999,
               is_admin: true,
               is_super_admin: true,
               days_remaining: 999999,
               plan_details: {
                 plan_name: 'enterprise',
                 plan_display_name: 'Plan Administrador',
-                duration_days: 999999,
-                price: 0,
                 max_users: 999999,
                 max_messages_per_month: 999999,
                 messages_sent_this_month: session.messages_sent_this_month || 0,
-                messages_scheduled: session.messages_scheduled || 0,
-                messages_personalized: session.messages_personalized || 0,
-                messages_api: session.messages_api || 0,
-                messages_chatbot: session.messages_chatbot || 0,
-                max_campaigns: 999999,
-                max_contacts: 999999,
                 max_channels: 999999,
                 bot_enabled: true,
                 api_enabled: true
@@ -607,143 +539,87 @@ router.get('/my-subscription', async (req, res) => {
           });
         }
 
-        // Para usuarios regulares en user_sessions, verificar si tienen suscripción activa
-        if (session.subscription_plan && session.subscription_status === 'active') {
-          // Tiene un plan activo, buscar detalles del plan
-          const [planDetails] = await connection.query(
-            'SELECT * FROM plans WHERE name = ?',
-            [session.subscription_plan]
-          );
+        // Usuario regular en user_sessions
+        const [planDetails] = await connection.query(
+          'SELECT id, name as plan_name, name as plan_display_name, price, max_agents, max_messages, max_channels, bot_enabled, api_enabled FROM plans WHERE name = ?',
+          [session.subscription_plan]
+        );
 
-          const plan = planDetails.length > 0 ? planDetails[0] : null;
-          const daysRemaining = session.subscription_end_date
-            ? Math.ceil((new Date(session.subscription_end_date) - new Date()) / (1000 * 60 * 60 * 24))
-            : 0;
+        const plan = planDetails.length > 0 ? planDetails[0] : null;
+        const daysRemaining = session.subscription_end_date
+          ? Math.ceil((new Date(session.subscription_end_date) - new Date()) / (1000 * 60 * 60 * 24))
+          : 0;
 
-          return res.json({
-            success: true,
-            subscription: {
-              phone: session.session_id, // convención: phone lógico = sessionId
-              subscription_plan: session.subscription_plan,
-              subscription_status: session.subscription_status,
-              subscription_start_date: session.subscription_start_date,
-              subscription_end_date: session.subscription_end_date,
-              subscription_days: session.subscription_days,
-              is_admin: false,
-              is_super_admin: false,
-              days_remaining: daysRemaining,
-              plan_details: plan ? {
-                plan_name: plan.name,
-                plan_display_name: plan.name,
-                duration_days: session.subscription_days,
-                price: plan.price,
-                max_users: plan.max_agents || 0,
-                max_messages_per_month: plan.max_messages || 0,
-                messages_sent_this_month: session.messages_sent_this_month || 0,
-                messages_scheduled: session.messages_scheduled || 0,
-                messages_personalized: session.messages_personalized || 0,
-                messages_api: session.messages_api || 0,
-                messages_chatbot: session.messages_chatbot || 0,
-                max_campaigns: 0,
-                max_contacts: 0,
-                max_channels: plan.max_channels || 0,
-                bot_enabled: plan.bot_enabled || false,
-                api_enabled: plan.api_enabled || false
-              } : null
-            }
-          });
-        }
-
-        // Usuario en user_sessions sin suscripción activa
-        console.log('[SUBSCRIPTIONS] ℹ️ Usuario en user_sessions sin plan activo:', effectivePhone);
-        return res.json({
-          success: true,
-          subscription: null
-        });
-      }
-
-      // Si no está en user_sessions, buscar en users (Agentes)
-      await connection.query(`
-        UPDATE users 
-        SET subscription_status = 'expired'
-        WHERE phone = ? 
-        AND (subscription_status = 'active' OR subscription_status = 'trial')
-        AND subscription_end_date IS NOT NULL
-        AND subscription_end_date < NOW()
-      `, [effectivePhone]);
-
-      const [users] = await connection.query(`
-        SELECT 
-          id,
-          name,
-          email,
-          phone,
-          subscription_plan,
-          subscription_status,
-          subscription_start_date,
-          subscription_end_date,
-          subscription_days,
-          is_admin,
-          DATEDIFF(subscription_end_date, NOW()) as days_remaining
-        FROM users 
-        WHERE phone = ?
-      `, [effectivePhone]);
-
-      if (users.length === 0) {
-        console.log('[SUBSCRIPTIONS] ℹ️ Usuario no encontrado, devolviendo suscripción por defecto (trial)');
         return res.json({
           success: true,
           subscription: {
-            phone: effectivePhone,
-            subscription_plan: 'trial',
-            subscription_status: 'trial',
-            subscription_start_date: new Date(),
-            subscription_end_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 días
-            subscription_days: 14,
-            is_admin: false,
-            is_super_admin: false,
-            days_remaining: 14,
-            plan_details: {
-              plan_name: 'trial',
-              plan_display_name: 'Plan de Prueba',
-              duration_days: 14,
-              price: 0,
-              max_users: 3,
-              max_messages_per_month: 1000,
-              max_campaigns: 1,
-              max_contacts: 100,
-              max_channels: 1,
-              bot_enabled: false,
-              api_enabled: false
-            }
+            phone: session.session_id,
+            subscription_plan: session.subscription_plan,
+            subscription_status: session.subscription_status,
+            subscription_start_date: session.subscription_start_date,
+            subscription_end_date: session.subscription_end_date,
+            days_remaining: daysRemaining > 0 ? daysRemaining : 0,
+            plan_details: plan ? {
+              ...plan,
+              price: Number(plan.price),
+              max_users: plan.max_agents || 0,
+              max_messages_per_month: plan.max_messages || 0,
+              messages_sent_this_month: session.messages_sent_this_month || 0,
+              messages_scheduled: session.messages_scheduled || 0,
+              messages_personalized: session.messages_personalized || 0,
+              messages_api: session.messages_api || 0,
+              messages_chatbot: session.messages_chatbot || 0,
+              max_campaigns: 100,
+              max_contacts: 10000,
+              bot_enabled: !!plan.bot_enabled,
+              api_enabled: !!plan.api_enabled
+            } : null
           }
         });
       }
 
-      const user = users[0];
+      // 3. Si no está en user_sessions, buscar en users (Agentes)
+      const [users] = await connection.query(`
+        SELECT *, DATEDIFF(subscription_end_date, NOW()) as days_remaining FROM users WHERE phone = ? OR email = ? LIMIT 1
+      `, [effectiveIdentifier, effectiveIdentifier]);
 
-      // Obtener información del plan
-      const [plans] = await connection.query(
-        'SELECT * FROM subscription_plans WHERE plan_name = ?',
-        [user.subscription_plan]
-      );
+      if (users.length > 0) {
+        const user = users[0];
+        const [planDetails] = await connection.query(
+          'SELECT id, name as plan_name, name as plan_display_name, price, max_agents, max_messages, max_channels, bot_enabled, api_enabled FROM plans WHERE name = ?',
+          [user.subscription_plan]
+        );
 
-      res.json({
-        success: true,
-        subscription: {
-          ...user,
-          plan_details: plans[0] || null,
-          days_remaining: user.days_remaining > 0 ? user.days_remaining : 0
-        }
-      });
-    } catch (error) {
-      console.error('Error fetching subscription:', error);
-      res.status(500).json({ success: false, error: 'Error al obtener suscripción' });
+        const plan = planDetails.length > 0 ? planDetails[0] : null;
+
+        return res.json({
+          success: true,
+          subscription: {
+            ...user,
+            days_remaining: user.days_remaining > 0 ? user.days_remaining : 0,
+            plan_details: plan ? {
+              ...plan,
+              price: Number(plan.price),
+              max_users: plan.max_agents || 0,
+              max_messages_per_month: plan.max_messages || 0,
+              messages_sent_this_month: 0,
+              max_campaigns: 100,
+              max_contacts: 10000,
+              bot_enabled: !!plan.bot_enabled,
+              api_enabled: !!plan.api_enabled
+            } : null
+          }
+        });
+      }
+
+      // 4. No encontrado
+      res.json({ success: true, subscription: null });
+
     } finally {
       connection.release();
     }
   } catch (error) {
-    console.error('Error general fetching subscription:', error);
+    console.error('Error fetching subscription:', error);
     res.status(500).json({ success: false, error: 'Error al obtener suscripción' });
   }
 });
@@ -761,26 +637,26 @@ router.get('/users', checkAdmin, async (req, res) => {
     const connection = await pool.getConnection();
     try {
       const [users] = await connection.query(`
-        SELECT 
-          u.id,
-          u.name,
-          u.email,
-          u.phone,
-          u.subscription_plan,
-          u.subscription_status,
-          u.subscription_start_date,
-          u.subscription_end_date,
-          u.subscription_days,
-          u.is_admin,
-          u.created_at,
-          u.last_login,
-          DATEDIFF(u.subscription_end_date, NOW()) as days_remaining,
-          sp.plan_display_name,
-          sp.price
+        SELECT
+      u.id,
+        u.name,
+        u.email,
+        u.phone,
+        u.subscription_plan,
+        u.subscription_status,
+        u.subscription_start_date,
+        u.subscription_end_date,
+        u.subscription_days,
+        u.is_admin,
+        u.created_at,
+        u.last_login,
+        DATEDIFF(u.subscription_end_date, NOW()) as days_remaining,
+        sp.plan_display_name,
+        sp.price
         FROM users u
-        LEFT JOIN subscription_plans sp ON u.subscription_plan COLLATE utf8mb4_unicode_ci = sp.plan_name COLLATE utf8mb4_unicode_ci
+        LEFT JOIN plans sp ON u.subscription_plan COLLATE utf8mb4_unicode_ci = sp.name COLLATE utf8mb4_unicode_ci
         ORDER BY u.is_admin DESC, u.subscription_end_date ASC
-      `);
+        `);
       res.json({ success: true, users });
     } finally {
       connection.release();
@@ -825,39 +701,39 @@ router.post('/users', async (req, res) => {
         // NO debe ver agentes de la tabla users
 
         const [clientSessions] = await connection.query(`
-          SELECT
-            us.phone as phone,
-            us.session_id,
-            us.device_id,
-            us.is_active,
-            us.subscription_plan,
-            us.subscription_status,
-            us.subscription_start_date,
-            us.subscription_end_date,
-            us.subscription_days,
-            us.created_at,
-            us.last_connection_time as last_login,
-            COALESCE(us.phone, 'Cliente') as name,
-            CONCAT(us.phone, '@whats-flow.com') as email,
-            DATEDIFF(us.subscription_end_date, NOW()) as days_remaining,
-            COALESCE(p.name,
-              CASE
+      SELECT
+      us.phone as phone,
+        us.session_id,
+        us.device_id,
+        us.is_active,
+        us.subscription_plan,
+        us.subscription_status,
+        us.subscription_start_date,
+        us.subscription_end_date,
+        us.subscription_days,
+        us.created_at,
+        us.last_connection_time as last_login,
+        COALESCE(us.phone, 'Cliente') as name,
+        CONCAT(us.phone, '@whats-flow.com') as email,
+        DATEDIFF(us.subscription_end_date, NOW()) as days_remaining,
+        COALESCE(p.name,
+          CASE
                 WHEN us.phone = '595994854167' THEN 'Plan Administrador'
                 WHEN us.subscription_status = 'active' THEN COALESCE(us.subscription_plan, 'Sin plan')
                 ELSE 'Sin plan'
               END
-            ) as plan_display_name,
-            COALESCE(p.price, 0) as price,
-            CASE WHEN us.phone = '595994854167' THEN 1 ELSE 0 END as is_admin,
-            CASE WHEN us.phone = '595994854167' THEN 1 ELSE 0 END as is_super_admin
+        ) as plan_display_name,
+        COALESCE(p.price, 0) as price,
+        CASE WHEN us.phone = '595994854167' THEN 1 ELSE 0 END as is_admin,
+          CASE WHEN us.phone = '595994854167' THEN 1 ELSE 0 END as is_super_admin
           FROM user_sessions us
           LEFT JOIN plans p ON us.subscription_plan = p.name
           WHERE us.is_active = 1
           ORDER BY
             CASE WHEN us.phone = '595994854167' THEN 0 ELSE 1 END,
-            us.subscription_status DESC,
-            us.created_at DESC
-        `);
+        us.subscription_status DESC,
+          us.created_at DESC
+            `);
 
         users = clientSessions;
         console.log(`[SUBSCRIPTIONS] 🔑 SUPER ADMIN ${phone} ve: ${clientSessions.length} clientes de user_sessions`);
@@ -865,44 +741,44 @@ router.post('/users', async (req, res) => {
         // Admin normal (de user_sessions) ve solo:
         // - SUS propios agentes (donde admin_phone = su teléfono en tabla users)
         const [agentUsers] = await connection.query(`
-          SELECT 
-            u.id,
-            u.name,
-            u.email,
-            u.phone,
-            u.role,
-            u.subscription_plan,
-            u.subscription_status,
-            u.subscription_start_date,
-            u.subscription_end_date,
-            u.subscription_days,
-            u.is_admin,
-            0 as is_super_admin,
-            u.admin_phone,
-            u.created_at,
-            u.last_login,
-            DATEDIFF(u.subscription_end_date, NOW()) as days_remaining,
-            COALESCE(sp.plan_display_name, 
-              CASE 
+      SELECT
+      u.id,
+        u.name,
+        u.email,
+        u.phone,
+        u.role,
+        u.subscription_plan,
+        u.subscription_status,
+        u.subscription_start_date,
+        u.subscription_end_date,
+        u.subscription_days,
+        u.is_admin,
+        0 as is_super_admin,
+        u.admin_phone,
+        u.created_at,
+        u.last_login,
+        DATEDIFF(u.subscription_end_date, NOW()) as days_remaining,
+        COALESCE(sp.plan_display_name,
+          CASE 
                 WHEN u.subscription_plan = 'free' THEN 'Gratis'
                 WHEN u.subscription_plan = 'basic' OR u.subscription_plan = 'Basico' THEN 'Plan Basico'
                 WHEN u.subscription_plan = 'premium' THEN 'Premium'
                 WHEN u.subscription_plan = 'enterprise' THEN 'Empresarial'
                 ELSE COALESCE(u.subscription_plan, 'Sin plan')
               END
-            ) as plan_display_name,
-            COALESCE(sp.price, 0) as price
+        ) as plan_display_name,
+        COALESCE(sp.price, 0) as price
           FROM users u
           LEFT JOIN subscription_plans sp ON u.subscription_plan COLLATE utf8mb4_unicode_ci = sp.plan_name COLLATE utf8mb4_unicode_ci
           WHERE u.admin_phone = ?
-          ORDER BY u.created_at DESC
-        `, [phone]);
+        ORDER BY u.created_at DESC
+          `, [phone]);
 
         users = agentUsers;
         console.log(`[SUBSCRIPTIONS] 👤 Admin ${phone} ve sus ${users.length} agentes registrados`);
       }
 
-      console.log(`[SUBSCRIPTIONS] Devolviendo ${users.length} usuario(s) para ${phone}`);
+      console.log(`[SUBSCRIPTIONS] Devolviendo ${users.length} usuario(s) para ${phone} `);
 
       res.json({ success: true, users, isSuperAdmin });
     } finally {
@@ -968,13 +844,13 @@ router.post('/activate', checkAdmin, async (req, res) => {
           // Usuario existe en user_sessions, actualizar ahí
           await connection.query(`
             UPDATE user_sessions SET
-              subscription_plan = ?,
-              subscription_status = 'active',
-              subscription_start_date = ?,
-              subscription_end_date = ?,
-              subscription_days = ?
-            WHERE phone = ?
-          `, [finalPlanName, startDate, endDate, subscriptionDays, phone]);
+      subscription_plan = ?,
+        subscription_status = 'active',
+        subscription_start_date = ?,
+        subscription_end_date = ?,
+        subscription_days = ?
+          WHERE phone = ?
+            `, [finalPlanName, startDate, endDate, subscriptionDays, phone]);
 
           console.log('[ACTIVATE] Plan activado en user_sessions para:', phone);
 
@@ -1011,13 +887,13 @@ router.post('/activate', checkAdmin, async (req, res) => {
       const targetUserId = users[0].id;
       await connection.query(`
         UPDATE users SET
-          subscription_plan = ?,
-          subscription_status = 'active',
-          subscription_start_date = ?,
-          subscription_end_date = ?,
-          subscription_days = ?
-        WHERE id = ?
-      `, [finalPlanName, startDate, endDate, subscriptionDays, targetUserId]);
+      subscription_plan = ?,
+        subscription_status = 'active',
+        subscription_start_date = ?,
+        subscription_end_date = ?,
+        subscription_days = ?
+          WHERE id = ?
+            `, [finalPlanName, startDate, endDate, subscriptionDays, targetUserId]);
 
       console.log('[ACTIVATE] Plan activado en users para userId:', targetUserId);
 
@@ -1025,8 +901,8 @@ router.post('/activate', checkAdmin, async (req, res) => {
       await connection.query(`
         INSERT INTO subscription_history
         (user_id, plan_name, start_date, end_date, days, price, status, activated_by)
-        VALUES (?, ?, ?, ?, ?, ?, 'active', ?)
-      `, [targetUserId, finalPlanName, startDate, endDate, subscriptionDays, plan.price, adminId]);
+      VALUES(?, ?, ?, ?, ?, ?, 'active', ?)
+        `, [targetUserId, finalPlanName, startDate, endDate, subscriptionDays, plan.price, adminId]);
       await connection.commit();
 
       // 🎉 Enviar mensaje de bienvenida al cliente
@@ -1091,16 +967,16 @@ router.get('/history/:userId', checkAdmin, async (req, res) => {
     const connection = await pool.getConnection();
     try {
       const [history] = await connection.query(`
-        SELECT
-          sh.*,
-          u.name as user_name,
-          admin.name as activated_by_name
+      SELECT
+      sh.*,
+        u.name as user_name,
+        admin.name as activated_by_name
         FROM subscription_history sh
         LEFT JOIN users u ON sh.user_id = u.id
         LEFT JOIN users admin ON sh.activated_by = admin.id
         WHERE sh.user_id = ?
         ORDER BY sh.created_at DESC
-      `, [userId]);
+          `, [userId]);
       res.json({ success: true, history });
     } finally {
       connection.release();

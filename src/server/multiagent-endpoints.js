@@ -1345,7 +1345,6 @@ module.exports = function (app, pool) {
                         m.caption,
                         m.timestamp,
                         m.status,
-                        m.quoted_message_id,
                         c.name as contact_name,
                         c.avatar_url as contact_avatar,
                         u.name as sender_name

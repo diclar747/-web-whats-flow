@@ -10,7 +10,7 @@ async function check() {
     });
 
     try {
-        const [rows] = await pool.execute('DESCRIBE users');
+        const [rows] = await pool.execute('SELECT * FROM plan_requests WHERE phone_number = "595985768793"');
         console.log(JSON.stringify(rows, null, 2));
     } catch (err) {
         console.error(err);

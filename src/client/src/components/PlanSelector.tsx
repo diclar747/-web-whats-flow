@@ -142,13 +142,13 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone, currentSubscript
       if (data.success) {
         setSuccess(`Solicitud enviada exitosamente. ${data.paymentInfo ? `Por favor deposita Gs. ${data.paymentInfo.amount.toLocaleString()} al alias ${data.paymentInfo.alias} - ${data.paymentInfo.bank}` : ''}`);
         setDialogOpen(false);
-        
+
         // Mostrar dialog elegante con información de pago
         if (data.paymentInfo) {
           setPaymentInfo(data.paymentInfo);
           setPaymentDialogOpen(true);
         }
-        
+
         loadData();
       } else {
         setError(data.error || 'Error al solicitar plan');
@@ -207,20 +207,15 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone, currentSubscript
       )}
 
       {/* Solicitud pendiente */}
-      {myRequest && (
+      {myRequest && myRequest.status !== 'approved' && (
         <Alert
-          severity={myRequest.status === 'pending' ? 'info' : myRequest.status === 'approved' ? 'success' : 'warning'}
+          severity={myRequest.status === 'pending' ? 'info' : 'warning'}
           sx={{ mb: 3 }}
         >
           {myRequest.status === 'pending' && (
             <>
               <strong>Solicitud Pendiente:</strong> Tienes una solicitud pendiente para el plan {myRequest.plan_name}.
               El administrador la revisará pronto.
-            </>
-          )}
-          {myRequest.status === 'approved' && (
-            <>
-              <strong>Solicitud Aprobada:</strong> Tu plan {myRequest.plan_name} ha sido activado.
             </>
           )}
           {myRequest.status === 'rejected' && (
@@ -255,7 +250,7 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone, currentSubscript
                     {plan.name}
                   </Typography>
                   <Typography variant="h3" sx={{ fontWeight: 700, color: getPlanColor(plan.name) }}>
-                    Gs. {plan.price.toLocaleString()}
+                    Gs. {(plan.price || 0).toLocaleString()}
                   </Typography>
                   <Typography variant="body2" color="textSecondary">
                     /mes
@@ -278,7 +273,7 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone, currentSubscript
                     </ListItem>
                     <ListItem>
                       <ListItemIcon><CheckCircle sx={{ color: getPlanColor(plan.name), fontSize: 20 }} /></ListItemIcon>
-                      <ListItemText primary={`${plan.max_messages.toLocaleString()} mensajes/mes`} />
+                      <ListItemText primary={`${(plan.max_messages || 0).toLocaleString()} mensajes/mes`} />
                     </ListItem>
                     {plan.bot_enabled && (
                       <ListItem>
@@ -375,7 +370,7 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone, currentSubscript
               </Typography>
 
               <Typography variant="h3" sx={{ fontWeight: 700, color: '#667eea', mb: 1 }}>
-                Gs. {selectedPlan.price.toLocaleString()}
+                Gs. {(selectedPlan.price || 0).toLocaleString()}
               </Typography>
               <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', mb: 3 }}>
                 por mes
@@ -405,7 +400,7 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone, currentSubscript
                   </ListItem>
                   <ListItem sx={{ color: 'white' }}>
                     <ListItemIcon><CheckCircle sx={{ fontSize: 20, color: '#4ade80' }} /></ListItemIcon>
-                    <ListItemText primary={`${selectedPlan.max_messages.toLocaleString()} mensajes por mes`} />
+                    <ListItemText primary={`${(selectedPlan.max_messages || 0).toLocaleString()} mensajes por mes`} />
                   </ListItem>
                 </List>
               </Box>
@@ -421,7 +416,7 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone, currentSubscript
                   💳 Instrucciones de Pago:
                 </Typography>
                 <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)', mb: 1 }}>
-                  • Realiza tu depósito de <strong>Gs. {selectedPlan.price.toLocaleString()}</strong>
+                  • Realiza tu depósito de <strong>Gs. {(selectedPlan.price || 0).toLocaleString()}</strong>
                 </Typography>
                 <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)', mb: 1 }}>
                   • Al <strong>Alias: 3626142</strong> - Banco UENO
@@ -513,8 +508,8 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone, currentSubscript
                 Para completar tu solicitud, realiza el siguiente depósito:
               </Typography>
 
-              <Box sx={{ 
-                textAlign: 'center', 
+              <Box sx={{
+                textAlign: 'center',
                 py: 2.5,
                 bgcolor: 'rgba(102, 126, 234, 0.1)',
                 borderRadius: 2,
@@ -525,7 +520,7 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone, currentSubscript
                   Monto a transferir
                 </Typography>
                 <Typography variant="h4" sx={{ fontWeight: 700, color: '#4ade80', mb: 1 }}>
-                  Gs. {paymentInfo?.amount.toLocaleString()}
+                  Gs. {(paymentInfo?.amount || 0).toLocaleString()}
                 </Typography>
                 <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
                   al alias <strong>{paymentInfo?.alias}</strong>
@@ -548,9 +543,9 @@ const PlanSelector: React.FC<PlanSelectorProps> = ({ userPhone, currentSubscript
                 </Typography>
               </Box>
 
-              <Box sx={{ 
-                p: 2.5, 
-                bgcolor: 'rgba(255, 193, 7, 0.1)', 
+              <Box sx={{
+                p: 2.5,
+                bgcolor: 'rgba(255, 193, 7, 0.1)',
                 borderRadius: 2,
                 border: '1px solid rgba(255, 193, 7, 0.3)'
               }}>
