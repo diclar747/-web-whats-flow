@@ -545,21 +545,21 @@ async function syncActiveFlags() {
             // Activar en BD las sesiones conectadas en memoria que no estén activas en BD
             for (const [hexSessionId, mem] of memSessions.entries()) {
                 if (mem && mem.isConnected) {
-                    // 🔥 Buscar en BD por owner_phone_number = hexSessionId (sessionId de Baileys)
+                    // 🔥 Buscar en BD por owner_phone_number O por session_id directamente
                     const [dbRows] = await connection.query(
-                        'SELECT session_id, is_active FROM user_sessions WHERE owner_phone_number = ? LIMIT 1',
-                        [hexSessionId]
+                        'SELECT session_id, is_active FROM user_sessions WHERE owner_phone_number = ? OR session_id = ? LIMIT 1',
+                        [hexSessionId, hexSessionId]
                     );
-                    
-                    if (dbRows.length > 0) {
-                        // Activar sesión en BD si está conectada en memoria
+
+                    if (dbRows.length > 0 && !dbRows[0].is_active) {
+                        // Activar sesión en BD si está conectada en memoria y actualmente inactiva
                         const sessionIdNum = Number(dbRows[0].session_id);
                         if (!isNaN(sessionIdNum) && sessionIdNum > 0) {
                             await connection.query(
-                                'UPDATE user_sessions SET is_active = 1, last_activity = NOW(), last_connection_time = NOW() WHERE owner_phone_number = ?',
-                                [hexSessionId]
+                                'UPDATE user_sessions SET is_active = 1, last_activity = NOW(), last_connection_time = NOW() WHERE session_id = ?',
+                                [dbRows[0].session_id]
                             );
-                            console.log(`[SYNC] ✅ Activando sesión ${dbRows[0].session_id} (hex: ${hexSessionId})`);
+                            console.log(`[SYNC] ✅ Activando sesión ${dbRows[0].session_id} (hex/id: ${hexSessionId})`);
                             statusChanges.push({ sessionId: dbRows[0].session_id, isActive: true });
                         }
                     }
@@ -3776,27 +3776,28 @@ async function downloadAllAvatars(sessionId, sock) {
 
     const connection = await pool.getConnection();
     try {
-        // Obtener el número de teléfono del usuario
-        const phoneNumber = await getUserPhoneNumber(sessionId);
-        if (!phoneNumber) {
-            console.log(`[${sessionId}] ⚠️ No se pudo obtener el número de teléfono, saltando descarga de avatares`);
+        // Obtener el identificador correcto de la BD (puede ser ID numérico o phone)
+        const dbIdentifier = await getUserDbIdentifier(sessionId);
+        if (!dbIdentifier) {
+            console.log(`[${sessionId}] ⚠️ No se pudo obtener el identificador de BD, saltando descarga de avatares`);
             return;
         }
+        console.log(`[${sessionId}] 🔍 Buscando avatares para session_id en BD: ${dbIdentifier}`);
 
-        // LIMITAR a máximo 500 avatares por sesión para evitar sobrecarga
-        const MAX_AVATARS = 500;
+        // LIMITAR a máximo 2000 avatares por sesión para evitar sobrecarga
+        const MAX_AVATARS = 2000;
 
         // Obtener contactos sin avatar (limitado)
         const [contacts] = await connection.execute(
             'SELECT jid, name FROM contacts WHERE session_id = ? AND jid LIKE "%@s.whatsapp.net" AND (avatar_url IS NULL OR avatar_url = "") LIMIT ?',
-            [phoneNumber, MAX_AVATARS]
+            [dbIdentifier, MAX_AVATARS]
         );
 
         // Obtener grupos sin avatar (limitado)
         const remainingLimit = MAX_AVATARS - contacts.length;
         const [groups] = await connection.execute(
             'SELECT jid, name FROM contact_groups WHERE session_id = ? AND (avatar_url IS NULL OR avatar_url = "") LIMIT ?',
-            [phoneNumber, Math.max(remainingLimit, 0)]
+            [dbIdentifier, Math.max(remainingLimit, 0)]
         );
 
         const totalToDownload = contacts.length + groups.length;
@@ -3832,7 +3833,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     if (profilePicUrl) {
                         await pool.execute(
                             'UPDATE contacts SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                            [profilePicUrl, contact.jid, phoneNumber]
+                            [profilePicUrl, contact.jid, dbIdentifier]
                         );
                         downloadedCount++;
                         consecutiveErrors = 0; // Reset contador de errores consecutivos
@@ -3841,7 +3842,7 @@ async function downloadAllAvatars(sessionId, sock) {
                         if (previewUrl) {
                             await pool.execute(
                                 'UPDATE contacts SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                                [previewUrl, contact.jid, phoneNumber]
+                                [previewUrl, contact.jid, dbIdentifier]
                             );
                             downloadedCount++;
                             consecutiveErrors = 0; // Reset contador
@@ -3885,7 +3886,7 @@ async function downloadAllAvatars(sessionId, sock) {
                     if (profilePicUrl) {
                         await pool.execute(
                             'UPDATE contact_groups SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                            [profilePicUrl, group.jid, phoneNumber]
+                            [profilePicUrl, group.jid, dbIdentifier]
                         );
                         downloadedCount++;
                         consecutiveErrors = 0; // Reset contador
@@ -3894,7 +3895,7 @@ async function downloadAllAvatars(sessionId, sock) {
                         if (previewUrl) {
                             await pool.execute(
                                 'UPDATE contact_groups SET avatar_url = ?, updated_at = NOW() WHERE jid = ? AND session_id = ?',
-                                [previewUrl, group.jid, phoneNumber]
+                                [previewUrl, group.jid, dbIdentifier]
                             );
                             downloadedCount++;
                             consecutiveErrors = 0; // Reset contador
@@ -8903,23 +8904,19 @@ app.get('/api/sessions/active', async (req, res) => {
                     let dbUserSessions;
 
                     if (isSuperAdmin) {
-                        // SuperAdmin: obtener TODAS las sesiones EXCEPTO las de agentes
+                        // SuperAdmin: obtener TODAS las sesiones (sin filtrar agentes)
                         [dbUserSessions] = await connection.execute(
-                            `SELECT DISTINCT us.phone 
-                             FROM user_sessions us
-                             LEFT JOIN users u ON us.email = u.email OR us.id = u.id
-                             WHERE us.phone IS NOT NULL 
-                             AND (u.role IS NULL OR u.role != 'agent')`
+                            `SELECT DISTINCT phone 
+                             FROM user_sessions 
+                             WHERE phone IS NOT NULL`
                         );
                     } else {
-                        // Usuario normal: solo sus sesiones por email o userId (excluyendo agentes)
+                        // Usuario normal: solo sus sesiones por email o userId (permitiendo agentes propios)
                         [dbUserSessions] = await connection.execute(
-                            `SELECT DISTINCT us.phone 
-                             FROM user_sessions us
-                             LEFT JOIN users u ON us.email = u.email OR us.id = u.id
-                             WHERE (us.email = ? OR us.id = ?) 
-                             AND us.phone IS NOT NULL
-                             AND (u.role IS NULL OR u.role != 'agent')`,
+                            `SELECT DISTINCT phone 
+                             FROM user_sessions
+                             WHERE (email = ? OR id = ?) 
+                             AND phone IS NOT NULL`,
                             [userEmail, userId]
                         );
                     }
@@ -8957,31 +8954,12 @@ app.get('/api/sessions/active', async (req, res) => {
                 const phoneNumber = await getUserPhoneNumber(sessionId);
                 const ownerPhone = sessionOwnerMap.get(sessionId) || null;
 
-                // ✅ VERIFICAR SI LA SESIÓN PERTENECE A UN AGENTE (excluir)
-                let isAgentSession = false;
-                if (pool && sessionData.userId) {
-                    try {
-                        const connection = await pool.getConnection();
-                        const [userCheck] = await connection.execute(
-                            'SELECT role FROM users WHERE id = ? LIMIT 1',
-                            [sessionData.userId]
-                        );
-                        connection.release();
-                        
-                        if (userCheck.length > 0 && userCheck[0].role === 'agent') {
-                            isAgentSession = true;
-                        }
-                    } catch (err) {
-                        console.log(`[SESSIONS-ACTIVE] ⚠️ Error verificando role del usuario:`, err.message);
-                    }
-                }
-
                 // ✅ FILTRO según rol:
-                // - SuperAdmin: Ve TODAS las sesiones (excepto agentes)
-                // - Cliente normal: Ve solo sesiones cuyos phones pertenezcan a su cuenta (excepto agentes)
-                const belongsToUser = (isSuperAdmin ||
+                // - SuperAdmin: Ve TODAS las sesiones
+                // - Cliente normal: Ve solo sesiones cuyos phones pertenezcan a su cuenta
+                const belongsToUser = isSuperAdmin ||
                     userPhoneNumbers.has(phoneNumber) ||
-                    (ownerPhone && userPhoneNumbers.has(ownerPhone))) && !isAgentSession;
+                    (ownerPhone && userPhoneNumbers.has(ownerPhone));
 
                 if (belongsToUser) {
                     const avatar = sessionData.user?.imgUrl || null;
@@ -9011,37 +8989,31 @@ app.get('/api/sessions/active', async (req, res) => {
                     let dbSessions;
 
                     if (isSuperAdmin) {
-                        // SuperAdmin ve TODAS las sesiones de la base de datos EXCEPTO las de agentes
+                        // SuperAdmin ve TODAS las sesiones de la base de datos
                         [dbSessions] = await connection.execute(
-                            `SELECT us.phone, us.session_id, us.name, us.avatar_url, us.owner_phone_number, us.is_active, us.email
-                             FROM user_sessions us
-                             LEFT JOIN users u ON us.email = u.email OR us.id = u.id
-                             WHERE (u.role IS NULL OR u.role != 'agent')
-                             ORDER BY us.created_at DESC`
+                            `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email
+                             FROM user_sessions
+                             ORDER BY created_at DESC`
                         );
-                        console.log(`[SESSIONS-ACTIVE] 👑 SuperAdmin: cargando ${dbSessions.length} sesiones de BD (sin agentes)`);
+                        console.log(`[SESSIONS-ACTIVE] 👑 SuperAdmin: cargando ${dbSessions.length} sesiones de BD`);
                     } else {
-                        // Cliente normal: buscar por EMAIL (prioridad) o userId (excluyendo agentes)
+                        // Cliente normal: buscar por EMAIL (prioridad) o userId
                         if (userEmail || userId) {
                             [dbSessions] = await connection.execute(
-                                `SELECT us.phone, us.session_id, us.name, us.avatar_url, us.owner_phone_number, us.is_active, us.email
-                                 FROM user_sessions us
-                                 LEFT JOIN users u ON us.email = u.email OR us.id = u.id
-                                 WHERE (us.email = ? OR us.id = ?)
-                                 AND (u.role IS NULL OR u.role != 'agent')
-                                 ORDER BY us.created_at DESC`,
+                                `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email
+                                 FROM user_sessions
+                                 WHERE (email = ? OR id = ?)
+                                 ORDER BY created_at DESC`,
                                 [userEmail, userId]
                             );
                             console.log(`[SESSIONS-ACTIVE] 👤 Usuario ${userEmail}: encontradas ${dbSessions.length} sesiones en BD`);
                         } else {
                             // Fallback legacy: buscar por phone
                             [dbSessions] = await connection.execute(
-                                `SELECT us.phone, us.session_id, us.name, us.avatar_url, us.owner_phone_number, us.is_active, us.email
-                                 FROM user_sessions us
-                                 LEFT JOIN users u ON us.email = u.email OR us.id = u.id
-                                 WHERE (us.phone = ? OR us.owner_phone_number = ?)
-                                 AND (u.role IS NULL OR u.role != 'agent')
-                                 ORDER BY us.created_at DESC`,
+                                `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email
+                                 FROM user_sessions
+                                 WHERE (phone = ? OR owner_phone_number = ?)
+                                 ORDER BY created_at DESC`,
                                 [userPhone, userPhone]
                             );
                             console.log(`[SESSIONS-ACTIVE] 👤 Fallback phone ${userPhone}: encontradas ${dbSessions.length} sesiones en BD`);
@@ -12274,19 +12246,17 @@ async function getUserDbIdentifier(sessionId) {
     if (!pool) return sessionId;
     try {
         const connection = await pool.getConnection();
+        // Buscar por session_id, owner_phone_number o phone
         const [rows] = await connection.execute(
-            'SELECT owner_phone_number, phone FROM user_sessions WHERE session_id = ? OR phone = ? LIMIT 1',
-            [sessionId, sessionId]
+            'SELECT session_id as db_session_id FROM user_sessions WHERE session_id = ? OR owner_phone_number = ? OR phone = ? LIMIT 1',
+            [sessionId, sessionId, sessionId]
         );
         connection.release();
 
         if (rows.length > 0) {
-            // Prioritize owner_phone_number (which seems to be the user ID '1')
-            if (rows[0].owner_phone_number) {
-                console.log(`[DB-ID] Resolved ${sessionId} to owner_phone_number: ${rows[0].owner_phone_number}`);
-                return rows[0].owner_phone_number;
-            }
-            if (rows[0].phone) return rows[0].phone;
+            // Devolver el session_id de la BD (que es el ID numérico del usuario)
+            console.log(`[DB-ID] Resolved ${sessionId} to db_session_id: ${rows[0].db_session_id}`);
+            return rows[0].db_session_id;
         }
         return sessionId;
     } catch (e) {
@@ -14517,13 +14487,13 @@ app.post('/api/update-contacts-avatars/:sessionId', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            // ✅ Reducido a 20 para evitar timeout
+            // ✅ Aumentado a 100 avatares por petición
             const [contacts] = await connection.execute(
-                `SELECT jid, name FROM contacts 
-                 WHERE session_id = ? 
-                 AND jid LIKE "%@s.whatsapp.net" 
+                `SELECT jid, name FROM contacts
+                 WHERE session_id = ?
+                 AND jid LIKE "%@s.whatsapp.net"
                  AND (avatar_url IS NULL OR avatar_url = "")
-                 LIMIT 20`,
+                 LIMIT 100`,
                 [phoneNumber]
             );
 
@@ -16071,18 +16041,15 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
         try {
             // ✅ CRÍTICO: Resolver sessionId al users.id
             let resolvedSessionId = sessionId;
-            
+
             // Si el sessionId no es '1', intentar resolverlo
             if (sessionId !== '1' && sessionId !== 'null' && sessionId !== 'undefined') {
                 resolvedSessionId = await getOwnerSessionId(sessionId);
                 console.log(`[KANBAN-CONTACTS] 🔄 Resolviendo ${sessionId} → ${resolvedSessionId}`);
             }
 
-            // ✅ CORREGIDO: Cargar TODOS los contactos de la tabla contacts
-            // Filtrar por el users.id (que es lo que está en session_id de contactos)
-            // Incluir avatares
-            
-            let sql = `SELECT
+            // 1️⃣ Obtener todos los contactos del usuario
+            let contactsSql = `SELECT
                     c.id,
                     c.jid,
                     c.name,
@@ -16093,48 +16060,95 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
                     c.created_at,
                     c.updated_at
                 FROM contacts c
-                WHERE c.is_group = 0 AND c.session_id = ?`;  // Filtrar por session_id (users.id)
-            
-            const params = [resolvedSessionId];
+                WHERE c.is_group = 0 AND c.session_id = ?`;
+
+            const contactsParams = [resolvedSessionId];
 
             // Búsqueda por nombre o teléfono
             if (search && search.trim()) {
-                sql += ` AND (c.name LIKE ? OR c.notify_name LIKE ? OR c.jid LIKE ?)`;
+                contactsSql += ` AND (c.name LIKE ? OR c.notify_name LIKE ? OR c.jid LIKE ?)`;
                 const searchTerm = `%${search.trim()}%`;
-                params.push(searchTerm, searchTerm, searchTerm);
+                contactsParams.push(searchTerm, searchTerm, searchTerm);
                 console.log(`[KANBAN-CONTACTS] 🔍 Buscando: "${search}"`);
             }
 
-            // Ordenar por nombre
-            sql += ` ORDER BY c.name ASC, c.notify_name ASC LIMIT 5000`;
+            contactsSql += ` ORDER BY c.name ASC, c.notify_name ASC LIMIT 5000`;
 
-            console.log(`[KANBAN-CONTACTS] 📊 Query ejecutada con resolvedSessionId: ${resolvedSessionId}`);
-
-            const [contacts] = await connection.execute(sql, params);
-
+            const [contacts] = await connection.execute(contactsSql, contactsParams);
             console.log(`[KANBAN-CONTACTS] ✅ Cargados ${contacts.length} contactos para session_id=${resolvedSessionId}`);
 
-            // Transformar respuesta - Incluir avatares
-            const transformedContacts = contacts.map(c => ({
-                id: c.id,
-                jid: c.jid,
-                phone: c.jid?.split('@')[0] || '',
-                name: c.name || c.notify_name || c.jid?.split('@')[0] || 'Sin nombre',
-                avatarUrl: c.avatar_url || null,  // ✅ Incluir avatar (puede ser null si no tiene)
-                sessionId: c.session_id,
-                isGroup: !!c.is_group,
-                createdAt: c.created_at,
-                updatedAt: c.updated_at
-            }));
+            // 2️⃣ Obtener los tableros del usuario
+            const [boards] = await connection.execute(
+                `SELECT id, is_default FROM kanban_boards WHERE session_id = ? ORDER BY board_order ASC`,
+                [resolvedSessionId]
+            );
 
-            // Devolver contactos agrupados en "Sin Categoría" (board_id = default)
+            // Encontrar el tablero por defecto (Sin Categoría)
+            const defaultBoard = boards.find(b => b.is_default === 1);
+            const defaultBoardId = defaultBoard ? defaultBoard.id : null;
+            console.log(`[KANBAN-CONTACTS] 📌 Tablero por defecto (Sin Categoría): ${defaultBoardId}`);
+
+            // 3️⃣ Obtener asignaciones de contactos a tableros desde kanban_contacts
+            const [kanbanAssignments] = await connection.execute(
+                `SELECT kc.contact_jid, kc.board_id, kc.notes
+                 FROM kanban_contacts kc
+                 INNER JOIN kanban_boards kb ON kc.board_id = kb.id
+                 WHERE kb.session_id = ?`,
+                [resolvedSessionId]
+            );
+
+            console.log(`[KANBAN-CONTACTS] 📊 ${kanbanAssignments.length} asignaciones encontradas en kanban_contacts`);
+
+            // 4️⃣ Crear un mapa de contactos asignados: jid -> board_id
+            const contactToBoardMap = new Map();
+            kanbanAssignments.forEach(assignment => {
+                contactToBoardMap.set(assignment.contact_jid, assignment.board_id);
+            });
+
+            // 5️⃣ Agrupar contactos por tablero
+            const contactsByBoard = {};
+
+            // Inicializar todos los boards con arrays vacíos
+            boards.forEach(board => {
+                contactsByBoard[board.id] = [];
+            });
+
+            // 6️⃣ Distribuir contactos
+            contacts.forEach(c => {
+                const transformedContact = {
+                    id: c.id,
+                    jid: c.jid,
+                    phone: c.jid?.split('@')[0] || '',
+                    name: c.name || c.notify_name || c.jid?.split('@')[0] || 'Sin nombre',
+                    avatarUrl: c.avatar_url || null,
+                    sessionId: c.session_id,
+                    isGroup: !!c.is_group,
+                    createdAt: c.created_at,
+                    updatedAt: c.updated_at
+                };
+
+                // Verificar si el contacto está asignado a un tablero
+                const assignedBoardId = contactToBoardMap.get(c.jid);
+
+                if (assignedBoardId && contactsByBoard[assignedBoardId]) {
+                    // Contacto asignado a un tablero específico
+                    contactsByBoard[assignedBoardId].push(transformedContact);
+                } else if (defaultBoardId && contactsByBoard[defaultBoardId]) {
+                    // Contacto sin asignar -> "Sin Categoría" (tablero por defecto)
+                    contactsByBoard[defaultBoardId].push(transformedContact);
+                }
+            });
+
+            // 7️⃣ Log de resultados
+            console.log(`[KANBAN-CONTACTS] 📦 Distribución de contactos:`);
+            Object.keys(contactsByBoard).forEach(boardId => {
+                console.log(`   - ${boardId}: ${contactsByBoard[boardId].length} contactos`);
+            });
+
             res.json({
                 success: true,
-                contactsByBoard: {
-                    'default': transformedContacts  // "Sin Categoría"
-                },
-                contacts: transformedContacts,  // También devolver flat para compatibilidad
-                totalContacts: transformedContacts.length
+                contactsByBoard: contactsByBoard,
+                totalContacts: contacts.length
             });
 
         } finally {
@@ -22128,18 +22142,19 @@ app.get('/api/contacts/search/:sessionId/:phone', async (req, res) => {
             const searchPattern = `%${phone}%`;
             console.log(`🔍 [CONTACTS-SEARCH] SQL params: phoneNumber=${phoneNumber}, searchPattern=${searchPattern}`);
 
-            const [contacts] = await connection.execute(
-                `SELECT name, 
-                        SUBSTRING_INDEX(jid, '@', 1) as phone,
-                        jid
-                 FROM contacts 
-                 WHERE session_id = ? 
-                   AND (SUBSTRING_INDEX(jid, '@', 1) LIKE ? OR phone LIKE ?)
-                   AND jid LIKE '%@s.whatsapp.net'
-                 ORDER BY name IS NOT NULL DESC, updated_at DESC
-                 LIMIT 1`,
-                [phoneNumber, searchPattern, searchPattern]
-            );
+                        // La tabla contacts no tiene columna phone; usar SUBSTRING_INDEX para filtrar por número
+                        const [contacts] = await connection.execute(
+                                `SELECT name,
+                                                SUBSTRING_INDEX(jid, '@', 1) AS phone,
+                                                jid
+                                 FROM contacts
+                                 WHERE session_id = ?
+                                     AND SUBSTRING_INDEX(jid, '@', 1) LIKE ?
+                                     AND jid LIKE '%@s.whatsapp.net'
+                                 ORDER BY name IS NOT NULL DESC, updated_at DESC
+                                 LIMIT 1`,
+                                [phoneNumber, searchPattern]
+                        );
 
             console.log(`📊 [CONTACTS-SEARCH] Resultados encontrados: ${contacts.length}`);
             if (contacts.length > 0) {
