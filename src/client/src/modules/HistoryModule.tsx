@@ -393,12 +393,21 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       setLoading(true);
       setError(null);
 
-      console.log('🔄 Cargando historial de mensajes para sessionId:', sessionId);
+      // ✅ FIX: Usar sessionId de prop O recuperar de localStorage (para F5)
+      let activeSessionId = sessionId;
+      if (!activeSessionId || activeSessionId.trim() === '') {
+        activeSessionId = localStorage.getItem('whatsflow_session') || '';
+        if (activeSessionId) {
+          console.log('✅ [HistoryModule] Recuperado sessionId de localStorage:', activeSessionId);
+        }
+      }
+
+      console.log('🔄 Cargando historial de mensajes para sessionId:', activeSessionId);
 
       // Validar que el sessionId sea válido
-      if (!sessionId || sessionId.trim() === '') {
-        console.error('❌ SessionId no válido:', sessionId);
-        setError('SessionId no válido');
+      if (!activeSessionId || activeSessionId.trim() === '') {
+        console.error('❌ SessionId no válido:', activeSessionId);
+        setError('No se encontró sesión activa. Por favor, recarga o vuelve a conectar.');
         setMessages([]);
         setConversations([]);
         setAnalytics(null);
@@ -466,13 +475,14 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
               messageStatus = 'received'; // Para mensajes recibidos
             }
 
+            const isGroup = chatJid.includes('@g.us'); // 🆕 Detectar si es grupo
             return {
               id: msg.id || `msg_${Date.now()}`,
               conversationId: chatJid,
               contactName: displayName,
               contactPhone: displayPhone,
               contactAvatar: displayAvatar,
-              isGroup: false,
+              isGroup: isGroup,
               messageType: msg.type || msg.message_type || 'text',
               content: getMessageContent(msg),
               mediaUrl: msg.mediaUrl || msg.media_url || null,
@@ -481,7 +491,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
               isFromMe: isFromMe,
               status: messageStatus,
               agentId: msg.agentId || msg.agent_id,
-              agentName: msg.agentName || msg.agent_name || (isFromMe ? (msg.agentId || msg.agent_id ? 'Agente' : 'Sistema') : '-'),
+              agentName: msg.agentName || msg.agent_name || (isFromMe ? (msg.agentId || msg.agent_id ? 'Gestión' : 'Sistema') : '-'),
               labels: [],
               priority: 'medium',
               sentiment: 'neutral',
@@ -502,7 +512,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
               contactName: msg.contactName || 'Desconocido',
               contactPhone: msg.contactPhone || 'unknown',
               contactAvatar: `${getAPIBaseURL()}/api/avatar/${sessionId}/${convId}`,
-              isGroup: false, // Ya no hay grupos
+              isGroup: convId.includes('@g.us'), // 🆕 Detectar si es grupo
               messageCount: 0,
               lastMessage: msg.content || 'Sin mensaje',
               lastMessageTime: msg.timestamp || new Date().toISOString(),

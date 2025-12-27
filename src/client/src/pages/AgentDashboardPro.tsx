@@ -124,9 +124,13 @@ interface UploadProgress {
   status: 'uploading' | 'complete' | 'error';
 }
 
+interface AgentDashboardProProps {
+  onLogout?: () => void;
+}
+
 // ==================== COMPONENTE PRINCIPAL ====================
 
-const AgentDashboardPro: React.FC = () => {
+const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
   const navigate = useNavigate();
   const { socket, isConnected, on, off } = useSocket();
 
@@ -363,31 +367,40 @@ const AgentDashboardPro: React.FC = () => {
         }
       }
 
-      // Inicializar audio de notificación (con manejo de errores)
+      // Inicializar audio de notificación (con manejo de errores mejorado)
       try {
-        // Intentar cargar archivo de notificación
-        audioRef.current = new Audio('/notification.mp3');
-        audioRef.current.volume = 0.5; // Volumen moderado
-        audioRef.current.load(); // Pre-cargar
-        console.log('✅ Audio de notificación inicializado');
+        console.log('🎵 [AGENT-PRO] Cargando audio de notificación...');
+        const audio = new Audio();
+
+        // Manejar errores de carga
+        audio.onerror = (e) => {
+          console.warn('⚠️ [AGENT-PRO] Error cargando notification.mp3:', e);
+          audioRef.current = null;
+          setupAudioFallback();
+        };
+
+        // Configurar fuente y cargar
+        audio.src = '/notification.mp3';
+        audio.volume = 0.5;
+        audio.preload = 'auto';
+
+        audioRef.current = audio;
+        console.log('✅ [AGENT-PRO] Audio configurado (pendiente de interacción para reproducir)');
       } catch (error) {
-        console.log('⚠️ No se pudo cargar audio de notificación:', error);
-        // Si falla, usar AudioContext para generar un beep
+        console.warn('⚠️ [AGENT-PRO] Excepción al configurar audio:', error);
+        setupAudioFallback();
+      }
+
+      function setupAudioFallback() {
         try {
           const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-          const audioContext = new AudioContext();
-          const oscillator = audioContext.createOscillator();
-          const gainNode = audioContext.createGain();
-          oscillator.connect(gainNode);
-          gainNode.connect(audioContext.destination);
-          oscillator.frequency.value = 800;
-          oscillator.type = 'sine';
-          gainNode.gain.value = 0.3;
-          // Guardar referencia para reproducir después
-          (audioRef as any).beepContext = { audioContext, oscillator, gainNode };
-        } catch (beepError) {
-          console.log('⚠️ Tampoco se pudo crear beep de audio');
-          audioRef.current = null;
+          if (AudioContext) {
+            console.log('🎹 [AGENT-PRO] Configurando fallback de AudioContext');
+            const audioContext = new AudioContext();
+            (audioRef as any).beepContext = { audioContext };
+          }
+        } catch (e) {
+          console.error('❌ [AGENT-PRO] Fallback de audio no disponible:', e);
         }
       }
 
@@ -433,29 +446,47 @@ const AgentDashboardPro: React.FC = () => {
   const playNotificationSound = () => {
     if (!soundEnabled) return;
 
-    // Intentar reproducir audio
-    if (audioRef.current) {
+    // 🛡️ Intentar interactuar con el AudioContext si existe (para desbloquearlo)
+    const bCtx = (audioRef as any).beepContext;
+    if (bCtx && bCtx.audioContext && bCtx.audioContext.state === 'suspended') {
+      bCtx.audioContext.resume();
+    }
+
+    // Intentar reproducir audio (MP3)
+    if (audioRef.current && audioRef.current.src) {
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(e => {
-        console.log('⚠️ No se pudo reproducir sonido:', e.message || e);
+        console.warn('⚠️ [AGENT-PRO] No se pudo reproducir MP3:', e.message);
+        // Si falla el MP3, intentar el beep
+        playBeepFallback();
       });
+    } else {
+      playBeepFallback();
     }
-    // Si no hay audio, intentar con beep generado
-    else if ((audioRef as any).beepContext) {
-      try {
-        const { audioContext, oscillator, gainNode } = (audioRef as any).beepContext;
-        const newOscillator = audioContext.createOscillator();
-        const newGainNode = audioContext.createGain();
-        newOscillator.connect(newGainNode);
-        newGainNode.connect(audioContext.destination);
-        newOscillator.frequency.value = 800;
-        newOscillator.type = 'sine';
-        newGainNode.gain.value = 0.3;
-        newOscillator.start();
-        setTimeout(() => newOscillator.stop(), 200);
-      } catch (e) {
-        console.log('⚠️ No se pudo reproducir beep');
-      }
+  };
+
+  const playBeepFallback = () => {
+    try {
+      const bCtx = (audioRef as any).beepContext;
+      if (!bCtx || !bCtx.audioContext) return;
+
+      const { audioContext } = bCtx;
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 800;
+      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0.2, audioContext.currentTime + 0.05);
+      gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.15);
+
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + 0.2);
+    } catch (e) {
+      console.error('❌ [AGENT-PRO] Error en beep fallback:', e);
     }
   };
 
@@ -479,7 +510,9 @@ const AgentDashboardPro: React.FC = () => {
     setChatListDateFilter(dateFilter); // Actualizar el filtro actual
 
     try {
-      const token = sessionStorage.getItem('token');
+      const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+      if (!token) return;
+
       const response = await fetch(`/api/agents/${agentId}/chats?sessionId=${sessionId}&dateFilter=${dateFilter}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -548,7 +581,9 @@ const AgentDashboardPro: React.FC = () => {
     setMessageDateFilter(dateFilter); // Actualizar el filtro actual
 
     try {
-      const token = sessionStorage.getItem('token');
+      const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+      if (!token) return;
+
       // Por defecto cargar solo mensajes de HOY para velocidad
       const response = await fetch(`/api/messages/${sessionId}/${selectedChat.id}?dateFilter=${dateFilter}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -1253,10 +1288,15 @@ const AgentDashboardPro: React.FC = () => {
       setSessionId(null);
       setPhoneNumber(null);
 
-      console.log('✅ [AGENT-PRO] Sesión cerrada correctamente');
+      console.log('✅ [AGENT-PRO] Sesión cerrada correctamente localmente');
 
-      // 7. Redirigir a login
-      navigate('/login', { replace: true });
+      // 7. Llamar al logout global si existe (para actualizar App.tsx)
+      if (onLogout) {
+        onLogout();
+      } else {
+        // Redirigir a login directamente si no hay onLogout (fallback)
+        window.location.href = '/login';
+      }
     } catch (error) {
       console.error('❌ [AGENT-PRO] Error durante logout:', error);
       // Forzar limpieza y redirección incluso si hay error

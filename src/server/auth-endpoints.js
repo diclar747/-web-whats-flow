@@ -186,7 +186,7 @@ function registerAuthEndpoints(app, pool) {
                 const sessions = global.sessions;
                 if (sessions && user.phone_number) {
                     const userSessionId = String(user.id);
-                    
+
                     // Verificar si ya existe en memoria
                     if (!sessions.has(userSessionId)) {
                         // Buscar si tiene archivos de credenciales guardados
@@ -194,10 +194,10 @@ function registerAuthEndpoints(app, pool) {
                         const fs = require('fs');
                         const authPath = path.join(process.cwd(), 'auth_info_multi', userSessionId);
                         const credsPath = path.join(authPath, 'creds.json');
-                        
+
                         if (fs.existsSync(credsPath)) {
                             console.log(`[AUTH] 🚀 Levantando sesión automáticamente para usuario ${user.id} (${user.phone_number})`);
-                            
+
                             // Levantar sesión de forma asíncrona (no esperar para responder rápido)
                             const createSession = global.createSession;
                             if (createSession) {
@@ -251,10 +251,19 @@ function registerAuthEndpoints(app, pool) {
 
             try {
                 // Buscar usuario en tabla 'users' y verificar campo session
+                const userId = req.user.userId || req.user.id;
+                if (!userId) {
+                    return res.status(401).json({
+                        success: false,
+                        error: 'Token inválido: ID de usuario no encontrado',
+                        requiresReauth: true
+                    });
+                }
+
                 const [users] = await connection.execute(
                     `SELECT id, name as full_name, email, phone as phone_number, is_super_admin, is_admin, session
                      FROM users WHERE id = ?`,
-                    [req.user.userId]
+                    [userId]
                 );
 
                 if (users.length === 0) {
@@ -458,7 +467,7 @@ function registerAuthEndpoints(app, pool) {
                 const sessionInfo = sessions.get(whatsappSessionId);
                 if (sessionInfo) {
                     sessionInfo.userId = userId;  // ← Guardar userId en la sesión de memoria
-                    
+
                     // Obtener el teléfono de la BD (users.phone)
                     const dbPool = pool || global.dbPool;
                     if (dbPool) {
@@ -469,7 +478,7 @@ function registerAuthEndpoints(app, pool) {
                                 [userId]
                             );
                             userConn.release();
-                            
+
                             if (userRows.length > 0 && userRows[0].phone) {
                                 sessionInfo.phoneNumber = userRows[0].phone;
                                 console.log(`[AUTH-LINK] ✅ phoneNumber guardado: ${userRows[0].phone}`);
@@ -478,7 +487,7 @@ function registerAuthEndpoints(app, pool) {
                             console.warn('[AUTH-LINK] ⚠️ Error obteniendo teléfono:', phoneErr.message);
                         }
                     }
-                    
+
                     console.log(`[AUTH-LINK] 🔄 Sesión en memoria actualizada: sessionId=${whatsappSessionId}, userId=${userId}, isConnected=${sessionInfo.isConnected}`);
                 } else {
                     console.warn(`[AUTH-LINK] ⚠️ Sesión en memoria NO encontrada para ${whatsappSessionId}`);

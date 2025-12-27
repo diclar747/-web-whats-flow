@@ -1095,21 +1095,18 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                             {getContactName(msg)}
                           </Typography>
                         )}
-
                         {/* 🆕 Mostrar nombre del agente o "Admin" para mensajes salientes */}
                         {msg.isFromMe && (
                           <Typography
                             variant="caption"
                             sx={{
-                              color: '#00a884',
-                              mr: 1,
-                              mb: 0.25,
+                              color: colors.primary,
                               fontWeight: 500,
                               alignSelf: 'flex-end',
                               fontSize: '0.7rem'
                             }}
                           >
-                            {msg.agent_name || 'Admin'}
+                            {msg.agent_name && ['Super Admin', 'Admin', 'Carlos', 'WhatsFlow'].includes(msg.agent_name) ? 'ADMIN' : (msg.agent_name || 'Gestión')}
                           </Typography>
                         )}
 

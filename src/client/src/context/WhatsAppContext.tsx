@@ -311,6 +311,17 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   };
 
   const loadChats = useCallback(async (sessionId: string, dateFilter: string = 'all', offset: number = 0, append: boolean = false): Promise<void> => {
+    // 🛡️ SEGURIDAD: No intentar cargar chats si no hay token (tras logout o sesión expirada)
+    const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+    if (!token) {
+      console.log('[WhatsAppContext] 🛑 Omitiendo loadChats: No hay token de autenticación');
+      return;
+    }
+
+    if (!sessionId) {
+      console.log('[WhatsAppContext] 🛑 Omitiendo loadChats: sessionId es nulo o indefinido');
+      return;
+    }
     console.log('[WhatsAppContext] 🚀 loadChats llamado con:', {
       sessionId,
       dateFilter,
@@ -384,13 +395,15 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         const mappedChats: WhatsAppChat[] = Array.from(chatMap.values());
         console.log(`📱 Chats únicos cargados: ${mappedChats.length} de ${data.chats.length} total`);
 
-        // FILTRAR GRUPOS: NO guardar grupos en el estado
-        // 🔒 Filtro estricto: NO grupos, NO chats propios, NO LIDs, NO Status broadcast
+        // FILTRAR GRUPOS: YA NO FILTRAR GRUPOS - Mostrarlos para la pestaña respectiva
+        // 🔒 Filtro: NO chats propios, NO LIDs, NO Status broadcast
         const currentSessionId = sessionId;
         const currentPhone = String(currentSessionId || '').split(':')[0]?.split('@')[0];
 
-        const individualChats = mappedChats.filter(chat => {
-          if (chat.isGroup) return false;
+        const filteredChats = mappedChats.filter(chat => {
+          // ✅ FIX: Permitir grupos (se filtrarán visualmente en tabs)
+          // if (chat.isGroup) return false; 
+
           if (chat.id.includes('@lid')) return false;
           if (chat.id.includes('status@broadcast')) return false;
 
@@ -419,11 +432,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           // ⚡ ORDENAR EXPLÍCITAMENTE
           .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
 
-        const groupCount = mappedChats.filter(chat => chat.isGroup).length;
-        console.log(`📋 Filtrando ${groupCount} grupos. Solo contactos individuales: ${individualChats.length}`);
+        const groupCount = filteredChats.filter(chat => chat.isGroup).length;
+        console.log(`📋 Chats filtrados: ${filteredChats.length}. Grupos incluidos: ${groupCount}`);
 
-        console.log('[WhatsAppContext] 💾 Guardando chats en estado (ordenado):', individualChats.length);
-        console.log('[WhatsAppContext] 📅 Fechas de chats:', individualChats.map(c => ({
+        console.log('[WhatsAppContext] 💾 Guardando chats en estado (ordenado):', filteredChats.length);
+        console.log('[WhatsAppContext] 📅 Fechas de chats:', filteredChats.map(c => ({
           name: c.name,
           timestamp: c.timestamp,
         })).slice(0, 5));
@@ -432,14 +445,14 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           setChats(prev => {
             // Evitar duplicados al añadir
             const existingIds = new Set(prev.map(c => c.id));
-            const newUniqueChats = individualChats.filter(c => !existingIds.has(c.id));
+            const newUniqueChats = filteredChats.filter(c => !existingIds.has(c.id));
             // Ordenar todo de nuevo al unir
             return [...prev, ...newUniqueChats].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
           });
-          console.log(`[WhatsAppContext] ➕ Chats añadidos: ${individualChats.length}`);
+          console.log(`[WhatsAppContext] ➕ Chats añadidos: ${filteredChats.length}`);
         } else {
-          setChats(individualChats);
-          console.log('[WhatsAppContext] ✅ Chats reemplazados (inicio):', individualChats.length);
+          setChats(filteredChats);
+          console.log('[WhatsAppContext] ✅ Chats reemplazados (inicio):', filteredChats.length);
         }
 
         const pagination = (data as any).pagination;
@@ -448,7 +461,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           console.log(`[WhatsAppContext] 📜 Paginación: hasMore=${pagination.hasMore}, count=${pagination.count}`);
         } else {
           // Fallback si no hay info de paginación
-          setHasMoreChats(individualChats.length >= limit);
+          setHasMoreChats(filteredChats.length >= limit);
         }
 
         setConnectionStatus('connected');
@@ -503,7 +516,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   }, [API_BASE, userId, userRole]);
 
   useEffect(() => {
-    const savedSessionId = sessionStorage.getItem('whatsflow_session');
+    // 🔄 FIX: Check localStorage too in case AuthContext hasn't synced it to sessionStorage yet
+    const savedSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
     if (savedSessionId) {
       console.log('Sesión encontrada en localStorage:', savedSessionId);
       setConnectionStatus('connecting');

@@ -2262,7 +2262,10 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                         label="Tableros Kanban"
                         icon={<ViewColumn />}
                       />
-
+                      <Tab
+                        label="Grupos de WhatsApp"
+                        icon={<Group />}
+                      />
                     </Tabs>
                   </Paper>
 
@@ -2457,7 +2460,136 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                     </Box>
                   )}
 
+                  {/* Tab 3: Grupos de WhatsApp */}
+                  {contactSelectionTab === 3 && (
+                    <Box>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Typography variant="subtitle1">
+                          Grupos de WhatsApp ({whatsappGroups.length})
+                        </Typography>
+                        <Button
+                          size="small"
+                          startIcon={selectedWhatsAppGroups.length === whatsappGroups.length ? <CheckBox /> : <CheckBoxOutlineBlank />}
+                          onClick={() => {
+                            if (selectedWhatsAppGroups.length === whatsappGroups.length) {
+                              setSelectedWhatsAppGroups([]);
+                              updateCampaignContactsFromSelection(selectedWhatsAppContacts, [], selectedKanbanBoards, selectedLocalGroups);
+                            } else {
+                              const allGroupIds = whatsappGroups.map(g => g.id || g.jid);
+                              setSelectedWhatsAppGroups(allGroupIds);
+                              updateCampaignContactsFromSelection(selectedWhatsAppContacts, allGroupIds, selectedKanbanBoards, selectedLocalGroups);
+                            }
+                          }}
+                          disabled={whatsappGroups.length === 0}
+                        >
+                          {selectedWhatsAppGroups.length === whatsappGroups.length ? 'Deseleccionar Todos' : 'Seleccionar Todos'}
+                        </Button>
+                      </Box>
+
+                      <Typography variant="body2" color="primary" sx={{ mb: 1, fontWeight: 'bold' }}>
+                        {selectedWhatsAppGroups.length} grupos seleccionados
+                      </Typography>
+
+                      <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                        <Grid container spacing={1}>
+                          {whatsappGroups.map((group) => (
+                            <Grid item xs={12} sm={6} key={group.id || group.jid}>
+                              <Paper
+                                sx={{
+                                  p: 1.5,
+                                  cursor: 'pointer',
+                                  bgcolor: selectedWhatsAppGroups.includes(group.id || group.jid) ? 'action.selected' : 'background.paper',
+                                  '&:hover': { bgcolor: 'action.hover' },
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 1
+                                }}
+                                onClick={() => handleWhatsAppGroupSelection(group.id || group.jid)}
+                              >
+                                <Checkbox checked={selectedWhatsAppGroups.includes(group.id || group.jid)} />
+                                <Avatar src={group.avatar_url} sx={{ width: 32, height: 32 }}>
+                                  {!group.avatar_url && <Group />}
+                                </Avatar>
+                                <ListItemText
+                                  primary={group.name || group.subject}
+                                  secondary={`${group.memberCount || 0} miembros`}
+                                  primaryTypographyProps={{ variant: 'body2', noWrap: true }}
+                                />
+                              </Paper>
+                            </Grid>
+                          ))}
+                        </Grid>
+                      </Box>
+                    </Box>
+                  )}
+
                   {/* Tab 4: Grupos Locales */}
+                  {contactSelectionTab === 4 && (
+                    <Box>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Typography variant="subtitle1">
+                          Grupos Locales ({localGroups.length})
+                        </Typography>
+                        <Button
+                          size="small"
+                          startIcon={selectedLocalGroups.length === localGroups.length ? <CheckBox /> : <CheckBoxOutlineBlank />}
+                          onClick={() => {
+                            if (selectedLocalGroups.length === localGroups.length) {
+                              setSelectedLocalGroups([]);
+                              updateCampaignContactsFromSelection(selectedWhatsAppContacts, selectedWhatsAppGroups, selectedKanbanBoards, []);
+                            } else {
+                              const allGroupIds = localGroups.map(g => g.id);
+                              setSelectedLocalGroups(allGroupIds);
+                              updateCampaignContactsFromSelection(selectedWhatsAppContacts, selectedWhatsAppGroups, selectedKanbanBoards, allGroupIds);
+                            }
+                          }}
+                          disabled={localGroups.length === 0}
+                        >
+                          {selectedLocalGroups.length === localGroups.length ? 'Deseleccionar Todos' : 'Seleccionar Todos'}
+                        </Button>
+                      </Box>
+                      <Box sx={{ maxHeight: 400, overflow: 'auto' }}>
+                        <Grid container spacing={1}>
+                          {localGroups.map((group) => (
+                            <Grid item xs={12} sm={6} key={group.id}>
+                              <Paper
+                                sx={{
+                                  p: 1.5,
+                                  cursor: 'pointer',
+                                  bgcolor: selectedLocalGroups.includes(group.id) ? 'action.selected' : 'background.paper',
+                                  '&:hover': { bgcolor: 'action.hover' },
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 1
+                                }}
+                                onClick={() => {
+                                  setSelectedLocalGroups(prev => {
+                                    const isSelected = prev.includes(group.id);
+                                    const newSelection = isSelected
+                                      ? prev.filter(id => id !== group.id)
+                                      : [...prev, group.id];
+                                    updateCampaignContactsFromSelection(selectedWhatsAppContacts, selectedWhatsAppGroups, selectedKanbanBoards, newSelection);
+                                    return newSelection;
+                                  });
+                                }}
+                              >
+                                <Checkbox checked={selectedLocalGroups.includes(group.id)} />
+                                <Folder sx={{ color: 'primary.main', fontSize: 20 }} />
+                                <Box sx={{ flex: 1, minWidth: 0 }}>
+                                  <Typography variant="body2" noWrap fontWeight="medium">
+                                    {group.name}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {group.count || 0} contactos
+                                  </Typography>
+                                </Box>
+                              </Paper>
+                            </Grid>
+                          ))}
+                        </Grid>
+                      </Box>
+                    </Box>
+                  )}
 
 
                   {/* Vista previa de contactos */}

@@ -51,6 +51,7 @@ interface TransferredChat {
   id: string;
   chatId: string;
   chatName: string;
+  avatarUrl?: string; // 🆕 Agregado
   fromAgent: string;
   toAgent: string;
   status: 'pending' | 'accepted' | 'closed';
@@ -80,7 +81,7 @@ const AgentChatsModule: React.FC<AgentChatsModuleProps> = ({ sessionId, agentId 
     textSecondary: isDarkMode ? '#8696a0' : '#667781',
     divider: isDarkMode ? '#2a3942' : '#d1d7db',
     hover: isDarkMode ? '#2a3942' : '#f5f6f6',
-    pending: '#ff9800',
+    pending: '#25d366',
     active: '#00a884',
     closed: '#667781'
   };
@@ -98,12 +99,18 @@ const AgentChatsModule: React.FC<AgentChatsModuleProps> = ({ sessionId, agentId 
   }, []);
 
   const loadTransferredChats = async () => {
-    
+
     try {
       const response = await fetch(`${getAPIBaseURL()}/api/agent/${agentId}/chats`);
       const data = await response.json();
       if (data.success && data.chats) {
-        setTransferredChats(data.chats);
+        // Mapear campos del backend a la interfaz del frontend
+        const mappedChats = data.chats.map((chat: any) => ({
+          ...chat,
+          avatarUrl: chat.avatar_url,
+          chatName: chat.contact_name || chat.chatName
+        }));
+        setTransferredChats(mappedChats);
       }
       setLoading(false);
     } catch (error) {
@@ -113,7 +120,7 @@ const AgentChatsModule: React.FC<AgentChatsModuleProps> = ({ sessionId, agentId 
   };
 
   const loadAvailableAgents = async () => {
-    
+
     try {
       const response = await fetch(`${getAPIBaseURL()}/api/agents/available`);
       const data = await response.json();
@@ -126,7 +133,7 @@ const AgentChatsModule: React.FC<AgentChatsModuleProps> = ({ sessionId, agentId 
   };
 
   const handleAcceptChat = async (chat: TransferredChat) => {
-    
+
     try {
       const response = await fetch(`${getAPIBaseURL()}/api/agent/chat/accept`, {
         method: 'POST',
@@ -149,7 +156,7 @@ const AgentChatsModule: React.FC<AgentChatsModuleProps> = ({ sessionId, agentId 
   };
 
   const handleRejectChat = async (chat: TransferredChat) => {
-    
+
     try {
       const response = await fetch(`${getAPIBaseURL()}/api/agent/chat/reject`, {
         method: 'POST',
@@ -170,7 +177,7 @@ const AgentChatsModule: React.FC<AgentChatsModuleProps> = ({ sessionId, agentId 
   };
 
   const handleCloseChat = async () => {
-    
+
     if (!selectedChat) return;
 
     try {
@@ -194,7 +201,7 @@ const AgentChatsModule: React.FC<AgentChatsModuleProps> = ({ sessionId, agentId 
   };
 
   const handleReturnChat = async () => {
-    
+
     if (!selectedChat) return;
 
     try {
@@ -218,7 +225,7 @@ const AgentChatsModule: React.FC<AgentChatsModuleProps> = ({ sessionId, agentId 
   };
 
   const handleTransferChat = async () => {
-    
+
     if (!selectedChat || !selectedAgentForTransfer) return;
 
     try {
@@ -401,8 +408,11 @@ const AgentChatsModule: React.FC<AgentChatsModuleProps> = ({ sessionId, agentId 
                       color="error"
                       invisible={!chat.unreadCount || chat.unreadCount === 0}
                     >
-                      <Avatar sx={{ bgcolor: colors.primary, width: 50, height: 50 }}>
-                        {chat.chatName.charAt(0).toUpperCase()}
+                      <Avatar
+                        src={chat.avatarUrl}
+                        sx={{ bgcolor: colors.primary, width: 50, height: 50 }}
+                      >
+                        {!chat.avatarUrl && chat.chatName.charAt(0).toUpperCase()}
                       </Avatar>
                     </Badge>
                   </ListItemAvatar>

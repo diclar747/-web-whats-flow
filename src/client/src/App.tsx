@@ -147,7 +147,7 @@ const AppContent: React.FC<{
                         userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
                         userRole={user?.role}
                       >
-                        <AgentDashboardPro />
+                        <AgentDashboardPro onLogout={handleLogout} />
                       </WhatsAppProvider>
                     );
                   })()

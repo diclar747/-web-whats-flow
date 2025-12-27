@@ -171,8 +171,16 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
     try {
       setLoading(true);
 
-      // 🆕 VERIFICAR si sessionId es válido
-      if (!sessionId || sessionId.trim() === '') {
+      // 🆕 VERIFICAR si sessionId es válido (o recuperar de localStorage)
+      let activeSessionId = sessionId;
+      if (!activeSessionId || activeSessionId.trim() === '') {
+        activeSessionId = localStorage.getItem('whatsflow_session') || '';
+        if (activeSessionId) {
+          console.log('✅ [Dashboard] Recuperado sessionId de localStorage:', activeSessionId);
+        }
+      }
+
+      if (!activeSessionId || activeSessionId.trim() === '') {
         console.log('ℹ️ SessionId vacío - Mostrando datos por defecto (sin WhatsApp conectado)');
         setMetrics([]);
         setLoading(false);
@@ -180,8 +188,8 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
       }
 
       // Cargar estadísticas reales desde la API
-      console.log('🔄 Cargando estadísticas del dashboard desde:', `/api/dashboard/stats/${sessionId}`);
-      const response = await fetch(`/api/dashboard/stats/${sessionId}`);
+      console.log('🔄 Cargando estadísticas del dashboard desde:', `/api/dashboard/stats/${activeSessionId}`);
+      const response = await fetch(`/api/dashboard/stats/${activeSessionId}`);
       const data = await response.json();
       console.log('📊 Respuesta del servidor:', data);
 
@@ -431,11 +439,11 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
       // Cargar analíticas reales de chatbots
       try {
         // 🆕 VERIFICAR sessionId antes de hacer petición
-        if (!sessionId || sessionId.trim() === '') {
+        if (!activeSessionId || activeSessionId.trim() === '') {
           console.log('ℹ️ SessionId vacío - Saltando carga de analíticas de chatbots');
           setChatbotAnalytics([]);
         } else {
-          const chatbotResponse = await fetch(`/api/chatbot/analytics/${sessionId}`);
+          const chatbotResponse = await fetch(`/api/chatbot/analytics/${activeSessionId}`);
           const chatbotData = await chatbotResponse.json();
 
           if (chatbotData.success && chatbotData.analytics) {
@@ -454,56 +462,56 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
       // Cargar usuarios reales (agentes/operadores) desde la base de datos
       try {
         // 🆕 VERIFICAR sessionId antes de hacer petición
-        if (!sessionId || sessionId.trim() === '') {
+        if (!activeSessionId || activeSessionId.trim() === '') {
           console.log('ℹ️ SessionId vacío - Saltando carga de usuarios');
           setTopAgents([]);
         } else {
-          const usersResponse = await fetch(`/api/users?sessionId=${sessionId}`);
-        const usersData = await usersResponse.json();
+          const usersResponse = await fetch(`/api/users?sessionId=${activeSessionId}`);
+          const usersData = await usersResponse.json();
 
-        if (usersData.success && usersData.users && usersData.users.length > 0) {
-          console.log('👥 Usuarios reales cargados:', usersData.users.length);
+          if (usersData.success && usersData.users && usersData.users.length > 0) {
+            console.log('👥 Usuarios reales cargados:', usersData.users.length);
 
-          // Convertir usuarios de BD al formato del dashboard
-          const realAgents: TopAgent[] = usersData.users.slice(0, 4).map((user: any) => {
-            // Calcular iniciales del nombre
-            const nameParts = user.name?.split(' ') || ['Usuario'];
-            const initials = nameParts.length >= 2
-              ? `${nameParts[0][0]}${nameParts[1][0]}`
-              : nameParts[0].substring(0, 2);
+            // Convertir usuarios de BD al formato del dashboard
+            const realAgents: TopAgent[] = usersData.users.slice(0, 4).map((user: any) => {
+              // Calcular iniciales del nombre
+              const nameParts = user.name?.split(' ') || ['Usuario'];
+              const initials = nameParts.length >= 2
+                ? `${nameParts[0][0]}${nameParts[1][0]}`
+                : nameParts[0].substring(0, 2);
 
-            // 🔧 FIX: Usar el agent_status REAL de la base de datos
-            // No calcular basado en last_login, usar el estado actual del agente
-            const agentStatus = user.agent_status || 'offline';
+              // 🔧 FIX: Usar el agent_status REAL de la base de datos
+              // No calcular basado en last_login, usar el estado actual del agente
+              const agentStatus = user.agent_status || 'offline';
 
-            // Mapear agent_status (online/offline/busy/paused) a formato del dashboard (online/away/busy)
-            let dashboardStatus: 'online' | 'away' | 'busy' = 'away';
-            if (agentStatus === 'online') {
-              dashboardStatus = 'online';
-            } else if (agentStatus === 'busy') {
-              dashboardStatus = 'busy';
-            } else if (agentStatus === 'paused' || agentStatus === 'offline') {
-              dashboardStatus = 'away';
-            }
+              // Mapear agent_status (online/offline/busy/paused) a formato del dashboard (online/away/busy)
+              let dashboardStatus: 'online' | 'away' | 'busy' = 'away';
+              if (agentStatus === 'online') {
+                dashboardStatus = 'online';
+              } else if (agentStatus === 'busy') {
+                dashboardStatus = 'busy';
+              } else if (agentStatus === 'paused' || agentStatus === 'offline') {
+                dashboardStatus = 'away';
+              }
 
-            console.log(`[DASHBOARD] Agente ${user.name}: agent_status=${agentStatus}, dashboardStatus=${dashboardStatus}`);
+              console.log(`[DASHBOARD] Agente ${user.name}: agent_status=${agentStatus}, dashboardStatus=${dashboardStatus}`);
 
-            return {
-              id: user.id.toString(),
-              name: user.name || `Usuario ${user.phone}`,
-              avatar: user.avatar_url || initials.toUpperCase(),
-              messages: 0, // Se puede calcular desde mensajes enviados
-              responseTime: '< 1m',
-              satisfaction: 4.5,
-              status: dashboardStatus
-            };
-          });
+              return {
+                id: user.id.toString(),
+                name: user.name || `Usuario ${user.phone}`,
+                avatar: user.avatar_url || initials.toUpperCase(),
+                messages: 0, // Se puede calcular desde mensajes enviados
+                responseTime: '< 1m',
+                satisfaction: 4.5,
+                status: dashboardStatus
+              };
+            });
 
-          setTopAgents(realAgents);
-        } else {
-          console.log('⚠️ No hay usuarios registrados');
-          setTopAgents([]); // Mostrar vacío en lugar de datos falsos
-        }
+            setTopAgents(realAgents);
+          } else {
+            console.log('⚠️ No hay usuarios registrados');
+            setTopAgents([]); // Mostrar vacío en lugar de datos falsos
+          }
         }
       } catch (error) {
         console.error('❌ Error cargando usuarios:', error);

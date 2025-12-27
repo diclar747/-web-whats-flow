@@ -127,6 +127,63 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
   // Menu contextual
   const [menuAnchor, setMenuAnchor] = useState<{ element: HTMLElement; board: KanbanBoard } | null>(null);
 
+  // 📜 Estado para Paginación / Scroll Infinito
+  const [boardPagination, setBoardPagination] = useState<{ [boardId: string]: { page: number, hasMore: boolean } }>({});
+  const [loadingBoard, setLoadingBoard] = useState<{ [boardId: string]: boolean }>({});
+
+  const handleColumnScroll = (e: React.UIEvent<HTMLDivElement>, boardId: string) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+
+    // Si estamos cerca del final (a 50px)
+    if (scrollHeight - scrollTop - clientHeight < 50) {
+      loadMoreContacts(boardId);
+    }
+  };
+
+  const loadMoreContacts = async (boardId: string) => {
+    // Evitar múltiples cargas simultáneas o si no hay más datos
+    if (loadingBoard[boardId]) return;
+
+    const currentPagination = boardPagination[boardId] || { page: 1, hasMore: true };
+    if (!currentPagination.hasMore) return;
+
+    try {
+      setLoadingBoard(prev => ({ ...prev, [boardId]: true }));
+      const nextPage = currentPagination.page + 1;
+
+      console.log(`[Kanban-Scroll] 📜 Cargando página ${nextPage} para tablero ${boardId}`);
+
+      const response = await fetch(`${getAPIBaseURL()}/api/kanban/contacts/${sessionId}?boardId=${boardId}&page=${nextPage}&limit=25`);
+      const data = await response.json();
+
+      if (data.success && data.contacts) {
+        if (data.contacts.length > 0) {
+          // Agregar nuevos contactos al estado existente
+          setContacts(prev => ({
+            ...prev,
+            [boardId]: [...(prev[boardId] || []), ...data.contacts]
+          }));
+
+          // Actualizar paginación
+          setBoardPagination(prev => ({
+            ...prev,
+            [boardId]: { page: nextPage, hasMore: data.hasMore }
+          }));
+        } else {
+          // No hay más datos
+          setBoardPagination(prev => ({
+            ...prev,
+            [boardId]: { ...currentPagination, hasMore: false }
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Error cargando más contactos:', error);
+    } finally {
+      setLoadingBoard(prev => ({ ...prev, [boardId]: false }));
+    }
+  };
+
   useEffect(() => {
     loadBoards();
     loadContacts();
@@ -781,7 +838,10 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
           </Box>
 
           {/* Lista de contactos */}
-          <Box sx={{ overflowY: 'auto', maxHeight: 'calc(100vh - 300px)' }}>
+          <Box
+            sx={{ overflowY: 'auto', maxHeight: 'calc(100vh - 300px)' }}
+            onScroll={(e) => handleColumnScroll(e, board.id)}
+          >
             {boardContacts.length === 0 ? (
               <Card sx={{ p: 4, textAlign: 'center', bgcolor: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.5)', borderRadius: 2 }}>
                 <Typography variant="body2">
@@ -789,7 +849,14 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                 </Typography>
               </Card>
             ) : (
-              boardContacts.map(contact => renderContactCard(contact, board.id))
+              <>
+                {boardContacts.map(contact => renderContactCard(contact, board.id))}
+                {loadingBoard[board.id] && (
+                  <Box sx={{ p: 2, textAlign: 'center', color: 'gray' }}>
+                    <Typography variant="caption">Cargando más...</Typography>
+                  </Box>
+                )}
+              </>
             )}
           </Box>
         </Box>

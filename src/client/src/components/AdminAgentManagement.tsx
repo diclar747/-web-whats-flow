@@ -165,7 +165,7 @@ const AdminAgentManagement: React.FC = () => {
 
   const loadAgents = async () => {
     try {
-      const response = await fetch(`${apiUrl}/api/admin/dashboard`, {
+      const response = await fetch(`${apiUrl}/api/agents/list`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -174,8 +174,8 @@ const AdminAgentManagement: React.FC = () => {
       if (!response.ok) throw new Error('Error cargando agentes');
 
       const data = await response.json();
-      if (data.success && data.stats.agents) {
-        setAgents(data.stats.agents);
+      if (data.success && data.agents) {
+        setAgents(data.agents);
       }
     } catch (err) {
       console.error('Error loading agents:', err);
