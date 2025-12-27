@@ -63,7 +63,7 @@ async function sendReminder(pool, sessions, appointment) {
 
         try {
             const [sessionRows] = await connection.execute(
-                'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 LIMIT 1',
+                'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 LIMIT 1',
                 [appointment.session_id]
             );
 

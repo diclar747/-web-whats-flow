@@ -14815,38 +14815,38 @@ app.post('/api/kanban/contacts', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            // Obtener phoneNumber del sessionId si se proporciona
-            let phoneNumber = sessionId;
+            // Obtener session_id del usuario (debe ser users.id)
+            let userSessionId = sessionId;
             if (sessionId) {
-                const userPhone = await getUserPhoneNumber(sessionId);
-                if (userPhone) phoneNumber = userPhone;
+                const resolved = await getOwnerSessionId(sessionId);
+                if (resolved) userSessionId = resolved;
             }
 
             // Asegurar que el contacto existe en la tabla contacts primero
             await connection.execute(
                 `INSERT IGNORE INTO contacts (jid, session_id, name, notify_name, is_group, created_at)
                  VALUES (?, ?, ?, ?, ?, NOW())`,
-                [contactJid, phoneNumber || 'unknown', notes || contactJid.split('@')[0], notes, contactJid.includes('@g.us') ? 1 : 0]
+                [contactJid, userSessionId || 'unknown', notes || contactJid.split('@')[0], notes, contactJid.includes('@g.us') ? 1 : 0]
             );
 
-            // Verificar si el contacto ya existe en el tablero
-            const [existing] = await connection.execute(
-                'SELECT id FROM kanban_contacts WHERE board_id = ? AND contact_jid = ?',
-                [boardId, contactJid]
-            );
-
-            if (existing.length > 0) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'El contacto ya está en este tablero'
-                });
+            // PASO 1: Eliminar el contacto de TODOS los tableros del usuario primero
+            // Esto previene que el contacto aparezca en múltiples tableros simultáneamente
+            if (userSessionId) {
+                await connection.execute(
+                    `DELETE kc FROM kanban_contacts kc
+                     INNER JOIN kanban_boards kb ON kc.board_id = kb.id
+                     WHERE kc.contact_jid = ? AND kb.session_id = ?`,
+                    [contactJid, userSessionId]
+                );
+                console.log(`[KANBAN] 🗑️ Contacto ${contactJid} eliminado de tableros anteriores antes de agregar`);
             }
 
-            // Agregar contacto al tablero
+            // PASO 2: Agregar contacto al nuevo tablero
             await connection.execute(
                 'INSERT INTO kanban_contacts (board_id, contact_jid, notes) VALUES (?, ?, ?)',
                 [boardId, contactJid, notes || '']
             );
+            console.log(`[KANBAN] ✅ Contacto ${contactJid} agregado al tablero ${boardId}`);
 
             res.json({
                 success: true,
