@@ -1179,23 +1179,20 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
         return false;
       }
 
-      // ⚠️ IMPORTANTE: FILTRAR GRUPOS - NO mostrarlos NUNCA
-      if (chat.isGroup) {
-        return false;
-      }
+      // ✅ Permitir grupos en el filtro
 
       const matchesSearch = chatName.toLowerCase().includes(searchTerm.toLowerCase());
       if (!matchesSearch) return false;
 
-      // Filtrado por pestañas (SOLO contactos individuales, SIN grupos)
-      if (filterTab === 0) return true; // Todo (todos los chats individuales)
+      // Filtrado por pestañas
+      if (filterTab === 0) return true; // Todo
       if (filterTab === 1) {
-        // Enviados: chats donde el último mensaje es de nosotros
-        return chat.lastMessageFromMe === true;
+        // Grupos: solo mostrar grupos
+        return chat.isGroup === true;
       }
       if (filterTab === 2) {
-        // Recibidos: chats donde el último mensaje NO es de nosotros
-        return chat.lastMessageFromMe === false;
+        // Recibidos: chats donde el último mensaje NO es de nosotros (solo contactos)
+        return chat.lastMessageFromMe === false && !chat.isGroup;
       }
       if (filterTab === 3) {
         // Pendientes: chats con mensajes sin leer
@@ -1218,14 +1215,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     return filtered;
   }, [chats, searchTerm, filterTab]);
 
-  // 🚀 Estadísticas de chats (SIN grupos)
+  // 🚀 Estadísticas de chats (con grupos)
   const chatStats = useMemo(() => {
-    const individualChats = chats.filter(c => !c.isGroup);
     return {
-      total: individualChats.length,
-      sent: individualChats.filter(c => c.lastMessageFromMe === true).length,
-      received: individualChats.filter(c => c.lastMessageFromMe === false).length,
-      pending: individualChats.filter(c => c.unreadCount && c.unreadCount > 0).length
+      total: chats.length,
+      groups: chats.filter(c => c.isGroup).length,
+      received: chats.filter(c => c.lastMessageFromMe === false && !c.isGroup).length,
+      pending: chats.filter(c => c.unreadCount && c.unreadCount > 0).length
     };
   }, [chats]);
 
@@ -1410,7 +1406,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
             }}
           >
             <Tab label={`Todo (${chatStats.total})`} />
-            <Tab label={`Enviados (${chatStats.sent})`} />
+            <Tab label={`Grupos (${chatStats.groups})`} />
             <Tab label={`Recibidos (${chatStats.received})`} />
             <Tab label={`Sin leer (${chatStats.pending})`} />
             <Tab label={`Estados`} />
