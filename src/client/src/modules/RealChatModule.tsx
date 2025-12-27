@@ -784,19 +784,6 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                       }}
                     />
                     <Chip
-                      label={`No leídos (${chats.filter(c => c.unreadCount && c.unreadCount > 0).length})`}
-                      size="small"
-                      variant={filterType === 'unread' ? 'filled' : 'outlined'}
-                      onClick={() => setFilterType('unread')}
-                      sx={{
-                        backgroundColor: filterType === 'unread' ? '#00a884' : 'transparent',
-                        color: filterType === 'unread' ? 'white' : isDarkMode ? '#aebac1' : '#667781',
-                        fontSize: '0.75rem',
-                        height: 28,
-                        minWidth: 'auto'
-                      }}
-                    />
-                    <Chip
                       label={`Grupos (${chats.filter(c => c.isGroup).length})`}
                       size="small"
                       variant={filterType === 'groups' ? 'filled' : 'outlined'}
@@ -804,6 +791,19 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                       sx={{
                         backgroundColor: filterType === 'groups' ? '#00a884' : 'transparent',
                         color: filterType === 'groups' ? 'white' : isDarkMode ? '#aebac1' : '#667781',
+                        fontSize: '0.75rem',
+                        height: 28,
+                        minWidth: 'auto'
+                      }}
+                    />
+                    <Chip
+                      label={`No leídos (${chats.filter(c => c.unreadCount && c.unreadCount > 0).length})`}
+                      size="small"
+                      variant={filterType === 'unread' ? 'filled' : 'outlined'}
+                      onClick={() => setFilterType('unread')}
+                      sx={{
+                        backgroundColor: filterType === 'unread' ? '#00a884' : 'transparent',
+                        color: filterType === 'unread' ? 'white' : isDarkMode ? '#aebac1' : '#667781',
                         fontSize: '0.75rem',
                         height: 28,
                         minWidth: 'auto'
