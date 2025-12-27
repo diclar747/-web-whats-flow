@@ -26,7 +26,7 @@ module.exports = function (app, pool) {
         try {
             // Primero intentar decodificar como JWT
             const jwt = require('jsonwebtoken');
-            const JWT_SECRET = process.env.JWT_SECRET || 'whatsflow_jwt_secret';
+            const JWT_SECRET = process.env.JWT_SECRET || '0927450953d52b804a8e511e5a7f2f35bbd20f6c4c156902b4e0902214795eb4c6dafffc36e40489d6eda1ae3963ac42c2d043ab3a4a6382bc62c70fe8ed3a7b';
 
             try {
                 const decoded = jwt.verify(token, JWT_SECRET);
@@ -38,9 +38,9 @@ module.exports = function (app, pool) {
                     // Intentar buscar ID numérico real si existe
                     // ... (Simplificación: Asumimos null para operaciones de BD si no es Agente)
                     req.user = {
-                        id: 'admin_' + decoded.phone,
+                        id: decoded.id || ('admin_' + decoded.phone),
                         permissions_id: null, // Admin no tiene row, so NULL 
-                        dbId: null, // Para FKs que requieran INT
+                        dbId: decoded.id || null, // Para FKs que requieran INT
                         name: 'Admin',
                         email: null,
                         role: 'admin',

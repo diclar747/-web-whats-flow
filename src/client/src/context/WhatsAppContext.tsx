@@ -605,6 +605,34 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       }
     };
 
+    const handleConnectionUpdate = (data: any) => {
+      console.log('📱 [WhatsAppContext] Actualización de conexión recibida:', data);
+      if (data.status === 'connected' && (data.sessionId || data.newSessionId)) {
+        const newSid = data.sessionId || data.newSessionId;
+        console.log('🎉 [WhatsAppContext] WhatsApp conectado exitosamente:', newSid);
+
+        // Actualizar sesión y cargar chats sin necesidad de re-login
+        setSession({
+          sessionId: newSid,
+          isConnected: true,
+          status: 'connected',
+          lastActivity: new Date().toISOString(),
+          phoneNumber: data.phoneNumber
+        });
+        setConnectionStatus('connected');
+
+        // Guardar en sessionStorage para persistencia
+        sessionStorage.setItem('whatsflow_session', newSid);
+
+        // Cargar chats inmediatamente
+        loadChats(newSid);
+      } else if (data.status === 'disconnected') {
+        console.log('⚠️ [WhatsAppContext] WhatsApp desconectado');
+        setConnectionStatus('disconnected');
+        setSession(prev => prev ? { ...prev, isConnected: false, status: 'disconnected' } : null);
+      }
+    };
+
     const handleMessage = (newMessage: WhatsAppMessage) => {
       console.log('📨 [REAL-TIME] handleMessage recibido:', newMessage);
 
@@ -790,6 +818,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       console.log('🔔 [SOCKET] Actualización de transferencia:', data);
       // Aquí podrías mostrar un toast o notificación
     };
+
+    socket.on('connection-update', handleConnectionUpdate);
 
     const handleChatUpdate = (data: any) => {
       console.log('🔄 [SOCKET] Actualización de chat recibida:', data);

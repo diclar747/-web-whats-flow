@@ -143,7 +143,7 @@ module.exports = function (app, pool) {
      * Crear nuevo agente con privilegios
      * POST /api/agents/create
      */
-    app.post('/api/agents/create', authenticateToken, checkActivePlan, async (req, res) => {
+    app.post(['/api/agents/create', '/api/agents-create'], authenticateToken, checkActivePlan, async (req, res) => {
         try {
             console.log('🔍 [AGENT-CREATE] ===== INICIO DE PETICIÓN =====');
             console.log('🔍 [AGENT-CREATE] Headers:', {

@@ -48,16 +48,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Verificar token guardado al inicializar
     const checkAuthStatus = async () => {
       try {
-        // ✅ DETECTAR SI ESTAMOS EN MODO ADMIN POR QR - MUY AGRESIVO
+        // ✅ RELAXED DASHBOARD CHECK: 
+        // No desactivar AuthContext completamente en /dashboard, solo si NO tenemos datos.
         const isAdminQRMode = window.location.pathname.startsWith('/dashboard');
+        const hasStoredSession = !!(localStorage.getItem('token') || localStorage.getItem('whatsflow_token'));
 
-        // 🆕 SI estamos en /dashboard, NUNCA verificar token - dejar que Socket.IO lo maneje
-        if (isAdminQRMode) {
-          console.log('🚫 MODO DASHBOARD - AuthContext DESACTIVADO completamente');
-          console.log('ℹ️ La autenticación se manejará via Socket.IO cuando conecte WhatsApp');
+        if (isAdminQRMode && !hasStoredSession) {
+          console.log('ℹ️ MODO DASHBOARD (SIN SESIÓN) - Esperando QR/Socket');
           setIsLoading(false);
-          setUser(null); // Asegurar que user esté limpio
-          return; // SALIR COMPLETAMENTE
+          return;
         }
 
         console.log('🔄 AuthContext: Verificando sesión (soporte persistente habilitado)');
