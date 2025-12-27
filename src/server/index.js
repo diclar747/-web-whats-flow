@@ -14882,17 +14882,17 @@ app.put('/api/kanban/contacts/move', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            const userSessionId = sessionId ? await getOwnerSessionId(sessionId) : null;
+            const phoneNumber = sessionId ? await getUserPhoneNumber(sessionId) : null;
 
             // Asegurar que el contacto existe en la tabla contacts
-            if (userSessionId) {
+            if (phoneNumber) {
                 await connection.execute(
                     `INSERT INTO contacts (jid, session_id, name)
                      VALUES (?, ?, ?)
                      ON DUPLICATE KEY UPDATE jid = jid`,
                     [
                         contactJid,
-                        userSessionId,
+                        phoneNumber,
                         contactJid.split('@')[0]
                     ]
                 );
@@ -14946,10 +14946,10 @@ app.post('/api/kanban/move-contact', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
-            const userSessionId = sessionId ? await getOwnerSessionId(sessionId) : null;
+            const phoneNumber = sessionId ? await getUserPhoneNumber(sessionId) : null;
 
             // Asegurar que el contacto existe en la tabla contacts
-            if (userSessionId) {
+            if (phoneNumber) {
                 await connection.execute(
                     `INSERT INTO contacts (jid, session_id, name, avatar_url)
                      VALUES (?, ?, ?, ?)
@@ -14958,7 +14958,7 @@ app.post('/api/kanban/move-contact', async (req, res) => {
                         avatar_url = COALESCE(VALUES(avatar_url), avatar_url)`,
                     [
                         contactJid,
-                        userSessionId,
+                        phoneNumber,
                         contactName || contactJid.split('@')[0],
                         contactAvatar || null
                     ]
@@ -14969,7 +14969,7 @@ app.post('/api/kanban/move-contact', async (req, res) => {
                     `DELETE kc FROM kanban_contacts kc
                      INNER JOIN kanban_boards kb ON kc.board_id = kb.id
                      WHERE kc.contact_jid = ? AND kb.session_id = ?`,
-                    [contactJid, userSessionId]
+                    [contactJid, phoneNumber]
                 );
                 console.log(`[KANBAN] 🗑️ Contacto ${contactJid} eliminado de tableros anteriores`);
             }
