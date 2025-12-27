@@ -5300,6 +5300,19 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     connectionState: 'open'
                 });
 
+                // 🔥 NOTIFICAR AL FRONTEND que WhatsApp se conectó
+                io.emit('whatsapp-connected', {
+                    sessionId,
+                    timestamp: new Date().toISOString(),
+                    phoneNumber: sock?.user?.id?.split(':')[0]
+                });
+                io.to(`session-${sessionId}`).emit('whatsapp-connected', {
+                    sessionId,
+                    timestamp: new Date().toISOString(),
+                    phoneNumber: sock?.user?.id?.split(':')[0]
+                });
+                console.log(`[${sessionId}] 📢 Evento whatsapp-connected emitido al frontend`);
+
                 // Informar sobre el estado de sincronización
                 if (syncHistory) {
                     console.log(`[${sessionId}] 📥 Sincronización de historial ACTIVADA - Descargando mensajes, chats y contactos...`);
