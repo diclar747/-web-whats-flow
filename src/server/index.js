@@ -138,15 +138,6 @@ io.use(async (socket, next) => {
     }
 });
 
-// 🧩 Join al cuarto de la sesión para eventos en tiempo real
-io.on('connection', (socket) => {
-    const sid = socket.data.sessionId || socket.handshake.query.sessionId;
-    if (sid) {
-        socket.join(`session-${sid}`);
-        console.log(`[SOCKET] Cliente unido a sala session-${sid}`);
-    }
-});
-
 // Monitoring de conexiones activas
 let activeConnections = 0;
 setInterval(() => {
@@ -609,25 +600,44 @@ async function getMaxChannelsForOwner(ownerPhone) {
     try {
         connection = await pool.getConnection();
 
-        // 1. Buscar primero en la tabla users (Master record)
+        // 1. Buscar en la tabla users (Master record) por teléfono o email
         let planName;
+        let subscriptionStatus;
+        let isSuperAdmin = false;
+
         const [userRows] = await connection.execute(
-            'SELECT subscription_plan FROM users WHERE phone = ? LIMIT 1',
-            [ownerPhone]
+            'SELECT subscription_plan, subscription_status, is_super_admin FROM users WHERE phone = ? OR email = ? LIMIT 1',
+            [ownerPhone, ownerPhone]
         );
 
-        if (userRows.length > 0 && userRows[0].subscription_plan) {
+        if (userRows.length > 0) {
             planName = userRows[0].subscription_plan;
+            subscriptionStatus = userRows[0].subscription_status;
+            isSuperAdmin = !!userRows[0].is_super_admin;
         } else {
-            // 2. Fallback a user_sessions
+            // 2. Fallback a user_sessions (por phone o session_id)
             const [sessionRows] = await connection.execute(
-                'SELECT subscription_plan FROM user_sessions WHERE phone = ? AND subscription_plan IS NOT NULL LIMIT 1',
-                [ownerPhone]
+                'SELECT subscription_plan, subscription_status FROM user_sessions WHERE (phone = ? OR session_id = ?) AND subscription_plan IS NOT NULL LIMIT 1',
+                [ownerPhone, ownerPhone]
             );
-            planName = sessionRows[0]?.subscription_plan;
+
+            if (sessionRows.length > 0) {
+                planName = sessionRows[0].subscription_plan;
+                subscriptionStatus = sessionRows[0].subscription_status;
+            }
+        }
+
+        // Si es super admin, tiene acceso ilimitado
+        if (isSuperAdmin) {
+            return { maxChannels: Infinity, source: 'super-admin' };
         }
 
         if (planName) {
+            // Si el plan no está activo, el límite es 0
+            if (subscriptionStatus !== 'active') {
+                return { maxChannels: 0, source: 'inactive-plan' };
+            }
+
             const [plans] = await connection.execute(
                 'SELECT max_channels, max_sessions FROM plans WHERE name = ? LIMIT 1',
                 [planName]
@@ -636,12 +646,12 @@ async function getMaxChannelsForOwner(ownerPhone) {
             const plan = plans[0];
             if (plan) {
                 const limit = plan.max_channels || plan.max_sessions;
-                const normalized = limit && Number(limit) > 0 ? Number(limit) : Infinity;
+                const normalized = limit && Number(limit) > 0 ? Number(limit) : 1;
                 return { maxChannels: normalized, source: 'plans' };
             }
         }
 
-        return { maxChannels: Infinity, source: 'no-plan' };
+        return { maxChannels: 0, source: 'no-plan' };
     } catch (err) {
         console.error('[PLAN-LIMIT] Error obteniendo plan:', err);
         return { maxChannels: Infinity, source: 'error' };
@@ -653,25 +663,62 @@ async function getMaxChannelsForOwner(ownerPhone) {
 async function countActiveSessionsForOwner(ownerPhone) {
     if (!ownerPhone) return 0;
 
+    let connection;
+    let aliases = new Set([ownerPhone]);
+
+    // 1. Resolver todos los posibles alias (phone, email) del dueño
+    try {
+        if (pool) {
+            connection = await pool.getConnection();
+            const [userRows] = await connection.execute(
+                'SELECT phone, email FROM users WHERE phone = ? OR email = ?',
+                [ownerPhone, ownerPhone]
+            );
+            userRows.forEach(row => {
+                if (row.phone) aliases.add(row.phone);
+                if (row.email) aliases.add(row.email);
+            });
+
+            // También buscar en user_sessions por si acaso
+            const [sessionRows] = await connection.execute(
+                'SELECT phone, session_id FROM user_sessions WHERE phone = ? OR session_id = ?',
+                [ownerPhone, ownerPhone]
+            );
+            sessionRows.forEach(row => {
+                if (row.phone) aliases.add(row.phone);
+                if (row.session_id) aliases.add(row.session_id);
+            });
+        }
+    } catch (err) {
+        console.warn('[COUNT-SESSIONS] Error al obtener alias:', err.message);
+    } finally {
+        if (connection) connection.release();
+    }
+
+    console.log(`[COUNT-SESSIONS] 🔍 Buscando sesiones activas para alias:`, Array.from(aliases));
+
     let activeCount = 0;
     for (const [sid, sessionData] of sessions.entries()) {
         const mappedOwner = sessionOwnerMap.get(sid);
-        let phoneNumber = null;
 
-        if (!mappedOwner) {
-            try {
-                phoneNumber = await getUserPhoneNumber(sid);
-            } catch (err) {
-                console.warn(`[PLAN-LIMIT] No se pudo resolver phoneNumber para ${sid}:`, err.message);
-            }
+        // Si el dueño mapeado coincide con alguno de nuestros alias
+        if (mappedOwner && aliases.has(mappedOwner) && sessionData?.isConnected) {
+            activeCount++;
+            continue;
         }
 
-        const ownerMatches = mappedOwner ? mappedOwner === ownerPhone : phoneNumber === ownerPhone;
-        if (ownerMatches && sessionData?.isConnected) {
-            activeCount++;
+        // Fallback: verificar el número de teléfono de la sesión
+        try {
+            const phoneNumber = await getUserPhoneNumber(sid);
+            if (phoneNumber && aliases.has(phoneNumber) && sessionData?.isConnected) {
+                activeCount++;
+            }
+        } catch (e) {
+            // Ignorar errores al obtener el número de teléfono
         }
     }
 
+    console.log(`[COUNT-SESSIONS] 📊 Total sesiones activas para ${ownerPhone}: ${activeCount}`);
     return activeCount;
 }
 
@@ -8449,6 +8496,21 @@ app.post('/api/whatsapp/qr-code', async (req, res) => {
             ownerIdentifier = rawIdentifier || `session-${Date.now()}`;
         }
 
+        // VALIDAR CAPACIDAD DEL PLAN ANTES DE CONTINUAR
+        const capacity = await ensurePlanCapacity(ownerIdentifier);
+        if (!capacity.allowed) {
+            const errorMessage = capacity.maxChannels === 0
+                ? 'Es necesario activar un plan para generar el código QR.'
+                : `Has alcanzado el límite de líneas permitidas (${capacity.maxChannels}).`;
+
+            return res.status(403).json({
+                success: false,
+                error: errorMessage,
+                maxChannels: capacity.maxChannels,
+                activeSessions: capacity.activeCount
+            });
+        }
+
         // Generar nuevo sessionId
         const sessionId = crypto.randomBytes(8).toString('hex');
         console.log(`[QR-ENDPOINT] 🆕 Generando QR para ${ownerIdentifier}, sessionId: ${sessionId}`);
@@ -9039,7 +9101,7 @@ app.get('/api/sessions/active', async (req, res) => {
                     if (isSuperAdmin) {
                         // SuperAdmin ve TODAS las sesiones de la base de datos
                         [dbSessions] = await connection.execute(
-                            `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email
+                            `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at
                              FROM user_sessions
                              ORDER BY created_at DESC`
                         );
@@ -9048,7 +9110,7 @@ app.get('/api/sessions/active', async (req, res) => {
                         // Cliente normal: buscar por EMAIL (prioridad) o userId
                         if (userEmail || userId) {
                             [dbSessions] = await connection.execute(
-                                `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email
+                                `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at
                                  FROM user_sessions
                                  WHERE (email = ? OR id = ?)
                                  ORDER BY created_at DESC`,
@@ -9058,7 +9120,7 @@ app.get('/api/sessions/active', async (req, res) => {
                         } else {
                             // Fallback legacy: buscar por phone
                             [dbSessions] = await connection.execute(
-                                `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email
+                                `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at
                                  FROM user_sessions
                                  WHERE (phone = ? OR owner_phone_number = ?)
                                  ORDER BY created_at DESC`,
@@ -10252,12 +10314,30 @@ app.post('/api/send/message', async (req, res) => {
     const { sessionId, number, message, sentBy, sentByName } = req.body;
 
     if (!sessionId || !number || !message) {
+        console.error('[API-SEND] ❌ Faltan parámetros:', { sessionId, number, message });
         return res.status(400).json({ success: false, error: 'Faltan parámetros: sessionId, number, message' });
     }
 
     const session = sessions.get(sessionId);
+
+    // DEBUG: Diagnóstico detallado de por qué falla
     if (!session || !session.sock || !session.isConnected) {
-        return res.status(400).json({ success: false, error: 'Sesión no encontrada, socket no disponible o WhatsApp no conectado' });
+        console.error(`[API-SEND] ❌ Rechazado para sessionId: ${sessionId}`);
+        console.error(`[API-SEND] Estado sesión:`, {
+            exists: !!session,
+            hasSock: !!session?.sock,
+            isConnected: session?.isConnected,
+            keysInMap: Array.from(sessions.keys()) // Ver qué sesiones SÍ existen
+        });
+
+        return res.status(400).json({
+            success: false,
+            error: 'Sesión no encontrada, socket no disponible o WhatsApp no conectado',
+            debug: {
+                exists: !!session,
+                isConnected: session?.isConnected
+            }
+        });
     }
 
     try {
@@ -17124,11 +17204,12 @@ app.post('/api/campaigns/create', authenticateToken, /* checkActivePlan, */ asyn
                     const contactJid = recipient.jid || recipient.id;
                     const contactName = recipient.name || '';
 
+                    const isGroup = contactJid.endsWith('@g.us') ? 1 : 0;
                     // INSERT IGNORE para crear el contacto solo si no existe
                     await connection.execute(
                         `INSERT IGNORE INTO contacts (jid, name, session_id, is_group, created_at)
-                         VALUES (?, ?, ?, 0, NOW())`,
-                        [contactJid, contactName, phoneNumber]
+                         VALUES (?, ?, ?, ?, NOW())`,
+                        [contactJid, contactName, phoneNumber, isGroup]
                     );
                 }
 

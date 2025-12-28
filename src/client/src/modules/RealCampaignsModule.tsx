@@ -4,6 +4,7 @@ import PersonalizedCampaignModule from './PersonalizedCampaignModule';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
 import { SubscriptionGuard } from '../components/SubscriptionGuard';
 import {
+  Avatar,
   Box,
   Grid,
   Card,
@@ -819,8 +820,13 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
   // Función para formatear números de teléfono con código 595
   const formatPhoneNumber = (phone: string): string => {
+    // Si es un grupo (@g.us), devolver tal cual
+    if (phone.includes('@g.us')) {
+      return phone;
+    }
+
     // Si ya viene con @s.whatsapp.net, extraer solo el número
-    if (phone.includes('@')) {
+    if (phone.includes('@s.whatsapp.net')) {
       phone = phone.split('@')[0];
     }
 
@@ -1046,28 +1052,18 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       }
     });
 
-    // Agregar miembros de grupos de WhatsApp seleccionados
-    for (const groupId of groupIds) {
-      try {
-        const response = await fetch(`${getAPIBaseURL()}/api/group-contacts/${sessionId}/${groupId}`);
-        const data = await response.json();
-        if (data.success && data.contacts) {
-          data.contacts.forEach((contact: any) => {
-            const rawPhone = contact.phone || contact.jid?.split('@')[0] || '';
-            if (rawPhone) {
-              const formattedPhone = formatPhoneNumber(rawPhone);
-              campaignContacts.push({
-                phone: formattedPhone,
-                name: contact.name || rawPhone,
-                variables: { nombre: contact.name || rawPhone }
-              });
-            }
-          });
-        }
-      } catch (error) {
-        console.error(`Error obteniendo contactos del grupo ${groupId}:`, error);
+    // Agregar grupos de WhatsApp seleccionados DIRECTAMENTE (no sus miembros)
+    groupIds.forEach(groupId => {
+      const group = whatsappGroups.find(g => (g.id === groupId || g.jid === groupId));
+      if (group) {
+        const jid = group.jid || group.id;
+        campaignContacts.push({
+          phone: jid, // Guardamos el JID completo en el campo phone
+          name: group.name || group.subject || jid,
+          variables: { nombre: group.name || group.subject || jid }
+        });
       }
-    }
+    });
 
     // Agregar contactos de tableros Kanban seleccionados
     boardNames.forEach(boardName => {
@@ -1205,10 +1201,12 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
       // 🔥 GUARDAR EN BASE DE DATOS
       console.log('💾 Guardando campaña en base de datos...');
       // Normalizar JIDs de contactos (asegurar que tengan @s.whatsapp.net)
-      const normalizeJid = (phone: string) => {
+      const normalizeJid = (phone: string): string => {
         if (!phone) return '';
-        // Si ya tiene @, retornarlo tal cual
-        if (phone.includes('@')) return phone;
+        // Si ya tiene @g.us o @s.whatsapp.net, retornarlo tal cual
+        if (phone.includes('@g.us') || phone.includes('@s.whatsapp.net')) return phone;
+        // Si tiene otro @, extraer número (por seguridad)
+        if (phone.includes('@')) phone = phone.split('@')[0];
         // Si es solo número, agregar @s.whatsapp.net
         return `${phone}@s.whatsapp.net`;
       };
@@ -2512,7 +2510,6 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                                 </Avatar>
                                 <ListItemText
                                   primary={group.name || group.subject}
-                                  secondary={`${group.memberCount || 0} miembros`}
                                   primaryTypographyProps={{ variant: 'body2', noWrap: true }}
                                 />
                               </Paper>

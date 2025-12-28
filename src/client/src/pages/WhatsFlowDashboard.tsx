@@ -200,6 +200,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   const [userPhoneNumber, setUserPhoneNumber] = useState<string | null>(null);
   const [sessionValid, setSessionValid] = useState<boolean | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false); // Nuevo estado para evitar race conditions
+  const [primarySessionId, setPrimarySessionId] = useState<string | null>(null); // 🆕 Primary Session (oldest)
 
   // Detectar rol del usuario (priorizar el del hook de permisos)
   const userRole = permUserRole || sessionStorage.getItem('userRole') || localStorage.getItem('userRole') || 'admin';
@@ -208,6 +209,48 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   const isAgent = userRole === 'agent';
   const isSupervisor = userRole === 'supervisor';
   const isAdmin = userRole === 'admin';
+
+  // 🆕 Determinar Primary Session (Oldest Active Session)
+  useEffect(() => {
+    const fetchPrimarySession = async () => {
+      try {
+        const response = await fetch(`${window.location.origin}/api/sessions/active`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+        const data = await response.json();
+
+        if (data.success && data.sessions && data.sessions.length > 0) {
+          // Filtrar primero por sesiones que parecen validas
+          // Prioridad: 1. Strict Oldest (Principal) - Connection status does NOT change selection
+          const sortedSessions = [...data.sessions].sort((a, b) => {
+            // Usar fecha de creación (más antiguo primero)
+            const timeA = new Date(a.created_at || 0).getTime();
+            const timeB = new Date(b.created_at || 0).getTime();
+            return timeA - timeB;
+          });
+
+          if (sortedSessions.length > 0) {
+            const primary = sortedSessions[0];
+            console.log('[DASHBOARD] 🏆 Primary Session Determinado:', {
+              sessionId: primary.sessionId,
+              created_at: primary.created_at,
+              isConnected: primary.isConnected,
+              phone: primary.phoneNumber
+            });
+            setPrimarySessionId(primary.sessionId);
+          }
+        }
+      } catch (err) {
+        console.error('[DASHBOARD] Error fetching primary session:', err);
+      }
+    };
+
+    if (sessionId || localStorage.getItem('token')) {
+      fetchPrimarySession();
+    }
+  }, [sessionId]);
 
   // Dashboard statistics state
   const [dashboardStats, setDashboardStats] = useState({
@@ -1346,14 +1389,14 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                               <Box sx={{ p: 3 }}>
                                 <AgentChatView
                                   userId={userId || ''}
-                                  sessionId={sessionId}
+                                  sessionId={primarySessionId || sessionId}
                                   onChatSelect={(chatJid) => {
                                     navigate(`/dashboard/chat/${chatJid}`);
                                   }}
                                 />
                               </Box>
                             ) : (
-                              <WhatsAppWebChat sessionId={sessionId} />
+                              <WhatsAppWebChat sessionId={primarySessionId || sessionId} />
                             )}
                           </Suspense>
                         </RequiresWhatsApp>

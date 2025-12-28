@@ -44,6 +44,7 @@ interface WhatsAppSession {
   isConnected: boolean;
   hasAuth: boolean;
   ownerPhone?: string;
+  created_at?: string; // 🆕 Added field
 }
 
 const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ sessionId }) => {
@@ -64,6 +65,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
   const [waLoading, setWaLoading] = useState(false);
   const [waError, setWaError] = useState('');
   const [normalizedMaxChannels, setNormalizedMaxChannels] = useState<number>(Infinity);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string>('inactive');
   const [disconnectDialog, setDisconnectDialog] = useState<{ open: boolean; sessionId: string }>({
     open: false,
     sessionId: ''
@@ -74,19 +76,37 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
   // Cargar plan de suscripción y límites
   useEffect(() => {
     const fetchSubscriptionLimits = async () => {
-      if (!resolvedSessionId) {
+      let identifier = resolvedSessionId;
+
+      if (!identifier || /^\d+$/.test(identifier)) {
+        try {
+          const savedUser = localStorage.getItem('user');
+          if (savedUser) {
+            const userData = JSON.parse(savedUser);
+            identifier = userData.phone || userData.phone_number || userData.email || identifier;
+          }
+        } catch (e) {
+          console.warn('[SUBSCRIPTION] Error parse user:', e);
+        }
+      }
+
+      if (!identifier) {
         setNormalizedMaxChannels(1);
         return;
       }
+
       try {
-        const response = await sessionFetch(`/api/subscriptions/my-subscription?phone=${resolvedSessionId}`, {
+        const response = await sessionFetch(`/api/subscriptions/my-subscription?phone=${encodeURIComponent(identifier)}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' }
         });
 
         if (response.ok) {
           const data = await response.json();
-          const maxChannels = data?.subscription?.max_channels;
+          const sub = data?.subscription;
+          setSubscriptionStatus(sub?.subscription_status || 'inactive');
+
+          const maxChannels = sub?.plan_details?.max_channels || sub?.max_channels;
           if (typeof maxChannels === 'number' && maxChannels > 0) {
             setNormalizedMaxChannels(maxChannels);
           } else if (maxChannels === 'unlimited' || maxChannels === -1) {
@@ -98,6 +118,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       } catch (err) {
         console.error('[SUBSCRIPTION] Error al cargar límites:', err);
         setNormalizedMaxChannels(1);
+        setSubscriptionStatus('inactive');
       }
     };
 
@@ -125,15 +146,26 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       }
 
       const data = await response.json();
-      setWaSessions((data.sessions || []).map((s: any) => ({
+      const sessionsData = (data.sessions || []).map((s: any) => ({
         sessionId: s.sessionId,
         phoneNumber: s.phoneNumber,
         name: s.name,
         avatar: s.avatar,
         isConnected: s.isConnected,
         hasAuth: true,
-        ownerPhone: s.ownerPhone
-      })));
+        ownerPhone: s.ownerPhone,
+        created_at: s.created_at
+      }));
+
+      // 🆕 Sort logic (Verified): Priority strictly to Oldest (Primary)
+      sessionsData.sort((a: WhatsAppSession, b: WhatsAppSession) => {
+        // Age priority (Oldest first) - Strict Principal
+        const timeA = new Date(a.created_at || 0).getTime();
+        const timeB = new Date(b.created_at || 0).getTime();
+        return timeA - timeB;
+      });
+
+      setWaSessions(sessionsData);
     } catch (err: any) {
       console.error('[WHATSAPP] Error al cargar sesiones:', err);
       setWaError(err.message || 'Error al cargar sesiones de WhatsApp');
@@ -188,6 +220,19 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
     }
 
     setWaError('');
+
+    // Validar plan activo
+    if (subscriptionStatus !== 'active') {
+      setWaError('Es necesario activar un plan para generar el código QR.');
+      return;
+    }
+
+    // Validar límite de canales
+    if (Number.isFinite(normalizedMaxChannels) && waSessions.length >= normalizedMaxChannels) {
+      setWaError(`Has alcanzado el límite de líneas de tu plan (${waSessions.length}/${normalizedMaxChannels}).`);
+      return;
+    }
+
     stopQrPolling();
     setQrState({ sessionId: '', qrDataUrl: '', isLoading: true });
 
@@ -361,14 +406,18 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                   variant="contained"
                   startIcon={<QrCode />}
                   onClick={() => startQrFlow()}
-                  disabled={qrState.isLoading || (Number.isFinite(normalizedMaxChannels) && waSessions.length >= normalizedMaxChannels)}
+                  disabled={
+                    qrState.isLoading ||
+                    subscriptionStatus !== 'active' ||
+                    (Number.isFinite(normalizedMaxChannels) && waSessions.length >= normalizedMaxChannels)
+                  }
                   sx={{
                     bgcolor: '#25d366',
                     '&:hover': { bgcolor: '#1ebe57' },
                     '&:disabled': { bgcolor: 'rgba(37, 211, 102, 0.3)' }
                   }}
                 >
-                  Conectar por QR
+                  {subscriptionStatus !== 'active' ? 'Plan Requerido' : 'Conectar por QR'}
                 </Button>
                 <Button
                   variant="outlined"
@@ -445,8 +494,9 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
               )}
 
               <List>
-                {waSessions.map((session) => {
-                  const isPrimary = session.sessionId === sessionId;
+                {waSessions.map((session, index) => {
+                  // 🆕 Primary logic: First session in the sorted list is Primary
+                  const isPrimary = index === 0;
                   const iconBg = isPrimary ? 'primary.main' : 'success.main';
                   const displayName = session.name || session.phoneNumber || session.sessionId;
 

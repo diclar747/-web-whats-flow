@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
-import { useWhatsApp } from '../contexts/WhatsAppContext';
+import { useWhatsApp } from '../context/WhatsAppContext';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import io from 'socket.io-client';
 import {
@@ -393,28 +393,28 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   }) : [];
 
   return (
-    <div style={{ 
+    <div style={{
       display: 'flex',
       height: 'calc(100vh - 64px)', // Adjust height to account for the top app bar
       backgroundColor: isDarkMode ? '#0c1317' : '#f0f2f5'
     }}>
       {/* Sidebar de contactos */}
-      <div style={{ 
+      <div style={{
         width: '30%',
-        borderRight: `1px solid ${isDarkMode ? '#303d45' : '#e9edef'}`, 
+        borderRight: `1px solid ${isDarkMode ? '#303d45' : '#e9edef'}`,
         backgroundColor: isDarkMode ? '#111b21' : '#fff',
         display: 'flex',
         flexDirection: 'column'
       }}>
-        <div style={{ 
+        <div style={{
           padding: '10px 16px',
           backgroundColor: isDarkMode ? '#202c33' : '#f0f2f5',
           display: 'flex',
           alignItems: 'center',
           gap: '8px'
         }}>
-          <TextField 
-            fullWidth 
+          <TextField
+            fullWidth
             size="small"
             placeholder="Buscar o empezar nuevo chat"
             InputProps={{
@@ -427,7 +427,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
             value={searchTerm}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
           />
-          <IconButton 
+          <IconButton
             onClick={() => {
               console.log('🔄 Recargando chats manualmente...');
               if (loadChats) loadChats(sessionId);
@@ -438,7 +438,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
           >
             <RefreshIcon sx={{ fontSize: 20 }} />
           </IconButton>
-          <IconButton 
+          <IconButton
             onClick={async () => {
               console.log('🔄 Forzando sincronización completa...');
               // setIsInitialLoading(true);
@@ -547,7 +547,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
               )}
               {connectionStatus === 'connected' && (
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                  <Button 
+                  <Button
                     variant="outlined"
                     size="small"
                     onClick={async () => {
@@ -564,7 +564,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                   >
                     Recargar Chats
                   </Button>
-                  <Button 
+                  <Button
                     variant="text"
                     size="small"
                     onClick={async () => {
@@ -748,19 +748,19 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
               </Box>
 
               {filteredChats.map(chat => (
-                <ListItem 
+                <ListItem
                   key={chat.id}
                   button
                   selected={activeChat?.id === chat.id}
                   onClick={() => setActiveChat && setActiveChat(chat)}
-                  style={{ 
-                    backgroundColor: activeChat?.id === chat.id 
+                  style={{
+                    backgroundColor: activeChat?.id === chat.id
                       ? isDarkMode ? '#2a3942' : '#f5f6f6'
                       : 'transparent'
                   }}
                 >
                   <ListItemAvatar>
-                    <Badge 
+                    <Badge
                       badgeContent={chat.unreadCount || 0}
                       color="error"
                       invisible={!chat.unreadCount || chat.unreadCount === 0}
@@ -775,7 +775,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                         }
                       }}
                     >
-                      <Avatar 
+                      <Avatar
                         src={chat.avatar}
                         sx={{
                           bgcolor: chat.isGroup ? '#9c27b0' : '#00a884',
@@ -787,7 +787,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                       </Avatar>
                     </Badge>
                   </ListItemAvatar>
-                  <ListItemText 
+                  <ListItemText
                     primary={chat.name}
                     secondary={chat.lastMessage}
                     secondaryTypographyProps={{
@@ -796,7 +796,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                       style: { textOverflow: 'ellipsis', overflow: 'hidden', width: '180px' }
                     }}
                   />
-                  <ListItemText 
+                  <ListItemText
                     secondary={new Date(chat.timestamp || 0).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     style={{ textAlign: 'right' }}
                     secondaryTypographyProps={{
@@ -811,7 +811,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
       </div>
 
       {/* Área de chat principal */}
-      <div style={{ 
+      <div style={{
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
@@ -820,14 +820,14 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
         {activeChat ? (
           <>
             {/* Cabecera del chat */}
-            <div style={{ 
+            <div style={{
               padding: '10px 16px',
               backgroundColor: isDarkMode ? '#202c33' : '#f0f2f5',
               display: 'flex',
               alignItems: 'center',
               borderBottom: `1px solid ${isDarkMode ? '#303d45' : '#e9edef'}`
             }}>
-              <Avatar 
+              <Avatar
                 src={activeChat?.avatar}
                 sx={{
                   bgcolor: activeChat?.isGroup ? '#9c27b0' : '#00a884',
@@ -839,7 +839,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
               </Avatar>
               <div style={{ marginLeft: '15px', flex: 1 }}>
                 <div style={{ fontWeight: 'bold' }}>{activeChat?.name}</div>
-                <div style={{ 
+                <div style={{
                   fontSize: '0.8rem',
                   color: isDarkMode ? '#aebac1' : '#667781',
                 }}>
@@ -852,7 +852,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
             </div>
 
             {/* Mensajes */}
-            <div style={{ 
+            <div style={{
               flex: 1,
               overflowY: 'auto',
               padding: '20px',
@@ -863,14 +863,14 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                 </Box>
               ) : (
                 (messages || []).map((msg) => (
-                  <div key={msg.id} style={{ 
+                  <div key={msg.id} style={{
                     display: 'flex',
                     justifyContent: msg.isFromMe ? 'flex-end' : 'flex-start',
                     marginBottom: '10px',
                     alignItems: 'flex-end'
                   }}>
                     {!msg.isFromMe && (
-                      <Avatar 
+                      <Avatar
                         src={getContactAvatar(msg) || undefined}
                         sx={{
                           width: 32,
@@ -885,7 +885,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
 
                     <div style={{ maxWidth: '70%' }}>
                       {!msg.isFromMe && (
-                        <Typography 
+                        <Typography
                           variant="caption"
                           sx={{
                             color: isDarkMode ? '#aebac1' : '#667781',
@@ -899,11 +899,11 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                         </Typography>
                       )}
 
-                      <div 
-                        style={{ 
+                      <div
+                        style={{
                           padding: '8px 12px',
                           borderRadius: '7.5px',
-                          backgroundColor: msg.isFromMe 
+                          backgroundColor: msg.isFromMe
                             ? isDarkMode ? '#005c4b' : '#d9fdd3'
                             : isDarkMode ? '#202c33' : '#fff',
                           color: isDarkMode ? '#e9edef' : '#111b21',
@@ -913,7 +913,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                         onClick={() => handleReplyClick(msg)}
                       >
                         {msg.contextInfo && (
-                          <Paper 
+                          <Paper
                             elevation={0}
                             sx={{
                               bgcolor: isDarkMode ? '#1a262f' : '#e0e0e0',
@@ -939,7 +939,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
 
                         {msg.type === 'image' && msg.mediaUrl ? (
                           <div>
-                            <img 
+                            <img
                               src={msg.mediaUrl.startsWith('data:') ? msg.mediaUrl : `${getAPIBaseURL()}${msg.mediaUrl}`}
                               alt="Imagen"
                               style={{
@@ -952,7 +952,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                           </div>
                         ) : msg.type === 'video' && msg.mediaUrl ? (
                           <div>
-                            <video 
+                            <video
                               controls
                               style={{
                                 maxWidth: '100%',
@@ -966,7 +966,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                           </div>
                         ) : msg.type === 'audio' && msg.mediaUrl ? (
                           <div>
-                            <audio 
+                            <audio
                               controls
                               style={{
                                 width: '100%',
@@ -979,7 +979,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                           </div>
                         ) : msg.type === 'document' && msg.mediaUrl ? (
                           <div>
-                            <a 
+                            <a
                               href={msg.mediaUrl.startsWith('data:') ? msg.mediaUrl : `${getAPIBaseURL()}${msg.mediaUrl}`}
                               download={msg.message}
                               style={{
@@ -997,7 +997,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                           <p>{msg.message}</p>
                         )}
 
-                        <div style={{ 
+                        <div style={{
                           fontSize: '0.7rem',
                           textAlign: 'right',
                           color: isDarkMode ? '#aebac1' : '#667781',
@@ -1024,7 +1024,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
               <div ref={messagesEndRef} />
             </div>
 
-            <div style={{ 
+            <div style={{
               padding: '8px 16px',
               backgroundColor: isDarkMode ? '#202c33' : '#f0f2f5',
               display: 'flex',
@@ -1033,14 +1033,14 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
               gap: '8px'
             }}>
               {replyMessage && (
-                <Paper 
+                <Paper
                   elevation={0}
                   sx={{
                     width: '100%',
                     bgcolor: isDarkMode ? '#1a262f' : '#e0e0e0',
                     p: 1,
                     borderRadius: '8px',
-                    borderLeft: `4px solid ${replyMessage?.isFromMe ? '#25d366' : '#007bff'}`, 
+                    borderLeft: `4px solid ${replyMessage?.isFromMe ? '#25d366' : '#007bff'}`,
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center'
@@ -1084,7 +1084,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                   <EmojiIcon />
                 </IconButton>
 
-                <input 
+                <input
                   type="file"
                   ref={fileInputRef}
                   onChange={handleFileSelect}
@@ -1096,7 +1096,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                   <AttachIcon />
                 </IconButton>
 
-                <TextField 
+                <TextField
                   fullWidth
                   variant="outlined"
                   size="small"
@@ -1106,13 +1106,13 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                   placeholder={selectedFile ? "Agrega un mensaje..." : "Escribe un mensaje"}
                   multiline
                   maxRows={3}
-                  style={{ 
+                  style={{
                     backgroundColor: isDarkMode ? '#2a3942' : '#fff',
                     borderRadius: '8px'
                   }}
                 />
 
-                <IconButton 
+                <IconButton
                   onClick={handleSendMessage}
                   disabled={!newMessage.trim() && !selectedFile}
                   sx={{
@@ -1129,7 +1129,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
             </div>
           </>
         ) : (
-          <div style={{ 
+          <div style={{
             flex: 1,
             display: 'flex',
             alignItems: 'center',

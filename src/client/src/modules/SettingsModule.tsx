@@ -112,7 +112,7 @@ import {
   NotificationImportant,
   Email,
   Sms,
-  WhatsApp,
+
   Telegram,
   Facebook,
   Twitter,
@@ -333,24 +333,6 @@ interface SystemPreferences {
   };
   whatsapp: {
     autoReply: boolean;
-    businessHours: {
-      enabled: boolean;
-      timezone: string;
-      schedule: {
-        monday: { start: string; end: string; enabled: boolean };
-        tuesday: { start: string; end: string; enabled: boolean };
-        wednesday: { start: string; end: string; enabled: boolean };
-        thursday: { start: string; end: string; enabled: boolean };
-        friday: { start: string; end: string; enabled: boolean };
-        saturday: { start: string; end: string; enabled: boolean };
-        sunday: { start: string; end: string; enabled: boolean };
-      };
-    };
-    templates: {
-      welcomeMessage: string;
-      awayMessage: string;
-      businessHoursMessage: string;
-    };
   };
   notifications: {
     email: {
@@ -419,27 +401,18 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
   const [mySubscription, setMySubscription] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [syncPreference, setSyncPreference] = useState<any>(null);
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [syncHistoryOnConnect, setSyncHistoryOnConnect] = useState(() => {
-    const saved = localStorage.getItem('whatsflow_sync_history');
-    return saved === 'true';
-  });
+
+  const [deleteUserDialog, setDeleteUserDialog] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<UserAccount | null>(null);
+
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: '',
     severity: 'success' as 'success' | 'error' | 'warning' | 'info'
   });
-  const [syncConfirmDialog, setSyncConfirmDialog] = useState(false);
-  const [deleteUserDialog, setDeleteUserDialog] = useState(false);
-  const [userToDelete, setUserToDelete] = useState<UserAccount | null>(null);
 
-  const [waSessions, setWaSessions] = useState<Array<{ sessionId: string; phoneNumber: string | null; ownerPhone?: string | null; isPrimary?: boolean; isConnected: boolean; name?: string; avatar?: string; hasAuth?: boolean }>>([]);
-  const [waLoading, setWaLoading] = useState(false);
-  const [waError, setWaError] = useState('');
-  const [qrState, setQrState] = useState<{ sessionId: string; qrDataUrl: string; isLoading: boolean }>({ sessionId: '', qrDataUrl: '', isLoading: false });
-  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [deviceId, setDeviceId] = useState('');
+
+
 
   // Estados para formulario de usuario
   const [userForm, setUserForm] = useState({
@@ -452,14 +425,10 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     avatar_url: '' // 🖼️ Avatar del contacto
   });
 
-  // Estados para búsqueda de contactos
-  const [contactSearchOpen, setContactSearchOpen] = useState(false);
-  const [contactSearchQuery, setContactSearchQuery] = useState('');
-  const [availableContacts, setAvailableContacts] = useState<any[]>([]);
-  const [loadingContacts, setLoadingContacts] = useState(false);
-
   // Estados para modal de permisos
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+
+
   const [selectedUserForPermissions, setSelectedUserForPermissions] = useState<UserAccount | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
 
@@ -500,27 +469,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     }
   }, [location.search]);
 
-  // 📱 Función para cargar contactos de WhatsApp
-  const loadWhatsAppContacts = async () => {
-    const currentSessionId = localStorage.getItem('sessionId') || sessionStorage.getItem('sessionId');
-    if (!currentSessionId) return;
 
-    setLoadingContacts(true);
-    try {
-      const API_BASE = getAPIBaseURL();
-      const response = await fetch(`${API_BASE}/api/contacts/${currentSessionId}`);
-      const data = await response.json();
-
-      if (data.success && data.contacts) {
-        console.log('[CONTACTS] 📋 Contactos cargados:', data.contacts.length);
-        setAvailableContacts(data.contacts);
-      }
-    } catch (error) {
-      console.error('[CONTACTS] ❌ Error cargando contactos:', error);
-    } finally {
-      setLoadingContacts(false);
-    }
-  };
 
   const loadSettingsData = async () => {
     try {
@@ -647,21 +596,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         setIsSuperAdmin(userIsSuperAdmin);
       }
 
-      // Cargar preferencia de sincronización
-      try {
-        const syncResponse = await fetch(`${getAPIBaseURL()}/api/sync/preference/${sessionId}`);
-        const syncData = await syncResponse.json();
 
-        if (syncData.success) {
-          console.log('[SYNC-LOAD] Preferencia cargada desde BD:', syncData);
-          console.log('[SYNC-LOAD] auto_sync valor:', syncData.auto_sync);
-          setSyncPreference(syncData);
-        } else {
-          console.log('[SYNC-LOAD] No se pudo cargar preferencia:', syncData);
-        }
-      } catch (error) {
-        console.error('[SYNC-LOAD] Error loading sync preference:', error);
-      }
 
       // Cargar usuarios reales desde la API
       try {
@@ -831,24 +766,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         },
         whatsapp: {
           autoReply: true,
-          businessHours: {
-            enabled: true,
-            timezone: 'America/Asuncion',
-            schedule: {
-              monday: { start: '08:00', end: '17:00', enabled: true },
-              tuesday: { start: '08:00', end: '17:00', enabled: true },
-              wednesday: { start: '08:00', end: '17:00', enabled: true },
-              thursday: { start: '08:00', end: '17:00', enabled: true },
-              friday: { start: '08:00', end: '17:00', enabled: true },
-              saturday: { start: '08:00', end: '12:00', enabled: false },
-              sunday: { start: '08:00', end: '12:00', enabled: false }
-            }
-          },
-          templates: {
-            welcomeMessage: '¡Hola! Gracias por contactarnos. ¿En qué podemos ayudarte?',
-            awayMessage: 'Actualmente no estamos disponibles. Te responderemos lo antes posible.',
-            businessHoursMessage: 'Nuestro horario de atención es de lunes a viernes de 9:00 a 18:00.'
-          }
+
         },
         notifications: {
           email: {
@@ -911,288 +829,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     }
   };
 
-  const stopQrPolling = () => {
-    if (qrPollRef.current) {
-      clearInterval(qrPollRef.current);
-      qrPollRef.current = null;
-    }
-  };
 
-  const fetchActiveSessions = async () => {
-    setWaLoading(true);
-    setWaError('');
-
-    try {
-      // ✅ Obtener token de autenticación para identificar al usuario
-      const token = localStorage.getItem('token') || localStorage.getItem('whatsflow_token');
-
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      // ✅ CRÍTICO: Enviar token JWT para que el backend identifique al usuario por email
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      // ✅ Enviar sessionId como fallback (legacy)
-      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active?sessionId=${encodeURIComponent(sessionId)}`, {
-        headers
-      });
-      const data = await response.json();
-
-      console.log('[WHATSAPP] 📡 Sesiones activas recibidas:', data);
-
-      if (data.success) {
-        setWaSessions(data.sessions || []);
-      } else {
-        setWaError(data.error || 'No se pudieron cargar las sesiones activas');
-      }
-    } catch (error) {
-      console.error('[WHATSAPP] Error cargando sesiones activas:', error);
-      setWaError('No se pudieron cargar las sesiones activas');
-    } finally {
-      setWaLoading(false);
-    }
-  };
-
-  const pollSessionStatus = (targetSessionId: string) => {
-    if (!targetSessionId) return;
-    stopQrPolling();
-
-    qrPollRef.current = setInterval(async () => {
-      try {
-        const resp = await fetch(`${getAPIBaseURL()}/api/session/${targetSessionId}/status?deviceId=${encodeURIComponent(deviceId)}`);
-        const data = await resp.json();
-
-        console.log('[WHATSAPP-POLL]', data);
-
-        // SOLO aceptar si:
-        // 1. Tiene phoneNumber (autenticado)
-        // 2. El sessionId coincide con el que generamos
-        // 3. NO aceptar si solo está en BD (sesión vieja)
-        if (data.success && data.isConnected && data.phoneNumber && data.sessionId === targetSessionId) {
-          console.log('[WHATSAPP] ✅ Sesión NUEVA autenticada detectada');
-          stopQrPolling();
-
-          // Guardar sessionId inmediatamente
-          localStorage.setItem('whatsflow_session', targetSessionId);
-          sessionStorage.setItem('whatsflow_session', targetSessionId);
-
-          setQrState({ sessionId: '', qrDataUrl: '', isLoading: false });
-          setSnackbar({ open: true, message: `✅ WhatsApp conectado: ${data.phoneNumber}`, severity: 'success' });
-
-          // ✅ Actualizar la lista de sesiones sin recargar la página
-          console.log('[WHATSAPP] 🔄 Actualizando lista de sesiones...');
-          setTimeout(() => {
-            fetchActiveSessions();
-          }, 1000);
-        } else if (data.success && data.isConnected && !data.phoneNumber) {
-          console.log('[WHATSAPP] ⏳ Sesión en memoria sin phoneNumber aún (esperando escaneo)');
-        } else if (data.success && data.isConnected && data.sessionId !== targetSessionId) {
-          console.log('[WHATSAPP] ⚠️ Sesión encontrada pero NO es la del QR actual - ignorando');
-        }
-      } catch (err) {
-        console.warn('[WHATSAPP] Error al verificar estado de sesión:', err);
-      }
-    }, 2000);
-  };
-
-  const startQrFlow = async () => {
-    const ensuredDeviceId = deviceId || localStorage.getItem('whatsflow_device_id') || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-
-    if (!deviceId) {
-      setDeviceId(ensuredDeviceId);
-      localStorage.setItem('whatsflow_device_id', ensuredDeviceId);
-    }
-
-    setWaError('');
-    setQrState({ sessionId: '', qrDataUrl: '', isLoading: true });
-
-    try {
-      // PRIMERO: Cerrar TODAS las sesiones activas en BD para este deviceId
-      // Esto evita que el polling detecte sesiones viejas
-      console.log('[WHATSAPP] 🧹 Desactivando sesiones previas en BD...');
-      try {
-        await fetch(`${getAPIBaseURL()}/api/sessions/cleanup-device`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deviceId: ensuredDeviceId })
-        });
-        console.log('[WHATSAPP] ✅ Sesiones previas limpiadas');
-      } catch (cleanErr) {
-        console.warn('[WHATSAPP] ⚠️ No se pudieron limpiar sesiones previas:', cleanErr);
-      }
-
-      // ✅ Obtener token JWT para asociar sesión con usuario autenticado
-      const token = localStorage.getItem('token') || localStorage.getItem('whatsflow_token');
-
-      const qrHeaders: HeadersInit = {
-        'Content-Type': 'application/json'
-      };
-
-      if (token) {
-        qrHeaders['Authorization'] = `Bearer ${token}`;
-      }
-
-      // Usar /api/qr-refresh para forzar regeneración de QR
-      const response = await fetch(`${getAPIBaseURL()}/api/qr-refresh`, {
-        method: 'POST',
-        headers: qrHeaders,
-        body: JSON.stringify({
-          deviceId: ensuredDeviceId,
-          ownerPhone: sessionId
-        })
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'No se pudo generar el código QR');
-      }
-
-      setQrState({
-        sessionId: data.sessionId,
-        qrDataUrl: data.qrDataUrl || '',
-        isLoading: false
-      });
-
-      if (data.sessionId) {
-        pollSessionStatus(data.sessionId);
-      }
-    } catch (error: any) {
-      console.error('[WHATSAPP] Error iniciando QR:', error);
-      setWaError(error?.message || 'No se pudo iniciar la conexión');
-      setQrState({ sessionId: '', qrDataUrl: '', isLoading: false });
-      stopQrPolling();
-    }
-  };
-
-  const disconnectSession = async (targetSessionId: string) => {
-    try {
-      const response = await fetch(`${getAPIBaseURL()}/api/sessions/${targetSessionId}/disconnect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ownerPhone: sessionId })
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'No se pudo eliminar la conexión');
-      }
-
-      console.log('[WHATSAPP] ✅ Conexión eliminada:', targetSessionId);
-    } catch (error: any) {
-      console.error('[WHATSAPP] Error eliminando conexión:', error);
-      setSnackbar({ open: true, message: error?.message || 'No se pudo eliminar la conexión', severity: 'error' });
-      throw error;
-    }
-  };
-
-  // Diálogo de confirmación para desconexión
-  const [disconnectDialog, setDisconnectDialog] = useState<{ open: boolean; targetSessionId: string; isPrimary: boolean; hasSecondaries: boolean }>({ open: false, targetSessionId: '', isPrimary: false, hasSecondaries: false });
-
-  const openDisconnectDialog = (targetSessionId: string) => {
-    setDisconnectDialog({ open: true, targetSessionId, isPrimary: false, hasSecondaries: false });
-  };
-
-  const closeDisconnectDialog = () => {
-    setDisconnectDialog({ open: false, targetSessionId: '', isPrimary: false, hasSecondaries: false });
-  };
-
-  const confirmDisconnect = async () => {
-    const { targetSessionId } = disconnectDialog;
-    closeDisconnectDialog();
-
-    setSnackbar({ open: true, message: 'Eliminando conexión...', severity: 'info' });
-
-    await disconnectSession(targetSessionId);
-
-    // ✅ Actualizar lista inmediatamente
-    await fetchActiveSessions();
-
-    setSnackbar({ open: true, message: 'Conexión eliminada exitosamente', severity: 'success' });
-  };
-
-  const handleReconnectSession = async (targetSessionId: string) => {
-    try {
-      setSnackbar({ open: true, message: 'Reconectando sesión...', severity: 'info' });
-
-      const response = await fetch(`${getAPIBaseURL()}/api/reconnect-session`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ sessionId: targetSessionId })
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setSnackbar({ open: true, message: 'Sesión reconectada exitosamente', severity: 'success' });
-        fetchActiveSessions();
-      } else {
-        setSnackbar({ open: true, message: data.error || 'Error al reconectar sesión', severity: 'error' });
-      }
-    } catch (error) {
-      console.error('[RECONNECT] Error:', error);
-      setSnackbar({ open: true, message: 'Error al reconectar sesión', severity: 'error' });
-    }
-  };
-
-  useEffect(() => {
-    let storedDeviceId = localStorage.getItem('whatsflow_device_id');
-    if (!storedDeviceId) {
-      storedDeviceId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      localStorage.setItem('whatsflow_device_id', storedDeviceId);
-    }
-    setDeviceId(storedDeviceId);
-
-    return () => {
-      stopQrPolling();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (selectedTab === 2 && sessionId) {
-      console.log('[SETTINGS] Tab WhatsApp activa, cargando sesiones para:', sessionId);
-      fetchActiveSessions();
-    }
-  }, [selectedTab, sessionId]);
-
-  // ✅ Socket.IO listener para actualizar la lista cuando WhatsApp se conecta
-  useEffect(() => {
-    if (!socket) return;
-
-    // Escuchar cuando una sesión de WhatsApp se conecta exitosamente
-    const handleConnectionSuccess = (data: any) => {
-      console.log('[SETTINGS] 🎉 WhatsApp conectado (socket event):', data);
-
-      // Actualizar la lista de sesiones activas automáticamente
-      if (selectedTab === 2) {
-        console.log('[SETTINGS] 🔄 Recargando lista de sesiones...');
-        fetchActiveSessions();
-      }
-
-      // Mostrar notificación
-      setSnackbar({
-        open: true,
-        message: `✅ WhatsApp conectado: ${data.phoneNumber || 'Nueva línea'}`,
-        severity: 'success'
-      });
-    };
-
-    // Escuchar eventos de conexión de WhatsApp
-    socket.on('whatsapp-connected', handleConnectionSuccess);
-    socket.on('connection-update', handleConnectionSuccess);
-
-    // Cleanup al desmontar
-    return () => {
-      socket.off('whatsapp-connected');
-      socket.off('connection-update');
-    };
-  }, [socket, selectedTab]);
 
   // ============== FUNCIONES CRUD DE USUARIOS ==============
 
@@ -1453,137 +1090,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     }
   };
 
-  const handleToggleSyncHistory = (enabled: boolean) => {
-    setSyncHistoryOnConnect(enabled);
-    localStorage.setItem('whatsflow_sync_history', enabled.toString());
-  };
 
-  const handleToggleAutoSync = async (enabled: boolean) => {
-    try {
-      setSyncLoading(true);
-
-      console.log(`[SYNC] Cambiando auto_sync a: ${enabled}`);
-
-      const response = await fetch(`${getAPIBaseURL()}/api/sync/preference/${sessionId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ auto_sync: enabled })
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        // Actualizar el estado inmediatamente con el valor que devuelve el servidor
-        const newPreference = {
-          ...syncPreference,
-          auto_sync: data.auto_sync !== undefined ? data.auto_sync : enabled
-        };
-        setSyncPreference(newPreference);
-
-        console.log(`[SYNC] Estado actualizado en frontend:`, newPreference);
-        console.log(`[SYNC] auto_sync guardado en BD:`, data.auto_sync);
-
-        setSnackbar({
-          open: true,
-          message: data.message || (enabled
-            ? '✅ Sincronización automática activada. Descargando datos...'
-            : 'Sincronización automática desactivada'),
-          severity: 'success'
-        });
-
-        // Si se activa, iniciar sincronización inmediata
-        if (enabled) {
-          console.log('[AUTO-SYNC] Iniciando sincronización automática inmediata...');
-          // Esperar 1 segundo para que el snackbar se muestre
-          setTimeout(() => {
-            handleForceSync(true);
-          }, 1000);
-        }
-      } else {
-        setSnackbar({
-          open: true,
-          message: 'Error al actualizar preferencia: ' + data.error,
-          severity: 'error'
-        });
-      }
-    } catch (error) {
-      console.error('Error toggling auto sync:', error);
-      setSnackbar({
-        open: true,
-        message: 'Error al actualizar preferencia',
-        severity: 'error'
-      });
-    } finally {
-      setSyncLoading(false);
-    }
-  };
-
-  const handleForceSync = async (silent: boolean = false) => {
-    // Cerrar dialog si estaba abierto
-    setSyncConfirmDialog(false);
-
-    try {
-      setSyncLoading(true);
-
-      console.log('[FORCE-SYNC] Iniciando sincronización forzada...');
-      console.log('[FORCE-SYNC] SessionId:', sessionId);
-      console.log('[FORCE-SYNC] Silent:', silent);
-
-      if (!silent) {
-        setSnackbar({
-          open: true,
-          message: '🔄 Iniciando sincronización completa...',
-          severity: 'info'
-        });
-      }
-
-      const url = `${getAPIBaseURL()}/api/sync/force/${sessionId}`;
-      console.log('[FORCE-SYNC] URL:', url);
-
-      const response = await fetch(url, {
-        method: 'POST'
-      });
-
-      console.log('[FORCE-SYNC] Response status:', response.status);
-      const data = await response.json();
-      console.log('[FORCE-SYNC] Response data:', data);
-
-      if (data.success) {
-        // Actualizar solo sync_completed y last_sync_date, NO tocar auto_sync
-        setSyncPreference((prev: any) => ({
-          ...prev,
-          sync_completed: true,
-          last_sync_date: new Date().toISOString()
-        }));
-
-        const totalSynced = (data.stats.chats || 0) + (data.stats.contacts || 0) + (data.stats.groups || 0);
-
-        setSnackbar({
-          open: true,
-          message: `🎉 ¡Sincronización completa! Se descargaron ${data.stats.chats || 0} chats, ${data.stats.contacts || 0} contactos y ${data.stats.groups || 0} grupos (Total: ${totalSynced})`,
-          severity: 'success'
-        });
-      } else {
-        console.error('[FORCE-SYNC] Error:', data.error);
-        setSnackbar({
-          open: true,
-          message: 'Error al sincronizar: ' + data.error,
-          severity: 'error'
-        });
-      }
-    } catch (error) {
-      console.error('[FORCE-SYNC] Exception:', error);
-      setSnackbar({
-        open: true,
-        message: 'Error al sincronizar. Verifica que WhatsApp esté conectado.',
-        severity: 'error'
-      });
-    } finally {
-      setSyncLoading(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -1611,7 +1118,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
             ⚙️ Configuración Enterprise
           </Typography>
           <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>
-            General • Seguridad • WhatsApp • Mi Plan • API REST
+            General • Seguridad • Mi Plan • API REST
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 2 }}>
@@ -1645,7 +1152,6 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         <Tabs value={selectedTab} onChange={(_, newValue) => setSelectedTab(newValue)}>
           <Tab label="General" />
           <Tab label="Seguridad" />
-          <Tab label="WhatsApp" />
           <Tab label="Mi Plan" />
           <Tab label="🔌 API REST" />
           {isSuperAdmin && <Tab label="🔐 Panel Admin" />}
@@ -1797,36 +1303,6 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
           </Grid>
 
           {/* Configuración de Sincronización */}
-          <Grid item xs={12}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>🔄 Sincronización de WhatsApp</Typography>
-                <Typography variant="body2" sx={{ color: '#64748b', mb: 3 }}>
-                  Controla cuándo sincronizar tus chats, contactos y grupos de WhatsApp.
-                </Typography>
-
-                <Alert severity="success" sx={{ mb: 3 }}>
-                  <Typography variant="body1" sx={{ fontWeight: 600, mb: 1 }}>
-                    ✅ Sincronización Automática SIEMPRE Activa
-                  </Typography>
-                  <Typography variant="body2">
-                    Al conectar WhatsApp (escanear QR), el sistema descargará automáticamente:
-                  </Typography>
-                  <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2 }}>
-                    <li>📱 Todos los chats individuales</li>
-                    <li>👥 Todos los grupos</li>
-                    <li>📞 Todos los contactos</li>
-                    <li>💬 Historial de mensajes recientes</li>
-                  </Box>
-                  <Typography variant="caption" sx={{ mt: 1, display: 'block', fontStyle: 'italic' }}>
-                    No necesitas hacer nada, la descarga inicia automáticamente.
-                  </Typography>
-                </Alert>
-
-
-              </CardContent>
-            </Card>
-          </Grid>
 
           {/* Configuración de rendimiento */}
           <Grid item xs={12}>
@@ -2088,219 +1564,10 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         </Grid>
       )}
 
-      {/* Tab 3: WhatsApp - Configuración Avanzada */}
-      {selectedTab === 2 && (
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={4}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>📡 Estado de WhatsApp</Typography>
-                <Stack spacing={1}>
-                  <Typography variant="body2" color="textSecondary">Límites del plan</Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 700 }}>
-                    {Number.isFinite(normalizedMaxChannels)
-                      ? `${waSessions.length}/${normalizedMaxChannels} líneas`
-                      : `${waSessions.length} / Ilimitado`}
-                  </Typography>
-                  {Number.isFinite(normalizedMaxChannels) && (
-                    <LinearProgress
-                      variant="determinate"
-                      value={Math.min(100, (waSessions.length / (normalizedMaxChannels || 1)) * 100)}
-                      sx={{ height: 8, borderRadius: 1 }}
-                    />
-                  )}
-                  <Alert severity={Number.isFinite(normalizedMaxChannels) && waSessions.length >= normalizedMaxChannels ? 'warning' : 'info'}>
-                    {Number.isFinite(normalizedMaxChannels)
-                      ? `${Math.max(0, normalizedMaxChannels - waSessions.length)} slots disponibles`
-                      : 'Slots ilimitados'}
-                  </Alert>
-
-                  {waError && (
-                    <Alert severity="error" onClose={() => setWaError('')}>
-                      {waError}
-                    </Alert>
-                  )}
-
-                  <Button
-                    variant="contained"
-                    startIcon={<QrCode />}
-                    onClick={startQrFlow}
-                    disabled={qrState.isLoading || (Number.isFinite(normalizedMaxChannels) && waSessions.length >= normalizedMaxChannels)}
-                  >
-                    Conectar por QR
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    startIcon={<Refresh />}
-                    onClick={fetchActiveSessions}
-                    disabled={waLoading}
-                  >
-                    Actualizar estado
-                  </Button>
-                </Stack>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid item xs={12} md={8}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>Escanear QR</Typography>
-                {qrState.isLoading && <LinearProgress sx={{ mb: 2 }} />}
-
-                {qrState.qrDataUrl ? (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: 280 }}>
-                    <Paper elevation={3} sx={{ p: 2, textAlign: 'center' }}>
-                      <img src={qrState.qrDataUrl} alt="QR de WhatsApp" style={{ width: 240, height: 240 }} />
-                      <Typography variant="caption" display="block" sx={{ mt: 1 }}>
-                        Session ID: {qrState.sessionId}
-                      </Typography>
-                    </Paper>
-                    <Button
-                      variant="outlined"
-                      startIcon={<Refresh />}
-                      onClick={startQrFlow}
-                      sx={{ mt: 2 }}
-                      disabled={qrState.isLoading}
-                    >
-                      Actualizar QR
-                    </Button>
-                  </Box>
-                ) : (
-                  <Box sx={{ minHeight: 180, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Typography variant="body2" color="textSecondary" align="center">
-                      Presiona "Conectar por QR" para generar un código y vincular una nueva línea.
-                    </Typography>
-                  </Box>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid item xs={12}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant="h6">Líneas conectadas</Typography>
-                  {waLoading && <LinearProgress sx={{ width: 200 }} />}
-                </Box>
-
-                {!waLoading && waSessions.length === 0 && (
-                  <Alert severity="info">No hay sesiones activas.</Alert>
-                )}
-
-                <List>
-                  {waSessions.map((session: any) => {
-                    // Solo la sesión que coincide con el sessionId del módulo es principal
-                    const isPrimary = session.sessionId === sessionId;
-                    const iconBg = isPrimary ? 'primary.main' : 'success.main';
-
-                    return (
-                      <ListItem key={session.sessionId} divider>
-                        <ListItemAvatar>
-                          <Avatar
-                            src={session.avatar || undefined}
-                            sx={{ bgcolor: !session.avatar ? iconBg : undefined }}
-                          >
-                            {!session.avatar && <Phone />}
-                          </Avatar>
-                        </ListItemAvatar>
-                        <ListItemText
-                          primary={
-                            <Box>
-                              <Typography component="span" variant="subtitle1">
-                                {session.name || session.phoneNumber || session.sessionId}
-                              </Typography>
-                              {isPrimary && (
-                                <Chip
-                                  label="👑 Principal"
-                                  color="primary"
-                                  size="small"
-                                  sx={{ ml: 1 }}
-                                />
-                              )}
-                              {!isPrimary && session.ownerPhone && (
-                                <Chip
-                                  label="Secundaria"
-                                  color="success"
-                                  variant="outlined"
-                                  size="small"
-                                  sx={{ ml: 1 }}
-                                />
-                              )}
-                            </Box>
-                          }
-                          secondary={
-                            <>
-                              <Typography component="span" variant="body2" display="block">
-                                {session.phoneNumber || session.sessionId}
-                              </Typography>
-                              {session.isConnected ? '🟢 Conectado' : '🔴 Desconectado'}
-                              {!isPrimary && session.ownerPhone && (
-                                <Typography component="span" variant="caption" display="block" color="text.secondary">
-                                  Relacionada con: {session.ownerPhone}
-                                </Typography>
-                              )}
-                            </>
-                          }
-                        />
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          {!session.isConnected && session.hasAuth && (
-                            <Button
-                              size="small"
-                              color="success"
-                              variant="contained"
-                              onClick={() => handleReconnectSession(session.sessionId)}
-                              startIcon={<Refresh />}
-                            >
-                              Reconectar
-                            </Button>
-                          )}
-                          <Button
-                            size="small"
-                            color="error"
-                            variant="outlined"
-                            onClick={() => openDisconnectDialog(session.sessionId)}
-                            startIcon={<Delete />}
-                          >
-                            {session.isConnected ? 'Desconectar' : 'Eliminar'}
-                          </Button>
-                        </Stack>
-                      </ListItem>
-                    );
-                  })}
-                </List>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      )}
-
-      {/* Diálogo de confirmación de desconexión */}
-      <Dialog open={disconnectDialog.open} onClose={closeDisconnectDialog}>
-        <DialogTitle>
-          Confirmar desconexión
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            ¿Estás seguro que deseas eliminar esta conexión de WhatsApp?
-            <br /><br />
-            <strong>Nota importante:</strong> Esto solo desconectará el número de WhatsApp.
-            Tu sesión en el panel seguirá activa y podrás reconectar esta u otras líneas
-            escaneando un nuevo código QR cuando lo necesites.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeDisconnectDialog}>Cancelar</Button>
-          <Button onClick={confirmDisconnect} color="error" variant="contained">
-            Eliminar conexión
-          </Button>
-        </DialogActions>
-      </Dialog>
 
 
       {/* Tab 4: Mi Plan */}
-      {selectedTab === 3 && mySubscription && (
+      {selectedTab === 2 && mySubscription && (
         <Grid container spacing={3}>
           {/* Plan actual */}
           <Grid item xs={12} md={6}>
@@ -2518,7 +1785,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       )}
 
       {/* Mostrar planes disponibles - siempre visible en tab Mi Plan */}
-      {selectedTab === 3 && (
+      {selectedTab === 2 && (
         <Box sx={{ mt: mySubscription ? 4 : 0 }}>
           <PlanSelector userPhone={sessionId} currentSubscription={mySubscription} />
         </Box>
@@ -2526,12 +1793,12 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
 
       {/* Tab 6: API REST */}
       {/* Tab 5: API REST - ajustado de índice 6 a 5 */}
-      {selectedTab === 4 && (
+      {selectedTab === 3 && (
         <APIRestSettings sessionId={sessionId} />
       )}
 
       {/* Tab 6: Panel de Administrador (solo para admins y super admins) */}
-      {(isAdmin || isSuperAdmin) && selectedTab === 5 && (
+      {(isAdmin || isSuperAdmin) && selectedTab === 4 && (
         isSuperAdmin ? <AdminPanel /> : <AdminSubscriptionPanel sessionId={sessionId} userPhone={sessionId} />
       )}
 
@@ -2544,29 +1811,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
             {/* 📱 Botón para buscar en contactos (solo al crear nuevo) */}
-            {!selectedUser && (
-              <Grid item xs={12}>
-                <Button
-                  fullWidth
-                  variant="outlined"
-                  startIcon={<Search />}
-                  onClick={() => {
-                    loadWhatsAppContacts();
-                    setContactSearchOpen(true);
-                  }}
-                  sx={{
-                    borderColor: '#25D366',
-                    color: '#25D366',
-                    '&:hover': {
-                      borderColor: '#128C7E',
-                      backgroundColor: 'rgba(37, 211, 102, 0.1)'
-                    }
-                  }}
-                >
-                  Buscar en Contactos de WhatsApp
-                </Button>
-              </Grid>
-            )}
+
 
             {/* Vista previa del avatar seleccionado */}
             {userForm.avatar_url && (
@@ -2692,100 +1937,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         </DialogActions>
       </Dialog>
 
-      {/* 📱 Dialog de búsqueda de contactos */}
-      <Dialog
-        open={contactSearchOpen}
-        onClose={() => setContactSearchOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Phone sx={{ color: '#25D366' }} />
-            <Typography variant="h6">Seleccionar Contacto de WhatsApp</Typography>
-          </Box>
-        </DialogTitle>
-        <DialogContent>
-          <TextField
-            fullWidth
-            placeholder="Buscar por nombre..."
-            value={contactSearchQuery}
-            onChange={(e) => setContactSearchQuery(e.target.value)}
-            sx={{ mb: 2 }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <Search />
-                </InputAdornment>
-              ),
-            }}
-          />
 
-          {loadingContacts ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-              <CircularProgress />
-            </Box>
-          ) : (
-            <List sx={{ maxHeight: 400, overflow: 'auto' }}>
-              {availableContacts
-                .filter(contact =>
-                  contact.name?.toLowerCase().includes(contactSearchQuery.toLowerCase()) ||
-                  contact.notify_name?.toLowerCase().includes(contactSearchQuery.toLowerCase())
-                )
-                .map((contact) => (
-                  <ListItem
-                    key={contact.jid}
-                    button
-                    onClick={() => {
-                      // Llenar el formulario con datos del contacto
-                      setUserForm({
-                        ...userForm,
-                        name: contact.name || contact.notify_name || contact.jid.split('@')[0],
-                        phone: contact.jid.split('@')[0],
-                        avatar_url: contact.avatar_url || ''
-                      });
-                      setContactSearchOpen(false);
-                      setContactSearchQuery('');
-                    }}
-                    sx={{
-                      borderRadius: 2,
-                      mb: 1,
-                      '&:hover': {
-                        backgroundColor: 'rgba(37, 211, 102, 0.1)'
-                      }
-                    }}
-                  >
-                    <ListItemAvatar>
-                      <Avatar
-                        src={contact.avatar_url}
-                        sx={{ bgcolor: '#25D366' }}
-                      >
-                        {(contact.name || contact.notify_name || 'U')[0].toUpperCase()}
-                      </Avatar>
-                    </ListItemAvatar>
-                    <ListItemText
-                      primary={contact.name || contact.notify_name || contact.jid.split('@')[0]}
-                      secondary={contact.jid.split('@')[0]}
-                    />
-                  </ListItem>
-                ))}
-              {availableContacts.filter(contact =>
-                contact.name?.toLowerCase().includes(contactSearchQuery.toLowerCase()) ||
-                contact.notify_name?.toLowerCase().includes(contactSearchQuery.toLowerCase())
-              ).length === 0 && (
-                  <Typography variant="body2" sx={{ textAlign: 'center', color: '#64748b', py: 3 }}>
-                    {contactSearchQuery ? 'No se encontraron contactos' : 'No hay contactos disponibles'}
-                  </Typography>
-                )}
-            </List>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setContactSearchOpen(false)}>
-            Cancelar
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Dialog de cambio de contraseña */}
       <Dialog open={passwordDialogOpen} onClose={() => setPasswordDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -2814,74 +1966,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         </DialogActions>
       </Dialog>
 
-      {/* Dialog de confirmación de sincronización */}
-      <Dialog
-        open={syncConfirmDialog}
-        onClose={() => setSyncConfirmDialog(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle sx={{
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 2
-        }}>
-          <Refresh sx={{ fontSize: 32 }} />
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 600 }}>
-              Sincronizar Todo
-            </Typography>
-            <Typography variant="caption">
-              Descarga completa de datos
-            </Typography>
-          </Box>
-        </DialogTitle>
-        <DialogContent sx={{ mt: 3 }}>
-          <Alert severity="info" sx={{ mb: 2 }}>
-            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              🔄 Sincronización Completa de WhatsApp
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 1 }}>
-              Esta acción descargará <strong>TODOS</strong> tus chats, contactos y grupos completos desde WhatsApp.
-            </Typography>
-          </Alert>
-          <Typography variant="body1" sx={{ mb: 2, fontWeight: 600 }}>
-            ¿Confirmas que deseas iniciar la sincronización completa?
-          </Typography>
-          <Typography variant="body2" sx={{ color: '#64748b' }}>
-            ⏱️ <strong>Tiempo estimado:</strong> 1-5 minutos (depende de la cantidad de chats)<br />
-            📱 <strong>Chats individuales:</strong> Se descargarán todos los contactos<br />
-            👥 <strong>Grupos:</strong> Se descargarán todos los grupos y sus miembros<br />
-            📞 <strong>Contactos:</strong> Se descargará tu lista completa de contactos<br />
-            💾 <strong>Almacenamiento:</strong> Todo se guardará en la base de datos
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ p: 3, gap: 1 }}>
-          <Button
-            onClick={() => setSyncConfirmDialog(false)}
-            variant="outlined"
-            sx={{ borderRadius: 2 }}
-          >
-            Cancelar
-          </Button>
-          <Button
-            onClick={() => handleForceSync(false)}
-            variant="contained"
-            startIcon={<Refresh />}
-            sx={{
-              borderRadius: 2,
-              background: 'linear-gradient(135deg, #25d366 0%, #1da851 100%)',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #1da851 0%, #128c7e 100%)',
-              }
-            }}
-          >
-            Sincronizar Ahora
-          </Button>
-        </DialogActions>
-      </Dialog>
+
 
       {/* Snackbar para notificaciones */}
       <Snackbar

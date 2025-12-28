@@ -367,42 +367,40 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
         }
       }
 
-      // Inicializar audio de notificación (con manejo de errores mejorado)
-      try {
-        console.log('🎵 [AGENT-PRO] Cargando audio de notificación...');
-        const audio = new Audio();
+      // Inicializar sonido de manera robusta
+      const setupAudio = () => {
+        if (!window.notificationSound) {
+          console.log('🔊 [AGENT-PRO] Creando objeto de audio global...');
+          const audio = new Audio('/notification.mp3');
+          audio.volume = 0.5;
+          audio.preload = 'auto';
+          window.notificationSound = audio;
+        }
 
-        // Manejar errores de carga
-        audio.onerror = (e) => {
-          console.warn('⚠️ [AGENT-PRO] Error cargando notification.mp3:', e);
-          audioRef.current = null;
-          setupAudioFallback();
+        // Cargar audio
+        window.notificationSound?.load();
+
+        // Intentar desbloquear
+        const unlockAudio = () => {
+          const audio = window.notificationSound;
+          if (audio) {
+            audio.play().then(() => {
+              audio.pause();
+              audio.currentTime = 0;
+              console.log('🔊 [AGENT-PRO] Audio desbloqueado');
+              window.removeEventListener('click', unlockAudio);
+              window.removeEventListener('touchstart', unlockAudio);
+            }).catch(err => {
+              console.log('🔊 [AGENT-PRO] Esperando interacción para audio:', err.message);
+            });
+          }
         };
 
-        // Configurar fuente y cargar
-        audio.src = '/notification.mp3';
-        audio.volume = 0.5;
-        audio.preload = 'auto';
+        window.addEventListener('click', unlockAudio);
+        window.addEventListener('touchstart', unlockAudio);
+      };
 
-        audioRef.current = audio;
-        console.log('✅ [AGENT-PRO] Audio configurado (pendiente de interacción para reproducir)');
-      } catch (error) {
-        console.warn('⚠️ [AGENT-PRO] Excepción al configurar audio:', error);
-        setupAudioFallback();
-      }
-
-      function setupAudioFallback() {
-        try {
-          const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-          if (AudioContext) {
-            console.log('🎹 [AGENT-PRO] Configurando fallback de AudioContext');
-            const audioContext = new AudioContext();
-            (audioRef as any).beepContext = { audioContext };
-          }
-        } catch (e) {
-          console.error('❌ [AGENT-PRO] Fallback de audio no disponible:', e);
-        }
-      }
+      setupAudio();
 
       // Obtener sessionId del ADMIN desde la base de datos
       try {
@@ -446,18 +444,14 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
   const playNotificationSound = () => {
     if (!soundEnabled) return;
 
-    // 🛡️ Intentar interactuar con el AudioContext si existe (para desbloquearlo)
-    const bCtx = (audioRef as any).beepContext;
-    if (bCtx && bCtx.audioContext && bCtx.audioContext.state === 'suspended') {
-      bCtx.audioContext.resume();
-    }
+    console.log('🔊 [AGENT-PRO] Intentando reproducir sonido...');
 
-    // Intentar reproducir audio (MP3)
-    if (audioRef.current && audioRef.current.src) {
-      audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(e => {
-        console.warn('⚠️ [AGENT-PRO] No se pudo reproducir MP3:', e.message);
-        // Si falla el MP3, intentar el beep
+    const audio = window.notificationSound || audioRef.current;
+
+    if (audio) {
+      audio.currentTime = 0;
+      audio.play().catch(e => {
+        console.warn('⚠️ [AGENT-PRO] Error al reproducir audio:', e.message);
         playBeepFallback();
       });
     } else {
@@ -767,21 +761,7 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
       }
     };
 
-    // Escuchar eventos específicos del agente
-    on(`agent-${agentId}-new-chat`, handleNewChat);
-    on(`agent-${agentId}-assignment`, handleNewChat); // Evento correcto del backend
-    on('chat:assigned', handleNewChat);
-    on('chat-assignment-changed', (data: any) => {
-      if (data.agentId === agentId) {
-        console.log('🔄 Asignación de chat cambiada');
-        loadAgentChats();
-      }
-    });
-
-    on('message:received', handleNewMessage);
-    on('message', handleNewMessage);
-
-    on('message-sent', (data: any) => {
+    const handleMessageSent = (data: any) => {
       console.log('✅ [AGENT-PRO] Mensaje enviado confirmado:', data);
       if (selectedChat && data.chatJid === selectedChat.id) {
         setMessages(prev => {
@@ -809,7 +789,7 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
             return [...prev, {
               id: data.id || Date.now().toString(),
               chatJid: data.chatJid,
-              senderJid: data.senderJid || sessionId,
+              senderJid: data.senderJid || sessionId || '',
               from_me: true,
               message_type: data.message_type || 'conversation',
               text_content: data.message || data.text_content,
@@ -823,7 +803,52 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
           return prev;
         });
       }
+    };
+
+    const handleMessageStatus = (data: any) => {
+      console.log('📊 [AGENT-PRO] Actualización de estado:', data);
+      const { id, status } = data;
+      if (id && status) {
+        setMessages(prev => prev.map(msg =>
+          (msg.id === id || msg.id.toString().includes(id)) ? { ...msg, status: status as any } : msg
+        ));
+      }
+    };
+
+    // Escuchar eventos específicos del agente
+    on(`agent-${agentId}-new-chat`, handleNewChat);
+    on(`agent-${agentId}-assignment`, handleNewChat);
+    on('chat:assigned', handleNewChat);
+    on('chat-assignment-changed', (data: any) => {
+      if (data.agentId === agentId) {
+        console.log('🔄 [AGENT-PRO] Asignación de chat cambiada');
+        loadAgentChats();
+      }
     });
+
+    // Mensajes entrantes (variantes)
+    on('message:received', handleNewMessage);
+    on('message', handleNewMessage);
+
+    // Mensajes salientes (variantes)
+    on('message-sent', handleMessageSent);
+    on('message:sent', handleMessageSent);
+
+    // Estados de mensaje
+    on('message-status-update', handleMessageStatus);
+
+    return () => {
+      console.log('🔌 [AGENT-PRO] Limpiando listeners de socket');
+      off(`agent-${agentId}-new-chat`);
+      off(`agent-${agentId}-assignment`);
+      off('chat:assigned');
+      off('chat-assignment-changed');
+      off('message:received');
+      off('message');
+      off('message-sent');
+      off('message:sent');
+      off('message-status-update');
+    };
 
     // Indicador de escritura
     on('user-typing', (data: any) => {

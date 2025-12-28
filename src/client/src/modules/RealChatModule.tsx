@@ -73,6 +73,18 @@ const RealChatModule: React.FC<RealChatModuleProps> = ({ sessionId }) => {
 
 const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => {
   const { isDarkMode } = useTheme();
+
+  const colors = {
+    primary: '#00a884',
+    secondary: '#005c4b',
+    background: isDarkMode ? '#0b141a' : '#f0f2f5',
+    paper: isDarkMode ? '#111b21' : '#fff',
+    text: isDarkMode ? '#e9edef' : '#111b21',
+    textSecondary: isDarkMode ? '#8696a0' : '#667781',
+    divider: isDarkMode ? '#2a3942' : '#d1d7db',
+    hover: isDarkMode ? '#2a3942' : '#f5f6f6'
+  };
+
   const {
     chats,
     activeChat,

@@ -18,118 +18,99 @@ interface NotificationOptions {
   silent?: boolean;
 }
 
-const playNotificationSound = () => {
-  try {
-    console.log('🔊 [AUDIO] Intentando reproducir sonido de notificación');
+const initializeSound = () => {
+  if (!window.notificationSound) {
+    console.log('🔊 [AUDIO] Creando objeto de audio global...');
+    const audio = new Audio('/notification.mp3');
+    audio.volume = 0.5;
+    audio.preload = 'auto';
+    window.notificationSound = audio;
+  }
 
-    // Función helper para reproducir sonido
-    const playSound = (context: AudioContext) => {
-      const oscillator = context.createOscillator();
-      const gainNode = context.createGain();
-      oscillator.connect(gainNode);
-      gainNode.connect(context.destination);
+  // Cargar audio
+  window.notificationSound.load();
 
-      // Tono más audible y característico de WhatsApp
-      oscillator.frequency.setValueAtTime(880, context.currentTime); // La nota A5
-      oscillator.frequency.setValueAtTime(660, context.currentTime + 0.1); // E5
-      oscillator.frequency.setValueAtTime(880, context.currentTime + 0.2); // A5
-
-      // Volumen más alto y gradual
-      gainNode.gain.setValueAtTime(0.5, context.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.5);
-
-      oscillator.type = 'sine'; // Onda sinusoidal para un sonido más suave
-      oscillator.start(context.currentTime);
-      oscillator.stop(context.currentTime + 0.5);
-
-      console.log('🔊 [AUDIO] Sonido reproducido exitosamente');
-    };
-
-    // Crear un nuevo contexto de audio cada vez para asegurar que funcione
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-
-    // Verificar si el contexto está suspendido (común en navegadores modernos)
-    if (audioContext.state === 'suspended') {
-      audioContext.resume().then(() => {
-        console.log('🔊 [AUDIO] Contexto de audio resumido');
-        playSound(audioContext);
+  // Intentar desbloquear con interacción
+  const unlockAudio = () => {
+    const audio = window.notificationSound;
+    if (audio) {
+      audio.play().then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        console.log('🔊 [AUDIO] Audio desbloqueado exitosamente');
+        window.removeEventListener('click', unlockAudio);
+        window.removeEventListener('touchstart', unlockAudio);
+      }).catch(err => {
+        console.log('🔊 [AUDIO] Esperando interacción para audio:', err.message);
       });
-    } else {
-      playSound(audioContext);
     }
-  } catch (error) {
-    console.error('🔊 [AUDIO] Error reproduciendo sonido:', error);
+  };
+
+  window.addEventListener('click', unlockAudio);
+  window.addEventListener('touchstart', unlockAudio);
+};
+
+const playNotificationSound = () => {
+  console.log('🔊 [AUDIO] Intentando reproducir sonido...');
+  const audio = window.notificationSound;
+
+  if (audio) {
+    audio.currentTime = 0;
+    audio.play().catch(e => {
+      console.warn('⚠️ [AUDIO] No se pudo reproducir MP3, usando fallback beep:', e.message);
+      playBeepFallback();
+    });
+  } else {
+    playBeepFallback();
+  }
+};
+
+const playBeepFallback = () => {
+  try {
+    const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = context.createOscillator();
+    const gainNode = context.createGain();
+    oscillator.connect(gainNode);
+    gainNode.connect(context.destination);
+    oscillator.frequency.setValueAtTime(880, context.currentTime);
+    gainNode.gain.setValueAtTime(0.1, context.currentTime);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.1);
+  } catch (e) {
+    console.error('❌ [AUDIO] Beep fallback falló:', e);
   }
 };
 
 const showBrowserNotification = (options: NotificationOptions) => {
-  console.log('🔔 [NOTIFICACIONES] showBrowserNotification llamada con:', options);
+  if (!('Notification' in window)) return;
 
-  // 🔇 SONIDO DESACTIVADO - Solo notificaciones visuales
-  // if (!options.silent) {
-  //   playNotificationSound();
-  // }
-
-  // Verificar si las notificaciones del navegador están soportadas
-  if (!('Notification' in window)) {
-    console.warn('🔔 [NOTIFICACIONES] Las notificaciones del navegador no están soportadas');
-    return null;
-  }
-
-  console.log('🔔 [NOTIFICACIONES] Permiso actual:', Notification.permission);
-
-  // Si no hay permisos, solicitarlos
-  if (Notification.permission === 'default') {
-    console.log('🔔 [NOTIFICACIONES] Solicitando permisos...');
-    Notification.requestPermission().then(permission => {
-      console.log('🔔 [NOTIFICACIONES] Permiso otorgado:', permission);
-      if (permission === 'granted') {
-        // Mostrar la notificación después de obtener permisos
-        showNotification(options);
-      }
-    });
-    return null;
-  }
-
-  // Si los permisos están denegados, solo reproducir sonido
-  if (Notification.permission !== 'granted') {
-    console.warn('🔔 [NOTIFICACIONES] Permisos denegados. Solo se reproducirá sonido.');
-    return null;
-  }
-
-  // Mostrar notificación
-  return showNotification(options);
-};
-
-function showNotification(options: NotificationOptions) {
-  try {
-    console.log('🔔 [NOTIFICACIONES] Mostrando notificación del navegador');
-
+  if (Notification.permission === 'granted') {
     const notification = new Notification(options.title, {
       body: options.body,
       icon: options.icon || '/whatsapp-icon.png',
       tag: options.tag || 'whatsapp-message',
-      requireInteraction: options.requireInteraction || false,
-      silent: true, // Siempre silenciar la notificación del navegador porque usamos nuestro sonido custom
-      badge: '/whatsapp-icon.png'
+      silent: true // Usamos nuestro propio sonido
     });
-
-    setTimeout(() => {
-      notification.close();
-    }, 5000);
 
     notification.onclick = () => {
       window.focus();
       notification.close();
     };
 
-    console.log('🔔 [NOTIFICACIONES] Notificación mostrada exitosamente');
+    setTimeout(() => notification.close(), 5000);
+
+    if (!options.silent) playNotificationSound();
     return notification;
-  } catch (error) {
-    console.error('🔔 [NOTIFICACIONES] Error mostrando notificación:', error);
-    return null;
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then(permission => {
+      if (permission === 'granted') showBrowserNotification(options);
+    });
   }
-}
+
+  // Si no hay permiso, al menos sonar
+  if (!options.silent) playNotificationSound();
+  return null;
+};
 
 interface Call {
   id: string;
@@ -544,9 +525,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             await loadChats(savedSessionId);
           } else {
             console.log('Sesión guardada pero no conectada. Manteniendo en localStorage para posibles reintentos...');
-            // Mantener la sesión en localStorage pero cambiar el estado a desconectado
             setConnectionStatus('disconnected');
-            // No eliminar la sesión de localStorage para permitir reintentos automáticos
           }
         } catch (error) {
           console.error('Error verificando conexión:', error);
@@ -567,85 +546,6 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     if (!socket || !session?.sessionId) return;
 
     console.log('🔄 [WhatsAppContext] Configurando listeners en socket compartido for session:', session.sessionId);
-
-    // Si el socket ya está conectado, actualizar estado
-    if (isSocketConnected) {
-      setConnectionStatus('connected');
-      // Asegurar que estamos en la sala correcta
-      socket.emit('join-session', { sessionId: session.sessionId });
-    }
-
-    const handleConnect = () => {
-      console.log('✅ [WhatsAppContext] Socket conectado');
-      setConnectionStatus('connected');
-      if (session?.sessionId) {
-        socket.emit('join-session', { sessionId: session.sessionId });
-      }
-      connectedAtRef.current = Date.now();
-    };
-
-    const handleDisconnect = (reason: string) => {
-      console.log('❌ [WhatsAppContext] Socket desconectado:', reason);
-      setConnectionStatus('disconnected');
-    };
-
-    const handleConnectError = (err: any) => {
-      console.error('⚠️ [WhatsAppContext] Error de conexión:', err);
-      setConnectionStatus('error');
-    };
-
-    const handleJoinedSession = (data: any) => {
-      console.log('✅ [WhatsAppContext] Unido a sesión:', data);
-    };
-
-    const handleIncomingCall = (call: Call) => {
-      setActiveCall(call);
-    };
-
-    const handleMessageStatusUpdate = ({ id, status, chatJid }: { id: string; status: string; chatJid?: string }) => {
-      console.log('📊 [WhatsAppContext] Estado mensaje actualizado:', id, status, chatJid);
-      setMessages(prev =>
-        prev.map(msg => (msg.id === id ? { ...msg, status: status as 'sending' | 'sent' | 'delivered' | 'read' } : msg))
-      );
-
-      // Actualizar también el status en la lista de chats
-      if (chatJid) {
-        setChats(prev => prev.map(chat => {
-          if (chat.id === chatJid || chat.id.includes(chatJid)) {
-            return { ...chat, status: status as any };
-          }
-          return chat;
-        }));
-      }
-    };
-
-    const handleConnectionUpdate = (data: any) => {
-      console.log('📱 [WhatsAppContext] Actualización de conexión recibida:', data);
-      if (data.status === 'connected' && (data.sessionId || data.newSessionId)) {
-        const newSid = data.sessionId || data.newSessionId;
-        console.log('🎉 [WhatsAppContext] WhatsApp conectado exitosamente:', newSid);
-
-        // Actualizar sesión y cargar chats sin necesidad de re-login
-        setSession({
-          sessionId: newSid,
-          isConnected: true,
-          status: 'connected',
-          lastActivity: new Date().toISOString(),
-          phoneNumber: data.phoneNumber
-        });
-        setConnectionStatus('connected');
-
-        // Guardar en sessionStorage para persistencia
-        sessionStorage.setItem('whatsflow_session', newSid);
-
-        // Cargar chats inmediatamente
-        loadChats(newSid);
-      } else if (data.status === 'disconnected') {
-        console.log('⚠️ [WhatsAppContext] WhatsApp desconectado');
-        setConnectionStatus('disconnected');
-        setSession(prev => prev ? { ...prev, isConnected: false, status: 'disconnected' } : null);
-      }
-    };
 
     const handleMessage = (newMessage: WhatsAppMessage) => {
       console.log('📨 [REAL-TIME] handleMessage recibido:', newMessage);
@@ -818,6 +718,73 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       });
     };
 
+    const handleConnect = () => {
+      console.log('✅ [WhatsAppContext] Socket conectado');
+      setConnectionStatus('connected');
+      if (session?.sessionId) {
+        socket.emit('join-session', { sessionId: session.sessionId });
+      }
+      connectedAtRef.current = Date.now();
+    };
+
+    const handleDisconnect = (reason: string) => {
+      console.log('❌ [WhatsAppContext] Socket desconectado:', reason);
+      setConnectionStatus('disconnected');
+    };
+
+    const handleConnectError = (err: any) => {
+      console.error('⚠️ [WhatsAppContext] Error de conexión:', err);
+      setConnectionStatus('error');
+    };
+
+    const handleJoinedSession = (data: any) => {
+      console.log('✅ [WhatsAppContext] Unido a sesión:', data);
+    };
+
+    const handleIncomingCall = (call: Call) => {
+      setActiveCall(call);
+    };
+
+    const handleMessageStatusUpdate = ({ id, status, chatJid }: { id: string; status: string; chatJid?: string }) => {
+      console.log('📊 [WhatsAppContext] Estado mensaje actualizado:', id, status, chatJid);
+      setMessages(prev =>
+        prev.map(msg => (msg.id === id ? { ...msg, status: status as 'sending' | 'sent' | 'delivered' | 'read' } : msg))
+      );
+
+      // Actualizar también el status en la lista de chats
+      if (chatJid) {
+        setChats(prev => prev.map(chat => {
+          if (chat.id === chatJid || chat.id.includes(chatJid)) {
+            return { ...chat, status: status as any };
+          }
+          return chat;
+        }));
+      }
+    };
+
+    const handleConnectionUpdate = (data: any) => {
+      console.log('📱 [WhatsAppContext] Actualización de conexión recibida:', data);
+      if (data.status === 'connected' && (data.sessionId || data.newSessionId)) {
+        const newSid = data.sessionId || data.newSessionId;
+        console.log('🎉 [WhatsAppContext] WhatsApp conectado exitosamente:', newSid);
+
+        setSession({
+          sessionId: newSid,
+          isConnected: true,
+          status: 'connected',
+          lastActivity: new Date().toISOString(),
+          phoneNumber: data.phoneNumber
+        });
+        setConnectionStatus('connected');
+        sessionStorage.setItem('whatsflow_session', newSid);
+        loadChats(newSid);
+      } else if (data.status === 'disconnected') {
+        console.log('⚠️ [WhatsAppContext] WhatsApp desconectado');
+        setConnectionStatus('disconnected');
+        setSession(prev => prev ? { ...prev, isConnected: false, status: 'disconnected' } : null);
+      }
+    };
+
     const handleSyncComplete = (data: any) => {
       console.log('🔄 [WhatsAppContext] Sincronización completa:', data);
     };
@@ -832,8 +799,6 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       console.log('🔔 [SOCKET] Actualización de transferencia:', data);
       // Aquí podrías mostrar un toast o notificación
     };
-
-    socket.on('connection-update', handleConnectionUpdate);
 
     const handleChatUpdate = (data: any) => {
       console.log('🔄 [SOCKET] Actualización de chat recibida:', data);
@@ -882,26 +847,31 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     socket.on('joined-session', handleJoinedSession);
     socket.on('incoming-call', handleIncomingCall);
     socket.on('message-status-update', handleMessageStatusUpdate);
+    socket.on('connection-update', handleConnectionUpdate);
     socket.on('message', handleMessage);
-    socket.on('chat-update', handleChatUpdate); // 🆕 Nuevo listener
+    socket.on('message:received', handleMessage);
+    socket.on('message:sent', handleMessage);
+    socket.on('chat-update', handleChatUpdate);
     socket.on('sync-complete', handleSyncComplete);
-
-    // Listeners de transferencia
     if (userId) {
       socket.on(`agent-${userId}-transfer-request`, handleTransferRequest);
     }
     socket.on('transfer-request-update', handleTransferUpdate);
 
-    // Cleanup
+    initializeSound();
+
     return () => {
-      console.log('🧹 [WhatsAppContext] Limpiando listeners de socket');
+      console.log('🔌 [WhatsAppContext] Limpiando listeners');
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
       socket.off('joined-session', handleJoinedSession);
       socket.off('incoming-call', handleIncomingCall);
       socket.off('message-status-update', handleMessageStatusUpdate);
+      socket.off('connection-update', handleConnectionUpdate);
       socket.off('message', handleMessage);
+      socket.off('message:received', handleMessage);
+      socket.off('message:sent', handleMessage);
       socket.off('chat-update', handleChatUpdate);
       socket.off('sync-complete', handleSyncComplete);
       if (userId) {
@@ -909,7 +879,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       }
       socket.off('transfer-request-update', handleTransferUpdate);
     };
-  }, [socket, session?.sessionId, isSocketConnected]); // Solo reconectar cuando cambia la sesión, NO cuando cambia el chat activo
+  }, [socket, session?.sessionId, isSocketConnected, loadChats, userId]);
+  // Solo reconectar cuando cambia la sesión, NO cuando cambia el chat activo
 
   const rejectCall = async (callId: string) => {
     if (!session?.sessionId) return;
@@ -930,7 +901,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch(`${API_BASE}/api/qr-status`);
+      const response = await fetch(`${API_BASE} /api/qr - status`);
       const data = await response.json();
 
       if (data.success) {
@@ -991,7 +962,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     try {
       // 1. Si no es "append" (carga inicial), intentar cargar desde cache para respuesta instantánea
       if (!append && messagesCacheRef.current.has(chatId) && offset === 0) {
-        console.log(`⚡ [CACHE] Cargando mensajes desde cache para: ${chatId}`);
+        console.log(`⚡[CACHE] Cargando mensajes desde cache para: ${chatId} `);
         const cachedMessages = messagesCacheRef.current.get(chatId) || [];
         setMessages(cachedMessages);
         setIsLoading(false);
@@ -1001,14 +972,14 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         setIsLoading(true);
       }
 
-      console.log(`🔄 [API] Cargando mensajes para ${chatId} (offset=${offset}, limit=${limit}, append=${append})`);
+      console.log(`🔄[API] Cargando mensajes para ${chatId} (offset = ${offset}, limit = ${limit}, append = ${append})`);
 
       // ⚡ URL paginada
       const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`);
       const data = await response.json();
 
       if (data.success && data.messages) {
-        console.log(`✅ Mensajes cargados: ${data.messages.length} para chat ${chatId}`);
+        console.log(`✅ Mensajes cargados: ${data.messages.length} para chat ${chatId} `);
         const mappedMessages: WhatsAppMessage[] = data.messages.map((msg: any) => ({
           id: msg.id,
           from: msg.from,
@@ -1056,7 +1027,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           }
         }
       } else {
-        console.log(`ℹ️ No se encontraron mensajes para chat ${chatId}`);
+        console.log(`ℹ️ No se encontraron mensajes para chat ${chatId} `);
         setMessages([]);
       }
     } catch (err) {
@@ -1072,11 +1043,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     if (!session?.sessionId) return false;
 
     try {
-      console.log(`📤 Enviando mensaje a ${chatId}:`, message.substring(0, 50) + '...');
+      console.log(`📤 Enviando mensaje a ${chatId}: `, message.substring(0, 50) + '...');
 
       // Crear mensaje temporal para mostrar inmediatamente
       const tempMessage: WhatsAppMessage = {
-        id: `temp-${Date.now()}`,
+        id: `temp - ${Date.now()} `,
         from: 'me',
         to: chatId,
         message,
@@ -1113,12 +1084,12 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       const data = await response.json();
 
       if (data.success) {
-        console.log(`✅ Mensaje enviado exitosamente. ID: ${data.messageId}`);
+        console.log(`✅ Mensaje enviado exitosamente.ID: ${data.messageId} `);
 
         // Actualizar mensaje temporal con el real
         setMessages(prev => prev.map(msg =>
           msg.id === tempMessage.id
-            ? { ...msg, id: data.messageId || `sent-${Date.now()}`, status: 'sent' }
+            ? { ...msg, id: data.messageId || `sent - ${Date.now()} `, status: 'sent' }
             : msg
         ));
 
@@ -1182,7 +1153,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       const endpoint = '/api/send/media';
 
-      const response = await fetch(`${API_BASE}${endpoint}`, {
+      const response = await fetch(`${API_BASE}${endpoint} `, {
         method: 'POST',
         // No establecer Content-Type header, el navegador lo hará con el boundary correcto para FormData
         body: formData
@@ -1206,7 +1177,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     if (!session?.sessionId) return [];
 
     try {
-      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&search=${encodeURIComponent(query)}`);
+      const response = await fetch(`${API_BASE} /api/messages / ${session.sessionId}?number = ${chatId}& search=${encodeURIComponent(query)} `);
       const data = await response.json();
 
       if (data.success && data.messages) {
@@ -1251,7 +1222,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     if (!session?.sessionId) return;
 
     try {
-      console.log(`😍 Agregando reacción ${reaction} al mensaje ${messageId}`);
+      console.log(`😍 Agregando reacción ${reaction} al mensaje ${messageId} `);
 
       // Actualizar inmediatamente en la UI
       setMessages(prev => prev.map(msg => {
@@ -1287,7 +1258,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         return msg;
       }));
 
-      const response = await fetch(`${API_BASE}/api/messages/${messageId}/reactions`, {
+      const response = await fetch(`${API_BASE} /api/messages / ${messageId}/reactions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
