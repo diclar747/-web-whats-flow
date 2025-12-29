@@ -8660,10 +8660,30 @@ app.get('/api/qr-status', async (req, res) => {
         });
     }
 
+    // ✅ Extraer email del usuario autenticado desde JWT
+    let userEmail = null;
+    if (req.headers.authorization) {
+        try {
+            const token = req.headers.authorization.split(' ')[1];
+            const jwt = require('jsonwebtoken');
+            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+            userEmail = decoded.email || null;
+            console.log(`[QR-STATUS] 👤 Usuario autenticado: ${userEmail}`);
+        } catch (jwtErr) {
+            console.log(`[QR-STATUS] ⚠️ No se pudo extraer email del JWT:`, jwtErr.message);
+        }
+    }
+
     // Si no hay sessionId, generar uno nuevo (NO buscar sesiones existentes por seguridad)
     if (!sessionId) {
         sessionId = crypto.randomBytes(8).toString('hex');
         console.log(`[QR] 🆕 Generando nueva sesión: ${sessionId}`);
+    }
+
+    // ✅ Asociar email del usuario autenticado con esta sesión
+    if (userEmail) {
+        sessionUserEmailMap.set(sessionId, userEmail);
+        console.log(`[QR-STATUS] 📧 Sesión ${sessionId} vinculada al usuario ${userEmail}`);
     }
 
     // Asociar sesión con dueño para límites de plan
@@ -24789,10 +24809,37 @@ app.post('/api/clients/:id/assign-plan', verifySuperAdmin, async (req, res) => {
         if (!plan_id) return res.status(400).json({ success: false, error: 'plan_id es requerido' });
         const connection = await pool.getConnection();
         try {
+            // Verificar que el plan existe
             const [plans] = await connection.execute('SELECT id FROM plans WHERE id=?', [plan_id]);
             if (plans.length === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+
+            // Actualizar tabla users
             const [result] = await connection.execute('UPDATE users SET plan_id=? WHERE id=?', [plan_id, id]);
             if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Cliente no encontrado' });
+
+            // ✅ TAMBIÉN actualizar tabla user_sessions para mantener sincronización
+            // Obtener el phone/email del usuario para buscar sus sesiones
+            const [userInfo] = await connection.execute('SELECT phone, email FROM users WHERE id=?', [id]);
+            if (userInfo.length > 0) {
+                const userPhone = userInfo[0].phone;
+                const userEmail = userInfo[0].email;
+
+                // Actualizar todas las sesiones del usuario (primaria y secundarias)
+                // Buscar por phone O por email para cubrir ambos casos
+                const [updateSessions] = await connection.execute(
+                    `UPDATE user_sessions 
+                     SET plan_id = ?, 
+                         subscription_status = 'active', 
+                         subscription_start_date = NOW(),
+                         subscription_end_date = DATE_ADD(NOW(), INTERVAL 30 DAY)
+                     WHERE phone = ? OR email = ?`,
+                    [plan_id, userPhone, userEmail]
+                );
+
+                console.log(`[ADMIN ASSIGN PLAN] ✅ Plan ${plan_id} asignado al usuario ID ${id}`);
+                console.log(`[ADMIN ASSIGN PLAN] 📱 Actualizadas ${updateSessions.affectedRows} sesiones en user_sessions`);
+            }
+
             res.json({ success: true });
         } finally {
             connection.release();
