@@ -25478,3 +25478,5 @@ app.post('/api/sessions/update-profile/:sessionId', async (req, res) => {
     }
 });
 
+// Export app for Vercel serverless functions
+module.exports = app;

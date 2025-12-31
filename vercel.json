@@ -1,29 +1,19 @@
 {
-  "version": 2,
-  "buildCommand": "npm run build",
-  "outputDirectory": "src/client/build",
-  "installCommand": "npm install",
-  "builds": [
+  "rewrites": [
     {
-      "src": "src/server/index.js",
-      "use": "@vercel/node"
+      "source": "/api/:path*",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/socket.io/:path*",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/index.html"
     }
   ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/src/server/index.js"
-    },
-    {
-      "src": "/socket.io/(.*)",
-      "dest": "/src/server/index.js"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/src/client/build/index.html"
-    }
-  ]
+  "buildCommand": "npm run build",
+  "outputDirectory": "src/client/build",
+  "installCommand": "npm install"
 }
