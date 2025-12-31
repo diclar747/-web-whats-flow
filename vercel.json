@@ -1,1 +1,30 @@
-{"rewrites":[{"source":"/(.*)","destination":"/index.html"}]}
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "src/client/build/**",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "src/server/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/src/server/index.js"
+    },
+    {
+      "src": "/socket.io/(.*)",
+      "dest": "/src/server/index.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/src/client/build/$1"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}
