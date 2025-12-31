@@ -1,10 +1,9 @@
 {
   "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "src/client/build",
+  "installCommand": "npm install",
   "builds": [
-    {
-      "src": "src/client/build/**",
-      "use": "@vercel/static"
-    },
     {
       "src": "src/server/index.js",
       "use": "@vercel/node"
@@ -20,11 +19,11 @@
       "dest": "/src/server/index.js"
     },
     {
+      "handle": "filesystem"
+    },
+    {
       "src": "/(.*)",
-      "dest": "/src/client/build/$1"
+      "dest": "/src/client/build/index.html"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }

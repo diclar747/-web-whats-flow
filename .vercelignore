@@ -1,7 +1,12 @@
 node_modules
-build
-dist
+.env
+.env.local
 .git
-.trae
-.log
-.figma
+*.log
+src/client/node_modules
+src/client/src
+src/client/public
+.gitignore
+README.md
+docs/
+*.md
