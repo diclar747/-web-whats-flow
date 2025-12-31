@@ -73,3 +73,4 @@ apply_fixes_automatically.py
 clean_database.sh
 test_system.sh
 
+.vercel
