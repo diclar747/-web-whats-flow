@@ -16370,10 +16370,9 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
     try {
         const connection = await pool.getConnection();
         try {
-            // ✅ CRÍTICO: Obtener identificador de BD (teléfono para contacts, ID para boards)
-            const dbIdentifier = await getUserDbIdentifier(sessionId);
+            // ✅ CRÍTICO: Obtener user ID numérico (ahora contacts y boards usan el mismo)
             const userIdForBoards = await getOwnerSessionId(sessionId);
-            console.log(`[KANBAN-CONTACTS] 🔄 sessionId: ${sessionId} → dbIdentifier: ${dbIdentifier}, userId: ${userIdForBoards}`);
+            console.log(`[KANBAN-CONTACTS] 🔄 sessionId: ${sessionId} → userId: ${userIdForBoards}`);
 
             // Configuración de paginación
             const pageNum = parseInt(page) || 1;
@@ -16415,7 +16414,7 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
                         ${search ? `AND (c.name LIKE '%${search}%' OR c.jid LIKE '%${search}%')` : ''}
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
                         LIMIT ? OFFSET ?
-                    `, [dbIdentifier, userIdForBoards, limitNum, offset]);
+                    `, [userIdForBoards, userIdForBoards, limitNum, offset]);
                     contacts = rows;
                 } else {
                     // Consulta paginada para Tableros Personalizados
@@ -16484,7 +16483,7 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
                         AND c.jid NOT IN (SELECT kc.contact_jid FROM kanban_contacts kc INNER JOIN kanban_boards kb ON kc.board_id = kb.id WHERE kb.session_id = ?)
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
                         LIMIT ?
-                    `, [dbIdentifier, userIdForBoards, INITIAL_LIMIT]);
+                    `, [userIdForBoards, userIdForBoards, INITIAL_LIMIT]);
 
                     contactsByBoard[board.id] = contacts.map(c => ({
                         id: c.id, jid: c.jid, phone: c.jid?.split('@')[0] || '', name: c.name,
