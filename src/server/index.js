@@ -9132,11 +9132,29 @@ app.get('/api/sessions/active', async (req, res) => {
                     const avatar = sessionData.user?.imgUrl || null;
                     const name = sessionData.user?.name || sessionData.user?.pushname || null;
 
+                    // 🔥 Buscar is_primary desde la base de datos
+                    let isPrimaryValue = false;
+                    if (pool) {
+                        try {
+                            const connection = await pool.getConnection();
+                            const [primaryRows] = await connection.execute(
+                                'SELECT is_primary FROM user_sessions WHERE phone = ? LIMIT 1',
+                                [phoneNumber]
+                            );
+                            connection.release();
+                            if (primaryRows.length > 0) {
+                                isPrimaryValue = Boolean(primaryRows[0].is_primary === 1 || primaryRows[0].is_primary === true);
+                            }
+                        } catch (err) {
+                            console.warn(`[SESSIONS-ACTIVE] Error obteniendo is_primary para ${phoneNumber}:`, err.message);
+                        }
+                    }
+
                     activeSessions.push({
                         sessionId: sessionId,
                         phoneNumber: phoneNumber,
                         ownerPhone: ownerPhone,
-                        isPrimary: ownerPhone === null,
+                        isPrimary: isPrimaryValue,
                         isConnected: true,
                         name: name,
                         avatar: avatar,
@@ -9158,29 +9176,29 @@ app.get('/api/sessions/active', async (req, res) => {
                     if (isSuperAdmin) {
                         // SuperAdmin ve TODAS las sesiones de la base de datos
                         [dbSessions] = await connection.execute(
-                            `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at
+                            `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at, is_primary
                              FROM user_sessions
-                             ORDER BY created_at DESC`
+                             ORDER BY is_primary DESC, created_at DESC`
                         );
                         console.log(`[SESSIONS-ACTIVE] 👑 SuperAdmin: cargando ${dbSessions.length} sesiones de BD`);
                     } else {
                         // Cliente normal: buscar por EMAIL (prioridad) o userId
                         if (userEmail || userId) {
                             [dbSessions] = await connection.execute(
-                                `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at
+                                `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at, is_primary
                                  FROM user_sessions
                                  WHERE (email = ? OR id = ?)
-                                 ORDER BY created_at DESC`,
+                                 ORDER BY is_primary DESC, created_at DESC`,
                                 [userEmail, userId]
                             );
                             console.log(`[SESSIONS-ACTIVE] 👤 Usuario ${userEmail}: encontradas ${dbSessions.length} sesiones en BD`);
                         } else {
                             // Fallback legacy: buscar por phone
                             [dbSessions] = await connection.execute(
-                                `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at
+                                `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at, is_primary
                                  FROM user_sessions
                                  WHERE (phone = ? OR owner_phone_number = ?)
-                                 ORDER BY created_at DESC`,
+                                 ORDER BY is_primary DESC, created_at DESC`,
                                 [userPhone, userPhone]
                             );
                             console.log(`[SESSIONS-ACTIVE] 👤 Fallback phone ${userPhone}: encontradas ${dbSessions.length} sesiones en BD`);
@@ -9210,7 +9228,7 @@ app.get('/api/sessions/active', async (req, res) => {
                                     sessionId: dbSession.session_id || dbSession.phone,
                                     phoneNumber: dbSession.phone,
                                     ownerPhone: dbSession.owner_phone_number || null,
-                                    isPrimary: !dbSession.owner_phone_number,
+                                    isPrimary: Boolean(dbSession.is_primary === 1 || dbSession.is_primary === true),
                                     isConnected: finalIsConnected,  // ← Ahora refleja is_active de BD
                                     is_active: isActiveBD,  // ← Agregar explícitamente para debugging
                                     name: dbSession.name || null,
@@ -9607,19 +9625,21 @@ app.get('/api/session/:sessionId/status', authenticateToken, validateSessionBelo
         let phoneNumber = null;
 
         // Buscar phone asociado al sessionId (puede ser user.id o phone directamente)
+        // 🔥 PRIORIZAR número principal (is_primary=1) si hay múltiples números
         if (pool) {
             try {
                 const connection = await pool.getConnection();
                 // Buscar por session_id O por phone (compatibilidad con sesiones QR)
+                // ORDER BY is_primary DESC para priorizar el número principal
                 const [rows] = await connection.execute(
-                    'SELECT phone FROM user_sessions WHERE session_id = ? OR phone = ? LIMIT 1',
+                    'SELECT phone FROM user_sessions WHERE session_id = ? OR phone = ? ORDER BY is_primary DESC, updated_at DESC LIMIT 1',
                     [sessionId, sessionId]
                 );
                 connection.release();
 
                 if (rows.length > 0) {
                     phoneNumber = rows[0].phone;
-                    console.log(`[SESSION-STATUS] 📱 Usuario ${sessionId} → Phone ${phoneNumber}`);
+                    console.log(`[SESSION-STATUS] 📱 Usuario ${sessionId} → Phone ${phoneNumber} (prioridad: principal)`);
                 }
             } catch (err) {
                 console.warn(`[SESSION-STATUS] Error buscando phone:`, err.message);
@@ -9674,8 +9694,9 @@ app.get('/api/session/:sessionId/status', authenticateToken, validateSessionBelo
         const connection = await pool.getConnection();
         try {
             // Buscar por session_id = user.id O por phone (compatibilidad con sesiones QR antiguas)
+            // 🔥 PRIORIZAR número principal (is_primary=1) si hay múltiples números
             let [rows] = await connection.execute(
-                'SELECT phone, is_active FROM user_sessions WHERE session_id = ? OR phone = ? LIMIT 1',
+                'SELECT phone, is_active FROM user_sessions WHERE session_id = ? OR phone = ? ORDER BY is_primary DESC, updated_at DESC LIMIT 1',
                 [sessionId, sessionId]
             );
 
