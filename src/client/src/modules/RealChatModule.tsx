@@ -598,7 +598,8 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
       case 'unread': return chat.unreadCount && chat.unreadCount > 0;
       case 'groups': return chat.isGroup;
       case 'contacts': return !chat.isGroup;
-      default: return true;
+      case 'all': return !chat.isGroup; // Solo contactos individuales, sin grupos
+      default: return !chat.isGroup;
     }
   });
 
@@ -791,7 +792,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                 }}>
                   <Box sx={{ display: 'flex', gap: 1, overflowX: 'auto' }}>
                     <Chip
-                      label={`Todos (${chats.length})`}
+                      label={`Todos (${chats.filter(c => !c.isGroup).length})`}
                       size="small"
                       variant={filterType === 'all' ? 'filled' : 'outlined'}
                       onClick={() => setFilterType('all')}
