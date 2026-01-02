@@ -281,7 +281,7 @@ app.use(async (req, res, next) => {
             const connection = await global.dbPool.getConnection();
             try {
                 const [rows] = await connection.execute(
-                    'SELECT session_id FROM user_sessions WHERE owner_phone_number = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
+                    'SELECT session_id FROM user_sessions WHERE owner_phone_number = ? AND is_active = 1 ORDER BY is_primary DESC, updated_at DESC LIMIT 1',
                     [sessionIdParam]
                 );
 
@@ -9469,11 +9469,11 @@ app.get('/api/session/discover', async (req, res) => {
         try {
             let query, params;
             if (userEmail) {
-                query = 'SELECT session_id, phone FROM user_sessions WHERE owner_phone_number = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1';
+                query = 'SELECT session_id, phone FROM user_sessions WHERE owner_phone_number = ? AND is_active = 1 ORDER BY is_primary DESC, updated_at DESC LIMIT 1';
                 params = [userPhone || userEmail];
             } else {
                 // Fallback: devolver primera sesión activa (para desarrollo)
-                query = 'SELECT session_id, phone FROM user_sessions WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1';
+                query = 'SELECT session_id, phone FROM user_sessions WHERE is_active = 1 ORDER BY is_primary DESC, updated_at DESC LIMIT 1';
                 params = [];
             }
 
