@@ -53,8 +53,8 @@ function registerAuthEndpoints(app, pool) {
                 });
             }
 
-            const dbPool = pool || global.dbPool;
-            if (!dbPool) {
+            const dbPool = global.dbPool || pool;
+            if (!dbPool || typeof dbPool.getConnection !== 'function') {
                 return res.status(503).json({ success: false, error: 'Database not initialized' });
             }
             const connection = await dbPool.getConnection();
@@ -123,8 +123,8 @@ function registerAuthEndpoints(app, pool) {
                 });
             }
 
-            const dbPool = pool || global.dbPool;
-            if (!dbPool) {
+            const dbPool = global.dbPool || pool;
+            if (!dbPool || typeof dbPool.getConnection !== 'function') {
                 return res.status(503).json({ success: false, error: 'Database not initialized' });
             }
             const connection = await dbPool.getConnection();
@@ -243,8 +243,8 @@ function registerAuthEndpoints(app, pool) {
     // ==================== VERIFICAR TOKEN ====================
     app.get('/api/auth/verify', authenticateJWT, async (req, res) => {
         try {
-            const dbPool = pool || global.dbPool;
-            if (!dbPool) {
+            const dbPool = global.dbPool || pool;
+            if (!dbPool || typeof dbPool.getConnection !== 'function') {
                 return res.status(503).json({ success: false, error: 'Database not initialized' });
             }
             const connection = await dbPool.getConnection();
@@ -326,7 +326,7 @@ function registerAuthEndpoints(app, pool) {
         console.log(`[AUTH-LOGOUT] 🔴 Iniciando logout...`);
 
         try {
-            const dbPool = pool || global.dbPool;
+            const dbPool = global.dbPool || pool;
 
             // Intentar obtener userId del token (incluso si es inválido)
             let userId = null;
@@ -345,7 +345,7 @@ function registerAuthEndpoints(app, pool) {
             }
 
             // Si tenemos userId, actualizar en BD
-            if (userId && dbPool) {
+            if (userId && dbPool && typeof dbPool.getConnection === 'function') {
                 const connection = await dbPool.getConnection();
                 try {
                     // Actualizar session = 0 y agent_status = 'offline' para agentes
@@ -401,8 +401,8 @@ function registerAuthEndpoints(app, pool) {
                 });
             }
 
-            const dbPool = pool || global.dbPool;
-            if (!dbPool) {
+            const dbPool = global.dbPool || pool;
+            if (!dbPool || typeof dbPool.getConnection !== 'function') {
                 return res.status(503).json({ success: false, error: 'Database not initialized' });
             }
             const connection = await dbPool.getConnection();
@@ -469,22 +469,28 @@ function registerAuthEndpoints(app, pool) {
                     sessionInfo.userId = userId;  // ← Guardar userId en la sesión de memoria
 
                     // Obtener el teléfono de la BD (users.phone)
-                    const dbPool = pool || global.dbPool;
-                    if (dbPool) {
-                        try {
-                            const userConn = await dbPool.getConnection();
-                            const [userRows] = await userConn.execute(
-                                'SELECT phone FROM users WHERE id = ? LIMIT 1',
-                                [userId]
-                            );
-                            userConn.release();
+                    const dbPool = global.dbPool || pool;
+                    if (!dbPool || typeof dbPool.getConnection !== 'function') {
+                        return res.status(503).json({ success: false, error: 'Database not initialized' });
+                    }
 
-                            if (userRows.length > 0 && userRows[0].phone) {
-                                sessionInfo.phoneNumber = userRows[0].phone;
-                                console.log(`[AUTH-LINK] ✅ phoneNumber guardado: ${userRows[0].phone}`);
-                            }
-                        } catch (phoneErr) {
-                            console.warn('[AUTH-LINK] ⚠️ Error obteniendo teléfono:', phoneErr.message);
+                    let userConn;
+                    try {
+                        userConn = await dbPool.getConnection();
+                        const [userRows] = await userConn.execute(
+                            'SELECT phone FROM users WHERE id = ? LIMIT 1',
+                            [userId]
+                        );
+
+                        if (userRows.length > 0 && userRows[0].phone) {
+                            sessionInfo.phoneNumber = userRows[0].phone;
+                            console.log(`[AUTH-LINK] ✅ phoneNumber guardado: ${userRows[0].phone}`);
+                        }
+                    } catch (phoneErr) {
+                        console.warn('[AUTH-LINK] ⚠️ Error obteniendo teléfono:', phoneErr.message);
+                    } finally {
+                        if (userConn) {
+                            userConn.release();
                         }
                     }
 

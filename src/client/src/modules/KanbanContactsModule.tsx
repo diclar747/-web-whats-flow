@@ -93,6 +93,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
   const [searchingGlobal, setSearchingGlobal] = useState(false);
   const [selectedBoardForAdd, setSelectedBoardForAdd] = useState<string>('');
   const [contactMenuAnchor, setContactMenuAnchor] = useState<{ [key: string]: HTMLElement | null }>({});
+  const [addingContactToBoard, setAddingContactToBoard] = useState<{ [key: string]: string | null }>({});
 
   // Estados para dialogs
   const [createBoardDialog, setCreateBoardDialog] = useState(false);
@@ -549,7 +550,16 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
 
   // Agregar contacto a tablero desde búsqueda
   const handleAddContactToBoard = async (contact: any, boardId: string) => {
+    // Protección contra doble clic
+    const uniqueKey = `${contact.jid}-${boardId}`;
+    if (addingContactToBoard[uniqueKey] === boardId) {
+      console.log('[Kanban] ⚠️ Ya hay una solicitud en progreso para este contacto');
+      return;
+    }
+
     try {
+      setAddingContactToBoard(prev => ({ ...prev, [uniqueKey]: boardId }));
+      
       const response = await fetch(`${getAPIBaseURL()}/api/kanban/move-contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -566,6 +576,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
       if (data.success) {
         const board = boards.find(b => b.id === boardId);
         setSuccess(`✅ ${contact.name} agregado a ${board?.name || 'tablero'}`);
+        console.log(`[Kanban] ✅ Contacto agregado exitosamente a tablero`);
 
         // Cerrar menú del contacto
         setContactMenuAnchor(prev => ({ ...prev, [contact.jid]: null }));
@@ -585,6 +596,12 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
     } catch (error) {
       console.error('[Kanban] Error agregando contacto:', error);
       setError('Error agregando contacto al tablero');
+    } finally {
+      setAddingContactToBoard(prev => {
+        const newState = { ...prev };
+        delete newState[uniqueKey];
+        return newState;
+      });
     }
   };
 
@@ -1316,6 +1333,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                         <Button
                           variant="contained"
                           size="medium"
+                          disabled={Object.values(addingContactToBoard).length > 0}
                           endIcon={<ArrowForward />}
                           onClick={(e) => setContactMenuAnchor(prev => ({ ...prev, [contact.jid]: e.currentTarget }))}
                           sx={{
@@ -1346,6 +1364,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                           {boards.map((board) => (
                             <MenuItem
                               key={board.id}
+                              disabled={addingContactToBoard[`${contact.jid}-${board.id}`] === board.id}
                               onClick={() => handleAddContactToBoard(contact, board.id)}
                               sx={{
                                 py: 1.5,

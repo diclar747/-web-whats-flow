@@ -3744,13 +3744,40 @@ async function loadContactsToDefaultBoard(userId) {
     const connection = await pool.getConnection();
     try {
         // Obtener el tablero "Sin Categoría" (is_default = 1) para este usuario
-        const [boards] = await connection.execute(
+        let [boards] = await connection.execute(
             'SELECT id FROM kanban_boards WHERE session_id = ? AND is_default = 1 LIMIT 1',
             [userId]
         );
 
+        // Si no existe, crear los tableros por defecto
         if (boards.length === 0) {
-            console.log(`[KANBAN-LOAD] No se encontró tablero "Sin Categoría" para usuario ${userId}`);
+            console.log(`[KANBAN-LOAD] Creando tableros por defecto para usuario ${userId}...`);
+            
+            const defaultBoards = [
+                { name: 'Sin Categoría', color: '#607d8b', order: 0, is_default: 1 },
+                { name: 'Clientes', color: '#4caf50', order: 1, is_default: 0 },
+                { name: 'Prospectos', color: '#2196f3', order: 2, is_default: 0 },
+                { name: 'Nuevos', color: '#ff9800', order: 3, is_default: 0 }
+            ];
+
+            for (const board of defaultBoards) {
+                const boardId = `board_${crypto.randomBytes(8).toString('hex')}`;
+                await connection.execute(
+                    `INSERT INTO kanban_boards (id, session_id, name, color, board_order, is_default)
+                     VALUES (?, ?, ?, ?, ?, ?)`,
+                    [boardId, userId, board.name, board.color, board.order, board.is_default]
+                );
+                
+                if (board.is_default) {
+                    boards = [{ id: boardId }];
+                }
+            }
+            
+            console.log(`[KANBAN-LOAD] ✅ Tableros por defecto creados`);
+        }
+
+        if (boards.length === 0) {
+            console.log(`[KANBAN-LOAD] Error: No se pudo obtener o crear el tablero "Sin Categoría"`);
             return;
         }
 
@@ -15011,28 +15038,25 @@ app.post('/api/kanban/contacts', async (req, res) => {
                 [contactJid, phoneNumber || 'unknown', notes || contactJid.split('@')[0], notes, contactJid.includes('@g.us') ? 1 : 0]
             );
 
-            // Verificar si el contacto ya existe en el tablero
-            const [existing] = await connection.execute(
-                'SELECT id FROM kanban_contacts WHERE board_id = ? AND contact_jid = ?',
-                [boardId, contactJid]
-            );
-
-            if (existing.length > 0) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'El contacto ya está en este tablero'
-                });
-            }
-
-            // Agregar contacto al tablero
-            await connection.execute(
-                'INSERT INTO kanban_contacts (board_id, contact_jid, notes) VALUES (?, ?, ?)',
+            // Agregar contacto al tablero (o actualizar si ya existe)
+            const [result] = await connection.execute(
+                `INSERT INTO kanban_contacts (board_id, contact_jid, notes, created_at, updated_at)
+                 VALUES (?, ?, ?, NOW(), NOW())
+                 ON DUPLICATE KEY UPDATE
+                    notes = COALESCE(VALUES(notes), notes),
+                    updated_at = NOW()`,
                 [boardId, contactJid, notes || '']
             );
 
+            // Si affectedRows es 1, se insertó. Si es 2, se actualizó (ya existía)
+            const wasNew = result.affectedRows === 1;
+
+            console.log(`[KANBAN] ${wasNew ? '✅ Nuevo' : '🔄 Actualizado'} - Contacto ${contactJid} en tablero ${boardId}`);
+
             res.json({
                 success: true,
-                message: 'Contacto agregado al tablero exitosamente'
+                message: wasNew ? 'Contacto agregado al tablero exitosamente' : 'El contacto ya estaba en este tablero',
+                wasNew
             });
         } finally {
             connection.release();
@@ -15086,9 +15110,13 @@ app.put('/api/kanban/contacts/move', async (req, res) => {
                 [fromBoardId, contactJid]
             );
 
-            // Agregar al nuevo tablero
+            // Agregar al nuevo tablero (con protección contra duplicados por si acaso)
             await connection.execute(
-                'INSERT INTO kanban_contacts (board_id, contact_jid, notes) VALUES (?, ?, ?)',
+                `INSERT INTO kanban_contacts (board_id, contact_jid, notes, created_at, updated_at)
+                 VALUES (?, ?, ?, NOW(), NOW())
+                 ON DUPLICATE KEY UPDATE
+                    notes = COALESCE(VALUES(notes), notes),
+                    updated_at = NOW()`,
                 [toBoardId, contactJid, notes || '']
             );
 
@@ -15129,6 +15157,7 @@ app.post('/api/kanban/move-contact', async (req, res) => {
         const connection = await pool.getConnection();
         try {
             const phoneNumber = sessionId ? await getUserPhoneNumber(sessionId) : null;
+            const userIdForBoards = sessionId ? await getOwnerSessionId(sessionId) : null;
 
             // Asegurar que el contacto existe en la tabla contacts
             if (phoneNumber) {
@@ -15151,18 +15180,21 @@ app.post('/api/kanban/move-contact', async (req, res) => {
                     `DELETE kc FROM kanban_contacts kc
                      INNER JOIN kanban_boards kb ON kc.board_id = kb.id
                      WHERE kc.contact_jid = ? AND kb.session_id = ?`,
-                    [contactJid, phoneNumber]
+                    [contactJid, userIdForBoards || phoneNumber]
                 );
                 console.log(`[KANBAN] 🗑️ Contacto ${contactJid} eliminado de tableros anteriores`);
             }
 
-            // PASO 2: Insertar el contacto en el nuevo tablero
+            // PASO 2: Insertar el contacto en el nuevo tablero (con protección contra duplicados)
             await connection.execute(
-                `INSERT INTO kanban_contacts (board_id, contact_jid, notes)
-                 VALUES (?, ?, ?)`,
+                `INSERT INTO kanban_contacts (board_id, contact_jid, notes, updated_at)
+                 VALUES (?, ?, ?, NOW())
+                 ON DUPLICATE KEY UPDATE
+                    notes = COALESCE(VALUES(notes), notes),
+                    updated_at = NOW()`,
                 [boardId, contactJid, '']
             );
-            console.log(`[KANBAN] ✅ Contacto ${contactJid} movido al tablero ${boardId}`);
+            console.log(`[KANBAN] ✅ Contacto ${contactJid} agregado al tablero ${boardId}`);
 
             res.json({
                 success: true,
@@ -15519,15 +15551,43 @@ app.post('/api/kanban/sync-all-contacts/:sessionId', async (req, res) => {
         const connection = await pool.getConnection();
         try {
             // 1. Obtener el tablero "Sin Categoría" (por defecto)
-            const [boards] = await connection.execute(
+            let [boards] = await connection.execute(
                 'SELECT id FROM kanban_boards WHERE session_id = ? AND name = ? LIMIT 1',
                 [phoneNumber, 'Sin Categoría']
             );
 
+            // Si no existe, crear los tableros por defecto
             if (boards.length === 0) {
-                return res.status(404).json({
+                console.log(`[KANBAN-SYNC] Creando tableros por defecto para usuario ${phoneNumber}...`);
+                
+                // Crear los tableros por defecto
+                const defaultBoards = [
+                    { name: 'Sin Categoría', color: '#607d8b', order: 0, is_default: 1 },
+                    { name: 'Clientes', color: '#4caf50', order: 1, is_default: 0 },
+                    { name: 'Prospectos', color: '#2196f3', order: 2, is_default: 0 },
+                    { name: 'Nuevos', color: '#ff9800', order: 3, is_default: 0 }
+                ];
+
+                for (const board of defaultBoards) {
+                    const boardId = `board_${crypto.randomBytes(8).toString('hex')}`;
+                    await connection.execute(
+                        `INSERT INTO kanban_boards (id, session_id, name, color, board_order, is_default)
+                         VALUES (?, ?, ?, ?, ?, ?)`,
+                        [boardId, phoneNumber, board.name, board.color, board.order, board.is_default]
+                    );
+                    
+                    if (board.is_default) {
+                        boards = [{ id: boardId }];
+                    }
+                }
+                
+                console.log(`[KANBAN-SYNC] ✅ Tableros por defecto creados`);
+            }
+
+            if (boards.length === 0) {
+                return res.status(500).json({
                     success: false,
-                    error: 'Tablero "Sin Categoría" no encontrado. Crea los tableros primero.'
+                    error: 'Error al crear tableros por defecto'
                 });
             }
 
@@ -16203,6 +16263,35 @@ app.get('/api/kanban/boards/:sessionId', async (req, res) => {
 
         const connection = await pool.getConnection();
         try {
+            // Primero verificar si existen tableros
+            const [existingBoards] = await connection.execute(
+                'SELECT COUNT(*) as count FROM kanban_boards WHERE session_id = ?',
+                [ownerUserId]
+            );
+
+            // Si no hay tableros, crear los por defecto
+            if (existingBoards[0].count === 0) {
+                console.log(`[KANBAN-BOARDS] Creando tableros por defecto para usuario ${ownerUserId}...`);
+                
+                const defaultBoards = [
+                    { name: 'Sin Categoría', color: '#607d8b', order: 0, is_default: 1 },
+                    { name: 'Clientes', color: '#4caf50', order: 1, is_default: 0 },
+                    { name: 'Prospectos', color: '#2196f3', order: 2, is_default: 0 },
+                    { name: 'Nuevos', color: '#ff9800', order: 3, is_default: 0 }
+                ];
+
+                for (const board of defaultBoards) {
+                    const boardId = `board_${crypto.randomBytes(8).toString('hex')}`;
+                    await connection.execute(
+                        `INSERT INTO kanban_boards (id, session_id, name, color, board_order, is_default)
+                         VALUES (?, ?, ?, ?, ?, ?)`,
+                        [boardId, ownerUserId, board.name, board.color, board.order, board.is_default]
+                    );
+                }
+                
+                console.log(`[KANBAN-BOARDS] ✅ Tableros por defecto creados`);
+            }
+
             // Consulta optimizada con timeout
             const queryPromise = connection.execute(
                 `SELECT
@@ -16281,14 +16370,10 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
     try {
         const connection = await pool.getConnection();
         try {
-            // ✅ CRÍTICO: Resolver sessionId al users.id
-            let resolvedSessionId = sessionId;
-
-            // Si el sessionId no es '1', intentar resolverlo
-            if (sessionId !== '1' && sessionId !== 'null' && sessionId !== 'undefined') {
-                resolvedSessionId = await getOwnerSessionId(sessionId);
-                console.log(`[KANBAN-CONTACTS] 🔄 Resolviendo ${sessionId} → ${resolvedSessionId}`);
-            }
+            // ✅ CRÍTICO: Obtener identificador de BD (teléfono para contacts, ID para boards)
+            const dbIdentifier = await getUserDbIdentifier(sessionId);
+            const userIdForBoards = await getOwnerSessionId(sessionId);
+            console.log(`[KANBAN-CONTACTS] 🔄 sessionId: ${sessionId} → dbIdentifier: ${dbIdentifier}, userId: ${userIdForBoards}`);
 
             // Configuración de paginación
             const pageNum = parseInt(page) || 1;
@@ -16302,7 +16387,7 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
                 // Verificar si es el tablero por defecto (necesitamos saber si es default)
                 const [boardInfo] = await connection.execute(
                     `SELECT id, is_default FROM kanban_boards WHERE id = ? AND session_id = ?`,
-                    [boardId, resolvedSessionId]
+                    [boardId, userIdForBoards]
                 );
 
                 if (boardInfo.length === 0) {
@@ -16330,7 +16415,7 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
                         ${search ? `AND (c.name LIKE '%${search}%' OR c.jid LIKE '%${search}%')` : ''}
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
                         LIMIT ? OFFSET ?
-                    `, [resolvedSessionId, resolvedSessionId, limitNum, offset]);
+                    `, [dbIdentifier, userIdForBoards, limitNum, offset]);
                     contacts = rows;
                 } else {
                     // Consulta paginada para Tableros Personalizados
@@ -16372,7 +16457,7 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
             // 1️⃣ Obtener los tableros del usuario
             const [boards] = await connection.execute(
                 `SELECT id, is_default FROM kanban_boards WHERE session_id = ? ORDER BY board_order ASC`,
-                [resolvedSessionId]
+                [userIdForBoards]
             );
 
             // 2️⃣ Cargar primeros 25 contactos de cada tablero
@@ -16399,7 +16484,7 @@ app.get('/api/kanban/contacts/:sessionId', async (req, res) => {
                         AND c.jid NOT IN (SELECT kc.contact_jid FROM kanban_contacts kc INNER JOIN kanban_boards kb ON kc.board_id = kb.id WHERE kb.session_id = ?)
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
                         LIMIT ?
-                    `, [resolvedSessionId, resolvedSessionId, INITIAL_LIMIT]);
+                    `, [dbIdentifier, userIdForBoards, INITIAL_LIMIT]);
 
                     contactsByBoard[board.id] = contacts.map(c => ({
                         id: c.id, jid: c.jid, phone: c.jid?.split('@')[0] || '', name: c.name,

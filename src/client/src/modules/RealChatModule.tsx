@@ -285,14 +285,18 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
         // Extract phone from chat ID and normalize (remove device suffixes like :0, :82, etc.)
         const rawPhone = activeChat.id.replace('@c.us', '').replace('@g.us', '');
         const phone = normalizePhoneNumber(rawPhone);
+        const contactJid = `${phone}@s.whatsapp.net`;
+        const contactName = activeChat.name || phone;
 
-        const response = await fetch(`${getAPIBaseURL()}/api/contacts/categorize`, {
+        const response = await fetch(`${getAPIBaseURL()}/api/kanban/move-contact`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionId,
-            contactId: phone,
-            category: selectedBoard,
+            contactJid,
+            contactName,
+            contactAvatar: activeChat.avatar || null,
+            boardId: selectedBoard,
           }),
         });
 
@@ -374,14 +378,18 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
 
     try {
       const phone = quickKanbanChat.id.replace('@c.us', '').replace('@g.us', '');
+      const contactJid = `${phone}@s.whatsapp.net`;
+      const contactName = quickKanbanChat.name || phone;
 
-      const response = await fetch(`${getAPIBaseURL()}/api/contacts/categorize`, {
+      const response = await fetch(`${getAPIBaseURL()}/api/kanban/move-contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId,
-          contactId: phone,
-          category: boardId,
+          contactJid,
+          contactName,
+          contactAvatar: quickKanbanChat.avatar || null,
+          boardId,
         }),
       });
 
