@@ -197,6 +197,21 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     }
   }, [sessionId]);
 
+  const loadTemplates = useCallback(async () => {
+    if (!sessionId) return;
+
+    try {
+      const response = await fetch(`/api/notification-templates/${sessionId}`);
+      const data = await response.json();
+
+      if (data.success && data.templates) {
+        setTemplates(data.templates);
+      }
+    } catch (error) {
+      console.error('Error cargando plantillas:', error);
+    }
+  }, [sessionId]);
+
   const loadAppointments = useCallback(async () => {
     if (!sessionId) {
       console.log('No sessionId, skipping appointments load');
@@ -263,7 +278,8 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
   // ⚡ OPTIMIZACIÓN: Cargar categorías solo al montar
   useEffect(() => {
     loadCategories();
-  }, [loadCategories]);
+    loadTemplates();
+  }, [loadCategories, loadTemplates]);
 
   // ⚡ OPTIMIZACIÓN: Cargar appointments solo cuando cambia sessionId o se cargan categorías por primera vez
   useEffect(() => {
@@ -554,34 +570,73 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     );
   };
 
-  const handleAddTemplate = () => {
+  const handleAddTemplate = async () => {
     if (!newTemplate.name || !newTemplate.message) {
       showError('Por favor completa el nombre y mensaje de la plantilla', '⚠️ Campos requeridos');
       return;
     }
 
-    const template: NotificationTemplate = {
-      id: `custom_${Date.now()}`,
-      name: newTemplate.name,
-      message: newTemplate.message,
-      is_default: false
-    };
+    if (!sessionId) {
+      showError('No hay sesión activa', '⚠️ Error');
+      return;
+    }
 
-    setTemplates([...templates, template]);
-    setNewTemplate({ name: '', message: '' });
+    try {
+      setSaving(true);
+      const response = await fetch('/api/notification-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          name: newTemplate.name,
+          message: newTemplate.message
+        })
+      });
 
-    showSuccess('Plantilla creada exitosamente', '✅ Creado');
+      const data = await response.json();
+
+      if (data.success) {
+        setNewTemplate({ name: '', message: '' });
+        await loadTemplates(); // Recargar plantillas desde el servidor
+        showSuccess('Plantilla creada exitosamente', '✅ Creado');
+      } else {
+        showError(data.error || 'Error al crear plantilla', '❌ Error');
+      }
+    } catch (error) {
+      console.error('Error creando plantilla:', error);
+      showError('Error al crear plantilla', '❌ Error');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDeleteTemplate = (templateId: string) => {
+  const handleDeleteTemplate = async (templateId: string) => {
     const template = templates.find(t => t.id === templateId);
     if (template?.is_default) {
       showError('No puedes eliminar plantillas predeterminadas', '⚠️ Advertencia');
       return;
     }
 
-    setTemplates(templates.filter(t => t.id !== templateId));
-    showSuccess('Plantilla eliminada', '✅ Eliminado');
+    try {
+      setSaving(true);
+      const response = await fetch(`/api/notification-templates/${templateId}`, {
+        method: 'DELETE'
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        await loadTemplates(); // Recargar plantillas desde el servidor
+        showSuccess('Plantilla eliminada', '✅ Eliminado');
+      } else {
+        showError(data.error || 'Error al eliminar plantilla', '❌ Error');
+      }
+    } catch (error) {
+      console.error('Error eliminando plantilla:', error);
+      showError('Error al eliminar plantilla', '❌ Error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Manejo de categorías
