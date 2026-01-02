@@ -789,6 +789,15 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       console.log('🔄 [WhatsAppContext] Sincronización completa:', data);
     };
 
+    const handleWhatsAppConnected = (data: any) => {
+      console.log('🎉 [WhatsAppContext] Evento whatsapp-connected recibido:', data);
+      // Recargar chats cuando WhatsApp se conecta
+      if (session?.sessionId) {
+        console.log('🔄 [WhatsAppContext] Recargando chats después de conectar WhatsApp...');
+        loadChats(session.sessionId);
+      }
+    };
+
     const handleTransferRequest = (data: any) => {
       console.log('🔔 [SOCKET] Solicitud de transferencia recibida:', data);
       setTransferRequest(data);
@@ -853,6 +862,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     socket.on('message:sent', handleMessage);
     socket.on('chat-update', handleChatUpdate);
     socket.on('sync-complete', handleSyncComplete);
+    socket.on('whatsapp-connected', handleWhatsAppConnected);
     if (userId) {
       socket.on(`agent-${userId}-transfer-request`, handleTransferRequest);
     }
@@ -874,6 +884,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       socket.off('message:sent', handleMessage);
       socket.off('chat-update', handleChatUpdate);
       socket.off('sync-complete', handleSyncComplete);
+      socket.off('whatsapp-connected', handleWhatsAppConnected);
       if (userId) {
         socket.off(`agent-${userId}-transfer-request`, handleTransferRequest);
       }

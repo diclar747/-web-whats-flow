@@ -36,6 +36,10 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                 localStorage.setItem('deviceId', deviceId);
                 sessionStorage.setItem('deviceId', deviceId);
+                localStorage.setItem('device_id', deviceId);
+                sessionStorage.setItem('device_id', deviceId);
+                localStorage.setItem('whatsflow_device_id', deviceId);
+                sessionStorage.setItem('whatsflow_device_id', deviceId);
             }
 
             const response = await fetch('/api/auth/login', {

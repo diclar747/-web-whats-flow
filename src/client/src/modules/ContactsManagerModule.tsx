@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getAPIBaseURL } from '../utils/socketConfig';
+import { sessionFetch } from '../utils/sessionFetch';
+import { useSocket } from '../context/SocketContext';
 import {
   Box,
   Grid,
@@ -305,7 +307,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
   // Cargar contactos sincronizados al iniciar
   const loadSyncedContacts = useCallback(async () => {
     try {
-      const response = await fetch(`${getAPIBaseURL()}/api/contacts/${sessionId}`);
+      const response = await sessionFetch(`${getAPIBaseURL()}/api/contacts/${sessionId}`);
       const data = await response.json();
 
       if (data.success && data.contacts) {
@@ -326,7 +328,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
   // Cargar grupos sincronizados al iniciar
   const loadSyncedGroups = useCallback(async () => {
     try {
-      const response = await fetch(`${getAPIBaseURL()}/api/groups/${sessionId}`);
+      const response = await sessionFetch(`${getAPIBaseURL()}/api/groups/${sessionId}`);
       const data = await response.json();
 
       if (data.success && data.groups) {
@@ -342,6 +344,26 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
     loadSyncedContacts();
     loadSyncedGroups();
   }, [loadSyncedContacts, loadSyncedGroups]);
+
+  // Escuchar evento de avatares descargados
+  const { socket } = useSocket();
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleAvatarsDownloaded = (data: any) => {
+      console.log('🖼️ [ContactsManager] Avatares descargados evento recibido:', data);
+      // Recargar contactos para mostrar los avatares recién descargados
+      console.log('🔄 [ContactsManager] Recargando contactos para mostrar avatares actualizados...');
+      loadSyncedContacts();
+      loadSyncedGroups();
+    };
+
+    socket.on('avatars-downloaded', handleAvatarsDownloaded);
+
+    return () => {
+      socket.off('avatars-downloaded', handleAvatarsDownloaded);
+    };
+  }, [socket, loadSyncedContacts, loadSyncedGroups]);
 
   // Función para cargar miembros de un grupo
   const loadGroupMembers = async (group: any) => {
@@ -473,7 +495,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
   const loadKanbanBoards = async () => {
     try {
       console.log('[Kanban] Cargando tableros...');
-      const response = await fetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
+      const response = await sessionFetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
       const data = await response.json();
 
       console.log('[Kanban] Respuesta del servidor:', data);
@@ -498,7 +520,7 @@ const ContactsManagerModule: React.FC<ContactsManagerModuleProps> = ({ sessionId
   const loadKanbanContacts = async () => {
     try {
       console.log('[Kanban] Cargando contactos...');
-      const response = await fetch(`${getAPIBaseURL()}/api/kanban/contacts/${sessionId}`);
+      const response = await sessionFetch(`${getAPIBaseURL()}/api/kanban/contacts/${sessionId}`);
       const data = await response.json();
 
       console.log('[Kanban] Contactos recibidos:', data);

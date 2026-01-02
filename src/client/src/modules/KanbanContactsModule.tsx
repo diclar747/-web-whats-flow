@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getAPIBaseURL } from '../utils/socketConfig';
+import { sessionFetch } from '../utils/sessionFetch';
 import {
   Box,
   Grid,
@@ -192,7 +193,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
 
   const loadBoards = async () => {
     try {
-      const response = await fetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
+      const response = await sessionFetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
       const data = await response.json();
       if (data.success) {
         setBoards(data.boards || []);
@@ -214,7 +215,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
         url += `?search=${encodeURIComponent(searchTerm)}`;
       }
 
-      const response = await fetch(url);
+      const response = await sessionFetch(url);
       const data = await response.json();
 
       console.log('[Kanban] Respuesta de contactos:', data);

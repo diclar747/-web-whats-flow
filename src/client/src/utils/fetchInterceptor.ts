@@ -68,41 +68,36 @@ export const setupFetchInterceptor = (): void => {
       return originalFetch(normalizedUrl, init);
     }
 
-    // Obtener credenciales de sesión
-    const sessionToken = sessionStorage.getItem('sessionToken');
-    const deviceId = sessionStorage.getItem('device_id');
-    const token = sessionStorage.getItem('token') || sessionStorage.getItem('whatsflow_token');
+    // Obtener credenciales de sesión (con múltiples fallbacks para claves previas)
+    const sessionToken = sessionStorage.getItem('sessionToken')
+      || localStorage.getItem('sessionToken')
+      || sessionStorage.getItem('whatsflow_session_token')
+      || localStorage.getItem('whatsflow_session_token');
 
-    // Si no hay sessionToken o deviceId, hacer fetch sin headers (dejar que el backend maneje)
-    // Esto permite que el dashboard funcione mientras se escanea el QR
-    if (!sessionToken || !deviceId) {
-      // Detectar si estamos en modo Admin por QR
-      const isAdminQRMode = window.location.pathname.startsWith('/dashboard');
-      const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
-      const hasToken = sessionStorage.getItem('token') || localStorage.getItem('token');
+    const deviceId = sessionStorage.getItem('device_id')
+      || localStorage.getItem('device_id')
+      || sessionStorage.getItem('deviceId')
+      || localStorage.getItem('deviceId')
+      || sessionStorage.getItem('whatsflow_device_id')
+      || localStorage.getItem('whatsflow_device_id')
+      || sessionStorage.getItem('whatsflow_session_device_id')
+      || localStorage.getItem('whatsflow_session_device_id');
 
-      // NO mostrar advertencias para:
-      // 1. Admin por QR (con o sin token todavía)
-      // 2. Endpoints públicos que no requieren autenticación
-      const url = normalizedUrl;
+    const token = sessionStorage.getItem('token')
+      || localStorage.getItem('token')
+      || sessionStorage.getItem('whatsflow_token')
+      || localStorage.getItem('whatsflow_token');
 
-      // Solo advertir si es endpoint crítico Y NO es admin Y NO tiene token
-      if ((url.includes('/api/auth/') || url.includes('/api/admin/'))
-        && !isAdminQRMode
-        && userRole !== 'admin'
-        && !hasToken) {
-        console.warn('[FETCH-INTERCEPTOR] ⚠️ No hay sessionToken/deviceId para endpoint crítico:', url);
-      } else {
-        console.log('[FETCH-INTERCEPTOR] ℹ️ Sin sessionToken/deviceId, pero permitido para:', url);
-      }
+    // Agregar headers de autenticación (usar los que existan; no omitir Authorization si falta deviceId)
+    const headers = new Headers(init?.headers);
 
-      return originalFetch(normalizedUrl, init);
+    if (sessionToken) {
+      headers.set('X-Session-Token', sessionToken);
     }
 
-    // Agregar headers de autenticación
-    const headers = new Headers(init?.headers);
-    headers.set('X-Session-Token', sessionToken);
-    headers.set('X-Device-Id', deviceId);
+    if (deviceId) {
+      headers.set('X-Device-Id', deviceId);
+    }
 
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);

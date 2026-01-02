@@ -308,11 +308,16 @@ const App: React.FC = () => {
 
 
       // Generar ID de dispositivo ÚNICO para esta pestaña/sesión del navegador
-      let deviceId = sessionStorage.getItem('whatsflow_device_id');
+      let deviceId = sessionStorage.getItem('whatsflow_device_id') || localStorage.getItem('whatsflow_device_id');
       if (!deviceId) {
         deviceId = generateDeviceId();
-        sessionStorage.setItem('whatsflow_device_id', deviceId);
       }
+
+      // Normalizar claves de deviceId para que los interceptores encuentren el valor
+      ['device_id', 'deviceId', 'whatsflow_device_id', 'whatsflow_session_device_id'].forEach((key) => {
+        sessionStorage.setItem(key, deviceId as string);
+        localStorage.setItem(key, deviceId as string);
+      });
 
       // Intentar recuperar de sessionStorage (primero) O localStorage (segundo, para persistencia)
       const savedToken = sessionStorage.getItem('token') || localStorage.getItem('token');
@@ -321,7 +326,14 @@ const App: React.FC = () => {
       const savedUserId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
       const savedUserName = sessionStorage.getItem('userName') || localStorage.getItem('userName');
       const savedUserRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
-      const savedDeviceId = sessionStorage.getItem('whatsflow_session_device_id') || localStorage.getItem('whatsflow_session_device_id');
+      const savedDeviceId = sessionStorage.getItem('whatsflow_session_device_id')
+        || sessionStorage.getItem('device_id')
+        || sessionStorage.getItem('deviceId')
+        || sessionStorage.getItem('whatsflow_device_id')
+        || localStorage.getItem('whatsflow_session_device_id')
+        || localStorage.getItem('device_id')
+        || localStorage.getItem('deviceId')
+        || localStorage.getItem('whatsflow_device_id');
       const savedSessionToken = sessionStorage.getItem('sessionToken') || localStorage.getItem('sessionToken');
 
       console.log('🔍 [APP-INIT] Verificando sesión guardada en sessionStorage (sesión única)...');

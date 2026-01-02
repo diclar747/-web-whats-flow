@@ -15,10 +15,25 @@ export const sessionFetch = async (url: string, options: SessionFetchOptions = {
     return fetch(url, fetchOptions);
   }
 
-  // Obtener credenciales de sesión desde sessionStorage
-  const sessionToken = sessionStorage.getItem('sessionToken');
-  const deviceId = sessionStorage.getItem('device_id');
-  const token = sessionStorage.getItem('token') || sessionStorage.getItem('whatsflow_token');
+  // Obtener credenciales de sesión desde storage (aceptar claves históricas)
+  const sessionToken = sessionStorage.getItem('sessionToken')
+    || localStorage.getItem('sessionToken')
+    || sessionStorage.getItem('whatsflow_session_token')
+    || localStorage.getItem('whatsflow_session_token');
+
+  const deviceId = sessionStorage.getItem('device_id')
+    || localStorage.getItem('device_id')
+    || sessionStorage.getItem('deviceId')
+    || localStorage.getItem('deviceId')
+    || sessionStorage.getItem('whatsflow_device_id')
+    || localStorage.getItem('whatsflow_device_id')
+    || sessionStorage.getItem('whatsflow_session_device_id')
+    || localStorage.getItem('whatsflow_session_device_id');
+
+  const token = sessionStorage.getItem('token')
+    || localStorage.getItem('token')
+    || sessionStorage.getItem('whatsflow_token')
+    || localStorage.getItem('whatsflow_token');
 
   // Preparar headers
   const headers = new Headers(fetchOptions.headers);
@@ -30,7 +45,7 @@ export const sessionFetch = async (url: string, options: SessionFetchOptions = {
   if (deviceId) {
     headers.set('X-Device-Id', deviceId);
   }
-  
+
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -70,9 +85,24 @@ export const sessionFetch = async (url: string, options: SessionFetchOptions = {
  * Verificar si hay una sesión activa válida
  */
 export const hasValidSession = (): boolean => {
-  const sessionToken = sessionStorage.getItem('sessionToken');
-  const deviceId = sessionStorage.getItem('device_id');
-  const token = sessionStorage.getItem('token') || sessionStorage.getItem('whatsflow_token');
+  const sessionToken = sessionStorage.getItem('sessionToken')
+    || localStorage.getItem('sessionToken')
+    || sessionStorage.getItem('whatsflow_session_token')
+    || localStorage.getItem('whatsflow_session_token');
+
+  const deviceId = sessionStorage.getItem('device_id')
+    || localStorage.getItem('device_id')
+    || sessionStorage.getItem('deviceId')
+    || localStorage.getItem('deviceId')
+    || sessionStorage.getItem('whatsflow_device_id')
+    || localStorage.getItem('whatsflow_device_id')
+    || sessionStorage.getItem('whatsflow_session_device_id')
+    || localStorage.getItem('whatsflow_session_device_id');
+
+  const token = sessionStorage.getItem('token')
+    || localStorage.getItem('token')
+    || sessionStorage.getItem('whatsflow_token')
+    || localStorage.getItem('whatsflow_token');
   
   return !!(sessionToken && deviceId && token);
 };
