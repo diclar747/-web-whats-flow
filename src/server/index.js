@@ -9021,8 +9021,11 @@ app.get('/api/sessions/active', async (req, res) => {
             }
         }
 
-        // Paso 2: Fallback - si no hay JWT, intentar desde sessionId query param (legacy)
-        const { sessionId: requestSessionId } = req.query;
+        // Paso 2: Verificar si se solicita modo admin (ver todas las sesiones)
+        const { sessionId: requestSessionId, viewAllSessions } = req.query;
+        const isAdminView = viewAllSessions === 'true' && isSuperAdmin;
+
+        // Paso 3: Fallback - si no hay JWT, intentar desde sessionId query param (legacy)
         if (!userEmail && !userId && requestSessionId) {
             const cleanSessionId = requestSessionId.replace(/\D/g, '');
             if (cleanSessionId.length >= 7 && cleanSessionId === requestSessionId) {
@@ -9070,22 +9073,26 @@ app.get('/api/sessions/active', async (req, res) => {
                 try {
                     let dbUserSessions;
 
-                    if (isSuperAdmin) {
-                        // SuperAdmin: obtener TODAS las sesiones (sin filtrar agentes)
+                    // 🔥 IMPORTANTE: SuperAdmin solo ve TODAS las sesiones si isAdminView=true
+                    // En dashboard de conexión personal, SuperAdmin ve solo sus propias sesiones
+                    if (isAdminView) {
+                        // Modo Admin: Ver TODAS las sesiones de todos los usuarios
                         [dbUserSessions] = await connection.execute(
-                            `SELECT DISTINCT phone 
-                             FROM user_sessions 
+                            `SELECT DISTINCT phone
+                             FROM user_sessions
                              WHERE phone IS NOT NULL`
                         );
+                        console.log(`[SESSIONS-ACTIVE] 👑 Modo Admin: mostrando todas las sesiones`);
                     } else {
-                        // Usuario normal: solo sus sesiones por email o userId (permitiendo agentes propios)
+                        // Modo Personal: Solo sesiones del usuario autenticado (incluye SuperAdmin viendo sus propias sesiones)
                         [dbUserSessions] = await connection.execute(
-                            `SELECT DISTINCT phone 
+                            `SELECT DISTINCT phone
                              FROM user_sessions
-                             WHERE (email = ? OR id = ?) 
+                             WHERE (email = ? OR id = ?)
                              AND phone IS NOT NULL`,
                             [userEmail, userId]
                         );
+                        console.log(`[SESSIONS-ACTIVE] 👤 Modo Personal: mostrando sesiones de ${userEmail || userId}`);
                     }
 
                     for (const row of dbUserSessions) {
@@ -9121,10 +9128,10 @@ app.get('/api/sessions/active', async (req, res) => {
                 const phoneNumber = await getUserPhoneNumber(sessionId);
                 const ownerPhone = sessionOwnerMap.get(sessionId) || null;
 
-                // ✅ FILTRO según rol:
-                // - SuperAdmin: Ve TODAS las sesiones
-                // - Cliente normal: Ve solo sesiones cuyos phones pertenezcan a su cuenta
-                const belongsToUser = isSuperAdmin ||
+                // ✅ FILTRO según modo:
+                // - Modo Admin (isAdminView=true): SuperAdmin ve TODAS las sesiones
+                // - Modo Personal: Usuario ve solo sus propias sesiones (incluye SuperAdmin en dashboard personal)
+                const belongsToUser = isAdminView ||
                     userPhoneNumbers.has(phoneNumber) ||
                     (ownerPhone && userPhoneNumbers.has(ownerPhone));
 
@@ -9173,16 +9180,17 @@ app.get('/api/sessions/active', async (req, res) => {
                 try {
                     let dbSessions;
 
-                    if (isSuperAdmin) {
-                        // SuperAdmin ve TODAS las sesiones de la base de datos
+                    // 🔥 IMPORTANTE: Usar isAdminView también aquí para consistencia
+                    if (isAdminView) {
+                        // Modo Admin: Ver TODAS las sesiones de todos los usuarios
                         [dbSessions] = await connection.execute(
                             `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at, is_primary
                              FROM user_sessions
                              ORDER BY is_primary DESC, created_at DESC`
                         );
-                        console.log(`[SESSIONS-ACTIVE] 👑 SuperAdmin: cargando ${dbSessions.length} sesiones de BD`);
+                        console.log(`[SESSIONS-ACTIVE] 👑 Modo Admin: cargando ${dbSessions.length} sesiones de BD`);
                     } else {
-                        // Cliente normal: buscar por EMAIL (prioridad) o userId
+                        // Modo Personal: Solo sesiones del usuario autenticado
                         if (userEmail || userId) {
                             [dbSessions] = await connection.execute(
                                 `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at, is_primary
@@ -9191,7 +9199,7 @@ app.get('/api/sessions/active', async (req, res) => {
                                  ORDER BY is_primary DESC, created_at DESC`,
                                 [userEmail, userId]
                             );
-                            console.log(`[SESSIONS-ACTIVE] 👤 Usuario ${userEmail}: encontradas ${dbSessions.length} sesiones en BD`);
+                            console.log(`[SESSIONS-ACTIVE] 👤 Modo Personal: encontradas ${dbSessions.length} sesiones en BD para ${userEmail || userId}`);
                         } else {
                             // Fallback legacy: buscar por phone
                             [dbSessions] = await connection.execute(
@@ -9201,7 +9209,7 @@ app.get('/api/sessions/active', async (req, res) => {
                                  ORDER BY is_primary DESC, created_at DESC`,
                                 [userPhone, userPhone]
                             );
-                            console.log(`[SESSIONS-ACTIVE] 👤 Fallback phone ${userPhone}: encontradas ${dbSessions.length} sesiones en BD`);
+                            console.log(`[SESSIONS-ACTIVE] 👤 Modo Personal (fallback phone): encontradas ${dbSessions.length} sesiones en BD`);
                         }
                     }
 
