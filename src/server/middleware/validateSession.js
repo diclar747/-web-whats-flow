@@ -61,14 +61,14 @@ const validateSessionBelongsToUser = async (req, res, next) => {
                 if (!isNaN(numericId) && numericId > 0 && numericId < 1000000 && sessionId == numericId) {
                     userId = numericId;
                 } else {
-                    // 2. Buscar en user_sessions
+                    // 2. Buscar en user_sessions por session_id, phone, o owner_phone_number
                     const [sessionRows] = await connection.execute(
-                        `SELECT us.session_id, u.id as user_id FROM user_sessions us 
-                         LEFT JOIN users u ON u.phone = us.phone 
-                         WHERE us.session_id = ? OR us.owner_phone_number = ? LIMIT 1`,
-                        [sessionId, sessionId]
+                        `SELECT us.session_id, u.id as user_id FROM user_sessions us
+                         LEFT JOIN users u ON u.phone = us.phone
+                         WHERE us.session_id = ? OR us.phone = ? OR us.owner_phone_number = ? LIMIT 1`,
+                        [sessionId, sessionId, sessionId]
                     );
-                    
+
                     if (sessionRows.length > 0 && sessionRows[0].user_id) {
                         userId = sessionRows[0].user_id;
                     }
