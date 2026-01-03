@@ -10605,7 +10605,7 @@ app.post('/api/send-message', async (req, res) => {
 
 
 // Endpoint específico para agentes - obtener mensajes de un chat
-app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
+app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     const { sessionId, chatJid } = req.params;
     const { limit = 25, dateFilter = 'today' } = req.query; // LÍMITE: Solo 25 mensajes más recientes por defecto
 
@@ -13567,11 +13567,36 @@ app.delete('/api/segments/:segmentId/contacts/:contactJid', async (req, res) => 
 });
 
 // GET: Obtener segmentos de un contacto
-app.get('/api/contacts/:contactJid/segments', async (req, res) => {
+app.get('/api/contacts/:contactJid/segments', authenticateToken, async (req, res) => {
     const { contactJid } = req.params;
     const { sessionId } = req.query;
 
+    if (!sessionId) {
+        return res.status(400).json({ success: false, error: 'sessionId requerido' });
+    }
+
     try {
+        // 🔥 VALIDACIÓN DE PERMISOS: Verificar que sessionId pertenece al usuario
+        const userEmail = req.user?.email;
+        const connection = await pool.getConnection();
+
+        try {
+            const [sessionCheck] = await connection.execute(
+                'SELECT email FROM user_sessions WHERE session_id = ? OR phone = ? ORDER BY is_primary DESC LIMIT 1',
+                [sessionId, sessionId]
+            );
+
+            if (sessionCheck.length === 0 || sessionCheck[0].email !== userEmail) {
+                console.warn(`[API-CONTACT-SEGMENTS] ⚠️ Acceso no autorizado: ${userEmail} a sessionId ${sessionId}`);
+                connection.release();
+                return res.status(403).json({ success: false, error: 'No tienes permiso para acceder a este recurso' });
+            }
+            connection.release();
+        } catch (err) {
+            connection.release();
+            throw err;
+        }
+
         const phoneNumber = await getUserPhoneNumber(sessionId);
         if (!phoneNumber) {
             return res.status(400).json({ success: false, error: 'Sesión no válida' });
@@ -14969,7 +14994,7 @@ app.post('/api/kanban/boards', async (req, res) => {
 });
 
 // Obtener contactos por categoría/tablero
-app.get('/api/contacts/by-category/:sessionId', async (req, res) => {
+app.get('/api/contacts/by-category/:sessionId', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     const { sessionId } = req.params;
     const { boardId } = req.query;
 
@@ -15502,11 +15527,11 @@ app.delete('/api/kanban/boards/:boardId', async (req, res) => {
 });
 
 // Endpoint para buscar contactos en toda la base de datos (no solo en Kanban)
-app.get('/api/kanban/search-all-contacts/:sessionId', async (req, res) => {
+app.get('/api/kanban/search-all-contacts/:sessionId', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     const { sessionId } = req.params;
     const { search } = req.query;
 
-    console.log(`[KANBAN-SEARCH-ALL] Buscando en toda la BD: "${search}"`);
+    console.log(`[KANBAN-SEARCH-ALL] Buscando contactos de ${req.user?.email}: "${search}"`);
 
     if (!pool) {
         return res.status(503).json({
@@ -22747,7 +22772,7 @@ app.get('/api/whatsapp/statuses/:sessionId', async (req, res) => {
 });
 
 // Buscar contacto por teléfono
-app.get('/api/contacts/search/:sessionId/:phone', async (req, res) => {
+app.get('/api/contacts/search/:sessionId/:phone', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     try {
         const { sessionId, phone } = req.params;
         console.log(`📞 [CONTACTS-SEARCH] Buscando contacto: sessionId=${sessionId}, phone=${phone}`);
@@ -22805,7 +22830,7 @@ app.get('/api/contacts/search/:sessionId/:phone', async (req, res) => {
 });
 
 // GET: Buscar contactos por nombre
-app.get('/api/contacts/search-by-name/:sessionId/:searchTerm', async (req, res) => {
+app.get('/api/contacts/search-by-name/:sessionId/:searchTerm', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     try {
         const { sessionId, searchTerm } = req.params;
 
