@@ -21471,6 +21471,10 @@ LIMIT ? OFFSET ? `,
     }
 });
 
+// ============ ENDPOINT DUPLICADO - Existe en multiagent-endpoints.js ============
+// app.get('/api/agents/:userId/chats', authenticateToken, async (req, res) => { ... }
+// Ver multiagent-endpoints.js línea 1402 para el endpoint activo
+
 // ============= FIN CRUD DE AGENTES =============
 
 // Asignar chat a un agente

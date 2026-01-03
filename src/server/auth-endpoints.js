@@ -261,7 +261,7 @@ function registerAuthEndpoints(app, pool) {
                 }
 
                 const [users] = await connection.execute(
-                    `SELECT id, name as full_name, email, phone as phone_number, is_super_admin, is_admin, session
+                    `SELECT id, name as full_name, email, phone as phone_number, role, is_super_admin, is_admin, session
                      FROM users WHERE id = ?`,
                     [userId]
                 );
@@ -287,8 +287,8 @@ function registerAuthEndpoints(app, pool) {
                     });
                 }
 
-                // Determinar rol del usuario
-                let userRole = 'user';
+                // Determinar rol del usuario - PRIORIZAR EL CAMPO role DE LA BD
+                let userRole = user.role || 'user'; // ✅ Usar el campo role directamente
                 if (user.is_super_admin === 1 || user.is_super_admin === true) {
                     userRole = 'super_admin';
                 } else if (user.is_admin === 1 || user.is_admin === true) {

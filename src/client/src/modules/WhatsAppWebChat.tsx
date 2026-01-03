@@ -286,10 +286,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     agent: any | null;
     activeChats: any[];
     loading: boolean;
-  }>({ open: false, agent: null, activeChats: [], loading: false });
+    selectedChat: any | null;
+    messages: any[];
+    loadingMessages: boolean;
+  }>({ open: false, agent: null, activeChats: [], loading: false, selectedChat: null, messages: [], loadingMessages: false });
 
   const handleAgentClick = async (agent: any) => {
-    setAgentDetailsDialog({ ...agentDetailsDialog, open: true, agent, loading: true });
+    setAgentDetailsDialog({ ...agentDetailsDialog, open: true, agent, loading: true, selectedChat: null, messages: [] });
     try {
       const response = await fetch(`${getAPIBaseURL()}/api/agents/${agent.id}/active-chats`, {
         headers: {
@@ -304,6 +307,28 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       console.error(e);
       setAgentDetailsDialog(prev => ({ ...prev, loading: false }));
     }
+  };
+
+  const handleChatClick = async (chat: any) => {
+    setAgentDetailsDialog(prev => ({ ...prev, selectedChat: chat, loadingMessages: true, messages: [] }));
+    try {
+      const response = await fetch(`${getAPIBaseURL()}/api/messages/${chat.session_id}/${chat.chat_jid}?limit=50`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setAgentDetailsDialog(prev => ({ ...prev, messages: data.messages || [], loadingMessages: false }));
+      }
+    } catch (e) {
+      console.error(e);
+      setAgentDetailsDialog(prev => ({ ...prev, loadingMessages: false }));
+    }
+  };
+
+  const handleBackToChats = () => {
+    setAgentDetailsDialog(prev => ({ ...prev, selectedChat: null, messages: [] }));
   };
 
   const handleRevokeAssignment = async (assignmentId: number, chatJid: string) => {
@@ -2973,15 +2998,18 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       {/* 🟢 Dialogo de Detalles del Agente - Mockup de Teléfono */}
       <Dialog
         open={agentDetailsDialog.open}
-        onClose={() => setAgentDetailsDialog({ ...agentDetailsDialog, open: false })}
+        onClose={() => setAgentDetailsDialog({ ...agentDetailsDialog, open: false, selectedChat: null, messages: [] })}
         maxWidth="xs"
         PaperProps={{
           sx: {
-            borderRadius: '40px',
+            borderRadius: '30px',
             overflow: 'hidden',
-            border: '12px solid #1f1f1f',
+            border: '10px solid #1f1f1f',
             boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
             position: 'relative',
+            width: '400px',
+            height: '750px',
+            margin: 0,
             '&::before': {
               content: '""',
               position: 'absolute',
@@ -3007,35 +3035,95 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
           alignItems: 'center',
           gap: 1
         }}>
+          {agentDetailsDialog.selectedChat && (
+            <IconButton
+              size="small"
+              sx={{ color: 'white', mr: 1 }}
+              onClick={handleBackToChats}
+            >
+              ←
+            </IconButton>
+          )}
           <Avatar sx={{ bgcolor: '#128C7E', width: 40, height: 40 }}>
-            {agentDetailsDialog.agent?.name?.[0]}
+            {agentDetailsDialog.selectedChat ? agentDetailsDialog.selectedChat.chat_name?.[0] : agentDetailsDialog.agent?.name?.[0]}
           </Avatar>
           <Box sx={{ flex: 1 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-              {agentDetailsDialog.agent?.name}
+              {agentDetailsDialog.selectedChat ? agentDetailsDialog.selectedChat.chat_name : agentDetailsDialog.agent?.name}
             </Typography>
             <Typography variant="caption" sx={{ opacity: 0.9 }}>
-              {agentDetailsDialog.activeChats.length} chat(s) activo(s)
+              {agentDetailsDialog.selectedChat ? 'Chat' : `${agentDetailsDialog.activeChats.length} chat(s) activo(s)`}
             </Typography>
           </Box>
           <IconButton
             size="small"
             sx={{ color: 'white' }}
-            onClick={() => setAgentDetailsDialog({ ...agentDetailsDialog, open: false })}
+            onClick={() => setAgentDetailsDialog({ ...agentDetailsDialog, open: false, selectedChat: null, messages: [] })}
           >
             ✕
           </IconButton>
         </Box>
 
-        {/* Lista de Chats estilo WhatsApp */}
+        {/* Lista de Chats o Mensajes estilo WhatsApp */}
         <DialogContent sx={{
           p: 0,
           bgcolor: '#E5DDD5',
           backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M0 0h100v100H0z\' fill=\'%23E5DDD5\'/%3E%3Cpath d=\'M10 10h80v80H10z\' fill=\'%23FFF\' opacity=\'.05\'/%3E%3C/svg%3E")',
-          minHeight: '400px',
-          maxHeight: '500px'
+          height: 'calc(750px - 100px)',
+          overflow: 'auto'
         }}>
-          {agentDetailsDialog.loading ? (
+          {agentDetailsDialog.selectedChat ? (
+            // Vista de Mensajes
+            agentDetailsDialog.loadingMessages ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                <CircularProgress sx={{ color: '#075E54' }} />
+              </Box>
+            ) : (
+              <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {agentDetailsDialog.messages.length === 0 ? (
+                  <Typography color="textSecondary" align="center" sx={{ mt: 4 }}>
+                    No hay mensajes
+                  </Typography>
+                ) : (
+                  agentDetailsDialog.messages.map((msg: any) => (
+                    <Box
+                      key={msg.id}
+                      sx={{
+                        display: 'flex',
+                        justifyContent: msg.from_me ? 'flex-end' : 'flex-start',
+                        mb: 0.5
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          maxWidth: '75%',
+                          bgcolor: msg.from_me ? '#DCF8C6' : 'white',
+                          borderRadius: '8px',
+                          p: 1,
+                          boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                          position: 'relative'
+                        }}
+                      >
+                        <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
+                          {msg.text_content || msg.caption || '📎 Archivo multimedia'}
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end', mt: 0.5 }}>
+                          <Typography variant="caption" sx={{ fontSize: '10px', color: '#667781' }}>
+                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Typography>
+                          {msg.from_me && (
+                            <Box sx={{ fontSize: '12px', color: msg.status === 'read' ? '#34B7F1' : '#667781' }}>
+                              {msg.status === 'read' ? '✓✓' : msg.status === 'delivered' ? '✓✓' : '✓'}
+                            </Box>
+                          )}
+                        </Box>
+                      </Box>
+                    </Box>
+                  ))
+                )}
+              </Box>
+            )
+          ) : agentDetailsDialog.loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
               <CircularProgress sx={{ color: '#075E54' }} />
             </Box>
@@ -3059,20 +3147,24 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
               </Typography>
             </Box>
           ) : (
+            // Vista de Lista de Chats
             <List sx={{ p: 0, bgcolor: 'white' }}>
               {agentDetailsDialog.activeChats.map((chat: any, index: number) => (
                 <React.Fragment key={chat.assignment_id}>
                   <ListItem
+                    button
+                    onClick={() => handleChatClick(chat)}
                     sx={{
                       bgcolor: 'white',
                       '&:hover': { bgcolor: '#f5f5f5' },
-                      py: 1.5,
-                      px: 2
+                      py: 1,
+                      px: 2,
+                      cursor: 'pointer'
                     }}
                   >
                     <ListItemAvatar>
                       <Avatar
-                        src={`${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.chat_jid}`}
+                        src={chat.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.chat_jid}`}
                         sx={{ width: 50, height: 50 }}
                       >
                         {chat.chat_name?.[0]}
@@ -3090,29 +3182,31 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                         </Box>
                       }
                       secondary={
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
-                          <Typography variant="caption" color="textSecondary" sx={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            maxWidth: '180px'
-                          }}>
+                        <Box>
+                          <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mb: 0.5 }}>
                             Asignado {new Date(chat.assigned_at).toLocaleDateString()}
                           </Typography>
-                          <Button
-                            variant="text"
-                            color="error"
-                            size="small"
-                            sx={{
-                              minWidth: 'auto',
-                              fontSize: '11px',
-                              py: 0.3,
-                              px: 1
-                            }}
-                            onClick={() => handleRevokeAssignment(chat.assignment_id, chat.chat_jid)}
-                          >
-                            Revocar
-                          </Button>
+                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 0.5 }}>
+                            <Chip label={`📩 No leídos: ${chat.unread_count || 0}`} size="small" sx={{ height: 20, fontSize: '10px', bgcolor: chat.unread_count > 0 ? '#25D366' : '#E0E0E0', color: chat.unread_count > 0 ? 'white' : '#666' }} />
+                            <Chip label={`📤 Enviados: ${chat.sent_count || 0}`} size="small" sx={{ height: 20, fontSize: '10px', bgcolor: '#128C7E', color: 'white' }} />
+                            <Chip label={`📥 Recibidos: ${chat.received_count || 0}`} size="small" sx={{ height: 20, fontSize: '10px', bgcolor: '#0088CC', color: 'white' }} />
+                          </Box>
+                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 0.5 }}>
+                            <Chip label={`✅ Leídos: ${chat.read_count || 0}`} size="small" sx={{ height: 20, fontSize: '10px', bgcolor: '#34B7F1', color: 'white' }} />
+                            <Chip label={`✓ Entregados: ${chat.delivered_count || 0}`} size="small" sx={{ height: 20, fontSize: '10px', bgcolor: '#00A884', color: 'white' }} />
+                            <Chip label={`⏳ Pendientes: ${chat.pending_count || 0}`} size="small" sx={{ height: 20, fontSize: '10px', bgcolor: chat.pending_count > 0 ? '#FFA000' : '#E0E0E0', color: 'white' }} />
+                          </Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5 }}>
+                            <Button
+                              variant="text"
+                              color="error"
+                              size="small"
+                              sx={{ minWidth: 'auto', fontSize: '11px', py: 0.3, px: 1 }}
+                              onClick={() => handleRevokeAssignment(chat.assignment_id, chat.chat_jid)}
+                            >
+                              Revocar
+                            </Button>
+                          </Box>
                         </Box>
                       }
                     />

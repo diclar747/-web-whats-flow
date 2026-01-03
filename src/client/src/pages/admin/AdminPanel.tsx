@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Box, Tabs, Tab, Typography, Paper } from '@mui/material';
 import PlansManager from './PlansManager';
 import ClientsManager from './ClientsManager';
-import AdminChatMonitor from './AdminChatMonitor';
+import ModernAdminChatMonitor from './ModernAdminChatMonitor';
 import PlanRequestsManager from './PlanRequestsManager';
 
 const AdminPanel: React.FC = () => {
@@ -42,7 +42,7 @@ const AdminPanel: React.FC = () => {
                 {tabIndex === 0 && <ClientsManager />}
                 {tabIndex === 1 && <PlansManager />}
                 {tabIndex === 2 && <PlanRequestsManager />}
-                {tabIndex === 3 && <AdminChatMonitor />}
+                {tabIndex === 3 && <ModernAdminChatMonitor />}
             </Box>
         </Box>
     );

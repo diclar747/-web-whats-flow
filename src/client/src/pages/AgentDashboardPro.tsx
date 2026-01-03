@@ -78,6 +78,10 @@ import { useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import EmojiPicker from 'emoji-picker-react';
 import StatusList from '../components/StatusList';
+import CustomConfirmDialog from '../components/CustomConfirmDialog';
+import ModernAgentChatList from '../components/ModernAgentChatList';
+import WhatsAppStyleMessages from '../components/WhatsAppStyleMessages';
+import MessageInputComponent from '../components/MessageInputComponent';
 
 // ==================== INTERFACES ====================
 
@@ -203,6 +207,25 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
     avatar?: string;
     phoneNumber?: string;
   } | null>(null);
+
+  // Estado para diálogo de confirmación personalizado
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    type?: 'warning' | 'error' | 'success' | 'info' | 'help';
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+    onCancel?: () => void;
+    loading?: boolean;
+    dangerousAction?: boolean;
+  }>({
+    open: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   // Referencias
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -494,6 +517,31 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
         requireInteraction: false
       });
     }
+  };
+
+  // Función para mostrar un diálogo personalizado de confirmación
+  const showConfirmDialog = (
+    title: string,
+    message: string,
+    onConfirm: () => void,
+    options?: {
+      type?: 'warning' | 'error' | 'success' | 'info' | 'help';
+      confirmText?: string;
+      cancelText?: string;
+      dangerousAction?: boolean;
+    }
+  ) => {
+    setConfirmDialog({
+      open: true,
+      title,
+      message,
+      type: options?.type || 'info',
+      confirmText: options?.confirmText || 'Confirmar',
+      cancelText: options?.cancelText || 'Cancelar',
+      onConfirm,
+      dangerousAction: options?.dangerousAction || false,
+      loading: false,
+    });
   };
 
   // ==================== CARGA DE DATOS ====================
@@ -3412,6 +3460,23 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
           }
         }
       `}</style>
+
+      {/* ==================== DIÁLOGO DE CONFIRMACIÓN PERSONALIZADO ==================== */}
+      <CustomConfirmDialog
+        open={confirmDialog.open}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        loading={confirmDialog.loading}
+        dangerousAction={confirmDialog.dangerousAction}
+        onConfirm={() => {
+          confirmDialog.onConfirm();
+          setConfirmDialog({ ...confirmDialog, open: false });
+        }}
+        onCancel={() => setConfirmDialog({ ...confirmDialog, open: false })}
+      />
     </Box>
   );
 };

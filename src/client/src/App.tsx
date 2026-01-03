@@ -17,6 +17,7 @@ import AdminLogin from './pages/admin/AdminLogin';
 import AgentLogin from './pages/AgentLogin';
 import AgentDashboard from './pages/AgentDashboard';
 import AgentDashboardPro from './pages/AgentDashboardPro';
+import ModernAgentChat from './components/ModernAgentChat';
 import AdminChatAssignment from './pages/AdminChatAssignment';
 import AdminAgentManagement from './components/AdminAgentManagement';
 import AgentPermissionsManager from './components/AgentPermissionsManager';

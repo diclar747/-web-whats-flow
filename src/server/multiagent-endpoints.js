@@ -1184,19 +1184,53 @@ module.exports = function (app, pool) {
                     SELECT 
                         ca.id as assignment_id,
                         ca.chat_jid,
-                        c.name as chat_name,
-                        ca.assigned_at
+                        ca.session_id,
+                        COALESCE(c.name, cg.name, SUBSTRING_INDEX(ca.chat_jid, '@', 1)) as chat_name,
+                        COALESCE(c.avatar_url, cg.avatar_url, '') as avatar,
+                        ca.assigned_at,
+                        ca.status,
+                        (SELECT COUNT(*) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id 
+                         AND m.from_me = 0 
+                         AND (m.is_read = 0 OR m.is_read IS NULL)) as unread_count,
+                        (SELECT COUNT(*) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id 
+                         AND m.from_me = 1) as sent_count,
+                        (SELECT COUNT(*) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id 
+                         AND m.from_me = 0) as received_count,
+                        (SELECT COUNT(*) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id 
+                         AND m.from_me = 1 
+                         AND (m.status = 'sent' OR m.status = 'delivered')) as delivered_count,
+                        (SELECT COUNT(*) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id 
+                         AND m.from_me = 1 
+                         AND m.status = 'pending') as pending_count,
+                        (SELECT COUNT(*) FROM messages m 
+                         WHERE m.chat_jid = ca.chat_jid 
+                         AND m.session_id = ca.session_id 
+                         AND m.from_me = 1 
+                         AND m.status = 'read') as read_count
                     FROM chat_assignments ca
-                    LEFT JOIN chats c ON c.id = ca.chat_jid
+                    LEFT JOIN contacts c ON c.jid = ca.chat_jid AND c.session_id = ca.session_id
+                    LEFT JOIN contact_groups cg ON cg.jid = ca.chat_jid AND cg.session_id = ca.session_id
                     WHERE ca.user_id = ? AND ca.status = 'active'
                     ORDER BY ca.assigned_at DESC
                 `, [agentId]);
+                
+                console.log(`[ACTIVE-CHATS] ✅ Agente ${agentId} tiene ${rows.length} chats activos`);
                 res.json({ success: true, chats: rows });
             } finally {
                 connection.release();
             }
         } catch (error) {
-            console.error('Error obteniendo chats activos:', error);
+            console.error('[ACTIVE-CHATS] Error obteniendo chats activos:', error);
             res.status(500).json({ success: false, error: 'Error interno' });
         }
     });
@@ -1437,6 +1471,7 @@ module.exports = function (app, pool) {
                 // Obtener chats asignados con información completa
                 let query = `
                     SELECT
+                        ca.chat_jid as id,
                         ca.chat_jid as chatJid,
                         ca.session_id,
                         ca.user_id,
