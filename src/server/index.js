@@ -13578,7 +13578,7 @@ app.get('/api/contacts/:contactJid/segments', authenticateToken, async (req, res
     try {
         // 🔥 VALIDACIÓN DE PERMISOS: Verificar que sessionId pertenece al usuario
         const userEmail = req.user?.email;
-        const connection = await pool.getConnection();
+        let connection = await pool.getConnection();
 
         try {
             const [sessionCheck] = await connection.execute(
@@ -13602,7 +13602,7 @@ app.get('/api/contacts/:contactJid/segments', authenticateToken, async (req, res
             return res.status(400).json({ success: false, error: 'Sesión no válida' });
         }
 
-        const connection = await pool.getConnection();
+        connection = await pool.getConnection();
         try {
             const [segments] = await connection.execute(`
                 SELECT s.id, s.name
