@@ -10404,29 +10404,7 @@ app.post('/api/send/message', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Faltan parámetros: sessionId, number, message' });
     }
 
-    // 🔧 FIX: Resolver session_id real desde BD si sessionId es un teléfono
-    let resolvedSessionId = sessionId;
-    if (pool && sessionId.match(/^\+?\d{10,15}$/)) {
-        try {
-            const connection = await pool.getConnection();
-            try {
-                const [rows] = await connection.execute(
-                    'SELECT session_id FROM user_sessions WHERE phone = ? LIMIT 1',
-                    [sessionId]
-                );
-                if (rows.length > 0) {
-                    resolvedSessionId = String(rows[0].session_id);
-                    console.log(`[API-SEND] ✅ Resuelto sessionId: ${sessionId} → ${resolvedSessionId}`);
-                }
-            } finally {
-                connection.release();
-            }
-        } catch (err) {
-            console.warn(`[API-SEND] ⚠️ Error resolviendo sessionId:`, err.message);
-        }
-    }
-
-    const session = sessions.get(resolvedSessionId);
+    const session = sessions.get(sessionId);
 
     // DEBUG: Diagnóstico detallado de por qué falla
     if (!session || !session.sock || !session.isConnected) {
