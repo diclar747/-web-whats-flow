@@ -2970,62 +2970,161 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
         onAgentClick={handleAgentClick}
       />
 
-      {/* 🟢 Dialogo de Detalles del Agente (Revocar) */}
+      {/* 🟢 Dialogo de Detalles del Agente - Mockup de Teléfono */}
       <Dialog
         open={agentDetailsDialog.open}
         onClose={() => setAgentDetailsDialog({ ...agentDetailsDialog, open: false })}
-        maxWidth="sm"
-        fullWidth
+        maxWidth="xs"
+        PaperProps={{
+          sx: {
+            borderRadius: '40px',
+            overflow: 'hidden',
+            border: '12px solid #1f1f1f',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            position: 'relative',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              top: '0',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: '150px',
+              height: '25px',
+              bgcolor: '#1f1f1f',
+              borderRadius: '0 0 20px 20px',
+              zIndex: 2
+            }
+          }
+        }}
       >
-        <DialogTitle>
-          {agentDetailsDialog.agent?.name} - Chats Activos
-        </DialogTitle>
-        <DialogContent dividers>
+        {/* Header estilo WhatsApp */}
+        <Box sx={{
+          bgcolor: '#075E54',
+          color: 'white',
+          p: 2,
+          pt: 4,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
+        }}>
+          <Avatar sx={{ bgcolor: '#128C7E', width: 40, height: 40 }}>
+            {agentDetailsDialog.agent?.name?.[0]}
+          </Avatar>
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              {agentDetailsDialog.agent?.name}
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.9 }}>
+              {agentDetailsDialog.activeChats.length} chat(s) activo(s)
+            </Typography>
+          </Box>
+          <IconButton
+            size="small"
+            sx={{ color: 'white' }}
+            onClick={() => setAgentDetailsDialog({ ...agentDetailsDialog, open: false })}
+          >
+            ✕
+          </IconButton>
+        </Box>
+
+        {/* Lista de Chats estilo WhatsApp */}
+        <DialogContent sx={{
+          p: 0,
+          bgcolor: '#E5DDD5',
+          backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'100\' height=\'100\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M0 0h100v100H0z\' fill=\'%23E5DDD5\'/%3E%3Cpath d=\'M10 10h80v80H10z\' fill=\'%23FFF\' opacity=\'.05\'/%3E%3C/svg%3E")',
+          minHeight: '400px',
+          maxHeight: '500px'
+        }}>
           {agentDetailsDialog.loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-              <CircularProgress />
+              <CircularProgress sx={{ color: '#075E54' }} />
             </Box>
           ) : agentDetailsDialog.activeChats.length === 0 ? (
-            <Typography color="textSecondary" align="center" sx={{ py: 3 }}>
-              No hay chats activos asignados a este agente.
-            </Typography>
+            <Box sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '400px',
+              gap: 2
+            }}>
+              <Box sx={{
+                fontSize: '60px',
+                opacity: 0.3
+              }}>
+                💬
+              </Box>
+              <Typography color="textSecondary" align="center">
+                No hay chats activos
+              </Typography>
+            </Box>
           ) : (
-            <List>
-              {agentDetailsDialog.activeChats.map((chat: any) => (
+            <List sx={{ p: 0, bgcolor: 'white' }}>
+              {agentDetailsDialog.activeChats.map((chat: any, index: number) => (
                 <React.Fragment key={chat.assignment_id}>
                   <ListItem
-                    secondaryAction={
-                      <Button
-                        variant="outlined"
-                        color="error"
-                        size="small"
-                        onClick={() => handleRevokeAssignment(chat.assignment_id, chat.chat_jid)}
-                      >
-                        Revocar
-                      </Button>
-                    }
+                    sx={{
+                      bgcolor: 'white',
+                      '&:hover': { bgcolor: '#f5f5f5' },
+                      py: 1.5,
+                      px: 2
+                    }}
                   >
                     <ListItemAvatar>
-                      <Avatar src={`${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.chat_jid}`}>
+                      <Avatar
+                        src={`${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.chat_jid}`}
+                        sx={{ width: 50, height: 50 }}
+                      >
                         {chat.chat_name?.[0]}
                       </Avatar>
                     </ListItemAvatar>
                     <ListItemText
-                      primary={chat.chat_name || chat.chat_jid.split('@')[0]}
-                      secondary={`Asignado: ${new Date(chat.assigned_at).toLocaleString()}`}
+                      primary={
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                            {chat.chat_name || chat.chat_jid.split('@')[0]}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {new Date(chat.assigned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Typography>
+                        </Box>
+                      }
+                      secondary={
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
+                          <Typography variant="caption" color="textSecondary" sx={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '180px'
+                          }}>
+                            Asignado {new Date(chat.assigned_at).toLocaleDateString()}
+                          </Typography>
+                          <Button
+                            variant="text"
+                            color="error"
+                            size="small"
+                            sx={{
+                              minWidth: 'auto',
+                              fontSize: '11px',
+                              py: 0.3,
+                              px: 1
+                            }}
+                            onClick={() => handleRevokeAssignment(chat.assignment_id, chat.chat_jid)}
+                          >
+                            Revocar
+                          </Button>
+                        </Box>
+                      }
                     />
                   </ListItem>
-                  <Divider variant="inset" component="li" />
+                  {index < agentDetailsDialog.activeChats.length - 1 && (
+                    <Divider variant="inset" component="li" />
+                  )}
                 </React.Fragment>
               ))}
             </List>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setAgentDetailsDialog({ ...agentDetailsDialog, open: false })}>
-            Cerrar
-          </Button>
-        </DialogActions>
       </Dialog>
 
 
