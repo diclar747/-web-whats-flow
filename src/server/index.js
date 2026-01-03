@@ -12305,6 +12305,7 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
 
     // 🔥 SEGURIDAD: Verificar que el usuario tenga permiso para ver este historial
     const userEmail = req.user?.email;
+    const userPhone = req.user?.phone;
     const userRole = req.user?.role;
     const isSuperAdmin = userRole === 'super_admin' || userRole === 'superadmin';
     const isAdminView = viewAllHistory === 'true' && isSuperAdmin;
@@ -12331,16 +12332,21 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
             }
 
             const sessionOwnerEmail = sessionCheck[0].email;
+            const sessionOwnerPhone = sessionCheck[0].phone;
 
-            // Verificar que el email del token coincide con el dueño de la sesión
-            if (userEmail !== sessionOwnerEmail) {
-                console.warn(`[API - HISTORY] ⚠️ INTENTO DE ACCESO NO AUTORIZADO: Usuario ${userEmail} intentó acceder al historial de ${sessionOwnerEmail}`);
+            // Verificar que el email o phone del token coincide con el dueño de la sesión
+            // Soportar usuarios que iniciaron sesión con phone en lugar de email
+            const isOwner = (userEmail && userEmail === sessionOwnerEmail) ||
+                           (userPhone && userPhone === sessionOwnerPhone);
+
+            if (!isOwner) {
+                console.warn(`[API - HISTORY] ⚠️ INTENTO DE ACCESO NO AUTORIZADO: Usuario ${userEmail || userPhone} intentó acceder al historial de ${sessionOwnerEmail || sessionOwnerPhone}`);
                 return res.status(403).json({ success: false, error: 'No tienes permiso para ver este historial' });
             }
 
-            console.log(`[API - HISTORY] ✅ Acceso autorizado: ${userEmail} a sessionId ${sessionId}`);
+            console.log(`[API - HISTORY] ✅ Acceso autorizado: ${userEmail || userPhone} a sessionId ${sessionId}`);
         } else {
-            console.log(`[API - HISTORY] 👑 Modo Admin: SuperAdmin ${userEmail} viendo todo el historial`);
+            console.log(`[API - HISTORY] 👑 Modo Admin: SuperAdmin ${userEmail || userPhone} viendo todo el historial`);
         }
 
         // ✅ FIX: Ya no usar fallback automático - solo mostrar mensajes del sessionId específico
