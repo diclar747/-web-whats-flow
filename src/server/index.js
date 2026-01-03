@@ -10404,7 +10404,50 @@ app.post('/api/send/message', async (req, res) => {
         return res.status(400).json({ success: false, error: 'Faltan parámetros: sessionId, number, message' });
     }
 
-    const session = sessions.get(sessionId);
+    // 🔧 FIX: Buscar sessionId hexadecimal activo
+    let realSessionId = sessionId;
+
+    // Si no existe directamente en sessions, buscar por userId o phone
+    if (!sessions.has(sessionId)) {
+        const numericId = parseInt(sessionId);
+
+        // Buscar el phone del usuario
+        let userPhone = null;
+        if (!isNaN(numericId) && numericId > 0 && numericId < 1000000) {
+            try {
+                const connection = await pool.getConnection();
+                try {
+                    const [rows] = await connection.execute(
+                        `SELECT us.phone FROM user_sessions us
+                         LEFT JOIN users u ON u.phone = us.phone
+                         WHERE us.session_id = ? OR u.id = ?
+                         ORDER BY us.is_primary DESC LIMIT 1`,
+                        [sessionId, sessionId]
+                    );
+                    if (rows.length > 0) {
+                        userPhone = rows[0].phone;
+                    }
+                } finally {
+                    connection.release();
+                }
+            } catch (err) {
+                console.warn(`[API-SEND] ⚠️ Error buscando phone:`, err.message);
+            }
+        }
+
+        // Buscar en sessionOwnerMap inverso: encontrar sessionId hexadecimal por phone
+        if (userPhone) {
+            for (const [hexSessionId, ownerPhone] of sessionOwnerMap.entries()) {
+                if (ownerPhone === userPhone && sessions.has(hexSessionId)) {
+                    realSessionId = hexSessionId;
+                    console.log(`[API-SEND] ✅ Resuelto userId ${sessionId} → phone ${userPhone} → sessionId ${realSessionId}`);
+                    break;
+                }
+            }
+        }
+    }
+
+    const session = sessions.get(realSessionId);
 
     // DEBUG: Diagnóstico detallado de por qué falla
     if (!session || !session.sock || !session.isConnected) {
