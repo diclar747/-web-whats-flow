@@ -944,20 +944,24 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
                       value={showCreateDialog ? (newFlow.aiConfig?.businessData || '') : (selectedFlow?.aiConfig?.businessData || '')}
                       onChange={(e) => {
                         const value = e.target.value;
-                        if (showCreateDialog) {
-                          setNewFlow({
-                            ...newFlow,
-                            aiConfig: { ...newFlow.aiConfig!, businessData: value }
-                          });
-                        } else if (selectedFlow) {
-                          setSelectedFlow({
-                            ...selectedFlow,
-                            aiConfig: { ...selectedFlow.aiConfig!, businessData: value }
-                          });
+                        // Limitar a 1200 caracteres máximo
+                        if (value.length <= 1200) {
+                          if (showCreateDialog) {
+                            setNewFlow({
+                              ...newFlow,
+                              aiConfig: { ...newFlow.aiConfig!, businessData: value }
+                            });
+                          } else if (selectedFlow) {
+                            setSelectedFlow({
+                              ...selectedFlow,
+                              aiConfig: { ...selectedFlow.aiConfig!, businessData: value }
+                            });
+                          }
                         }
                       }}
                       placeholder="Ejemplo:&#10;Empresa: Mi Tienda Online&#10;Productos: Ropa, accesorios, calzado&#10;Horarios: Lunes a Viernes 9am-6pm, Sábados 10am-2pm&#10;Dirección: Calle Principal 123, Ciudad&#10;Políticas: Envíos gratis sobre $50, devoluciones 30 días&#10;Formas de pago: Efectivo, tarjetas, transferencia"
-                      helperText="Ingresa toda la información relevante de tu negocio"
+                      helperText={`${(showCreateDialog ? (newFlow.aiConfig?.businessData || '') : (selectedFlow?.aiConfig?.businessData || '')).length}/1200 caracteres - Ingresa toda la información relevante de tu negocio`}
+                      error={(showCreateDialog ? (newFlow.aiConfig?.businessData || '') : (selectedFlow?.aiConfig?.businessData || '')).length >= 1200}
                       InputProps={{
                         endAdornment: (
                           <IconButton 
