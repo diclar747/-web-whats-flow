@@ -1196,18 +1196,53 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           <Container maxWidth="lg">
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
-                © 2024 WhatsFlow - Plataforma Empresarial de WhatsApp
+                © 2025 WhatsFlow - Plataforma Empresarial de WhatsApp
               </Typography>
               <Typography variant="caption" sx={{ color: '#64748b' }}>
-                Todos los Derechos Reservados por <strong>CNID</strong> Centro-Nacional-Información-Digital
-              </Typography>
-              <br />
-              <Typography variant="caption" sx={{ color: '#64748b' }}>
-                NRO REG: 17789
+                Todos los Derechos Reservados por <strong>CNID</strong> Centro-Nacional-Información-Digital NRO REG: 17789
               </Typography>
             </Box>
           </Container>
         </Box>
+
+        {/* Botón flotante de WhatsApp */}
+        <Fab
+          sx={{
+            position: 'fixed',
+            bottom: 32,
+            right: 32,
+            bgcolor: '#25D366',
+            color: 'white',
+            width: 70,
+            height: 70,
+            boxShadow: '0 8px 24px rgba(37, 211, 102, 0.4)',
+            transition: 'all 0.3s ease',
+            zIndex: 1000,
+            '&:hover': {
+              bgcolor: '#20BA5A',
+              transform: 'scale(1.1)',
+              boxShadow: '0 12px 32px rgba(37, 211, 102, 0.6)',
+            },
+            animation: 'pulse 2s infinite',
+            '@keyframes pulse': {
+              '0%': {
+                boxShadow: '0 8px 24px rgba(37, 211, 102, 0.4)',
+              },
+              '50%': {
+                boxShadow: '0 8px 32px rgba(37, 211, 102, 0.6)',
+              },
+              '100%': {
+                boxShadow: '0 8px 24px rgba(37, 211, 102, 0.4)',
+              },
+            },
+          }}
+          onClick={() => {
+            window.open('https://wa.me/595994854167?text=Hola%2C%20me%20interesa%20WhatsFlow', '_blank');
+          }}
+          aria-label="Contactar por WhatsApp"
+        >
+          <WhatsApp sx={{ fontSize: 40 }} />
+        </Fab>
       </Box>
     );
   }
