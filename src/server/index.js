@@ -12294,38 +12294,68 @@ app.get('/api/messages', async (req, res) => {
 });
 
 // Obtener historial de mensajes (con paginación)
-app.get('/api/history/messages', async (req, res) => {
-    const { limit = 10000, offset = 0, sessionId, chatJid, startDate, endDate, direction, status: filterStatus } = req.query; // LÍMITE: 10,000 por defecto para cargar historial completo
+app.get('/api/history/messages', authenticateToken, async (req, res) => {
+    const { limit = 10000, offset = 0, sessionId, chatJid, startDate, endDate, direction, status: filterStatus, viewAllHistory } = req.query;
 
-    console.log(`[API - HISTORY] Request for sessionId: ${sessionId} `);
+    console.log(`[API - HISTORY] Request for sessionId: ${sessionId} by user: ${req.user?.email}`);
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible.' });
     }
 
+    // 🔥 SEGURIDAD: Verificar que el usuario tenga permiso para ver este historial
+    const userEmail = req.user?.email;
+    const userRole = req.user?.role;
+    const isSuperAdmin = userRole === 'super_admin' || userRole === 'superadmin';
+    const isAdminView = viewAllHistory === 'true' && isSuperAdmin;
+
+    if (!isAdminView && !sessionId) {
+        return res.status(400).json({ success: false, error: 'sessionId requerido' });
+    }
+
     const connection = await pool.getConnection();
     try {
-        // ✅ FIX: Buscar directamente por session_id en la tabla messages
-        // Primero intentar con el sessionId proporcionado
-        // Si no hay mensajes, intentar usar el primer session_id disponible en la BD (útil para casos de demo)
-        let [checkMessages] = await connection.execute(
-            'SELECT COUNT(*) as count FROM messages WHERE session_id = ?',
-            [sessionId]
-        );
-
         let activeSessionId = sessionId;
 
-        // Si no hay mensajes con el sessionId proporcionado, intentar obtener uno de la BD
-        if (checkMessages[0].count === 0) {
-            console.log(`[API - HISTORY] No messages found for sessionId: ${sessionId}. Searching for any available session...`);
-            const [availableSessions] = await connection.execute(
-                'SELECT DISTINCT session_id FROM messages ORDER BY session_id DESC LIMIT 1'
+        // 🔥 VALIDACIÓN DE PERMISOS: Usuario solo puede ver su propio historial
+        if (!isAdminView) {
+            // Verificar que el sessionId pertenece al usuario autenticado
+            const [sessionCheck] = await connection.execute(
+                'SELECT email, phone FROM user_sessions WHERE session_id = ? OR phone = ? ORDER BY is_primary DESC LIMIT 1',
+                [sessionId, sessionId]
             );
 
-            if (availableSessions.length > 0) {
-                activeSessionId = availableSessions[0].session_id;
-                console.log(`[API - HISTORY] ℹ️ Using fallback sessionId: ${activeSessionId} (provided: ${sessionId})`);
+            if (sessionCheck.length === 0) {
+                console.warn(`[API - HISTORY] ⚠️ SessionId no encontrado: ${sessionId}`);
+                return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
             }
+
+            const sessionOwnerEmail = sessionCheck[0].email;
+
+            // Verificar que el email del token coincide con el dueño de la sesión
+            if (userEmail !== sessionOwnerEmail) {
+                console.warn(`[API - HISTORY] ⚠️ INTENTO DE ACCESO NO AUTORIZADO: Usuario ${userEmail} intentó acceder al historial de ${sessionOwnerEmail}`);
+                return res.status(403).json({ success: false, error: 'No tienes permiso para ver este historial' });
+            }
+
+            console.log(`[API - HISTORY] ✅ Acceso autorizado: ${userEmail} a sessionId ${sessionId}`);
+        } else {
+            console.log(`[API - HISTORY] 👑 Modo Admin: SuperAdmin ${userEmail} viendo todo el historial`);
+        }
+
+        // ✅ FIX: Ya no usar fallback automático - solo mostrar mensajes del sessionId específico
+        let [checkMessages] = await connection.execute(
+            'SELECT COUNT(*) as count FROM messages WHERE session_id = ?',
+            [activeSessionId]
+        );
+
+        if (checkMessages[0].count === 0) {
+            console.log(`[API - HISTORY] No messages found for sessionId: ${activeSessionId}`);
+            return res.json({
+                success: true,
+                messages: [],
+                pagination: { total: 0, limit: parseInt(limit, 10), offset: parseInt(offset, 10), page: 1, totalPages: 0 }
+            });
         }
 
         let query = `SELECT m.id, m.session_id, m.chat_jid,
@@ -12429,9 +12459,11 @@ app.get('/api/history/messages', async (req, res) => {
 });
 
 // Nuevo endpoint para historial completo por número de teléfono
-app.get('/api/history/full/:sessionId', async (req, res) => {
+app.get('/api/history/full/:sessionId', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     const { sessionId } = req.params;
     const { limit = 100, offset = 0 } = req.query;
+
+    console.log(`[API-HISTORY-FULL] Request for sessionId: ${sessionId} by user: ${req.user?.email}`);
 
     if (!pool) {
         return res.status(503).json({
@@ -12445,7 +12477,7 @@ app.get('/api/history/full/:sessionId', async (req, res) => {
         const dbIdentifier = await getUserDbIdentifier(sessionId);
         const phoneNumber = dbIdentifier; // Mantener nombre de variable para compatibilidad con query
 
-        console.log(`[API-HISTORY-FULL] Usando identificador de BD: ${phoneNumber} para ${sessionId}`);
+        console.log(`[API-HISTORY-FULL] ✅ Acceso autorizado: ${req.user?.email} a sessionId ${sessionId}`);
 
         const connection = await pool.getConnection();
         try {
