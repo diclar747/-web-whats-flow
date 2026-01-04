@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getAPIBaseURL } from '../utils/socketConfig';
+import { useSocket } from '../context/SocketContext';
 import {
   Box,
   Grid,
@@ -26,7 +27,6 @@ import {
   AdminPanelSettings,
   Refresh,
 } from '@mui/icons-material';
-import { io } from 'socket.io-client';
 import { getSocketURL } from '../utils/socketConfig';
 
 interface AgentsStatusModuleProps {
@@ -50,27 +50,56 @@ interface OnlineAgent {
 
 const AgentsStatusModule: React.FC<AgentsStatusModuleProps> = ({ sessionId, currentUser }) => {
   const [onlineAgents, setOnlineAgents] = useState<OnlineAgent[]>([]);
-  const [socket, setSocket] = useState<any>(null);
+  const { socket, on, off } = useSocket();
   const [lastUpdate, setLastUpdate] = useState<string>('');
 
   useEffect(() => {
-    // Conectar a Socket.IO
-    const socketURL = getSocketURL();
-    const newSocket = io(socketURL);
-    setSocket(newSocket);
+    if (!socket) return;
 
     // Si hay usuario actual, registrarse como agente en línea
     if (currentUser) {
-      newSocket.emit('agent-online', {
+      socket.emit('agent-online', {
         userId: currentUser.id,
         userName: currentUser.name,
         role: currentUser.role,
       });
     }
 
-    // Escuchar actualizaciones de estado de agentes
-    newSocket.on('agents-status-update', (agents: OnlineAgent[]) => {
+    // Escuchar actualizaciones masivas de agentes
+    on('agents-status-update', (agents: OnlineAgent[]) => {
+      console.log('📊 [AgentsStatus] Actualización masiva:', agents);
       setOnlineAgents(agents);
+      setLastUpdate(new Date().toLocaleTimeString());
+    });
+
+    // Escuchar cambios individuales de estado
+    on('agent-status-changed', (data: any) => {
+      console.log('🔔 [AgentsStatus] Cambio individual:', data);
+
+      setOnlineAgents(prev => {
+        // Si el estado es offline, remover de la lista de agentes "en línea"
+        if (data.agent_status === 'offline') {
+          return prev.filter(a => String(a.userId) !== String(data.agentId));
+        }
+
+        // Si ya está en la lista, actualizarlo
+        const exists = prev.find(a => String(a.userId) === String(data.agentId));
+        if (exists) {
+          return prev.map(a =>
+            String(a.userId) === String(data.agentId)
+              ? { ...a, status: data.agent_status }
+              : a
+          );
+        }
+
+        // Si es un nuevo agente conectándose (no estaba en la lista y ahora no es offline)
+        // Nota: loadOnlineAgents recargará la lista completa si es necesario, 
+        // pero podemos agregarlo aquí para reactividad instantánea si tenemos suficientes datos
+        // Por ahora, recargamos la lista para asegurar consistencia si el agente no existía
+        loadOnlineAgents();
+        return prev;
+      });
+
       setLastUpdate(new Date().toLocaleTimeString());
     });
 
@@ -78,12 +107,13 @@ const AgentsStatusModule: React.FC<AgentsStatusModuleProps> = ({ sessionId, curr
     loadOnlineAgents();
 
     return () => {
-      newSocket.close();
+      off('agents-status-update');
+      off('agent-status-changed');
     };
-  }, [currentUser]);
+  }, [socket, currentUser]);
 
   const loadOnlineAgents = async () => {
-    
+
     try {
       const response = await fetch('${getAPIBaseURL()}/api/agents/online');
       const data = await response.json();

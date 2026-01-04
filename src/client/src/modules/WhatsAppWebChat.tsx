@@ -586,7 +586,12 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     const checkConnection = async () => {
       try {
         console.log('[WhatsAppWebChat] 🔍 Verificando conexión para sessionId:', sessionId);
-        const response = await fetch(`${getAPIBaseURL()}/api/session/${sessionId}/status`);
+        const token = localStorage.getItem('token');
+        const response = await fetch(`${getAPIBaseURL()}/api/session/${sessionId}/status`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
         const data = await response.json();
         console.log('[WhatsAppWebChat] 📡 Estado de conexión recibido:', {
           success: data.success,
@@ -727,23 +732,25 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
   // Escuchar cambios de estado de agentes en tiempo real
   useEffect(() => {
-    const socket = io(getAPIBaseURL());
+    if (!socket) return;
 
-    socket.on('agent-status-changed', (data: { agentId: string; status: string }) => {
+    const handleAgentStatusChange = (data: { agentId: string; agent_status: string }) => {
       console.log('🔔 [WhatsAppWebChat] Estado de agente actualizado:', data);
       setAvailableAgents(prevAgents =>
         prevAgents.map(agent =>
           String(agent.id) === String(data.agentId)
-            ? { ...agent, status: data.status }
+            ? { ...agent, status: data.agent_status }
             : agent
         )
       );
-    });
+    };
+
+    socket.on('agent-status-changed', handleAgentStatusChange);
 
     return () => {
-      socket.disconnect();
+      socket.off('agent-status-changed', handleAgentStatusChange);
     };
-  }, []);
+  }, [socket]);
 
   // Funciones
   const handleSendMessage = async () => {
@@ -1222,7 +1229,10 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       if (!matchesSearch) return false;
 
       // Filtrado por pestañas
-      if (filterTab === 0) return true; // Todo
+      if (filterTab === 0) {
+        // Todo: solo chats individuales (NO grupos)
+        return !chat.isGroup;
+      }
       if (filterTab === 1) {
         // Grupos: solo mostrar grupos
         return chat.isGroup === true;

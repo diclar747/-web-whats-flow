@@ -1320,10 +1320,10 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
       // 1. Obtener token antes de limpiar
       const token = sessionStorage.getItem('token') || localStorage.getItem('agent_token_backup');
 
-      // 2. Cambiar estado a offline (no esperar si falla)
+      // 2. Cambiar estado a offline (no esperar si falla, sin mostrar notificación)
       if (agentId) {
         try {
-          await handleChangeStatus('offline');
+          await handleChangeStatus('offline', false);
         } catch (error) {
           console.error('Error al cambiar estado a offline:', error);
           // Continuar con logout aunque falle
@@ -1416,12 +1416,30 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
   };
 
   // Manejar cambio de estado del agente
-  const handleChangeStatus = async (newStatus: 'online' | 'offline' | 'paused' | 'busy') => {
-    if (!agentId) return;
+  const handleChangeStatus = async (newStatus: 'online' | 'offline' | 'paused' | 'busy', showNotification: boolean = true) => {
+    if (!agentId) {
+      console.error('❌ [AGENT-STATUS] No hay agentId disponible');
+      return;
+    }
+
+    console.log('🔄 [AGENT-STATUS] Cambiando estado del agente:', {
+      agentId,
+      currentStatus: agentStatus,
+      newStatus,
+      apiUrl
+    });
 
     try {
       const token = sessionStorage.getItem('token') || localStorage.getItem('agentToken');
-      const response = await fetch(`${apiUrl}/api/agents/${agentId}/status`, {
+      const url = `${apiUrl}/api/agents/${agentId}/status`;
+
+      console.log('📡 [AGENT-STATUS] Enviando petición PUT:', {
+        url,
+        hasToken: !!token,
+        body: { status: newStatus }
+      });
+
+      const response = await fetch(url, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -1430,22 +1448,38 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
         body: JSON.stringify({ status: newStatus })
       });
 
+      console.log('📥 [AGENT-STATUS] Respuesta recibida:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
+      });
+
       const data = await response.json();
+      console.log('📊 [AGENT-STATUS] Datos de respuesta:', data);
+
       if (data.success) {
         setAgentStatus(newStatus);
-        const statusLabels = {
-          online: 'Disponible',
-          busy: 'Ocupado',
-          paused: 'En pausa',
-          offline: 'Desconectado'
-        };
-        showSnackbar(`Estado cambiado a: ${statusLabels[newStatus]}`, 'success');
+        console.log('✅ [AGENT-STATUS] Estado actualizado localmente a:', newStatus);
+        if (showNotification) {
+          const statusLabels = {
+            online: 'Disponible',
+            busy: 'Ocupado',
+            paused: 'En pausa',
+            offline: 'Desconectado'
+          };
+          showSnackbar(`Estado cambiado a: ${statusLabels[newStatus]}`, 'success');
+        }
       } else {
-        showSnackbar('Error al cambiar estado', 'error');
+        console.error('❌ [AGENT-STATUS] Backend reportó error:', data);
+        if (showNotification) {
+          showSnackbar('Error al cambiar estado', 'error');
+        }
       }
     } catch (error) {
-      console.error('Error cambiando estado:', error);
-      showSnackbar('Error de conexión al cambiar estado', 'error');
+      console.error('❌ [AGENT-STATUS] Error en petición:', error);
+      if (showNotification) {
+        showSnackbar('Error de conexión al cambiar estado', 'error');
+      }
     }
     setStatusMenuAnchor(null);
   };

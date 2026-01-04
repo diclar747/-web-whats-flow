@@ -2927,8 +2927,8 @@ async function getUserPhoneNumber(sessionId) {
             try {
                 // Buscar por phone / session_id / owner_phone_number
                 const [phoneRows] = await connection.execute(
-                    'SELECT phone, session_id FROM user_sessions WHERE phone = ? OR session_id = ? OR owner_phone_number = ? ORDER BY updated_at DESC LIMIT 1',
-                    [sessionId, sessionId, sessionId]
+                    'SELECT owner_phone_number as phone, session_id FROM user_sessions WHERE owner_phone_number = ? OR session_id = ? ORDER BY updated_at DESC LIMIT 1',
+                    [sessionId, sessionId]
                 );
                 if (phoneRows.length > 0) {
                     const phoneNumber = phoneRows[0].phone;
@@ -19798,13 +19798,25 @@ app.get('/api/users/:userId/session', async (req, res) => {
                 // 2. Si no hay resultado (o no hay admin_phone), buscar CUALQUIER sesión activa de un admin
                 if (adminSessions.length === 0) {
                     console.log(`[AGENT-SESSION] ⚠️ No se encontró sesión por admin_phone (${user.admin_phone}), buscando global...`);
-                    [adminSessions] = await connection.execute(
-                        `SELECT us.session_id, us.phone 
-                         FROM user_sessions us
-                         JOIN users u ON us.user_id = u.id
-                         WHERE u.role = 'admin' AND us.is_active = 1 
-                         ORDER BY us.last_activity DESC LIMIT 1`
+                    // Primero obtener todos los admins
+                    const [admins] = await connection.execute(
+                        'SELECT phone FROM users WHERE role = "admin" OR role = "super_admin"'
                     );
+
+                    if (admins.length > 0) {
+                        // Buscar sesión activa de cualquier admin
+                        const adminPhones = admins.map(a => a.phone).filter(Boolean);
+                        if (adminPhones.length > 0) {
+                            const placeholders = adminPhones.map(() => '?').join(',');
+                            [adminSessions] = await connection.execute(
+                                `SELECT session_id, phone
+                                 FROM user_sessions
+                                 WHERE phone IN (${placeholders}) AND is_active = 1
+                                 ORDER BY last_activity DESC LIMIT 1`,
+                                adminPhones
+                            );
+                        }
+                    }
                 }
 
                 if (adminSessions.length > 0) {
@@ -22919,14 +22931,14 @@ app.get('/api/contacts/search-by-name/:sessionId/:searchTerm', authenticateToken
                         SUBSTRING_INDEX(jid, '@', 1) as phone,
                         jid
                  FROM contacts 
-                 WHERE session_id = ? 
+                 WHERE (session_id = ? OR session_id = ?)
                    AND name LIKE ?
                    AND jid LIKE '%@s.whatsapp.net'
                    AND name IS NOT NULL
                    AND name != SUBSTRING_INDEX(jid, '@', 1)
                  ORDER BY name ASC
                  LIMIT 20`,
-                [phoneNumber, searchPattern]
+                [sessionId, phoneNumber, searchPattern]
             );
 
             res.json({

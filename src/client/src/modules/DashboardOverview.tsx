@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { getAPIBaseURL } from '../utils/socketConfig';
+import { useNavigate } from 'react-router-dom';
+import { useSocket } from '../context/SocketContext';
 import {
   Box,
   Grid,
@@ -144,6 +145,8 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(new Date());
 
+  const { on, off, socket } = useSocket();
+
   useEffect(() => {
     loadDashboardData();
     loadSystemMetrics();
@@ -153,6 +156,41 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
 
     return () => clearInterval(metricsInterval);
   }, [sessionId]);
+
+  // Sincronización de estados de agentes en tiempo real
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleAgentStatusChange = (data: any) => {
+      console.log('📊 [Dashboard] Actualizando estado de agente:', data);
+      setTopAgents(prev => {
+        return prev.map(agent => {
+          if (String(agent.id) === String(data.agentId)) {
+            // Mapear agent_status (online/offline/busy/paused) a formato del dashboard (online/away/busy)
+            let dashboardStatus: 'online' | 'away' | 'busy' | 'offline' = 'offline';
+            if (data.agent_status === 'online') {
+              dashboardStatus = 'online';
+            } else if (data.agent_status === 'busy') {
+              dashboardStatus = 'busy';
+            } else if (data.agent_status === 'paused') {
+              dashboardStatus = 'away';
+            } else if (data.agent_status === 'offline') {
+              dashboardStatus = 'offline';
+            }
+
+            return { ...agent, status: dashboardStatus as any };
+          }
+          return agent;
+        });
+      });
+    };
+
+    on('agent-status-changed', handleAgentStatusChange);
+
+    return () => {
+      off('agent-status-changed');
+    };
+  }, [socket, on, off]);
 
   const loadSystemMetrics = async () => {
     try {

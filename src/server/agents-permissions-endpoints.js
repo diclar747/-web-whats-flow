@@ -964,7 +964,7 @@ module.exports = function (app, pool) {
                 if (global.io) {
                     global.io.emit('agent-status-changed', {
                         agentId: agent.id,
-                        status: 'online',
+                        agent_status: 'online', // Corrected property name
                         agentName: agent.name
                     });
                 }
@@ -1223,12 +1223,29 @@ module.exports = function (app, pool) {
 
                 // Emitir evento por Socket.IO si está disponible
                 if (global.io) {
-                    global.io.emit('agent-status-changed', {
+                    const eventData = {
                         agentId,
                         agent_status: status, // Frontend expects 'agent_status', not 'status'
                         agentName: agents[0].name
+                    };
+
+                    // Obtener información de sockets conectados
+                    const connectedSockets = global.io.sockets.sockets.size;
+                    const socketsArray = Array.from(global.io.sockets.sockets.values());
+                    const adminSockets = socketsArray.filter(s => s.userRole === 'admin').length;
+                    const agentSockets = socketsArray.filter(s => s.userRole === 'agent').length;
+
+                    console.log('[AGENT-STATUS] 📡 Emitiendo evento Socket.IO:', {
+                        event: 'agent-status-changed',
+                        data: eventData,
+                        connectedSockets,
+                        adminSockets,
+                        agentSockets,
+                        socketIds: socketsArray.map(s => ({ id: s.id, role: s.userRole }))
                     });
-                    console.log('[AGENT-STATUS] 📡 Evento Socket.IO emitido');
+
+                    global.io.emit('agent-status-changed', eventData);
+                    console.log('[AGENT-STATUS] ✅ Evento emitido a todos los sockets');
                 }
 
                 res.json({

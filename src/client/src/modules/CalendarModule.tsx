@@ -186,7 +186,13 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     if (!sessionId) return;
 
     try {
-      const response = await fetch(`/api/appointment-categories/${sessionId}`);
+      const token = sessionStorage.getItem('whinsap_token') || localStorage.getItem('whinsap_token') || localStorage.getItem('token') || sessionStorage.getItem('token') || localStorage.getItem('agentToken') || sessionStorage.getItem('agentToken');
+      console.log('[CALENDAR] Loading categories with token:', token ? 'Present' : 'Missing');
+      const response = await fetch(`/api/appointment-categories/${sessionId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const data = await response.json();
 
       if (data.success) {
@@ -201,7 +207,13 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     if (!sessionId) return;
 
     try {
-      const response = await fetch(`/api/notification-templates/${sessionId}`);
+      const token = sessionStorage.getItem('whinsap_token') || localStorage.getItem('whinsap_token') || localStorage.getItem('token') || sessionStorage.getItem('token') || localStorage.getItem('agentToken') || sessionStorage.getItem('agentToken');
+      console.log('[CALENDAR] Loading templates with token:', token ? 'Present' : 'Missing');
+      const response = await fetch(`/api/notification-templates/${sessionId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const data = await response.json();
 
       if (data.success && data.templates) {
@@ -221,7 +233,13 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch(`/api/appointments/${sessionId}`);
+      const token = sessionStorage.getItem('whinsap_token') || localStorage.getItem('whinsap_token') || localStorage.getItem('token') || sessionStorage.getItem('token') || localStorage.getItem('agentToken') || sessionStorage.getItem('agentToken');
+      console.log('[CALENDAR] Loading appointments with token:', token ? 'Present' : 'Missing');
+      const response = await fetch(`/api/appointments/${sessionId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const data = await response.json();
 
       if (data.success) {
@@ -295,7 +313,13 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     try {
       setSearchingContact(true);
       const cleanPhone = phone.replace(/[^0-9]/g, '');
-      const response = await fetch(`/api/contacts/search/${sessionId}/${cleanPhone}`);
+      const token = sessionStorage.getItem('whinsap_token') || localStorage.getItem('whinsap_token') || localStorage.getItem('token') || sessionStorage.getItem('token') || localStorage.getItem('agentToken') || sessionStorage.getItem('agentToken');
+      console.log('[CALENDAR] Searching contact by phone with token:', token ? 'Present' : 'Missing');
+      const response = await fetch(`/api/contacts/search/${sessionId}/${cleanPhone}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const data = await response.json();
 
       if (data.success && data.contact) {
@@ -318,7 +342,13 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
 
     try {
       setLoadingContacts(true);
-      const response = await fetch(`/api/contacts/search-by-name/${sessionId}/${encodeURIComponent(searchTerm)}`);
+      const token = sessionStorage.getItem('whinsap_token') || localStorage.getItem('whinsap_token') || localStorage.getItem('token') || sessionStorage.getItem('token') || localStorage.getItem('agentToken') || sessionStorage.getItem('agentToken');
+      console.log(`[CALENDAR] Searching contacts by name "${searchTerm}" with token:`, token ? 'Present' : 'Missing');
+      const response = await fetch(`/api/contacts/search-by-name/${sessionId}/${encodeURIComponent(searchTerm)}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
       const data = await response.json();
 
       if (data.success && data.contacts) {

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getAPIBaseURL } from '../utils/socketConfig';
-import { getSocketURL } from '../utils/socketConfig';
-import { io } from 'socket.io-client';
+import { useSocket } from '../context/SocketContext';
 import {
   Box,
   Grid,
@@ -104,8 +103,8 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
   const [statusFilter, setStatusFilter] = useState<'all' | AgentStatus>('all');
   const [selectedTab, setSelectedTab] = useState(0);
 
-  // Socket para actualizaciones en tiempo real
-  const [socket, setSocket] = useState<any>(null);
+  // Socket para actualizaciones en tiempo real desde el contexto global
+  const { socket, on, off, isConnected } = useSocket();
 
   // Estados del diálogo de crear/editar
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -141,14 +140,57 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
   // Cargar agentes al montar el componente
   useEffect(() => {
     loadAgents();
-    setupSocketConnection();
+  }, []);
+
+  // Configurar listeners de Socket.IO cuando el socket esté disponible
+  useEffect(() => {
+    if (!socket) {
+      console.log('⚠️ [AGENTS-MODULE] Socket no disponible todavía');
+      return;
+    }
+
+    console.log('🔌 [AGENTS-MODULE] Configurando listeners de Socket.IO');
+    console.log('🔌 [AGENTS-MODULE] Socket conectado:', socket.connected);
+
+    // ✅ Escuchar actualizaciones de ACTIVIDAD (online/offline/paused/busy)
+    const handleAgentStatusChanged = (data: { agentId: string; agent_status: AgentStatus }) => {
+      console.log('🔔 [AGENTS-MODULE] Estado de actividad cambiado:', data);
+      setAgents(prev => {
+        const updated = prev.map(agent =>
+          String(agent.id) === String(data.agentId) ? { ...agent, agent_status: data.agent_status } : agent
+        );
+        console.log('📊 [AGENTS-MODULE] Agentes actualizados:', updated.map(a => ({ id: a.id, name: a.name, status: a.agent_status })));
+        return updated;
+      });
+    };
+
+    // ✅ Escuchar actualizaciones de ACCESO (bloqueado/desbloqueado)
+    const handleAgentAccessChanged = (data: { agentId: string; status: AgentAccess }) => {
+      console.log('🔔 [AGENTS-MODULE] Acceso cambió:', data);
+      setAgents(prev => prev.map(agent =>
+        String(agent.id) === String(data.agentId) ? { ...agent, status: data.status } : agent
+      ));
+    };
+
+    const handleAgentsStatusUpdate = () => {
+      console.log('🔔 [AGENTS-MODULE] Recargando lista de agentes');
+      loadAgents();
+    };
+
+    on('agent-status-changed', handleAgentStatusChanged);
+    on('agent-access-changed', handleAgentAccessChanged);
+    on('agents-status-update', handleAgentsStatusUpdate);
+
+    console.log('✅ [AGENTS-MODULE] Listeners configurados correctamente');
 
     return () => {
-      if (socket) {
-        socket.close();
-      }
+      console.log('🧹 [AGENTS-MODULE] Limpiando listeners');
+      off('agent-status-changed');
+      off('agent-access-changed');
+      off('agents-status-update');
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, on, off]);
 
   // Filtrar agentes cuando cambian los filtros
   useEffect(() => {
@@ -170,33 +212,6 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
 
     setFilteredAgents(filtered);
   }, [agents, searchTerm, statusFilter]);
-
-  // Configurar conexión Socket.IO
-  const setupSocketConnection = () => {
-    const socketURL = getSocketURL();
-    const newSocket = io(socketURL);
-    setSocket(newSocket);
-
-    // ✅ Escuchar actualizaciones de ACTIVIDAD (online/offline/paused/busy)
-    newSocket.on('agent-status-changed', (data: { agentId: string; agent_status: AgentStatus }) => {
-      console.log('🔔 [AGENTS-MODULE] Estado de actividad cambiado:', data);
-      setAgents(prev => prev.map(agent =>
-        String(agent.id) === String(data.agentId) ? { ...agent, agent_status: data.agent_status } : agent
-      ));
-    });
-
-    // ✅ Escuchar actualizaciones de ACCESO (bloqueado/desbloqueado)
-    newSocket.on('agent-access-changed', (data: { agentId: string; status: AgentAccess }) => {
-      console.log('🔔 [AGENTS-MODULE] Acceso cambió:', data);
-      setAgents(prev => prev.map(agent =>
-        String(agent.id) === String(data.agentId) ? { ...agent, status: data.status } : agent
-      ));
-    });
-
-    newSocket.on('agents-status-update', () => {
-      loadAgents();
-    });
-  };
 
   // Cargar lista de agentes
   const loadAgents = async () => {
