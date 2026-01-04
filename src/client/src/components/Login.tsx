@@ -68,7 +68,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         // SIEMPRE usar sessionStorage para sesiones únicas por pestaña
         // (ignorar rememberMe por seguridad)
         sessionStorage.setItem('token', data.token);
-        sessionStorage.setItem('whatsflow_token', data.token);
+        sessionStorage.setItem('whinsap_token', data.token);
         sessionStorage.setItem('userRole', data.user.role);
         sessionStorage.setItem('userName', data.user.name);
         sessionStorage.setItem('userId', data.user.id);
@@ -84,14 +84,14 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         // Gestionar persistencia según "Recordar sesión"
         if (rememberMe) {
           localStorage.setItem('token', data.token);
-          localStorage.setItem('whatsflow_token', data.token);
+          localStorage.setItem('whinsap_token', data.token);
           localStorage.setItem('user', JSON.stringify(data.user)); // 🔐 Guardar usuario completo para verificación de rol
           localStorage.setItem('userRole', data.user.role);
           localStorage.setItem('userName', data.user.name);
           localStorage.setItem('userId', data.user.id);
           localStorage.setItem('sessionToken', data.sessionToken);
           if (data.sessionId) {
-            localStorage.setItem('whatsflow_session', data.sessionId);
+            localStorage.setItem('whinsap_session', data.sessionId);
           }
           if (data.permissions) {
             localStorage.setItem('userPermissions', JSON.stringify(data.permissions));
@@ -102,12 +102,12 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         } else {
           // Si no quiere recordar, limpiar localStorage
           localStorage.removeItem('token');
-          localStorage.removeItem('whatsflow_token');
+          localStorage.removeItem('whinsap_token');
           localStorage.removeItem('user');
           localStorage.removeItem('userRole');
           localStorage.removeItem('userName');
           localStorage.removeItem('userId');
-          localStorage.removeItem('whatsflow_session');
+          localStorage.removeItem('whinsap_session');
           localStorage.removeItem('userPermissions');
           localStorage.removeItem('permissionsByModule');
           console.log('🧹 localStorage limpio (Sesión temporal)');
@@ -118,9 +118,9 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         // IMPORTANTE: Si el backend devuelve sessionId o whatsappSessionId, guardarlo
         const whatsappSession = data.whatsappSessionId || data.sessionId;
         if (whatsappSession) {
-          sessionStorage.setItem('whatsflow_session', whatsappSession);
+          sessionStorage.setItem('whinsap_session', whatsappSession);
           if (rememberMe) {
-            localStorage.setItem('whatsflow_session', whatsappSession);
+            localStorage.setItem('whinsap_session', whatsappSession);
           }
           console.log('✅ WhatsApp SessionId desde BD:', whatsappSession);
         }
@@ -150,7 +150,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         }
 
         // Fallback: Redirigir según el rol del usuario
-        const finalSessionId = data.sessionId || sessionStorage.getItem('whatsflow_session');
+        const finalSessionId = data.sessionId || sessionStorage.getItem('whinsap_session');
         const userRole = data.user?.role;
         if (userRole === 'agent' || userRole === 'supervisor') {
           navigate('/dashboard');
@@ -236,7 +236,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 <WhatsApp sx={{ color: 'white', fontSize: 24 }} />
               </Box>
               <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em', color: 'white' }}>
-                WhatsFlow
+                Whinsap
               </Typography>
             </Box>
 

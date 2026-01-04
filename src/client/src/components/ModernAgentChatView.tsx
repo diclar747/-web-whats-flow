@@ -283,7 +283,7 @@ const ModernAgentChatView: React.FC<ModernAgentChatViewProps> = ({
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <WhatsAppIcon sx={{ color: 'white', fontSize: 28 }} />
             <Typography variant="h6" sx={{ color: 'white', fontWeight: 700 }}>
-              WhatsFlow
+              Whinsap
             </Typography>
           </Box>
 

@@ -51,7 +51,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // ✅ RELAXED DASHBOARD CHECK: 
         // No desactivar AuthContext completamente en /dashboard, solo si NO tenemos datos.
         const isAdminQRMode = window.location.pathname.startsWith('/dashboard');
-        const hasStoredSession = !!(localStorage.getItem('token') || localStorage.getItem('whatsflow_token'));
+        const hasStoredSession = !!(localStorage.getItem('token') || localStorage.getItem('whinsap_token'));
 
         if (isAdminQRMode && !hasStoredSession) {
           console.log('ℹ️ MODO DASHBOARD (SIN SESIÓN) - Esperando QR/Socket');
@@ -62,7 +62,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.log('🔄 AuthContext: Verificando sesión (soporte persistente habilitado)');
 
         // 🔧 FIX: PRIORIDAD 1 - Restaurar desde localStorage (sesión persistente)
-        let token = localStorage.getItem('token') || localStorage.getItem('whatsflow_token');
+        let token = localStorage.getItem('token') || localStorage.getItem('whinsap_token');
 
         if (token) {
           console.log('💾 Sesión persistente encontrada en localStorage');
@@ -72,7 +72,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const userNameLS = localStorage.getItem('userName');
           const userRoleLS = localStorage.getItem('userRole');
           const sessionTokenLS = localStorage.getItem('sessionToken');
-          const whatsflowSessionLS = localStorage.getItem('whatsflow_session');
+          const whinsapSessionLS = localStorage.getItem('whinsap_session');
           const userPermissionsLS = localStorage.getItem('userPermissions');
           const permissionsByModuleLS = localStorage.getItem('permissionsByModule');
 
@@ -81,11 +81,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (userNameLS) sessionStorage.setItem('userName', userNameLS);
           if (userRoleLS) sessionStorage.setItem('userRole', userRoleLS);
           if (sessionTokenLS) sessionStorage.setItem('sessionToken', sessionTokenLS);
-          if (whatsflowSessionLS) sessionStorage.setItem('whatsflow_session', whatsflowSessionLS);
+          if (whinsapSessionLS) sessionStorage.setItem('whinsap_session', whinsapSessionLS);
           if (userPermissionsLS) sessionStorage.setItem('userPermissions', userPermissionsLS);
           if (permissionsByModuleLS) sessionStorage.setItem('permissionsByModule', permissionsByModuleLS);
           sessionStorage.setItem('token', token);
-          sessionStorage.setItem('whatsflow_token', token);
+          sessionStorage.setItem('whinsap_token', token);
 
           // Regenerar deviceId si no existe
           let deviceId = sessionStorage.getItem('device_id');
@@ -97,7 +97,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           console.log('✅ Sesión restaurada desde localStorage a sessionStorage');
         } else {
           // 🔧 FIX: PRIORIDAD 2 - Intentar sessionStorage (sesión temporal)
-          token = sessionStorage.getItem('token') || sessionStorage.getItem('whatsflow_token');
+          token = sessionStorage.getItem('token') || sessionStorage.getItem('whinsap_token');
 
           if (!token) {
             // PRIORIDAD 3 - Intentar backup antiguo (compatibilidad)
@@ -150,12 +150,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               sessionStorage.clear();
               // Limpiar también localStorage y backups
               localStorage.removeItem('token');
-              localStorage.removeItem('whatsflow_token');
+              localStorage.removeItem('whinsap_token');
               localStorage.removeItem('userRole');
               localStorage.removeItem('userName');
               localStorage.removeItem('userId');
               localStorage.removeItem('sessionToken');
-              localStorage.removeItem('whatsflow_session');
+              localStorage.removeItem('whinsap_session');
               localStorage.removeItem('userPermissions');
               localStorage.removeItem('permissionsByModule');
               localStorage.removeItem('agent_token_backup');
@@ -197,8 +197,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(data.user);
         // El token ya fue guardado por el componente Login usando storageManager
         // Solo verificamos que esté presente
-        if (!storageManager.getItem('whatsflow_token')) {
-          storageManager.setItem('whatsflow_token', data.token);
+        if (!storageManager.getItem('whinsap_token')) {
+          storageManager.setItem('whinsap_token', data.token);
         }
         return true;
       } else {
@@ -217,8 +217,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Obtener el token JWT para enviar al servidor
     const token = sessionStorage.getItem('token') ||
       localStorage.getItem('token') ||
-      sessionStorage.getItem('whatsflow_token') ||
-      localStorage.getItem('whatsflow_token');
+      sessionStorage.getItem('whinsap_token') ||
+      localStorage.getItem('whinsap_token');
 
     // Notificar al servidor para destruir la sesión y marcar users.session = 0
     if (token) {
@@ -239,11 +239,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Limpiar sessionStorage y localStorage
     sessionStorage.clear();
     localStorage.removeItem('token');
-    localStorage.removeItem('whatsflow_token');
+    localStorage.removeItem('whinsap_token');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userName');
     localStorage.removeItem('userId');
-    localStorage.removeItem('whatsflow_session');
+    localStorage.removeItem('whinsap_session');
 
     console.log('👋 Sesión cerrada correctamente');
 

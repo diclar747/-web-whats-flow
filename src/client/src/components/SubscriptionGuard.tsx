@@ -33,7 +33,7 @@ export const SubscriptionGuard: React.FC<SubscriptionGuardProps> = ({
   const { hasActiveSubscription, isAdmin, loading, subscription } = useSubscription();
   
   // Bypass para usuarios admin detectados en sessionStorage
-  const userTypeSession = sessionStorage.getItem('whatsflow_user_type');
+  const userTypeSession = sessionStorage.getItem('whinsap_user_type');
   const isAdminBySession = userTypeSession === 'admin';
 
   console.log(`[SubscriptionGuard] ${feature}:`, {

@@ -261,7 +261,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
 
     try {
       // Verificar sessionId en localStorage
-      const localStorageSessionId = localStorage.getItem('whatsflow_session');
+      const localStorageSessionId = localStorage.getItem('whinsap_session');
 
       // Primero intentar con el sessionId recibido
       let activeSessionId = sessionId;

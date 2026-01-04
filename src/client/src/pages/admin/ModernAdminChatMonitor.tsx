@@ -4,7 +4,6 @@ import {
   Paper,
   Typography,
   List,
-  ListItem,
   ListItemText,
   ListItemAvatar,
   Avatar,
@@ -15,9 +14,11 @@ import {
   Tab,
   Badge,
   IconButton,
-  Tooltip,
   InputAdornment,
-  ListItemButton
+  ListItemButton,
+  Stack,
+  CircularProgress,
+  Button
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import {
@@ -25,18 +26,16 @@ import {
   Check as CheckIcon,
   DoneAll as DoneAllIcon,
   Schedule as ScheduleIcon,
-  Circle as CircleIcon,
   Refresh as RefreshIcon,
   Visibility as VisibilityIcon,
-  Send as SendIcon,
-  GetApp as GetAppIcon,
-  Image as ImageIcon,
-  Videocam as VideoIcon,
-  AudioFile as AudioIcon,
-  InsertDriveFile as FileIcon
+  InsertDriveFile as FileIcon,
+  Headset as HeadphonesIcon,
+  PlayArrow as PlayIcon,
+  Pause as PauseIcon,
+  Person as PersonIcon
 } from '@mui/icons-material';
 import { useSocket } from '../../context/SocketContext';
-import { formatDistanceToNow, format } from 'date-fns';
+import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import StatusList from '../../components/StatusList';
 import { getAPIBaseURL } from '../../utils/socketConfig';
@@ -53,6 +52,8 @@ interface ChatItem {
   readCount?: number;
   deliveredCount?: number;
   pendingCount?: number;
+  agent_name?: string | null;
+  agent_avatar?: string | null;
 }
 
 interface Message {
@@ -69,11 +70,43 @@ interface Message {
   media_url?: string | null;
   agent_id?: number | null;
   agent_name?: string | null;
+  agent_avatar?: string | null;
   contactName?: string;
   avatar?: string | null;
   file_name?: string;
   mime_type?: string;
 }
+
+const AudioPlayer: React.FC<{ url: string }> = ({ url }) => {
+  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const togglePlay = () => {
+    if (audioRef.current) {
+      if (playing) {
+        audioRef.current.pause();
+      } else {
+        audioRef.current.play();
+      }
+      setPlaying(!playing);
+    }
+  };
+
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 1, bgcolor: 'rgba(0,0,0,0.1)', borderRadius: 2, minWidth: 200 }}>
+      <audio ref={audioRef} src={url} onEnded={() => setPlaying(false)} />
+      <IconButton size="small" onClick={togglePlay} sx={{ color: 'white' }}>
+        {playing ? <PauseIcon /> : <PlayIcon />}
+      </IconButton>
+      <Box sx={{ flex: 1 }}>
+        <Box sx={{ height: 4, bgcolor: 'rgba(255,255,255,0.2)', borderRadius: 2, position: 'relative' }}>
+          <Box sx={{ position: 'absolute', height: '100%', width: '30%', bgcolor: '#25d366', borderRadius: 2 }} />
+        </Box>
+      </Box>
+      <HeadphonesIcon sx={{ fontSize: 18, color: 'rgba(255,255,255,0.5)' }} />
+    </Box>
+  );
+};
 
 const ModernAdminChatMonitor: React.FC = () => {
   const { on, off, isConnected } = useSocket();
@@ -81,9 +114,12 @@ const ModernAdminChatMonitor: React.FC = () => {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'all' | 'sent' | 'received' | 'statuses'>('all');
   const [selectedChat, setSelectedChat] = useState<string | null>(null);
-  const sessionId = (typeof window !== 'undefined' ? (sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session')) : '') || '';
+  const sessionId = (typeof window !== 'undefined' ? (sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session')) : '') || '';
   const [unreadByChat, setUnreadByChat] = useState<Record<string, number>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [initialDataLoaded, setInitialDataLoaded] = useState(false);
 
   const refreshUnreadCounts = async () => {
     try {
@@ -102,8 +138,88 @@ const ModernAdminChatMonitor: React.FC = () => {
     }
   };
 
+  // Load initial chats and their recent messages
+  const loadInitialData = async () => {
+    try {
+      if (!sessionId) {
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+
+      // Load all chats first
+      const chatsRes = await fetch(`${getAPIBaseURL()}/api/chats/${sessionId}?includeGroups=false`);
+      const chatsData = await chatsRes.json();
+
+      if (chatsData?.success && Array.isArray(chatsData.chats)) {
+        // Build unread counts map
+        const unreadMap: Record<string, number> = {};
+        for (const c of chatsData.chats) {
+          unreadMap[c.id] = typeof c.unreadCount === 'number' ? c.unreadCount : 0;
+        }
+        setUnreadByChat(unreadMap);
+
+        // Load recent messages for each chat (limit to last 20 messages per chat)
+        const allMessages: Message[] = [];
+        const chatPromises = chatsData.chats.slice(0, 50).map(async (chat: any) => {
+          try {
+            const msgRes = await fetch(`${getAPIBaseURL()}/api/messages/${sessionId}/${chat.id}?limit=20`);
+            const msgData = await msgRes.json();
+
+            if (msgData?.success && Array.isArray(msgData.messages)) {
+              msgData.messages.forEach((msg: any) => {
+                allMessages.push({
+                  id: msg.id?.toString() || msg.message_id?.toString() || `${Date.now()}-${Math.random()}`,
+                  chatJid: chat.id,
+                  senderJid: msg.sender_jid || msg.senderJid,
+                  message: msg.text_content || msg.message || msg.body,
+                  text_content: msg.text_content || msg.message || msg.body,
+                  timestamp: msg.timestamp || msg.created_at || new Date().toISOString(),
+                  isFromMe: msg.from_me || msg.isFromMe || false,
+                  from_me: msg.from_me || msg.isFromMe || false,
+                  status: msg.status || (msg.from_me ? 'sent' : 'received'),
+                  message_type: msg.message_type || msg.type,
+                  media_url: msg.media_url || msg.mediaUrl,
+                  agent_id: msg.agent_id ?? null,
+                  agent_name: msg.agent_name ?? null,
+                  agent_avatar: msg.agent_avatar || msg.agentAvatar || null,
+                  contactName: chat.name || msg.contact_name,
+                  avatar: chat.avatar || msg.avatar_url,
+                  file_name: msg.file_name,
+                  mime_type: msg.mime_type
+                });
+              });
+            }
+          } catch (err) {
+            console.error(`Error loading messages for chat ${chat.id}:`, err);
+          }
+        });
+
+        await Promise.all(chatPromises);
+
+        // Sort all messages by timestamp (newest first)
+        allMessages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+        setMessages(allMessages);
+        setInitialDataLoaded(true);
+      }
+
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading initial monitoring data:', error);
+      setLoading(false);
+    }
+  };
+
+  // Load initial data on mount
   useEffect(() => {
-    refreshUnreadCounts();
+    loadInitialData();
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!initialDataLoaded) return;
+
     const handler = (data: any) => {
       const payload: Message = {
         id: data.id?.toString() || `${Date.now()}`,
@@ -119,6 +235,7 @@ const ModernAdminChatMonitor: React.FC = () => {
         media_url: data.media_url,
         agent_id: data.agent_id ?? null,
         agent_name: data.agent_name ?? null,
+        agent_avatar: data.agent_avatar || data.agentAvatar || null,
         contactName: data.contactName || data.contact_name,
         avatar: data.avatar || data.avatar_url,
         file_name: data.file_name,
@@ -163,16 +280,14 @@ const ModernAdminChatMonitor: React.FC = () => {
       off('message-sent');
       off('chat:transferred');
     };
-  }, [on, off]);
+  }, [on, off, initialDataLoaded]);
 
-  // Scroll automático cuando hay nuevo mensaje en chat seleccionado
   useEffect(() => {
     if (selectedChat) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, selectedChat]);
 
-  // Calcular estadísticas por chat
   const chats: ChatItem[] = useMemo(() => {
     const map = new Map<string, ChatItem>();
 
@@ -194,7 +309,6 @@ const ModernAdminChatMonitor: React.FC = () => {
 
       const text = msg.text_content || msg.message || '';
 
-      // Actualizar contadores
       if (msg.from_me || msg.isFromMe) {
         if (msg.status === 'pending') existing.pendingCount = (existing.pendingCount || 0) + 1;
         else if (msg.status === 'sent') existing.sentCount = (existing.sentCount || 0) + 1;
@@ -202,6 +316,11 @@ const ModernAdminChatMonitor: React.FC = () => {
         else if (msg.status === 'read') existing.readCount = (existing.readCount || 0) + 1;
       } else {
         existing.receivedCount = (existing.receivedCount || 0) + 1;
+      }
+
+      if (msg.agent_name && !existing.agent_name) {
+        existing.agent_name = msg.agent_name;
+        existing.agent_avatar = msg.agent_avatar;
       }
 
       map.set(id, {
@@ -216,21 +335,15 @@ const ModernAdminChatMonitor: React.FC = () => {
 
   const filteredMessages = useMemo(() => {
     let filtered = messages;
-
-    // Filtrar por chat seleccionado
     if (selectedChat) {
       filtered = filtered.filter(m => m.chatJid === selectedChat);
     }
-
-    // Filtrar por tab
     filtered = filtered.filter(m => {
       if (tab === 'sent' && !(m.from_me || m.isFromMe)) return false;
       if (tab === 'received' && (m.from_me || m.isFromMe)) return false;
       if (tab === 'statuses') return false;
       return true;
     });
-
-    // Filtrar por búsqueda
     if (search) {
       filtered = filtered.filter(m => {
         const text = (m.text_content || m.message || '').toLowerCase();
@@ -239,43 +352,20 @@ const ModernAdminChatMonitor: React.FC = () => {
         return text.includes(search.toLowerCase()) || jid.includes(search.toLowerCase()) || agent.includes(search.toLowerCase());
       });
     }
-
     return filtered;
   }, [messages, search, tab, selectedChat]);
 
-  // Renderizar íconos de estado
   const getStatusIcon = (status: string | undefined, fromMe: boolean) => {
     if (!fromMe) return null;
-
     switch (status) {
-      case 'pending':
-        return <ScheduleIcon sx={{ fontSize: 14, color: '#8696a0' }} />;
-      case 'sent':
-        return <CheckIcon sx={{ fontSize: 14, color: '#8696a0' }} />;
-      case 'delivered':
-        return <DoneAllIcon sx={{ fontSize: 14, color: '#8696a0' }} />;
-      case 'read':
-        return <DoneAllIcon sx={{ fontSize: 14, color: '#53bdeb' }} />;
-      default:
-        return <ScheduleIcon sx={{ fontSize: 14, color: '#8696a0' }} />;
+      case 'pending': return <ScheduleIcon sx={{ fontSize: 13, color: '#8696a0' }} />;
+      case 'sent': return <CheckIcon sx={{ fontSize: 13, color: '#8696a0' }} />;
+      case 'delivered': return <DoneAllIcon sx={{ fontSize: 13, color: '#8696a0' }} />;
+      case 'read': return <DoneAllIcon sx={{ fontSize: 13, color: '#53bdeb' }} />;
+      default: return <ScheduleIcon sx={{ fontSize: 13, color: '#8696a0' }} />;
     }
   };
 
-  // Renderizar ícono de multimedia
-  const getMediaIcon = (messageType: string | undefined, mimeType: string | undefined) => {
-    if (messageType === 'image' || mimeType?.startsWith('image/')) {
-      return <ImageIcon sx={{ fontSize: 16, mr: 0.5 }} />;
-    } else if (messageType === 'video' || mimeType?.startsWith('video/')) {
-      return <VideoIcon sx={{ fontSize: 16, mr: 0.5 }} />;
-    } else if (messageType === 'audio' || messageType === 'ptt' || mimeType?.startsWith('audio/')) {
-      return <AudioIcon sx={{ fontSize: 16, mr: 0.5 }} />;
-    } else if (messageType === 'document') {
-      return <FileIcon sx={{ fontSize: 16, mr: 0.5 }} />;
-    }
-    return null;
-  };
-
-  // Colores tema WhatsApp
   const colors = {
     background: '#0b141a',
     chatListBg: '#111b21',
@@ -288,417 +378,227 @@ const ModernAdminChatMonitor: React.FC = () => {
     divider: '#2a3942',
     hover: '#2a3942',
     selected: '#2a3942',
-    green: '#25d366'
+    green: '#25d366',
+    premium: '#10b981'
   };
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 100px)', bgcolor: colors.background }}>
+    <Box sx={{ display: 'flex', height: 'calc(100vh - 80px)', bgcolor: colors.background, borderRadius: '12px', overflow: 'hidden', border: `1px solid ${colors.divider}` }}>
       {/* ============== LISTA DE CHATS ============== */}
-      <Box
-        sx={{
-          width: 420,
-          bgcolor: colors.chatListBg,
-          borderRight: `1px solid ${colors.divider}`,
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-      >
-        {/* Header */}
+      <Box sx={{ width: 450, bgcolor: colors.chatListBg, borderRight: `1px solid ${colors.divider}`, display: 'flex', flexDirection: 'column' }}>
+        {/* Header Monitoring */}
         <Box sx={{ p: 2, bgcolor: colors.headerBg }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-            <Typography variant="h6" sx={{ color: colors.text, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-              <VisibilityIcon />
-              Monitoreo de Chats
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Tooltip title={isConnected ? 'Conectado' : 'Desconectado'}>
-                <CircleIcon sx={{ fontSize: 12, color: isConnected ? colors.green : '#f44336' }} />
-              </Tooltip>
-              <Tooltip title="Refrescar">
-                <IconButton size="small" onClick={refreshUnreadCounts} sx={{ color: colors.textSecondary }}>
-                  <RefreshIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
+            <Box sx={{ width: 44, height: 44, borderRadius: '12px', bgcolor: colors.premium, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 0 15px ${alpha(colors.premium, 0.4)}` }}>
+              <VisibilityIcon sx={{ color: 'white' }} />
             </Box>
-          </Box>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="subtitle1" sx={{ color: 'white', fontWeight: 800 }}>Gestión de Chats</Typography>
+              <Typography variant="caption" sx={{ color: colors.green, fontWeight: 600 }}>{chats.length} chat(s) activo(s)</Typography>
+            </Box>
+            <IconButton
+              size="small"
+              onClick={loadInitialData}
+              disabled={loading}
+              sx={{ color: colors.textSecondary }}
+            >
+              <RefreshIcon fontSize="small" />
+            </IconButton>
+          </Stack>
 
-          {/* Búsqueda */}
           <TextField
             fullWidth
             size="small"
-            placeholder="Buscar chat..."
+            placeholder="Buscar por número o mensaje..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             sx={{
               '& .MuiOutlinedInput-root': {
                 bgcolor: '#2a3942',
                 color: colors.text,
-                borderRadius: 2,
+                borderRadius: '8px',
                 '& fieldset': { borderColor: 'transparent' },
                 '&:hover fieldset': { borderColor: 'transparent' },
-                '&.Mui-focused fieldset': { borderColor: '#00a884' },
+                '&.Mui-focused fieldset': { borderColor: colors.green },
                 '& input::placeholder': { color: colors.textSecondary, opacity: 1 }
               }
             }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
-                  <SearchIcon sx={{ color: colors.textSecondary, fontSize: 20 }} />
+                  <SearchIcon sx={{ color: colors.textSecondary, fontSize: 18 }} />
                 </InputAdornment>
               )
             }}
           />
         </Box>
 
-        {/* Lista de chats */}
-        <List
-          sx={{
-            flex: 1,
-            overflow: 'auto',
-            p: 0,
-            '&::-webkit-scrollbar': { width: '6px' },
-            '&::-webkit-scrollbar-thumb': {
-              bgcolor: colors.divider,
-              borderRadius: '3px'
-            }
-          }}
-        >
-          {chats.length === 0 ? (
-            <Box sx={{ p: 4, textAlign: 'center', color: colors.textSecondary }}>
-              <Typography variant="body2">Sin actividad reciente</Typography>
-              <Typography variant="caption">Los chats aparecerán aquí en tiempo real</Typography>
+        {/* Lista Scrollable */}
+        <List sx={{ flex: 1, overflow: 'auto', p: 0 }}>
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 200 }}>
+              <CircularProgress size={40} sx={{ color: colors.premium }} />
             </Box>
-          ) : (
-            chats.map((chat) => {
-              const isSelected = selectedChat === chat.id;
+          ) : chats.length === 0 ? (
+            <Box sx={{ p: 4, textAlign: 'center' }}>
+              <Typography variant="body2" sx={{ color: colors.textSecondary, mb: 1 }}>
+                Sin chats activos
+              </Typography>
+              <Typography variant="caption" sx={{ color: colors.textSecondary }}>
+                Los chats aparecerán aquí en tiempo real
+              </Typography>
+            </Box>
+          ) : chats.map((chat) => {
+            const isSelected = selectedChat === chat.id;
+            return (
+              <React.Fragment key={chat.id}>
+                <ListItemButton
+                  selected={isSelected}
+                  onClick={() => setSelectedChat(isSelected ? null : chat.id)}
+                  sx={{
+                    py: 2.5,
+                    px: 3,
+                    bgcolor: isSelected ? alpha(colors.premium, 0.08) : 'transparent',
+                    borderLeft: isSelected ? `4px solid ${colors.premium}` : '4px solid transparent',
+                    '&:hover': { bgcolor: colors.hover }
+                  }}
+                >
+                  <ListItemAvatar>
+                    <Badge
+                      badgeContent={chat.unreadCount || 0}
+                      color="error"
+                      sx={{ '& .MuiBadge-badge': { bgcolor: colors.green, color: 'white' } }}
+                    >
+                      <Avatar src={chat.avatar || undefined} sx={{ width: 54, height: 54, border: `2px solid ${colors.divider}` }}>
+                        {(chat.name || chat.id)?.[0]?.toUpperCase()}
+                      </Avatar>
+                    </Badge>
+                  </ListItemAvatar>
 
-              return (
-                <React.Fragment key={chat.id}>
-                  <ListItemButton
-                    selected={isSelected}
-                    onClick={() => setSelectedChat(isSelected ? null : chat.id)}
-                    sx={{
-                      py: 2,
-                      px: 2,
-                      bgcolor: isSelected ? colors.selected : 'transparent',
-                      '&:hover': { bgcolor: colors.hover }
-                    }}
-                  >
-                    <ListItemAvatar>
-                      <Badge
-                        badgeContent={chat.unreadCount || 0}
-                        color="error"
-                        max={99}
-                        sx={{
-                          '& .MuiBadge-badge': {
-                            bgcolor: colors.green,
-                            color: 'white',
-                            fontWeight: 600
-                          }
-                        }}
-                      >
-                        <Avatar src={chat.avatar || undefined} sx={{ width: 48, height: 48, bgcolor: '#00a884' }}>
-                          {(chat.name || chat.id)?.[0]?.toUpperCase()}
-                        </Avatar>
-                      </Badge>
-                    </ListItemAvatar>
-
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                          <Typography variant="subtitle2" sx={{ color: colors.text, fontWeight: 600 }}>
-                            {chat.name || chat.id.split('@')[0]}
-                          </Typography>
-                          {chat.updatedAt && (
-                            <Typography variant="caption" sx={{ color: colors.textSecondary, fontSize: 11 }}>
-                              {format(new Date(chat.updatedAt), 'HH:mm', { locale: es })}
-                            </Typography>
+                  <ListItemText
+                    sx={{ ml: 1.5 }}
+                    primary={
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5 }}>
+                        <Typography variant="subtitle2" sx={{ color: colors.text, fontWeight: 700 }}>
+                          {chat.name || chat.id.split('@')[0]}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: colors.textSecondary }}>
+                          {chat.updatedAt ? format(new Date(chat.updatedAt), 'HH:mm', { locale: es }) : ''}
+                        </Typography>
+                      </Stack>
+                    }
+                    secondary={
+                      <Box>
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                          {chat.agent_name ? (
+                            <Chip
+                              avatar={<Avatar src={chat.agent_avatar || undefined} sx={{ width: 14, height: 14 }} />}
+                              label={`Agente: ${chat.agent_name}`}
+                              size="small"
+                              sx={{ height: 20, fontSize: '0.7rem', bgcolor: alpha(colors.premium, 0.1), color: colors.premium, border: `1px solid ${alpha(colors.premium, 0.2)}` }}
+                            />
+                          ) : (
+                            <Typography variant="caption" sx={{ color: colors.textSecondary, fontSize: '0.7rem' }}>Sin agente asignado</Typography>
                           )}
-                        </Box>
-                      }
-                      secondary={
-                        <Box>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              color: colors.textSecondary,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                              fontSize: 13,
-                              mb: 1
-                            }}
-                          >
-                            {chat.lastMessage || 'Sin mensajes'}
-                          </Typography>
-
-                          {/* Badges de estadísticas */}
-                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                            {(chat.sentCount || 0) > 0 && (
-                              <Chip
-                                size="small"
-                                icon={<SendIcon sx={{ fontSize: 12 }} />}
-                                label={`${chat.sentCount}`}
-                                sx={{
-                                  height: 20,
-                                  fontSize: 10,
-                                  bgcolor: alpha('#00a884', 0.2),
-                                  color: '#00a884',
-                                  border: '1px solid',
-                                  borderColor: alpha('#00a884', 0.3),
-                                  '& .MuiChip-icon': { ml: 0.5 },
-                                  '& .MuiChip-label': { px: 0.5 }
-                                }}
-                              />
-                            )}
-                            {(chat.receivedCount || 0) > 0 && (
-                              <Chip
-                                size="small"
-                                icon={<GetAppIcon sx={{ fontSize: 12 }} />}
-                                label={`${chat.receivedCount}`}
-                                sx={{
-                                  height: 20,
-                                  fontSize: 10,
-                                  bgcolor: alpha('#2196f3', 0.2),
-                                  color: '#2196f3',
-                                  border: '1px solid',
-                                  borderColor: alpha('#2196f3', 0.3),
-                                  '& .MuiChip-icon': { ml: 0.5 },
-                                  '& .MuiChip-label': { px: 0.5 }
-                                }}
-                              />
-                            )}
-                            {(chat.readCount || 0) > 0 && (
-                              <Chip
-                                size="small"
-                                icon={<DoneAllIcon sx={{ fontSize: 12 }} />}
-                                label={`${chat.readCount}`}
-                                sx={{
-                                  height: 20,
-                                  fontSize: 10,
-                                  bgcolor: alpha('#53bdeb', 0.2),
-                                  color: '#53bdeb',
-                                  border: '1px solid',
-                                  borderColor: alpha('#53bdeb', 0.3),
-                                  '& .MuiChip-icon': { ml: 0.5 },
-                                  '& .MuiChip-label': { px: 0.5 }
-                                }}
-                              />
-                            )}
-                            {(chat.deliveredCount || 0) > 0 && (
-                              <Chip
-                                size="small"
-                                icon={<DoneAllIcon sx={{ fontSize: 12 }} />}
-                                label={`${chat.deliveredCount}`}
-                                sx={{
-                                  height: 20,
-                                  fontSize: 10,
-                                  bgcolor: alpha('#8696a0', 0.2),
-                                  color: '#8696a0',
-                                  border: '1px solid',
-                                  borderColor: alpha('#8696a0', 0.3),
-                                  '& .MuiChip-icon': { ml: 0.5 },
-                                  '& .MuiChip-label': { px: 0.5 }
-                                }}
-                              />
-                            )}
-                            {(chat.pendingCount || 0) > 0 && (
-                              <Chip
-                                size="small"
-                                icon={<ScheduleIcon sx={{ fontSize: 12 }} />}
-                                label={`${chat.pendingCount}`}
-                                sx={{
-                                  height: 20,
-                                  fontSize: 10,
-                                  bgcolor: alpha('#ff9800', 0.2),
-                                  color: '#ff9800',
-                                  border: '1px solid',
-                                  borderColor: alpha('#ff9800', 0.3),
-                                  '& .MuiChip-icon': { ml: 0.5 },
-                                  '& .MuiChip-label': { px: 0.5 }
-                                }}
-                              />
-                            )}
-                            {(chat.unreadCount || 0) > 0 && (
-                              <Chip
-                                size="small"
-                                label={`${chat.unreadCount}`}
-                                sx={{
-                                  height: 20,
-                                  fontSize: 10,
-                                  bgcolor: alpha('#f44336', 0.2),
-                                  color: '#f44336',
-                                  border: '1px solid',
-                                  borderColor: alpha('#f44336', 0.3),
-                                  '& .MuiChip-label': { px: 0.5 }
-                                }}
-                              />
-                            )}
-                          </Box>
-                        </Box>
-                      }
-                    />
-                  </ListItemButton>
-                  <Divider sx={{ bgcolor: colors.divider }} />
-                </React.Fragment>
-              );
-            })
-          )}
+                        </Stack>
+                        <Typography variant="body2" sx={{ color: colors.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', mb: 1.5, fontSize: '0.8rem' }}>
+                          {chat.lastMessage || 'Sin mensajes'}
+                        </Typography>
+                        <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                          {chat.sentCount! > 0 && <Chip label={`⬆ ${chat.sentCount}`} size="small" sx={{ height: 18, fontSize: 10, bgcolor: alpha(colors.premium, 0.1), color: colors.premium }} />}
+                          {chat.receivedCount! > 0 && <Chip label={`⬇ ${chat.receivedCount}`} size="small" sx={{ height: 18, fontSize: 10, bgcolor: alpha('#2196f3', 0.1), color: '#2196f3' }} />}
+                          {chat.readCount! > 0 && <Chip label={`✔✔ ${chat.readCount}`} size="small" sx={{ height: 18, fontSize: 10, bgcolor: alpha('#53bdeb', 0.1), color: '#53bdeb' }} />}
+                          {chat.deliveredCount! > 0 && <Chip label={`✔ ${chat.deliveredCount}`} size="small" sx={{ height: 18, fontSize: 10, bgcolor: alpha('#8696a0', 0.1), color: '#8696a0' }} />}
+                        </Stack>
+                      </Box>
+                    }
+                  />
+                </ListItemButton>
+                <Divider sx={{ bgcolor: colors.divider }} />
+              </React.Fragment>
+            );
+          })}
         </List>
       </Box>
 
-      {/* ============== ÁREA DE MENSAJES ============== */}
+      {/* ============== ÁREA DE CHAT ============== */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        {/* Tabs */}
         <Box sx={{ bgcolor: colors.headerBg, borderBottom: `1px solid ${colors.divider}` }}>
           <Tabs
             value={['all', 'sent', 'received', 'statuses'].indexOf(tab)}
             onChange={(_, i) => setTab(['all', 'sent', 'received', 'statuses'][i] as any)}
-            variant="fullWidth"
             sx={{
-              '& .MuiTab-root': {
-                color: colors.textSecondary,
-                textTransform: 'none',
-                fontSize: 14,
-                fontWeight: 500
-              },
-              '& .MuiTab-root.Mui-selected': {
-                color: '#00a884'
-              },
-              '& .MuiTabs-indicator': {
-                backgroundColor: '#00a884'
-              }
+              '& .MuiTab-root': { color: colors.textSecondary, fontWeight: 600, fontSize: '0.8rem' },
+              '& .MuiTab-root.Mui-selected': { color: colors.premium },
+              '& .MuiTabs-indicator': { backgroundColor: colors.premium }
             }}
           >
-            <Tab label="Todos" />
+            <Tab label="Todos los Mensajes" />
             <Tab label="Enviados" />
             <Tab label="Recibidos" />
-            <Tab label="Estados" />
+            <Tab label="Estado de Línea" />
           </Tabs>
         </Box>
 
-        {/* Contenido */}
-        <Box
-          sx={{
-            flex: 1,
-            overflow: 'auto',
-            bgcolor: colors.chatBg,
-            backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg opacity=\'0.03\'%3E%3Cpath d=\'M30 30 L30 15 L15 15 Z\' fill=\'%23ffffff\'/%3E%3C/g%3E%3C/svg%3E")',
-            '&::-webkit-scrollbar': { width: '6px' },
-            '&::-webkit-scrollbar-thumb': {
-              bgcolor: colors.divider,
-              borderRadius: '3px'
-            }
-          }}
-        >
+        <Box sx={{ flex: 1, overflow: 'auto', p: 3, bgcolor: colors.chatBg, backgroundImage: 'url("https://w7.pngwing.com/pngs/351/975/png-transparent-whatsapp-pattern-whatsapp-pattern-thumbnail.png")', backgroundOpacity: 0.1 }}>
           {tab === 'statuses' ? (
-            <Box sx={{ p: 2 }}>
-              {sessionId ? (
-                <StatusList sessionId={sessionId} />
-              ) : (
-                <Typography sx={{ color: colors.textSecondary, textAlign: 'center', mt: 4 }}>
-                  Sin sesión activa para cargar estados.
-                </Typography>
-              )}
-            </Box>
-          ) : filteredMessages.length === 0 ? (
-            <Box
-              sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '100%',
-                color: colors.textSecondary,
-                gap: 2
-              }}
-            >
-              <VisibilityIcon sx={{ fontSize: 80, opacity: 0.3 }} />
-              <Typography variant="h6">
-                {selectedChat ? 'No hay mensajes' : 'Selecciona un chat'}
-              </Typography>
-              <Typography variant="body2" sx={{ textAlign: 'center', maxWidth: 400 }}>
-                {selectedChat
-                  ? 'Los mensajes aparecerán en tiempo real'
-                  : 'Haz clic en un chat para ver la actividad'}
-              </Typography>
-            </Box>
+            <StatusList sessionId={sessionId} />
           ) : (
-            <Box sx={{ p: 2 }}>
-              {filteredMessages.map((m) => (
-                <Box
-                  key={m.id}
-                  sx={{
-                    display: 'flex',
-                    justifyContent: m.from_me || m.isFromMe ? 'flex-end' : 'flex-start',
-                    mb: 1.5
-                  }}
-                >
-                  <Paper
-                    sx={{
-                      maxWidth: '65%',
-                      p: 1.5,
-                      bgcolor: (m.from_me || m.isFromMe) ? colors.myMessage : colors.theirMessage,
-                      borderRadius: (m.from_me || m.isFromMe) ? '8px 0px 8px 8px' : '0px 8px 8px 8px',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
-                    }}
-                  >
-                    {/* Nombre del agente */}
-                    {m.agent_name && (
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          color: '#00a884',
-                          fontWeight: 600,
-                          display: 'block',
-                          mb: 0.5
-                        }}
-                      >
-                        {m.agent_name}
-                      </Typography>
+            <Stack spacing={2.5}>
+              {filteredMessages.map((m) => {
+                const isMe = !!(m.from_me || m.isFromMe);
+                return (
+                  <Box key={m.id} sx={{ alignSelf: isMe ? 'flex-end' : 'flex-start', maxWidth: '70%', position: 'relative' }}>
+                    {/* Agent Tooltip/Header */}
+                    {isMe && m.agent_name && (
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5, justifyContent: 'flex-end' }}>
+                        <Typography variant="caption" sx={{ color: colors.premium, fontWeight: 700 }}>{m.agent_name}</Typography>
+                        <Avatar src={m.agent_avatar || undefined} sx={{ width: 18, height: 18, border: `1px solid ${colors.premium}` }}>
+                          <PersonIcon sx={{ fontSize: 10 }} />
+                        </Avatar>
+                      </Stack>
                     )}
 
-                    {/* Tipo de multimedia */}
-                    {(m.message_type && m.message_type !== 'conversation' && m.message_type !== 'text') && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5, color: colors.text }}>
-                        {getMediaIcon(m.message_type, m.mime_type)}
-                        <Typography variant="caption">
-                          {m.file_name ||
-                            (m.message_type === 'image' ? 'Imagen' :
-                              m.message_type === 'video' ? 'Video' :
-                                m.message_type === 'audio' || m.message_type === 'ptt' ? 'Audio' :
-                                  'Archivo')}
-                        </Typography>
-                      </Box>
-                    )}
+                    <Paper
+                      elevation={1}
+                      sx={{
+                        p: 1.5,
+                        bgcolor: isMe ? colors.myMessage : colors.theirMessage,
+                        color: colors.text,
+                        borderRadius: isMe ? '15px 15px 3px 15px' : '15px 15px 15px 3px',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                        position: 'relative'
+                      }}
+                    >
+                      {/* Media Rendering */}
+                      {m.media_url && (
+                        <Box sx={{ mb: 1, borderRadius: 1, overflow: 'hidden' }}>
+                          {(m.message_type === 'image' || m.mime_type?.startsWith('image/')) ? (
+                            <Box component="img" src={m.media_url} sx={{ width: '100%', maxHeight: 300, objectFit: 'cover', cursor: 'pointer' }} onClick={() => window.open(m.media_url!, '_blank')} />
+                          ) : (m.message_type === 'video' || m.mime_type?.startsWith('video/')) ? (
+                            <Box component="video" src={m.media_url} controls sx={{ width: '100%', maxHeight: 300 }} />
+                          ) : (m.message_type === 'audio' || m.message_type === 'ptt' || m.mime_type?.startsWith('audio/')) ? (
+                            <AudioPlayer url={m.media_url} />
+                          ) : (
+                            <Button startIcon={<FileIcon />} variant="outlined" size="small" sx={{ color: 'white', borderColor: 'rgba(255,255,255,0.2)' }} onClick={() => window.open(m.media_url!, '_blank')}>
+                              {m.file_name || 'Descargar Archivo'}
+                            </Button>
+                          )}
+                        </Box>
+                      )}
 
-                    {/* Texto */}
-                    {m.text_content || m.message ? (
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          color: colors.text,
-                          wordBreak: 'break-word',
-                          whiteSpace: 'pre-wrap',
-                          fontSize: 14
-                        }}
-                      >
-                        {m.text_content || m.message}
-                      </Typography>
-                    ) : null}
+                      <Typography variant="body2" sx={{ fontSize: '0.95rem', whiteSpace: 'pre-wrap', mb: 0.5 }}>{m.text_content || m.message}</Typography>
 
-                    {/* Tiempo y estado */}
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                      <Typography variant="caption" sx={{ fontSize: 11, color: colors.textSecondary }}>
-                        {format(new Date(m.timestamp), 'HH:mm', { locale: es })}
-                      </Typography>
-                      {getStatusIcon(m.status, m.from_me || m.isFromMe || false)}
-                    </Box>
-                  </Paper>
-                </Box>
-              ))}
+                      <Stack direction="row" spacing={0.5} justifyContent="flex-end" alignItems="center">
+                        <Typography variant="caption" sx={{ color: colors.textSecondary, fontSize: 10 }}>{format(new Date(m.timestamp), 'HH:mm', { locale: es })}</Typography>
+                        {getStatusIcon(m.status, isMe)}
+                      </Stack>
+                    </Paper>
+                  </Box>
+                );
+              })}
               <div ref={messagesEndRef} />
-            </Box>
+            </Stack>
           )}
         </Box>
       </Box>

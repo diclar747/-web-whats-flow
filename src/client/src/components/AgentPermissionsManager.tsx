@@ -95,7 +95,7 @@ const AgentPermissionsManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  
+
   // Dialogs
   const [openCreateDialog, setOpenCreateDialog] = useState(false);
   const [openEditDialog, setOpenEditDialog] = useState(false);
@@ -104,7 +104,7 @@ const AgentPermissionsManager: React.FC = () => {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
   const [agentPermissions, setAgentPermissions] = useState<Permission[]>([]);
-  
+
   // Form data
   const [formData, setFormData] = useState({
     name: '',
@@ -145,14 +145,14 @@ const AgentPermissionsManager: React.FC = () => {
 
   const getAuthHeaders = (): HeadersInit => {
     // Buscar token y sessionId en sessionStorage principalmente
-    const token = sessionStorage.getItem('whatsflow_token') || 
-                  sessionStorage.getItem('token') || 
-                  localStorage.getItem('whatsflow_token') ||
-                  localStorage.getItem('token');
-    
-    const sessionId = sessionStorage.getItem('whatsflow_session') ||
-                     sessionStorage.getItem('sessionId');
-    
+    const token = sessionStorage.getItem('whinsap_token') ||
+      sessionStorage.getItem('token') ||
+      localStorage.getItem('whinsap_token') ||
+      localStorage.getItem('token');
+
+    const sessionId = sessionStorage.getItem('whinsap_session') ||
+      sessionStorage.getItem('sessionId');
+
     const sessionToken = sessionStorage.getItem('sessionToken');
     const deviceId = sessionStorage.getItem('device_id');
 
@@ -169,11 +169,11 @@ const AgentPermissionsManager: React.FC = () => {
     } else {
       console.error('❌ No se encontró token de autenticación');
     }
-    
+
     if (sessionToken) {
       headers['X-Session-Token'] = sessionToken;
     }
-    
+
     if (deviceId) {
       headers['X-Device-Id'] = deviceId;
     }
@@ -186,9 +186,9 @@ const AgentPermissionsManager: React.FC = () => {
     setError(null);
     try {
       // Obtener sessionId como fallback
-      const sessionId = sessionStorage.getItem('whatsflow_session') ||
-                       sessionStorage.getItem('sessionId') ||
-                       localStorage.getItem('whatsflow_session');
+      const sessionId = sessionStorage.getItem('whinsap_session') ||
+        sessionStorage.getItem('sessionId') ||
+        localStorage.getItem('whinsap_session');
 
       // Construir URL con sessionId si no hay token
       const url = new URL(`${getAPIBaseURL()}/api/agents/list`);
@@ -288,16 +288,16 @@ const AgentPermissionsManager: React.FC = () => {
     setError(null);
     try {
       // Obtener sessionId del usuario actual como fallback
-      let sessionId = sessionStorage.getItem('whatsflow_session') || 
-                       sessionStorage.getItem('sessionId') ||
-                       localStorage.getItem('whatsflow_session');
-      
+      let sessionId = sessionStorage.getItem('whinsap_session') ||
+        sessionStorage.getItem('sessionId') ||
+        localStorage.getItem('whinsap_session');
+
       console.log('📱 SessionId del usuario:', sessionId);
 
       // Si no hay token, intentar regenerarlo
       let headers = getAuthHeaders();
       let headersObj = headers as Record<string, string>;
-      
+
       if (!headersObj['Authorization'] && sessionId) {
         console.log('⚠️ No hay token, intentando regenerar...');
         try {
@@ -336,16 +336,16 @@ const AgentPermissionsManager: React.FC = () => {
           permissions: [] // Inicialmente sin permisos, se asignan después
         })
       });
-      
+
       console.log('📥 Respuesta del servidor:', response.status, response.statusText);
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         console.error('❌ Error en respuesta:', data);
         throw new Error(data.error || `Error ${response.status}: ${response.statusText}`);
       }
-      
+
       if (data.success) {
         console.log('✅ Agente creado exitosamente:', data);
         setSuccess('Agente creado exitosamente');
@@ -455,9 +455,9 @@ const AgentPermissionsManager: React.FC = () => {
   };
 
   const handlePermissionChange = (permissionId: number, field: string, value: boolean) => {
-    setAgentPermissions(prev => 
-      prev.map(perm => 
-        perm.permission_id === permissionId 
+    setAgentPermissions(prev =>
+      prev.map(perm =>
+        perm.permission_id === permissionId
           ? { ...perm, [field]: value }
           : perm
       )
@@ -721,7 +721,7 @@ const AgentPermissionsManager: React.FC = () => {
               label="Activo"
             />
             <Alert severity="info">
-              <strong>Inicio de sesión:</strong> El usuario usará su email y contraseña en <strong>https://web.whats-flow.com/login</strong>
+              <strong>Inicio de sesión:</strong> El usuario usará su email y contraseña en <strong>{window.location.origin}/login</strong>
             </Alert>
             <Alert severity="warning">
               Después de crear el usuario, debes asignarle permisos para los módulos que podrá acceder.
@@ -912,14 +912,14 @@ const AgentPermissionsManager: React.FC = () => {
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog 
-        open={openDeleteDialog} 
+      <Dialog
+        open={openDeleteDialog}
         onClose={() => !loading && setOpenDeleteDialog(false)}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle sx={{ 
-          bgcolor: 'error.main', 
+        <DialogTitle sx={{
+          bgcolor: 'error.main',
           color: 'white',
           display: 'flex',
           alignItems: 'center',
@@ -946,24 +946,24 @@ const AgentPermissionsManager: React.FC = () => {
               <Typography variant="body2" color="text.secondary">
                 {agentToDelete.email}
               </Typography>
-              <Chip 
-                label={agentToDelete.role} 
-                size="small" 
-                color="primary" 
+              <Chip
+                label={agentToDelete.role}
+                size="small"
+                color="primary"
                 sx={{ mt: 1 }}
               />
             </Box>
           )}
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
-          <Button 
+          <Button
             onClick={() => setOpenDeleteDialog(false)}
             disabled={loading}
             variant="outlined"
           >
             Cancelar
           </Button>
-          <Button 
+          <Button
             onClick={() => agentToDelete && handleDeleteAgent(agentToDelete.id)}
             disabled={loading}
             variant="contained"

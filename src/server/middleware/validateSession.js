@@ -21,14 +21,14 @@ const validateSessionBelongsToUser = async (req, res, next) => {
 
         // Obtener sessionId del parámetro o query
         const sessionId = req.params.sessionId || req.query.sessionId;
-        
+
         if (!sessionId) {
             // Si no hay sessionId en parámetro, podría estar en body (para POST)
             if (req.body && req.body.sessionId) {
                 req.params.sessionId = req.body.sessionId;
                 return validateSessionBelongsToUser(req, res, next);
             }
-            
+
             return res.status(400).json({
                 success: false,
                 error: 'sessionId requerido'
@@ -39,7 +39,7 @@ const validateSessionBelongsToUser = async (req, res, next) => {
 
         // Obtener pool de DB desde req.app
         const pool = req.app.get('dbPool') || global.dbPool;
-        
+
         if (!pool) {
             console.error('[SESSION-VALIDATION] ❌ DB Pool no disponible');
             return res.status(500).json({
@@ -51,25 +51,27 @@ const validateSessionBelongsToUser = async (req, res, next) => {
         try {
             // Llamar a getOwnerSessionId para convertir sessionId a users.id
             // (está definida en index.js, pero haremos la lógica aquí)
-            
+
             const connection = await pool.getConnection();
             try {
                 // 1. Si sessionId es numérico pequeño, asumir que es users.id
                 const numericId = parseInt(sessionId);
                 let userId = null;
-                
+
                 if (!isNaN(numericId) && numericId > 0 && numericId < 1000000 && sessionId == numericId) {
                     userId = numericId;
                 } else {
                     // 2. Buscar en user_sessions por session_id, phone, o owner_phone_number
+                    // Se agrega OR u.email = us.email para vincular por email si el teléfono aún no está sincronizado
                     const [sessionRows] = await connection.execute(
-                        `SELECT us.session_id, u.id as user_id FROM user_sessions us
-                         LEFT JOIN users u ON u.phone = us.phone
+                        `SELECT us.session_id, u.id as user_id, us.email as session_email 
+                         FROM user_sessions us
+                         LEFT JOIN users u ON (u.phone = us.phone OR u.email = us.email)
                          WHERE us.session_id = ? OR us.phone = ? OR us.owner_phone_number = ? LIMIT 1`,
                         [sessionId, sessionId, sessionId]
                     );
 
-                    if (sessionRows.length > 0 && sessionRows[0].user_id) {
+                    if (sessionRows.length > 0) {
                         userId = sessionRows[0].user_id;
                     }
                 }
@@ -126,8 +128,8 @@ const validateSessionBelongsToUser = async (req, res, next) => {
                 // Comparar email del token con email del dueño de la sesión
                 // Si alguno de los dos no tiene email, comparar por user ID
                 const isSameUser = (req.user.email && req.user.email === sessionOwner.email) ||
-                                   (req.user.id && String(req.user.id) === String(userId)) ||
-                                   (req.user.phone && req.user.phone === sessionOwner.email); // Admin con phone como email
+                    (req.user.id && String(req.user.id) === String(userId)) ||
+                    (req.user.phone && req.user.phone === sessionOwner.email); // Admin con phone como email
 
                 if (!isSameUser) {
                     console.warn(
@@ -140,7 +142,7 @@ const validateSessionBelongsToUser = async (req, res, next) => {
                         await connection.execute(
                             `INSERT INTO security_logs (event_type, user_id, details) VALUES (?, ?, ?)`,
                             ['UNAUTHORIZED_SESSION_ACCESS', userId || 'unknown',
-                             `User ${req.user.email || req.user.phone} attempted to access session of ${sessionOwner.email}`]
+                                `User ${req.user.email || req.user.phone} attempted to access session of ${sessionOwner.email}`]
                         );
                     } catch (logErr) {
                         // Ignorar si la tabla no existe

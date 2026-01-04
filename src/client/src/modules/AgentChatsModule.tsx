@@ -104,13 +104,27 @@ const AgentChatsModule: React.FC<AgentChatsModuleProps> = ({ sessionId, agentId 
       const response = await fetch(`${getAPIBaseURL()}/api/agent/${agentId}/chats`);
       const data = await response.json();
       if (data.success && data.chats) {
-        // Mapear campos del backend a la interfaz del frontend
-        const mappedChats = data.chats.map((chat: any) => ({
+        // Mapear campos del backend a la interfaz del frontend y agrupar por chatId
+        const validChats = data.chats || [];
+        const chatMap = new Map();
+
+        validChats.forEach((chat: any) => {
+          // Si ya existe, nos quedamos con el más reciente (mayor ID o fecha)
+          if (!chatMap.has(chat.chatId) || new Date(chat.transferredAt) > new Date(chatMap.get(chat.chatId).transferredAt)) {
+            chatMap.set(chat.chatId, chat);
+          }
+        });
+
+        const uniqueChats = Array.from(chatMap.values()).map((chat: any) => ({
           ...chat,
           avatarUrl: chat.avatar_url,
           chatName: chat.contact_name || chat.chatName
         }));
-        setTransferredChats(mappedChats);
+
+        // Ordenar por fecha descendente
+        uniqueChats.sort((a: any, b: any) => new Date(b.transferredAt).getTime() - new Date(a.transferredAt).getTime());
+
+        setTransferredChats(uniqueChats);
       }
       setLoading(false);
     } catch (error) {

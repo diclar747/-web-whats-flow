@@ -331,7 +331,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
 
     try {
       // Verificar sessionId en localStorage
-      const localStorageSessionId = localStorage.getItem('whatsflow_session');
+      const localStorageSessionId = localStorage.getItem('whinsap_session');
 
       // Primero intentar con el sessionId recibido
       let activeSessionId = sessionId;
@@ -396,7 +396,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       // ✅ FIX: Usar sessionId de prop O recuperar de localStorage (para F5)
       let activeSessionId = sessionId;
       if (!activeSessionId || activeSessionId.trim() === '') {
-        activeSessionId = localStorage.getItem('whatsflow_session') || '';
+        activeSessionId = localStorage.getItem('whinsap_session') || '';
         if (activeSessionId) {
           console.log('✅ [HistoryModule] Recuperado sessionId de localStorage:', activeSessionId);
         }
@@ -1263,7 +1263,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       // Encabezado
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
-      doc.text('Historial de Mensajes - WhatsFlow', pageWidth / 2, 15, { align: 'center' });
+      doc.text('Historial de Mensajes - Whinsap', pageWidth / 2, 15, { align: 'center' });
 
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
@@ -1324,7 +1324,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         );
       }
 
-      doc.save(`historial_whatsflow_${new Date().toISOString().split('T')[0]}.pdf`);
+      doc.save(`historial_whinsap_${new Date().toISOString().split('T')[0]}.pdf`);
       console.log('✅ PDF generado exitosamente');
       showSnackbar('✅ PDF descargado exitosamente', 'success');
     } catch (error) {
@@ -1385,7 +1385,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       const infoSheet = XLSX.utils.json_to_sheet(infoData);
       XLSX.utils.book_append_sheet(workbook, infoSheet, 'Información');
 
-      XLSX.writeFile(workbook, `historial_whatsflow_${new Date().toISOString().split('T')[0]}.xlsx`);
+      XLSX.writeFile(workbook, `historial_whinsap_${new Date().toISOString().split('T')[0]}.xlsx`);
       console.log('✅ Excel generado exitosamente');
       showSnackbar('✅ Excel descargado exitosamente', 'success');
     } catch (error) {
@@ -1463,7 +1463,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Historial WhatsFlow - ${new Date().toLocaleDateString('es-ES')}</title>
+        <title>Historial Whinsap - ${new Date().toLocaleDateString('es-ES')}</title>
         <style>
           @media print {
             @page { margin: 2cm; }
@@ -1517,7 +1517,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         </style>
       </head>
       <body>
-        <h1>📱 Historial de Mensajes - WhatsFlow</h1>
+        <h1>📱 Historial de Mensajes - Whinsap</h1>
         <div class="info">
           <p><strong>Fecha de impresión:</strong> ${new Date().toLocaleString('es-ES')}</p>
           <p><strong>Total de registros:</strong> ${data.length}</p>
@@ -1525,7 +1525,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         </div>
         ${tableHTML}
         <div class="footer">
-          <p>Generado por WhatsFlow - Sistema de Gestión de WhatsApp</p>
+          <p>Generado por Whinsap - Sistema de Gestión de WhatsApp</p>
           <p>${new Date().toLocaleDateString('es-ES')}</p>
         </div>
         <script>

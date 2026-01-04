@@ -23,7 +23,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 }) => {
   const { hasPermission, hasModuleAccess, userRole } = usePermissions();
   const token = sessionStorage.getItem('token');
-  const sessionId = sessionStorage.getItem('whatsflow_session');
+  const sessionId = sessionStorage.getItem('whinsap_session');
 
   // Verificar autenticación (token O sessionId de QR)
   if (requireAuth && !token && !sessionId) {

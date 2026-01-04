@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 class DeviceFingerprint {
   private deviceId: string | null = null;
-  private readonly STORAGE_KEY = 'whatsflow_device_id';
+  private readonly STORAGE_KEY = 'whinsap_device_id';
 
   /**
    * Genera o recupera el device ID del navegador
@@ -103,7 +103,7 @@ class DeviceFingerprint {
       ctx.fillStyle = '#f60';
       ctx.fillRect(125, 1, 62, 20);
       ctx.fillStyle = '#069';
-      ctx.fillText('WhatsFlow 🔐', 2, 15);
+      ctx.fillText('Whinsap 🔐', 2, 15);
       ctx.fillStyle = 'rgba(102, 204, 0, 0.7)';
       ctx.fillText('Device ID', 4, 17);
 

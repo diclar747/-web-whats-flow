@@ -17,7 +17,7 @@ const SessionIdDebugger: React.FC<SessionIdDebuggerProps> = ({ sessionId }) => {
       console.log('🔍 Debug: SessionId recibido:', sessionId);
 
       // Verificar sessionId en localStorage
-      const localStorageSessionId = sessionStorage.getItem('whatsflow_session');
+      const localStorageSessionId = sessionStorage.getItem('whinsap_session');
       console.log('🔍 Debug: SessionId en localStorage:', localStorageSessionId);
 
       // Primero intentar con el sessionId recibido
@@ -79,14 +79,14 @@ const SessionIdDebugger: React.FC<SessionIdDebuggerProps> = ({ sessionId }) => {
 
   const fixSessionId = () => {
     // Usar el sessionId correcto de localStorage
-    const correctSessionId = sessionStorage.getItem('whatsflow_session');
+    const correctSessionId = sessionStorage.getItem('whinsap_session');
     if (correctSessionId && correctSessionId !== sessionId) {
       console.log('🔧 SessionId correcto detectado:', correctSessionId);
       console.log('⚠️ Considera actualizar el estado sin recargar la página');
       // NO RECARGAR - el sistema debe funcionar en tiempo real
     } else if (debugInfo?.activeSessionId && debugInfo.activeSessionId !== sessionId) {
       console.log('🔧 SessionId activo detectado:', debugInfo.activeSessionId);
-      sessionStorage.setItem('whatsflow_session', debugInfo.activeSessionId);
+      sessionStorage.setItem('whinsap_session', debugInfo.activeSessionId);
       // NO RECARGAR - el sistema debe funcionar en tiempo real
     }
   };

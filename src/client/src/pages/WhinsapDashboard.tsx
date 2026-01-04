@@ -138,7 +138,7 @@ const ModuleLoadingFallback = () => (
   </Box>
 );
 
-interface WhatsFlowDashboardProps {
+interface WhinsapDashboardProps {
   sessionId: string;
   onLogout: () => void;
 }
@@ -152,15 +152,15 @@ interface NavigationItem {
   color?: string;
 }
 
-const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLogout }) => {
+const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
   // ✅ Guardar sessionId en localStorage para que SocketContext pueda acceder
   useEffect(() => {
     if (sessionId) {
-      localStorage.setItem('whatsflow_session', sessionId);
-      sessionStorage.setItem('whatsflow_session', sessionId);
+      localStorage.setItem('whinsap_session', sessionId);
+      sessionStorage.setItem('whinsap_session', sessionId);
       console.log('[DASHBOARD] 💾 SessionId guardado para Socket.IO:', sessionId);
       console.log('[DASHBOARD-DEBUG] 🔍 SessionId completo:', {
         sessionId,
@@ -527,11 +527,12 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
     // Si es usuario JWT sin WhatsApp, no hay stats que cargar (todo será 0)
     if (!sessionId && hasJWTAuth) {
       console.log('[STATS-DEBUG] ℹ️ Usuario JWT sin WhatsApp - stats predeterminados en 0');
-      return;
+      // No abortamos, permitimos que siga para mostrar el dashboard vacío pero con UI funcional
     }
 
-    if (sessionValid === false) {
-      console.warn('[STATS-DEBUG] ⚠️ ABORTANDO - sessionValid es false');
+    // 🔥 MODIFICADO: No abortar si sessionValid es false pero tenemos JWT
+    if (sessionValid === false && !hasJWTAuth) {
+      console.warn('[STATS-DEBUG] ⚠️ ABORTANDO - sessionValid es false y no hay JWT token');
       return;
     }
 
@@ -602,9 +603,9 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   // Actualizar título de página con mensajes no leídos
   useEffect(() => {
     if (totalUnreadMessages > 0) {
-      document.title = `(${totalUnreadMessages}) WhatsFlow - Mensajes nuevos`;
+      document.title = `(${totalUnreadMessages}) Whinsap - Mensajes nuevos`;
     } else {
-      document.title = 'WhatsFlow - Plataforma Empresarial';
+      document.title = 'Whinsap - Plataforma Empresarial';
     }
   }, [totalUnreadMessages]);
 
@@ -699,7 +700,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
         setAlertOpen(false);
         sessionStorage.clear();
         localStorage.clear();
-        window.location.href = 'https://web.whats-flow.com/';
+        window.location.href = '/';
       }
     });
     setAlertOpen(true);
@@ -909,7 +910,7 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
                 <WhatsApp sx={{ color: 'white', fontSize: 24 }} />
               </Box>
               <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em', color: 'white' }}>
-                WhatsFlow
+                Whinsap
               </Typography>
             </Box>
           ) : (
@@ -1558,4 +1559,4 @@ const WhatsFlowDashboard: React.FC<WhatsFlowDashboardProps> = ({ sessionId, onLo
   );
 };
 
-export default WhatsFlowDashboard;
+export default WhinsapDashboard;

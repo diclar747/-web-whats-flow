@@ -18,22 +18,22 @@ export const sessionFetch = async (url: string, options: SessionFetchOptions = {
   // Obtener credenciales de sesión desde storage (aceptar claves históricas)
   const sessionToken = sessionStorage.getItem('sessionToken')
     || localStorage.getItem('sessionToken')
-    || sessionStorage.getItem('whatsflow_session_token')
-    || localStorage.getItem('whatsflow_session_token');
+    || sessionStorage.getItem('whinsap_session_token')
+    || localStorage.getItem('whinsap_session_token');
 
   const deviceId = sessionStorage.getItem('device_id')
     || localStorage.getItem('device_id')
     || sessionStorage.getItem('deviceId')
     || localStorage.getItem('deviceId')
-    || sessionStorage.getItem('whatsflow_device_id')
-    || localStorage.getItem('whatsflow_device_id')
-    || sessionStorage.getItem('whatsflow_session_device_id')
-    || localStorage.getItem('whatsflow_session_device_id');
+    || sessionStorage.getItem('whinsap_device_id')
+    || localStorage.getItem('whinsap_device_id')
+    || sessionStorage.getItem('whinsap_session_device_id')
+    || localStorage.getItem('whinsap_session_device_id');
 
   const token = sessionStorage.getItem('token')
     || localStorage.getItem('token')
-    || sessionStorage.getItem('whatsflow_token')
-    || localStorage.getItem('whatsflow_token');
+    || sessionStorage.getItem('whinsap_token')
+    || localStorage.getItem('whinsap_token');
 
   // Preparar headers
   const headers = new Headers(fetchOptions.headers);
@@ -87,22 +87,22 @@ export const sessionFetch = async (url: string, options: SessionFetchOptions = {
 export const hasValidSession = (): boolean => {
   const sessionToken = sessionStorage.getItem('sessionToken')
     || localStorage.getItem('sessionToken')
-    || sessionStorage.getItem('whatsflow_session_token')
-    || localStorage.getItem('whatsflow_session_token');
+    || sessionStorage.getItem('whinsap_session_token')
+    || localStorage.getItem('whinsap_session_token');
 
   const deviceId = sessionStorage.getItem('device_id')
     || localStorage.getItem('device_id')
     || sessionStorage.getItem('deviceId')
     || localStorage.getItem('deviceId')
-    || sessionStorage.getItem('whatsflow_device_id')
-    || localStorage.getItem('whatsflow_device_id')
-    || sessionStorage.getItem('whatsflow_session_device_id')
-    || localStorage.getItem('whatsflow_session_device_id');
+    || sessionStorage.getItem('whinsap_device_id')
+    || localStorage.getItem('whinsap_device_id')
+    || sessionStorage.getItem('whinsap_session_device_id')
+    || localStorage.getItem('whinsap_session_device_id');
 
   const token = sessionStorage.getItem('token')
     || localStorage.getItem('token')
-    || sessionStorage.getItem('whatsflow_token')
-    || localStorage.getItem('whatsflow_token');
+    || sessionStorage.getItem('whinsap_token')
+    || localStorage.getItem('whinsap_token');
   
   return !!(sessionToken && deviceId && token);
 };

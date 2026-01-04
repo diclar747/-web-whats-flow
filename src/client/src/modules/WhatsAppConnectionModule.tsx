@@ -50,8 +50,8 @@ interface WhatsAppSession {
 const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ sessionId }) => {
   const resolvedSessionId = React.useMemo(() => (
     sessionId
-    || sessionStorage.getItem('whatsflow_session')
-    || localStorage.getItem('whatsflow_session')
+    || sessionStorage.getItem('whinsap_session')
+    || localStorage.getItem('whinsap_session')
     || sessionStorage.getItem('sessionId')
     || localStorage.getItem('sessionId')
   ), [sessionId]);
@@ -196,6 +196,15 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
     socket.on('connection-update', (data: any) => {
       console.log('[WA-CONNECTION] Actualización de conexión:', data);
       fetchActiveSessions(); // Refrescar lista
+    });
+
+    // 🆕 Escuchar evento específico emitido por el servidor al conectar
+    socket.on('whatsapp-connected', (data: any) => {
+      console.log('[WA-CONNECTION] WhatsApp conectado exitosamente:', data);
+      setWaError(''); // Limpiar errores
+      stopQrPolling(); // Detener polling si estaba activo
+      setQrState(prev => ({ ...prev, isLoading: false, qrDataUrl: '' })); // Limpiar QR
+      fetchActiveSessions(); // Refrescar lista inmediatamente
     });
 
     return () => {

@@ -86,6 +86,7 @@ interface Agent {
   avatar_url?: string;
   max_concurrent_chats?: number;
   role?: string;
+  active_chats_count?: number;
 }
 
 interface SnackbarState {
@@ -387,7 +388,7 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
         max_concurrent_chats: formData.max_concurrent_chats,
         // Enviar credenciales por WhatsApp si se solicita
         sendWhatsApp: formData.sendWhatsApp,
-        sessionId: sessionId || sessionStorage.getItem('sessionId') || localStorage.getItem('sessionId') || localStorage.getItem('whatsflow_session') || sessionStorage.getItem('whatsflow_session')
+        sessionId: sessionId || sessionStorage.getItem('sessionId') || localStorage.getItem('sessionId') || localStorage.getItem('whinsap_session') || sessionStorage.getItem('whinsap_session')
       };
 
       // Solo incluir password si se está editando y se proporcionó uno nuevo, o si es creación
@@ -746,6 +747,7 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
                     <TableCell>Agente</TableCell>
                     <TableCell>Contacto</TableCell>
                     <TableCell align="center">Estado</TableCell>
+                    <TableCell align="center">Chats Activos</TableCell>
                     <TableCell align="center">Última actividad</TableCell>
                     <TableCell align="center">Chats máx.</TableCell>
                     <TableCell align="center">Estado cuenta</TableCell>
@@ -812,6 +814,13 @@ const AgentsManagementModule: React.FC<AgentsManagementModuleProps> = ({ session
                             color: getStatusColor(agent.agent_status),
                             fontWeight: 600
                           }}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={agent.active_chats_count || 0}
+                          color={(agent.active_chats_count || 0) >= (agent.max_concurrent_chats || 5) ? 'error' : 'default'}
+                          size="small"
                         />
                       </TableCell>
                       <TableCell align="center">

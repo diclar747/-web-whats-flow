@@ -145,35 +145,102 @@ export const useTransferNotifications = (socket: any, userId?: number) => {
     }
 
     const eventName = `agent-${userId}-new-chat`;
+    const requestEventName = `agent-${userId}-transfer-request`;
+    const updateEventName = 'transfer-request-update';
 
+    // 1. Manejar NUEVO CHAT ASIGNADO (Directo o aceptado)
     const handleTransferNotification = (data: TransferNotification) => {
       console.log('🎉 [NOTIFICATION] Chat transferido recibido:', data);
-
-      // Reproducir sonido
-      if (data.playSound) {
-        playNotificationSound();
-      }
-
-      // Mostrar notificación del navegador
-      if (data.showNotification) {
-        showBrowserNotification(data);
-      }
-
-      // Mostrar toast en la app
+      if (data.playSound) playNotificationSound();
+      if (data.showNotification) showBrowserNotification(data);
       showToastNotification(data);
+      window.dispatchEvent(new CustomEvent('reload-assigned-chats', { detail: { chatJid: data.chatJid } }));
+    };
 
-      // Emitir evento para recargar chats
-      window.dispatchEvent(new CustomEvent('reload-assigned-chats', {
-        detail: { chatJid: data.chatJid }
-      }));
+    // 2. Manejar SOLICITUD DE TRANSFERENCIA (Requiere aceptación)
+    const handleTransferRequest = (data: any) => {
+      console.log('📨 [NOTIFICATION] Solicitud de transferencia recibida:', data);
+      playNotificationSound();
+
+      toast.custom((t) => (
+        <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-white shadow-xl rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5 overflow-hidden`}>
+          <div className="flex-1 w-0 p-4">
+            <div className="flex items-start">
+              <div className="flex-shrink-0 pt-0.5">
+                <span style={{ fontSize: '32px' }}>🤔</span>
+              </div>
+              <div className="ml-3 flex-1">
+                <p className="text-sm font-bold text-gray-900">Solicitud de Transferencia</p>
+                <p className="mt-1 text-sm text-gray-700">
+                  <strong>{data.fromUserName}</strong> quiere transferirte un chat.
+                </p>
+                {data.reason && (
+                  <p className="mt-2 text-sm text-gray-500 bg-gray-50 px-2 py-1 rounded">
+                    "{data.reason}"
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex border-l border-gray-200 flex-col">
+            <button
+              onClick={async () => {
+                toast.dismiss(t.id);
+                try {
+                  // Obtener API Base URL dinámicamente si es posible, o hardcoded relativo
+                  const apiBase = window.location.origin;
+                  await fetch(`${apiBase}/api/transfer-requests/${data.id}/respond`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                    body: JSON.stringify({ accept: true })
+                  });
+                  toast.success('Transferencia aceptada');
+                } catch (e) { toast.error('Error al aceptar'); }
+              }}
+              className="w-full border-b border-gray-200 p-3 flex items-center justify-center text-sm font-medium text-green-600 hover:bg-green-50 focus:outline-none"
+            >
+              Aceptar
+            </button>
+            <button
+              onClick={async () => {
+                toast.dismiss(t.id);
+                try {
+                  const apiBase = window.location.origin;
+                  await fetch(`${apiBase}/api/transfer-requests/${data.id}/respond`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                    body: JSON.stringify({ accept: false })
+                  });
+                  toast.error('Transferencia rechazada');
+                } catch (e) { toast.error('Error al rechazar'); }
+              }}
+              className="w-full p-3 flex items-center justify-center text-sm font-medium text-red-600 hover:bg-red-50 focus:outline-none"
+            >
+              Rechazar
+            </button>
+          </div>
+        </div>
+      ), { duration: 30000, position: 'top-right' });
+    };
+
+    // 3. Manejar ACTUALIZACIÓN DE ESTADO (Para Admin/Supervisor)
+    const handleTransferUpdate = (data: any) => {
+      console.log('📢 [NOTIFICATION] Actualización de transferencia:', data);
+      if (data.status === 'accepted') {
+        toast.success(`✅ ${data.by} aceptó la transferencia de ${data.chatJid}`);
+      } else if (data.status === 'rejected') {
+        toast.error(`❌ ${data.by} rechazó la transferencia de ${data.chatJid}`);
+      }
     };
 
     socket.on(eventName, handleTransferNotification);
-    console.log(`✅ [NOTIFICATION] Escuchando evento: ${eventName} para usuario ID: ${userId}`);
+    socket.on(requestEventName, handleTransferRequest);
+    socket.on(updateEventName, handleTransferUpdate);
 
     return () => {
       socket.off(eventName, handleTransferNotification);
-      console.log(`❌ [NOTIFICATION] Dejando de escuchar: ${eventName}`);
+      socket.off(requestEventName, handleTransferRequest);
+      socket.off(updateEventName, handleTransferUpdate);
     };
   }, [socket, userId, playNotificationSound, showBrowserNotification, showToastNotification]);
 

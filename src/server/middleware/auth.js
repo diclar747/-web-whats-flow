@@ -1,4 +1,4 @@
-const jwt = require('jsonwebtoken');
+const { validateUniqueSession } = require('./sessionValidator');
 const { validateDeviceFingerprint } = require('../utils/deviceFingerprint');
 
 // Middleware para proteger rutas que requieren autenticación
@@ -12,6 +12,33 @@ const authenticateToken = (req, res, next) => {
                 success: false,
                 error: 'Acceso denegado. Token no proporcionado.'
             });
+        }
+
+        // 🔐 VALIDACIÓN DE SESIÓN ÚNICA: Verificar sessionToken y deviceId
+        // Solo aplicar si los headers están presentes (para no romper compatibilidad legacy de golpe)
+        const sessionToken = req.headers['x-session-token'] || req.query.sessionToken;
+        const deviceId = req.headers['x-device-id'] || req.query.deviceId;
+
+        if (sessionToken && deviceId) {
+            // Usar la lógica de validateUniqueSession
+            const { activeSessions } = require('./sessionValidator');
+            const session = activeSessions.get(sessionToken);
+
+            if (!session) {
+                return res.status(401).json({
+                    success: false,
+                    error: 'Sesión no válida o expirada (Unique Session)',
+                    requiresReauth: true
+                });
+            }
+
+            if (session.deviceId !== deviceId) {
+                return res.status(403).json({
+                    success: false,
+                    error: 'Esta sesión está activa en otro dispositivo',
+                    requiresReauth: true
+                });
+            }
         }
 
         const { verifyToken } = require('../utils/tokenManager');

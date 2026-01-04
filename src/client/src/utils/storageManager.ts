@@ -77,9 +77,9 @@ class StorageManager {
    */
   clearAuthData(): void {
     const authKeys = [
-      'whatsflow_token',
-      'whatsflow_session',
-      'whatsflow_user_type',
+      'whinsap_token',
+      'whinsap_session',
+      'whinsap_user_type',
       'token',
       'userId',
       'userName',
@@ -94,9 +94,9 @@ class StorageManager {
    * Verifica si hay una sesión activa SOLO en sessionStorage (sesiones únicas)
    */
   hasActiveSession(): boolean {
-    const token = sessionStorage.getItem('whatsflow_token') ||
+    const token = sessionStorage.getItem('whinsap_token') ||
       sessionStorage.getItem('token') ||
-      localStorage.getItem('whatsflow_token') ||
+      localStorage.getItem('whinsap_token') ||
       localStorage.getItem('token');
 
     return !!token;
@@ -108,9 +108,9 @@ class StorageManager {
    */
   migrateToSessionStorage(): void {
     const authKeys = [
-      'whatsflow_token',
-      'whatsflow_session',
-      'whatsflow_user_type',
+      'whinsap_token',
+      'whinsap_session',
+      'whinsap_user_type',
       'token',
       'userId',
       'userName',
@@ -133,9 +133,9 @@ class StorageManager {
    */
   getDebugInfo(): object {
     const authKeys = [
-      'whatsflow_token',
-      'whatsflow_session',
-      'whatsflow_user_type',
+      'whinsap_token',
+      'whinsap_session',
+      'whinsap_user_type',
       'token',
       'userId',
       'userName',

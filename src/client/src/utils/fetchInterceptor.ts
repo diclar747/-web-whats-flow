@@ -40,11 +40,17 @@ export const setupFetchInterceptor = (): void => {
     try {
       const urlObj = new URL(rawUrl, window.location.origin);
 
-      // Normalizar query params comunes
-      ['sessionId', 'phone'].forEach((key) => {
+      // 1. Limpiar sufijos ":<num>" en pathname - Dividir cada segmento por ':' y tomar el primero
+      const segments = urlObj.pathname.split('/');
+      const cleanSegments = segments.map(seg => seg.includes(':') ? seg.split(':')[0] : seg);
+      urlObj.pathname = cleanSegments.join('/');
+
+      // 2. Normalizar todos los query params que puedan tener ":X"
+      const keysToClean = Array.from(urlObj.searchParams.keys());
+      keysToClean.forEach((key) => {
         const val = urlObj.searchParams.get(key);
-        if (val !== null) {
-          const clean = decodeURIComponent(val).split(':')[0] || '';
+        if (val !== null && val.includes(':')) {
+          const clean = val.split(':')[0];
           if (clean) {
             urlObj.searchParams.set(key, clean);
           } else {
@@ -53,13 +59,10 @@ export const setupFetchInterceptor = (): void => {
         }
       });
 
-      // Limpiar sufijos ":<num>" en pathname (p.ej. /boards/:1)
-      urlObj.pathname = urlObj.pathname.replace(/\/:\d+(?=\/|$)/g, '');
-
       normalizedUrl = urlObj.pathname + urlObj.search + urlObj.hash;
     } catch (e) {
-      // Si falla el parseo, continuar con la URL original
-      normalizedUrl = rawUrl.replace(/%3A\d+/gi, '').replace(/:\d+(?=\?|$)/g, '');
+      // Fallback si falla el parseo de URL
+      normalizedUrl = rawUrl.replace(/:(\d+)(?=@|$|\/|\?|&)/g, '');
     }
 
     // Si es ruta pública, usar fetch original sin headers
@@ -71,22 +74,22 @@ export const setupFetchInterceptor = (): void => {
     // Obtener credenciales de sesión (con múltiples fallbacks para claves previas)
     const sessionToken = sessionStorage.getItem('sessionToken')
       || localStorage.getItem('sessionToken')
-      || sessionStorage.getItem('whatsflow_session_token')
-      || localStorage.getItem('whatsflow_session_token');
+      || sessionStorage.getItem('whinsap_session_token')
+      || localStorage.getItem('whinsap_session_token');
 
     const deviceId = sessionStorage.getItem('device_id')
       || localStorage.getItem('device_id')
       || sessionStorage.getItem('deviceId')
       || localStorage.getItem('deviceId')
-      || sessionStorage.getItem('whatsflow_device_id')
-      || localStorage.getItem('whatsflow_device_id')
-      || sessionStorage.getItem('whatsflow_session_device_id')
-      || localStorage.getItem('whatsflow_session_device_id');
+      || sessionStorage.getItem('whinsap_device_id')
+      || localStorage.getItem('whinsap_device_id')
+      || sessionStorage.getItem('whinsap_session_device_id')
+      || localStorage.getItem('whinsap_session_device_id');
 
     const token = sessionStorage.getItem('token')
       || localStorage.getItem('token')
-      || sessionStorage.getItem('whatsflow_token')
-      || localStorage.getItem('whatsflow_token');
+      || sessionStorage.getItem('whinsap_token')
+      || localStorage.getItem('whinsap_token');
 
     // Agregar headers de autenticación (usar los que existan; no omitir Authorization si falta deviceId)
     const headers = new Headers(init?.headers);

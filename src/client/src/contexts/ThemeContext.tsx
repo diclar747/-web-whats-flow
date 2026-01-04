@@ -28,7 +28,7 @@ type ThemeProviderProps = {
 function ThemeProvider({ children }: ThemeProviderProps) {
   // Cargar preferencia guardada, por defecto modo claro
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    const saved = localStorage.getItem('whatsflow-theme');
+    const saved = localStorage.getItem('whinsap-theme');
     if (saved === 'light' || saved === 'dark') return saved;
 
     // Por defecto modo oscuro "Lead Wave"
@@ -38,7 +38,7 @@ function ThemeProvider({ children }: ThemeProviderProps) {
   const toggleTheme = () => {
     setTheme(prev => {
       const newTheme = prev === 'light' ? 'dark' : 'light';
-      localStorage.setItem('whatsflow-theme', newTheme);
+      localStorage.setItem('whinsap-theme', newTheme);
       return newTheme;
     });
   };

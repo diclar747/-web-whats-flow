@@ -46,14 +46,14 @@ export const useSubscription = (phone?: string): UseSubscriptionResult => {
       setLoading(true);
       setError(null);
 
-      const userType = sessionStorage.getItem('whatsflow_user_type');
+      const userType = sessionStorage.getItem('whinsap_user_type');
       const storedAdminPhone = sessionStorage.getItem('adminPhone') || localStorage.getItem('adminPhone');
-      const sessionPhone = sessionStorage.getItem('whatsflow_session');
+      const sessionPhone = sessionStorage.getItem('whinsap_session');
       let userPhone = phone || sessionPhone || localStorage.getItem('userPhone') || storedAdminPhone || '';
 
       console.log('[useSubscription] 🔍 Buscando phone en:', {
         prop_phone: phone,
-        sessionStorage_whatsflow_session: sessionPhone,
+        sessionStorage_whinsap_session: sessionPhone,
         localStorage_userPhone: localStorage.getItem('userPhone'),
         storedAdminPhone: storedAdminPhone,
         userType: userType,
@@ -149,7 +149,7 @@ export const useSubscription = (phone?: string): UseSubscriptionResult => {
 
     // Re-fetch si sessionStorage cambia (ej. después de login)
     const intervalId = setInterval(() => {
-      const currentSession = sessionStorage.getItem('whatsflow_session');
+      const currentSession = sessionStorage.getItem('whinsap_session');
       if (currentSession && !subscription) {
         console.log('[useSubscription] 🔄 Session detectada, re-fetching...');
         fetchSubscription();
@@ -159,7 +159,7 @@ export const useSubscription = (phone?: string): UseSubscriptionResult => {
     return () => clearInterval(intervalId);
   }, [phone]);
 
-  const userType = sessionStorage.getItem('whatsflow_user_type');
+  const userType = sessionStorage.getItem('whinsap_user_type');
   const isAdmin = subscription?.is_admin === 1 || userType === 'admin';
   const hasActiveSubscription = isAdmin || subscription?.subscription_status === 'active';
 

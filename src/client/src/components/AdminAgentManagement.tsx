@@ -92,8 +92,8 @@ const AdminAgentManagement: React.FC = () => {
 
   // ✅ OBTENER SESIÓN REAL DEL USUARIO CONECTADO
   const [sessionId] = useState(() => {
-    return sessionStorage.getItem('whatsflow_session') ||
-      localStorage.getItem('whatsflow_session') ||
+    return sessionStorage.getItem('whinsap_session') ||
+      localStorage.getItem('whinsap_session') ||
       sessionStorage.getItem('sessionId') ||
       localStorage.getItem('sessionId') ||
       'default';
@@ -209,8 +209,8 @@ const AdminAgentManagement: React.FC = () => {
       setLoadingContacts(true);
 
       // ✅ OBTENER SESIÓN ACTUAL DEL USUARIO CONECTADO
-      const currentSessionId = sessionStorage.getItem('whatsflow_session') ||
-        localStorage.getItem('whatsflow_session') ||
+      const currentSessionId = sessionStorage.getItem('whinsap_session') ||
+        localStorage.getItem('whinsap_session') ||
         sessionStorage.getItem('sessionId') ||
         localStorage.getItem('sessionId') ||
         sessionId;
@@ -352,7 +352,7 @@ const AdminAgentManagement: React.FC = () => {
     setCreatingAgent(true);
     try {
       // Intentar obtener sessionId del storage si no está en estado
-      const adminSessionId = sessionStorage.getItem('whatsflow_session') || sessionId;
+      const adminSessionId = sessionStorage.getItem('whinsap_session') || sessionId;
 
       // ✅ Usar ruta plana para evitar redirecciones 301 a GET y conflictos con :id
       const response = await fetch(`${apiUrl}/api/agents-create`, {

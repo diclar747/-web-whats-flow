@@ -166,15 +166,29 @@ const KanbanSelectorModal: React.FC<KanbanSelectorModalProps> = ({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{
+        sx: {
+          bgcolor: '#0f172a',
+          color: '#f1f5f9',
+          backgroundImage: 'none',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          border: '1px solid rgba(255,255,255,0.05)'
+        }
+      }}
+    >
+      <DialogTitle sx={{ borderBottom: '1px solid rgba(255,255,255,0.05)', pb: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <KanbanIcon sx={{ fontSize: 32, color: '#673ab7' }} />
+          <KanbanIcon sx={{ fontSize: 32, color: '#6366f1' }} />
           <Box>
-            <Typography variant="h6">
+            <Typography variant="h6" sx={{ color: '#f1f5f9', fontWeight: 600 }}>
               Enviar a Tablero Kanban
             </Typography>
-            <Typography variant="body2" color="textSecondary">
+            <Typography variant="body2" sx={{ color: '#94a3b8' }}>
               {isBulkMode
                 ? `Selecciona un tablero para ${contactCount} contactos`
                 : `Selecciona un tablero para ${contact?.name || 'este contacto'}`
@@ -190,8 +204,9 @@ const KanbanSelectorModal: React.FC<KanbanSelectorModalProps> = ({
           <Box sx={{
             mb: 3,
             p: 2,
-            bgcolor: '#f5f5f5',
-            borderRadius: 2,
+            bgcolor: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: 3,
             display: 'flex',
             alignItems: 'center',
             gap: 2
@@ -203,10 +218,10 @@ const KanbanSelectorModal: React.FC<KanbanSelectorModalProps> = ({
               {contact.name.charAt(0).toUpperCase()}
             </Avatar>
             <Box>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#f1f5f9' }}>
                 {contact.name}
               </Typography>
-              <Typography variant="caption" color="textSecondary">
+              <Typography variant="caption" sx={{ color: '#94a3b8' }}>
                 {contact.jid}
               </Typography>
             </Box>
@@ -218,18 +233,19 @@ const KanbanSelectorModal: React.FC<KanbanSelectorModalProps> = ({
           <Box sx={{
             mb: 3,
             p: 2,
-            bgcolor: '#e8f5e8',
-            borderRadius: 2,
+            bgcolor: 'rgba(16, 185, 129, 0.1)',
+            border: '1px solid rgba(16, 185, 129, 0.2)',
+            borderRadius: 3,
             display: 'flex',
             alignItems: 'center',
             gap: 2
           }}>
-            <PersonIcon sx={{ fontSize: 40, color: '#4caf50' }} />
+            <PersonIcon sx={{ fontSize: 40, color: '#10b981' }} />
             <Box>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#f1f5f9' }}>
                 {contactCount} contactos seleccionados
               </Typography>
-              <Typography variant="caption" color="textSecondary">
+              <Typography variant="caption" sx={{ color: '#94a3b8' }}>
                 Se moverán todos los contactos al tablero seleccionado
               </Typography>
             </Box>
@@ -252,21 +268,27 @@ const KanbanSelectorModal: React.FC<KanbanSelectorModalProps> = ({
           </Alert>
         ) : (
           <>
-            <Typography variant="body2" sx={{ mb: 2, color: '#666' }}>
+            <Typography variant="body2" sx={{ mb: 2, color: '#94a3b8', fontWeight: 500 }}>
               Selecciona un tablero:
             </Typography>
 
-            <List sx={{ border: '1px solid #e0e0e0', borderRadius: 2, p: 0 }}>
+            <List sx={{ border: '1px solid rgba(255,255,255,0.05)', borderRadius: 2, p: 0, overflow: 'hidden' }}>
               {boards.map((board) => (
                 <ListItem key={board.id} disablePadding>
                   <ListItemButton
                     selected={selectedBoard === board.id}
                     onClick={() => handleBoardSelect(board.id)}
                     sx={{
-                      borderLeft: `4px solid ${board.color}`,
+                      borderLeft: `5px solid ${board.color}`,
+                      transition: 'all 0.2s ease',
                       '&.Mui-selected': {
-                        bgcolor: `${board.color}15`,
-                        borderLeftWidth: '6px'
+                        bgcolor: `${board.color}25`,
+                        '&:hover': {
+                          bgcolor: `${board.color}35`,
+                        }
+                      },
+                      '&:hover': {
+                        bgcolor: 'rgba(255,255,255,0.05)'
                       }
                     }}
                   >
@@ -276,11 +298,12 @@ const KanbanSelectorModal: React.FC<KanbanSelectorModalProps> = ({
                       ) : (
                         <Box
                           sx={{
-                            width: 24,
-                            height: 24,
+                            width: 20,
+                            height: 20,
                             borderRadius: '50%',
                             bgcolor: board.color,
-                            opacity: 0.5
+                            opacity: 0.3,
+                            border: `2px solid ${board.color}`
                           }}
                         />
                       )}
@@ -289,11 +312,23 @@ const KanbanSelectorModal: React.FC<KanbanSelectorModalProps> = ({
                       primary={
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Typography sx={{ fontWeight: selectedBoard === board.id ? 600 : 400 }}>
+                            <Typography sx={{
+                              fontWeight: selectedBoard === board.id ? 700 : 500,
+                              color: selectedBoard === board.id ? '#f1f5f9' : '#cbd5e1'
+                            }}>
                               {board.name}
                             </Typography>
                             {board.is_default && (
-                              <Chip label="Por defecto" size="small" sx={{ height: 20 }} />
+                              <Chip
+                                label="Por defecto"
+                                size="small"
+                                sx={{
+                                  height: 20,
+                                  fontSize: '0.65rem',
+                                  bgcolor: 'rgba(255,255,255,0.1)',
+                                  color: '#cbd5e1'
+                                }}
+                              />
                             )}
                           </Box>
                           <Chip
@@ -301,8 +336,10 @@ const KanbanSelectorModal: React.FC<KanbanSelectorModalProps> = ({
                             size="small"
                             sx={{
                               height: 20,
-                              bgcolor: selectedBoard === board.id ? 'rgba(0,0,0,0.1)' : 'rgba(0,0,0,0.05)',
-                              fontWeight: 'bold'
+                              bgcolor: selectedBoard === board.id ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)',
+                              color: '#f1f5f9',
+                              fontWeight: 'bold',
+                              fontSize: '0.7rem'
                             }}
                           />
                         </Box>
@@ -316,8 +353,8 @@ const KanbanSelectorModal: React.FC<KanbanSelectorModalProps> = ({
         )}
       </DialogContent>
 
-      <DialogActions sx={{ p: 2, gap: 1 }}>
-        <Button onClick={onClose} disabled={submitting}>
+      <DialogActions sx={{ p: 3, gap: 1, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+        <Button onClick={onClose} disabled={submitting} sx={{ color: '#94a3b8' }}>
           Cancelar
         </Button>
         <Button
@@ -325,8 +362,17 @@ const KanbanSelectorModal: React.FC<KanbanSelectorModalProps> = ({
           variant="contained"
           disabled={!selectedBoard || submitting || loading}
           sx={{
-            bgcolor: '#673ab7',
-            '&:hover': { bgcolor: '#5e35b1' }
+            bgcolor: '#6366f1',
+            borderRadius: 2,
+            px: 3,
+            py: 1,
+            fontWeight: 600,
+            textTransform: 'none',
+            '&:hover': { bgcolor: '#4f46e5' },
+            '&.Mui-disabled': {
+              bgcolor: 'rgba(99, 102, 241, 0.3)',
+              color: 'rgba(255,255,255,0.3)'
+            }
           }}
         >
           {submitting ? (

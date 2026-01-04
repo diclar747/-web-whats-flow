@@ -174,7 +174,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
       // 🆕 VERIFICAR si sessionId es válido (o recuperar de localStorage)
       let activeSessionId = sessionId;
       if (!activeSessionId || activeSessionId.trim() === '') {
-        activeSessionId = localStorage.getItem('whatsflow_session') || '';
+        activeSessionId = localStorage.getItem('whinsap_session') || '';
         if (activeSessionId) {
           console.log('✅ [Dashboard] Recuperado sessionId de localStorage:', activeSessionId);
         }
@@ -633,7 +633,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
       }}>
         <Box>
           <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>
-            Dashboard WhatsFlow Enterprise
+            Dashboard Whinsap Enterprise
           </Typography>
           <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>
             Centro de comando y control • Sesión: {sessionId?.slice(-8)}

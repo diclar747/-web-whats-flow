@@ -529,7 +529,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
 
         // Si no hay sessionId, buscar en localStorage
         if (!subscriptionIdentifier) {
-          const storedSession = sessionStorage.getItem('whatsflow_session') || sessionStorage.getItem('sessionId');
+          const storedSession = sessionStorage.getItem('whinsap_session') || sessionStorage.getItem('sessionId');
           if (storedSession) subscriptionIdentifier = storedSession;
         }
 
@@ -604,7 +604,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
           'Content-Type': 'application/json'
         };
 
-        const actualSessionId = sessionId || sessionStorage.getItem('whatsflow_session') || sessionStorage.getItem('sessionId');
+        const actualSessionId = sessionId || sessionStorage.getItem('whinsap_session') || sessionStorage.getItem('sessionId');
 
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
@@ -705,7 +705,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
           features: ['Pagos', 'Suscripciones', 'Facturas', 'Webhooks'],
           config: {
             publishableKey: 'pk_***************',
-            webhookUrl: 'https://api.whatsflow.com/webhooks/stripe'
+            webhookUrl: 'https://api.whinsap.com/webhooks/stripe'
           },
           isActive: true,
           lastSync: '2024-01-20T14:20:00Z'
@@ -774,14 +774,14 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
             smtp: {
               host: 'smtp.gmail.com',
               port: 587,
-              username: 'notifications@whatsflow.com',
+              username: 'notifications@whinsap.com',
               password: '************',
               encryption: 'tls'
             }
           },
           webhook: {
             enabled: true,
-            url: 'https://api.yourapp.com/webhooks/whatsflow',
+            url: 'https://api.yourapp.com/webhooks/whinsap',
             events: ['message.received', 'conversation.started', 'conversation.ended'],
             retryAttempts: 3
           }
@@ -897,7 +897,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
           'Content-Type': 'application/json'
         };
 
-        const actualSessionId = sessionId || sessionStorage.getItem('whatsflow_session') || sessionStorage.getItem('sessionId');
+        const actualSessionId = sessionId || sessionStorage.getItem('whinsap_session') || sessionStorage.getItem('sessionId');
 
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
@@ -944,7 +944,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       const token = localStorage.getItem('token');
       const headers: any = {};
 
-      const actualSessionId = sessionId || sessionStorage.getItem('whatsflow_session') || sessionStorage.getItem('sessionId');
+      const actualSessionId = sessionId || sessionStorage.getItem('whinsap_session') || sessionStorage.getItem('sessionId');
 
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;

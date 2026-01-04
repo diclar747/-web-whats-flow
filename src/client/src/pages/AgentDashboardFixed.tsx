@@ -348,7 +348,7 @@ const AgentDashboardFixed: React.FC = () => {
         <Toolbar>
           <ChatIcon sx={{ mr: 2 }} />
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            WhatsFlow - Panel de Agente
+            Whinsap - Panel de Agente
           </Typography>
           <Typography variant="body2" sx={{ mr: 2 }}>
             {userName} • {connectionStatus}
@@ -624,7 +624,7 @@ const AgentDashboardFixed: React.FC = () => {
             <Box textAlign="center">
               <ChatIcon sx={{ fontSize: 80, color: '#d1d7db', mb: 2 }} />
               <Typography variant="h6" color="text.secondary">
-                WhatsFlow - Agente
+                Whinsap - Agente
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 Selecciona un chat para comenzar

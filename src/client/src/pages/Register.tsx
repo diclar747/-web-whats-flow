@@ -57,7 +57,7 @@ const Register = () => {
         <div className="auth-container">
             <div className="auth-card">
                 <div className="auth-header">
-                    <h1>WhatsFlow</h1>
+                    <h1>Whinsap</h1>
                     <h2>Crear cuenta</h2>
                 </div>
 

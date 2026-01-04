@@ -64,8 +64,8 @@ const AgentLogin: React.FC<AgentLoginProps> = ({ onLoginSuccess }) => {
 
         // Si es agente o supervisor y viene sessionId, guardarlo
         if ((data.user.role === 'agent' || data.user.role === 'supervisor') && data.sessionId) {
-          sessionStorage.setItem('whatsflow_session', data.sessionId);
-          sessionStorage.setItem('whatsflow_user_type', 'agent');
+          sessionStorage.setItem('whinsap_session', data.sessionId);
+          sessionStorage.setItem('whinsap_user_type', 'agent');
           console.log('✅ SessionId asignado:', data.sessionId);
         }
 
@@ -82,8 +82,8 @@ const AgentLogin: React.FC<AgentLoginProps> = ({ onLoginSuccess }) => {
           localStorage.removeItem('userRole');
           localStorage.removeItem('userName');
           localStorage.removeItem('userId');
-          localStorage.removeItem('whatsflow_session');
-          localStorage.removeItem('whatsflow_user_type');
+          localStorage.removeItem('whinsap_session');
+          localStorage.removeItem('whinsap_user_type');
         }
 
         console.log('✅ Login exitoso (sesión única):', data.user);
@@ -132,7 +132,7 @@ const AgentLogin: React.FC<AgentLoginProps> = ({ onLoginSuccess }) => {
                 <PersonIcon sx={{ fontSize: 50 }} />
               </Avatar>
               <Typography variant="h4" fontWeight="bold" gutterBottom>
-                WhatsFlow
+                Whinsap
               </Typography>
               <Typography variant="body1" color="text.secondary">
                 Acceso para Agentes

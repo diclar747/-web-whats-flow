@@ -593,6 +593,11 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
   };
 
   const filteredChats = chats.filter(chat => {
+    // 🆕 Exclude own phone number (self-chat)
+    const normalizedSessionId = normalizePhoneNumber(sessionId);
+    const normalizedChatId = normalizePhoneNumber(chat.id);
+    if (normalizedChatId === normalizedSessionId) return false;
+
     if (searchTerm && !chat.name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
     switch (filterType) {
       case 'unread': return chat.unreadCount && chat.unreadCount > 0;
@@ -1127,7 +1132,8 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                               fontSize: '0.7rem'
                             }}
                           >
-                            {msg.agent_name && ['Super Admin', 'Admin', 'Carlos', 'WhatsFlow'].includes(msg.agent_name) ? 'ADMIN' : (msg.agent_name || 'Gestión')}
+                            {/* Show Agent Name if exists, otherwise Admin (if really Admin) or 'Gestión' */}
+                            {msg.agent_name || (['claudio@cnid.com.py', '595985768793'].includes(sessionId) ? 'Admin' : 'Gestión')}
                           </Typography>
                         )}
 
@@ -1442,7 +1448,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
               <div style={{ textAlign: 'center' }}>
                 <WhatsApp sx={{ fontSize: 80, color: isDarkMode ? '#2a3942' : '#f0f2f5' }} />
                 <Typography variant="h5" component="h2" sx={{ mt: 2 }}>
-                  WhatsFlow Web
+                  Whinsap Web
                 </Typography>
                 <Typography sx={{ mt: 1, maxWidth: 400 }}>
                   Envía y recibe mensajes sin tener que mantener tu teléfono conectado. <br />

@@ -8,7 +8,7 @@ import { ThemeProvider as CustomThemeProvider } from './contexts/ThemeContext';
 import { WhatsAppProvider } from './context/WhatsAppContext';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import WhatsFlowDashboard from './pages/WhatsFlowDashboard';
+import WhinsapDashboard from './pages/WhinsapDashboard';
 import Login from './pages/Login'; // 🆕 Email/password login
 import Register from './pages/Register'; // 🆕 Registration page
 import LandingPage from './components/LandingPageComplete'; // 🆕 Complete landing with services/pricing
@@ -155,13 +155,13 @@ const AppContent: React.FC<{
                 ) : sessionId ? (
                   // Dashboard completo para admin (requiere sessionId del QR)
                   (() => {
-                    console.log('✅ [DASHBOARD-ROUTE] Cargando WhatsFlowDashboard (admin) con sessionId:', sessionId);
+                    console.log('✅ [DASHBOARD-ROUTE] Cargando WhinsapDashboard (admin) con sessionId:', sessionId);
                     return (
                       <WhatsAppProvider
                         userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
                         userRole={user?.role || 'admin'}
                       >
-                        <WhatsFlowDashboard
+                        <WhinsapDashboard
                           sessionId={sessionId}
                           onLogout={handleLogout}
                         />
@@ -177,7 +177,7 @@ const AppContent: React.FC<{
                         userId={undefined}
                         userRole="admin"
                       >
-                        <WhatsFlowDashboard
+                        <WhinsapDashboard
                           sessionId="" // Sin sessionId, permitirá generar QR
                           onLogout={handleLogout}
                         />
@@ -309,32 +309,32 @@ const App: React.FC = () => {
 
 
       // Generar ID de dispositivo ÚNICO para esta pestaña/sesión del navegador
-      let deviceId = sessionStorage.getItem('whatsflow_device_id') || localStorage.getItem('whatsflow_device_id');
+      let deviceId = sessionStorage.getItem('whinsap_device_id') || localStorage.getItem('whinsap_device_id');
       if (!deviceId) {
         deviceId = generateDeviceId();
       }
 
       // Normalizar claves de deviceId para que los interceptores encuentren el valor
-      ['device_id', 'deviceId', 'whatsflow_device_id', 'whatsflow_session_device_id'].forEach((key) => {
+      ['device_id', 'deviceId', 'whinsap_device_id', 'whinsap_session_device_id'].forEach((key) => {
         sessionStorage.setItem(key, deviceId as string);
         localStorage.setItem(key, deviceId as string);
       });
 
       // Intentar recuperar de sessionStorage (primero) O localStorage (segundo, para persistencia)
       const savedToken = sessionStorage.getItem('token') || localStorage.getItem('token');
-      const savedSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
-      const savedUserType = (sessionStorage.getItem('whatsflow_user_type') || localStorage.getItem('whatsflow_user_type')) as 'admin' | 'agent' | null;
+      const savedSessionId = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
+      const savedUserType = (sessionStorage.getItem('whinsap_user_type') || localStorage.getItem('whinsap_user_type')) as 'admin' | 'agent' | null;
       const savedUserId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
       const savedUserName = sessionStorage.getItem('userName') || localStorage.getItem('userName');
       const savedUserRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
-      const savedDeviceId = sessionStorage.getItem('whatsflow_session_device_id')
+      const savedDeviceId = sessionStorage.getItem('whinsap_session_device_id')
         || sessionStorage.getItem('device_id')
         || sessionStorage.getItem('deviceId')
-        || sessionStorage.getItem('whatsflow_device_id')
-        || localStorage.getItem('whatsflow_session_device_id')
+        || sessionStorage.getItem('whinsap_device_id')
+        || localStorage.getItem('whinsap_session_device_id')
         || localStorage.getItem('device_id')
         || localStorage.getItem('deviceId')
-        || localStorage.getItem('whatsflow_device_id');
+        || localStorage.getItem('whinsap_device_id');
       const savedSessionToken = sessionStorage.getItem('sessionToken') || localStorage.getItem('sessionToken');
 
       console.log('🔍 [APP-INIT] Verificando sesión guardada en sessionStorage (sesión única)...');
@@ -393,8 +393,8 @@ const App: React.FC = () => {
             // Si el sessionId del backend es diferente, actualizarlo
             if (savedSessionId !== foundSessionId) {
               console.log(`🔄 Actualizando sessionId: ${savedSessionId} → ${foundSessionId}`);
-              sessionStorage.setItem('whatsflow_session', foundSessionId);
-              localStorage.setItem('whatsflow_session', foundSessionId);
+              sessionStorage.setItem('whinsap_session', foundSessionId);
+              localStorage.setItem('whinsap_session', foundSessionId);
               setSessionId(foundSessionId);
             } else {
               console.log('✅ SessionId confirmado con backend:', foundSessionId);
@@ -441,7 +441,7 @@ const App: React.FC = () => {
           console.log('🔍 Verificando sessionId guardado:', savedSessionId);
 
           // Obtener sessionToken guardado (puede no existir para sesiones antiguas)
-          const savedSessionToken = sessionStorage.getItem('whatsflow_session_token');
+          const savedSessionToken = sessionStorage.getItem('whinsap_session_token');
           if (!savedSessionToken) {
             console.log('⚠️ No hay sessionToken guardado (sesión antigua, continuando con validación básica)');
           }
@@ -469,15 +469,15 @@ const App: React.FC = () => {
             if (response.status === 404) {
               console.log('🗑️ [APP-INIT] Sesión no encontrada (404), limpiando todo');
               // Limpiar sessionStorage
-              sessionStorage.removeItem('whatsflow_session');
-              sessionStorage.removeItem('whatsflow_session_token');
-              sessionStorage.removeItem('whatsflow_session_device_id');
-              sessionStorage.removeItem('whatsflow_user_type');
+              sessionStorage.removeItem('whinsap_session');
+              sessionStorage.removeItem('whinsap_session_token');
+              sessionStorage.removeItem('whinsap_session_device_id');
+              sessionStorage.removeItem('whinsap_user_type');
               sessionStorage.removeItem('sessionToken');
               sessionStorage.removeItem('token');
               // Limpiar también localStorage por si acaso
-              localStorage.removeItem('whatsflow_session');
-              localStorage.removeItem('whatsflow_session_token');
+              localStorage.removeItem('whinsap_session');
+              localStorage.removeItem('whinsap_session_token');
               // Resetear estados
               setSessionId(null);
               setUser(null);
@@ -497,8 +497,8 @@ const App: React.FC = () => {
               console.log('🚫 [APP-INIT] Sin sesión activa - Redirigiendo a inicio');
 
               // Limpiar sesión
-              sessionStorage.removeItem('whatsflow_session');
-              localStorage.removeItem('whatsflow_session');
+              sessionStorage.removeItem('whinsap_session');
+              localStorage.removeItem('whinsap_session');
 
               // Resetear estados
               setSessionId(null);
@@ -558,8 +558,8 @@ const App: React.FC = () => {
                       const activeSession = sessionsData.sessions[0];
                       const foundSessionId = activeSession.sessionId;
                       console.log('✅ SessionId encontrado automáticamente:', foundSessionId);
-                      sessionStorage.setItem('whatsflow_session', foundSessionId);
-                      localStorage.setItem('whatsflow_session', foundSessionId);
+                      sessionStorage.setItem('whinsap_session', foundSessionId);
+                      localStorage.setItem('whinsap_session', foundSessionId);
                       setSessionId(foundSessionId);
                     } else {
                       console.log('⚠️ No se encontró sesión activa de WhatsApp');
@@ -598,8 +598,8 @@ const App: React.FC = () => {
               // Solo limpiar si definitivamente no está conectado
               if (checkData.success === false) {
                 console.log('❌ API reporta error, limpiando sesión');
-                sessionStorage.removeItem('whatsflow_session');
-                sessionStorage.removeItem('whatsflow_session_device_id');
+                sessionStorage.removeItem('whinsap_session');
+                sessionStorage.removeItem('whinsap_session_device_id');
               } else {
                 console.log('⚠️ Sesión no conectada pero API responde OK - mantener y recargar');
                 // Mantener la sesión y permitir que el usuario intente de nuevo
@@ -623,8 +623,8 @@ const App: React.FC = () => {
       } catch (error) {
         console.error('❌ Error verificando sesión de WhatsApp:', error);
         // En caso de error, limpiar sesión
-        sessionStorage.removeItem('whatsflow_session');
-        sessionStorage.removeItem('whatsflow_session_device_id');
+        sessionStorage.removeItem('whinsap_session');
+        sessionStorage.removeItem('whinsap_session_device_id');
       }
 
       // Si llegamos aquí, NO hay sesión activa de WhatsApp
@@ -669,7 +669,7 @@ const App: React.FC = () => {
 
     // Importar socket.io-client
     import('socket.io-client').then(({ io }) => {
-      const API_BASE = process.env.REACT_APP_API_URL || 'https://web.whats-flow.com';
+      const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
       const sessionSocket = io(API_BASE, {
         transports: ['websocket', 'polling'],
         reconnection: true
@@ -736,7 +736,7 @@ const App: React.FC = () => {
         setUserType('agent');
 
         // Verificar si tiene sessionId guardado
-        const savedSessionId = sessionStorage.getItem('whatsflow_session');
+        const savedSessionId = sessionStorage.getItem('whinsap_session');
 
         if (savedSessionId) {
           // Ya tiene sessionId, usarlo
@@ -750,7 +750,7 @@ const App: React.FC = () => {
         // ✅ Sesión cerrada (session=0) o token inválido - redirigir a login
         console.log('❌ Sesión cerrada o token inválido, redirigiendo...');
         handleLogout();
-        window.location.href = 'https://web.whats-flow.com/';
+        window.location.href = '/';
       } else {
         // Token inválido, limpiar
         sessionStorage.removeItem('token');
@@ -758,8 +758,8 @@ const App: React.FC = () => {
       }
     } catch (error) {
       console.error('Error verificando token:', error);
-      sessionStorage.removeItem('whatsflow_token');
-      sessionStorage.removeItem('whatsflow_user_type');
+      sessionStorage.removeItem('whinsap_token');
+      sessionStorage.removeItem('whinsap_user_type');
     } finally {
       setLoading(false);
     }
@@ -780,11 +780,11 @@ const App: React.FC = () => {
         setAdminToken(token);
       } else {
         // Token inválido, limpiar
-        sessionStorage.removeItem('whatsflow_admin_token');
+        sessionStorage.removeItem('whinsap_admin_token');
       }
     } catch (error) {
       console.error('Error verificando token de admin:', error);
-      sessionStorage.removeItem('whatsflow_admin_token');
+      sessionStorage.removeItem('whinsap_admin_token');
     } finally {
       setLoading(false);
     }
@@ -793,7 +793,7 @@ const App: React.FC = () => {
   const handleAdminLogin = (adminData: any) => {
     setAdmin(adminData.admin);
     setAdminToken(adminData.token);
-    sessionStorage.setItem('whatsflow_admin_token', adminData.token);
+    sessionStorage.setItem('whinsap_admin_token', adminData.token);
   };
 
   const handleLoginSuccess = (userData: any, authToken?: string, sessionIdFromLogin?: string) => {
@@ -815,8 +815,8 @@ const App: React.FC = () => {
         { key: 'userName', value: userData.full_name },
         { key: 'userId', value: userData.id.toString() },
         { key: 'userEmail', value: userData.email },
-        { key: 'whatsflow_user_type', value: userData.role === 'super_admin' ? 'admin' : 'agent' },
-        { key: 'whatsflow_session', value: effectiveSessionId }, // ✅ Guardar sessionId
+        { key: 'whinsap_user_type', value: userData.role === 'super_admin' ? 'admin' : 'agent' },
+        { key: 'whinsap_session', value: effectiveSessionId }, // ✅ Guardar sessionId
         { key: 'sessionId', value: effectiveSessionId } // ✅ Compatibilidad
       ];
 
@@ -828,14 +828,14 @@ const App: React.FC = () => {
       setSessionId(effectiveSessionId); // ✅ Establecer en estado
 
       try {
-        window.dispatchEvent(new CustomEvent('whatsflow-session-established', {
+        window.dispatchEvent(new CustomEvent('whinsap-session-established', {
           detail: {
             sessionId: effectiveSessionId,
             userId: userData.id,
             userRole: userData.role
           }
         }));
-        console.log('📣 Evento whatsflow-session-established emitido (login)');
+        console.log('📣 Evento whinsap-session-established emitido (login)');
       } catch { }
 
       console.log('✅ Usuario autenticado con JWT:', userData.full_name, '| sessionId:', effectiveSessionId);
@@ -868,8 +868,8 @@ const App: React.FC = () => {
 
     // Guardar en sessionStorage (sesión actual) y localStorage (persistencia)
     const storageKeys = [
-      { key: 'whatsflow_token', value: authToken },
-      { key: 'whatsflow_user_type', value: userData.role === 'admin' ? 'admin' : 'agent' },
+      { key: 'whinsap_token', value: authToken },
+      { key: 'whinsap_user_type', value: userData.role === 'admin' ? 'admin' : 'agent' },
       { key: 'token', value: authToken },
       { key: 'userRole', value: userData.role },
       { key: 'userName', value: userData.name },
@@ -884,23 +884,23 @@ const App: React.FC = () => {
 
     // Si viene sessionId desde el login, guardarlo
     if (sessionIdFromLogin) {
-      sessionStorage.setItem('whatsflow_session', sessionIdFromLogin);
-      localStorage.setItem('whatsflow_session', sessionIdFromLogin);
+      sessionStorage.setItem('whinsap_session', sessionIdFromLogin);
+      localStorage.setItem('whinsap_session', sessionIdFromLogin);
       setSessionId(sessionIdFromLogin);
       console.log('✅ SessionId recibido del backend:', sessionIdFromLogin);
       try {
-        window.dispatchEvent(new CustomEvent('whatsflow-session-established', {
+        window.dispatchEvent(new CustomEvent('whinsap-session-established', {
           detail: {
             sessionId: sessionIdFromLogin,
             userId: userData.id,
             userRole: userData.role
           }
         }));
-        console.log('📣 Evento whatsflow-session-established emitido (login compat)');
+        console.log('📣 Evento whinsap-session-established emitido (login compat)');
       } catch { }
     } else {
       // Verificar si hay sessionId guardado previamente
-      const savedSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+      const savedSessionId = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
       if (savedSessionId) {
         setSessionId(savedSessionId);
         console.log('✅ SessionId establecido desde sessionStorage:', savedSessionId);
@@ -941,11 +941,11 @@ const App: React.FC = () => {
     sessionStorage.clear();
 
     // También limpiar localStorage por si había datos viejos
-    localStorage.removeItem('whatsflow_token');
-    localStorage.removeItem('whatsflow_session');
-    localStorage.removeItem('whatsflow_session_device_id');
-    localStorage.removeItem('whatsflow_user_type');
-    localStorage.removeItem('whatsflow_admin_token');
+    localStorage.removeItem('whinsap_token');
+    localStorage.removeItem('whinsap_session');
+    localStorage.removeItem('whinsap_session_device_id');
+    localStorage.removeItem('whinsap_user_type');
+    localStorage.removeItem('whinsap_admin_token');
     localStorage.removeItem('token');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userName');
@@ -968,19 +968,19 @@ const App: React.FC = () => {
 
     // Obtener o generar deviceId ÚNICO
     // Obtener o generar deviceId ÚNICO
-    let deviceId = localStorage.getItem('whatsflow_device_id') || sessionStorage.getItem('whatsflow_device_id');
+    let deviceId = localStorage.getItem('whinsap_device_id') || sessionStorage.getItem('whinsap_device_id');
     if (!deviceId) {
       deviceId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
-      localStorage.setItem('whatsflow_device_id', deviceId);
-      sessionStorage.setItem('whatsflow_device_id', deviceId);
+      localStorage.setItem('whinsap_device_id', deviceId);
+      sessionStorage.setItem('whinsap_device_id', deviceId);
     }
 
     // Guardar en sessionStorage (sesión actual) y localStorage (persistencia)
     const sessionData = [
-      { key: 'whatsflow_session', value: newSessionId },
-      { key: 'whatsflow_session_token', value: sessionToken },
-      { key: 'whatsflow_session_device_id', value: deviceId },
-      { key: 'whatsflow_user_type', value: 'admin' },
+      { key: 'whinsap_session', value: newSessionId },
+      { key: 'whinsap_session_token', value: sessionToken },
+      { key: 'whinsap_session_device_id', value: deviceId },
+      { key: 'whinsap_user_type', value: 'admin' },
       { key: 'userRole', value: 'admin' }
     ];
 
@@ -990,13 +990,13 @@ const App: React.FC = () => {
     });
 
     try {
-      window.dispatchEvent(new CustomEvent('whatsflow-session-established', {
+      window.dispatchEvent(new CustomEvent('whinsap-session-established', {
         detail: {
           sessionId: newSessionId,
           userRole: 'admin'
         }
       }));
-      console.log('📣 Evento whatsflow-session-established emitido (QR)');
+      console.log('📣 Evento whinsap-session-established emitido (QR)');
     } catch { }
 
     console.log('✅ [APP] Sesión guardada, datos listos para redirección');
@@ -1004,10 +1004,10 @@ const App: React.FC = () => {
 
     console.log('✅ [APP] SessionId, SessionToken y Device ID guardados (sesión única)');
     console.log('📊 [APP] Datos guardados:');
-    console.log('   - whatsflow_session:', newSessionId);
-    console.log('   - whatsflow_session_token:', sessionToken.substring(0, 20) + '...');
-    console.log('   - whatsflow_device_id:', deviceId.substring(0, 20) + '...');
-    console.log('   - whatsflow_user_type:', 'admin');
+    console.log('   - whinsap_session:', newSessionId);
+    console.log('   - whinsap_session_token:', sessionToken.substring(0, 20) + '...');
+    console.log('   - whinsap_device_id:', deviceId.substring(0, 20) + '...');
+    console.log('   - whinsap_user_type:', 'admin');
     console.log('   - userRole:', 'admin');
 
     // Registrar sesión en el servidor

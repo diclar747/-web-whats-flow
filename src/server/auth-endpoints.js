@@ -6,6 +6,7 @@ const {
     requireSuperAdmin
 } = require('./auth-utils');
 const { authenticateToken: authMiddleware } = require('./middleware/auth');
+const { createUniqueSession, validateUniqueSession } = require('./middleware/sessionValidator');
 
 /**
  * Registrar endpoints de autenticación
@@ -180,7 +181,11 @@ function registerAuthEndpoints(app, pool) {
                 // Generar token JWT con el rol correcto
                 const token = generateToken(user, userRole);
 
-                console.log(`[AUTH] Login exitoso: ${email} | Role: ${userRole}`);
+                // 🔐 Crear sesión única para validación por dispositivo
+                const deviceId = req.body.deviceId || 'unknown_device';
+                const sessionToken = createUniqueSession(user.id, deviceId, user.email, userRole);
+
+                console.log(`[AUTH] Login exitoso: ${email} | Role: ${userRole} | Device: ${deviceId.substr(0, 10)}...`);
 
                 // 🔥 AUTO-LEVANTAR SESIÓN: Si el usuario tiene sesión guardada, levantarla automáticamente
                 const sessions = global.sessions;
@@ -218,6 +223,7 @@ function registerAuthEndpoints(app, pool) {
                 res.json({
                     success: true,
                     token,
+                    sessionToken, // 🔐 Importante para el fetchInterceptor
                     sessionId: String(user.id), // sessionId es el user.id para usuarios normales
                     user: {
                         id: user.id,
@@ -241,7 +247,7 @@ function registerAuthEndpoints(app, pool) {
     });
 
     // ==================== VERIFICAR TOKEN ====================
-    app.get('/api/auth/verify', authenticateJWT, async (req, res) => {
+    app.get('/api/auth/verify', authenticateJWT, validateUniqueSession, async (req, res) => {
         try {
             const dbPool = global.dbPool || pool;
             if (!dbPool || typeof dbPool.getConnection !== 'function') {

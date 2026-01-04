@@ -373,8 +373,8 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
     try {
       // ✅ Obtener sessionId del usuario actual
-      const currentSessionId = sessionStorage.getItem('whatsflow_session') ||
-        localStorage.getItem('whatsflow_session') ||
+      const currentSessionId = sessionStorage.getItem('whinsap_session') ||
+        localStorage.getItem('whinsap_session') ||
         sessionId;
 
       console.log('[CAMPAIGNS] Cargando sesiones para:', currentSessionId);

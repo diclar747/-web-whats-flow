@@ -3753,7 +3753,7 @@ async function loadContactsToDefaultBoard(userId) {
         // Si no existe, crear los tableros por defecto
         if (boards.length === 0) {
             console.log(`[KANBAN-LOAD] Creando tableros por defecto para usuario ${userId}...`);
-            
+
             const defaultBoards = [
                 { name: 'Sin Categoría', color: '#607d8b', order: 0, is_default: 1 },
                 { name: 'Clientes', color: '#4caf50', order: 1, is_default: 0 },
@@ -3768,12 +3768,12 @@ async function loadContactsToDefaultBoard(userId) {
                      VALUES (?, ?, ?, ?, ?, ?)`,
                     [boardId, userId, board.name, board.color, board.order, board.is_default]
                 );
-                
+
                 if (board.is_default) {
                     boards = [{ id: boardId }];
                 }
             }
-            
+
             console.log(`[KANBAN-LOAD] ✅ Tableros por defecto creados`);
         }
 
@@ -10436,13 +10436,23 @@ app.post('/api/send/message', async (req, res) => {
         }
 
         // Buscar en sessionOwnerMap inverso: encontrar sessionId hexadecimal por phone
-        if (userPhone) {
-            for (const [hexSessionId, ownerPhone] of sessionOwnerMap.entries()) {
-                if (ownerPhone === userPhone && sessions.has(hexSessionId)) {
-                    realSessionId = hexSessionId;
-                    console.log(`[API-SEND] ✅ Resuelto userId ${sessionId} → phone ${userPhone} → sessionId ${realSessionId}`);
+        if (userPhone || sessionId.match(/^\d+$/)) {
+            const target = userPhone || sessionId;
+            for (const [sessId, sess] of sessions.entries()) {
+                if (sess.isConnected && (sessId === target || sess.phone === target || sess.phoneNumber === target)) {
+                    realSessionId = sessId;
+                    console.log(`[API-SEND] ✅ Resuelto por mapeo: ${sessionId} → ${realSessionId}`);
                     break;
                 }
+            }
+        }
+
+        // Fallback: Si no se encuentra y solo hay UNA sesión conectada, usar esa
+        if ((!realSessionId || !sessions.has(realSessionId)) || !sessions.get(realSessionId)?.isConnected) {
+            const connected = Array.from(sessions.entries()).filter(([_, s]) => s.isConnected && s.sock);
+            if (connected.length === 1) {
+                realSessionId = connected[0][0];
+                console.log(`[API-SEND] ✅ Fallback a única sesión activa: ${realSessionId}`);
             }
         }
     }
@@ -10793,29 +10803,30 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
         });
     }
 
-    // Buscar la sesión activa - MEJORADO: Buscar cualquier sesión conectada
+    // Buscar la sesión activa - MEJORADO: Buscar por sessionId o phone
     let session = sessions.get(sessionId);
     console.log('[AGENT-SEND] 🔍 Sesión directa:', session ? 'Encontrada' : 'No encontrada');
-    console.log('[AGENT-SEND] 📋 Sesiones disponibles en memoria:', Array.from(sessions.keys()));
 
-    // Si no se encuentra la sesión directamente, buscar cualquier sesión activa
+    // Si no se encuentra la sesión directamente, buscar por teléfono o cualquier sesión activa del admin
     if (!session || !session.isConnected) {
-        console.log('[AGENT-SEND] ⚠️ Sesión no encontrada directamente, buscando alternativas...');
+        console.log('[AGENT-SEND] ⚠️ Sesión no encontrada directamente, buscando por teléfono...');
 
-        // Buscar cualquier sesión conectada (prioridad para el sessionId dado)
         for (const [sessId, sess] of sessions.entries()) {
-            if (sess.isConnected && sess.sock) {
-                // Si encontramos el sessionId exacto y está conectado, usarlo
-                if (sessId === sessionId) {
-                    session = sess;
-                    console.log('[AGENT-SEND] ✅ Sesión encontrada por sessionId exacto:', sessId);
-                    break;
-                }
-                // Si no tenemos sesión aún, guardar la primera sesión conectada
-                if (!session) {
-                    session = sess;
-                    console.log('[AGENT-SEND] ✅ Usando sesión conectada disponible:', sessId);
-                }
+            // Verificar si el sessId es igual al sessionId, o si el objeto session tiene el mismo teléfono
+            if (sess.isConnected && sess.sock &&
+                (sessId === sessionId || sess.phone === sessionId || sess.phoneNumber === sessionId || sessId === phoneNumber)) {
+                session = sess;
+                console.log('[AGENT-SEND] ✅ Sesión encontrada por coincidencia de ID/Teléfono:', sessId);
+                break;
+            }
+        }
+
+        // Fallback: Si sigue sin haber sesión y solo hay UNA sesión conectada, usar esa
+        if (!session) {
+            const connectedSessions = Array.from(sessions.values()).filter(s => s.isConnected && s.sock);
+            if (connectedSessions.length === 1) {
+                session = connectedSessions[0];
+                console.log('[AGENT-SEND] ✅ Solo una sesión conectada, usándola como fallback');
             }
         }
     }
@@ -12380,7 +12391,7 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
             // Verificar que el email o phone del token coincide con el dueño de la sesión
             // Soportar usuarios que iniciaron sesión con phone en lugar de email
             const isOwner = (userEmail && userEmail === sessionOwnerEmail) ||
-                           (userPhone && userPhone === sessionOwnerPhone);
+                (userPhone && userPhone === sessionOwnerPhone);
 
             if (!isOwner) {
                 console.warn(`[API - HISTORY] ⚠️ INTENTO DE ACCESO NO AUTORIZADO: Usuario ${userEmail || userPhone} intentó acceder al historial de ${sessionOwnerEmail || sessionOwnerPhone}`);
@@ -15712,7 +15723,7 @@ app.post('/api/kanban/sync-all-contacts/:sessionId', async (req, res) => {
             // Si no existe, crear los tableros por defecto
             if (boards.length === 0) {
                 console.log(`[KANBAN-SYNC] Creando tableros por defecto para usuario ${phoneNumber}...`);
-                
+
                 // Crear los tableros por defecto
                 const defaultBoards = [
                     { name: 'Sin Categoría', color: '#607d8b', order: 0, is_default: 1 },
@@ -15728,12 +15739,12 @@ app.post('/api/kanban/sync-all-contacts/:sessionId', async (req, res) => {
                          VALUES (?, ?, ?, ?, ?, ?)`,
                         [boardId, phoneNumber, board.name, board.color, board.order, board.is_default]
                     );
-                    
+
                     if (board.is_default) {
                         boards = [{ id: boardId }];
                     }
                 }
-                
+
                 console.log(`[KANBAN-SYNC] ✅ Tableros por defecto creados`);
             }
 
@@ -16425,7 +16436,7 @@ app.get('/api/kanban/boards/:sessionId', authenticateToken, validateSessionBelon
             // Si no hay tableros, crear los por defecto
             if (existingBoards[0].count === 0) {
                 console.log(`[KANBAN-BOARDS] Creando tableros por defecto para usuario ${ownerUserId}...`);
-                
+
                 const defaultBoards = [
                     { name: 'Sin Categoría', color: '#607d8b', order: 0, is_default: 1 },
                     { name: 'Clientes', color: '#4caf50', order: 1, is_default: 0 },
@@ -16441,7 +16452,7 @@ app.get('/api/kanban/boards/:sessionId', authenticateToken, validateSessionBelon
                         [boardId, ownerUserId, board.name, board.color, board.order, board.is_default]
                     );
                 }
-                
+
                 console.log(`[KANBAN-BOARDS] ✅ Tableros por defecto creados`);
             }
 
@@ -19744,7 +19755,10 @@ app.put('/api/users/:userId/assign-session', async (req, res) => {
 app.get('/api/users/:userId/session', async (req, res) => {
     const { userId } = req.params;
 
+    console.log(`[USER-SESSION] 🔍 Obteniendo sesión para userId: ${userId}`);
+
     if (!pool) {
+        console.error('[USER-SESSION] ❌ Pool no disponible');
         return res.status(503).json({ success: false, error: 'Database not available' });
     }
 
@@ -19753,16 +19767,19 @@ app.get('/api/users/:userId/session', async (req, res) => {
 
         try {
             // Obtener datos del usuario (role, admin_phone)
+            console.log(`[USER-SESSION] Consultando usuario ${userId}...`);
             const [users] = await connection.execute(
                 'SELECT role, admin_phone, session_id FROM users WHERE id = ?',
                 [userId]
             );
 
             if (users.length === 0) {
+                console.warn(`[USER-SESSION] ⚠️ Usuario ${userId} no encontrado`);
                 return res.json({ success: false, message: 'Usuario no encontrado' });
             }
 
             const user = users[0];
+            console.log(`[USER-SESSION] Usuario encontrado:`, { userId, role: user.role, admin_phone: user.admin_phone });
             let sessionId = null;
             let phoneNumber = null;
 
@@ -19831,7 +19848,8 @@ app.get('/api/users/:userId/session', async (req, res) => {
             connection.release();
         }
     } catch (error) {
-        console.error('[USER-SESSION] Error obteniendo sesión:', error);
+        console.error('[USER-SESSION] ❌ Error obteniendo sesión:', error);
+        console.error('[USER-SESSION] Error stack:', error.stack);
         res.status(500).json({ success: false, error: error.message });
     }
 });

@@ -498,7 +498,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
   useEffect(() => {
     // 🔄 FIX: Check localStorage too in case AuthContext hasn't synced it to sessionStorage yet
-    const savedSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+    const savedSessionId = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
     if (savedSessionId) {
       console.log('Sesión encontrada en localStorage:', savedSessionId);
       setConnectionStatus('connecting');
@@ -776,7 +776,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           phoneNumber: data.phoneNumber
         });
         setConnectionStatus('connected');
-        sessionStorage.setItem('whatsflow_session', newSid);
+        sessionStorage.setItem('whinsap_session', newSid);
         loadChats(newSid);
       } else if (data.status === 'disconnected') {
         console.log('⚠️ [WhatsAppContext] WhatsApp desconectado');
@@ -946,7 +946,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     // 🔒 SEGURIDAD: NO guardar automáticamente el sessionId aquí
     // Solo debe guardarse cuando el usuario EXPLÍCITAMENTE inicia sesión
     // Esta función puede ser llamada desde eventos de Socket.IO sin autenticación
-    // sessionStorage.setItem('whatsflow_session', sessionId);
+    // sessionStorage.setItem('whinsap_session', sessionId);
 
     loadChats(sessionId);
   };
@@ -968,7 +968,14 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
   // ⚡ OPTIMIZADO: Soporte para paginación y "Load More"
   const loadMessages = async (chatId: string, dateFilter: string = 'all', limit: number = 25, offset: number = 0, append: boolean = false): Promise<void> => {
-    if (!session?.sessionId) return;
+    // 🔧 FIX: Permitir cargar mensajes aunque la sesión de WhatsApp no esté "conectada" en memoria
+    // siempre que tengamos un sessionId (email o ID) para consultar la DB
+    const effectiveSessionId = session?.sessionId || sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
+
+    if (!effectiveSessionId) {
+      console.warn('[WhatsAppContext] ⚠️ No se puede cargar mensajes: No hay sessionId disponible');
+      return;
+    }
 
     try {
       // 1. Si no es "append" (carga inicial), intentar cargar desde cache para respuesta instantánea
@@ -983,10 +990,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         setIsLoading(true);
       }
 
-      console.log(`🔄[API] Cargando mensajes para ${chatId} (offset = ${offset}, limit = ${limit}, append = ${append})`);
+      console.log(`🔄[API] Cargando mensajes para ${chatId} usando sessionId: ${effectiveSessionId} (offset = ${offset}, limit = ${limit}, append = ${append})`);
 
       // ⚡ URL paginada
-      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`);
+      const response = await fetch(`${API_BASE}/api/messages/${effectiveSessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`);
       const data = await response.json();
 
       if (data.success && data.messages) {

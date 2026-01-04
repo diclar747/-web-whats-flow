@@ -206,7 +206,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
       // Cargar sesiones activas (conexiones)
       try {
         // Obtener sessionId del usuario actual (si está disponible)
-        const currentSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+        const currentSessionId = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
         const token = sessionStorage.getItem('token') || localStorage.getItem('token');
         
         const connUrl = currentSessionId 
@@ -273,7 +273,7 @@ const AdminSubscriptionPanel: React.FC<AdminSubscriptionPanelProps> = ({ userPho
 
       // ✅ Obtener token de autenticación del admin
       const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-      const currentSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+      const currentSessionId = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
       
       const headers: any = {
         'Content-Type': 'application/json'

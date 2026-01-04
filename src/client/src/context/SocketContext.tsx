@@ -32,7 +32,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     const socketURL = getSocketURL();
 
     const createSocket = () => {
-      const sessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+      const sessionId = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
       const userRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole') || 'admin';
       const userId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
 
@@ -75,7 +75,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         if (prev) {
           try {
             prev.close();
-          } catch {}
+          } catch { }
         }
         return newSocket;
       });
@@ -88,7 +88,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
 
     const attachSocketHandlers = (newSocket: any) => {
       newSocket.on('connect', () => {
-        const currentSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+        const currentSessionId = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
         const currentUserRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
         const currentUserId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
 
@@ -115,7 +115,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       });
 
       newSocket.on('reconnect', (attemptNumber: number) => {
-        const currentSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+        const currentSessionId = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
         const currentUserRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
         const currentUserId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
 
@@ -146,7 +146,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         console.log('📱 Actualización de conexión WhatsApp:', data);
 
         const incomingSessionId = data?.sessionId || data?.newSessionId;
-        const oldSessionId = sessionStorage.getItem('whatsflow_session');
+        const oldSessionId = sessionStorage.getItem('whinsap_session');
 
         if (incomingSessionId && incomingSessionId !== oldSessionId) {
           try {
@@ -164,9 +164,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
           const existingToken = localStorage.getItem('token') || sessionStorage.getItem('token');
           if (!existingToken) {
             try {
-              const API_BASE_URL = window.location.hostname === 'localhost'
-                ? 'http://localhost:3001'
-                : 'https://web.whats-flow.com';
+              const API_BASE_URL = window.location.origin;
 
               console.log('🔑 [TOKEN] Generando token JWT para nueva sesión...');
               const response = await fetch(`${API_BASE_URL}/api/auth/generate-token`, {
@@ -224,7 +222,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       });
     };
 
-    const initialSessionId = sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session');
+    const initialSessionId = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
     const initialUserId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
 
     if (!initialSessionId && !initialUserId) {
@@ -233,12 +231,12 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       const onSessionEstablished = () => {
         console.log('✅ Evento de sesión establecido recibido, creando socket');
         createSocket();
-        window.removeEventListener('whatsflow-session-established', onSessionEstablished);
+        window.removeEventListener('whinsap-session-established', onSessionEstablished);
       };
 
-      window.addEventListener('whatsflow-session-established', onSessionEstablished);
+      window.addEventListener('whinsap-session-established', onSessionEstablished);
       return () => {
-        window.removeEventListener('whatsflow-session-established', onSessionEstablished);
+        window.removeEventListener('whinsap-session-established', onSessionEstablished);
       };
     }
 
@@ -247,7 +245,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
     return () => {
       console.log('🔌 Cerrando conexión Socket.IO');
       if (socket) {
-        try { socket.close(); } catch {}
+        try { socket.close(); } catch { }
       }
     };
   }, []);

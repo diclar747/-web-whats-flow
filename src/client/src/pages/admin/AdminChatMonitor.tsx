@@ -39,7 +39,7 @@ const AdminChatMonitor: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'all' | 'sent' | 'received' | 'statuses'>('all');
-  const sessionId = (typeof window !== 'undefined' ? (sessionStorage.getItem('whatsflow_session') || localStorage.getItem('whatsflow_session')) : '') || '';
+  const sessionId = (typeof window !== 'undefined' ? (sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session')) : '') || '';
   const [unreadByChat, setUnreadByChat] = useState<Record<string, number>>({});
 
   const refreshUnreadCounts = async () => {

@@ -527,7 +527,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                 failed: 0
               },
               message: {
-                text: '¡Hola {{nombre}}! 👋 Bienvenido a WhatsFlow. Estamos aquí para ayudarte.',
+                text: '¡Hola {{nombre}}! 👋 Bienvenido a Whinsap. Estamos aquí para ayudarte.',
                 hasVariables: true
               },
               segments: ['todos-contactos'],
@@ -562,7 +562,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
               failed: 0
             },
             message: {
-              text: 'Mensaje de prueba desde WhatsFlow',
+              text: 'Mensaje de prueba desde Whinsap',
               hasVariables: false
             },
             segments: ['todos-contactos'],
@@ -715,8 +715,8 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
     try {
       // ✅ Obtener sessionId del usuario actual
-      const currentSessionId = sessionStorage.getItem('whatsflow_session') || 
-                               localStorage.getItem('whatsflow_session') || 
+      const currentSessionId = sessionStorage.getItem('whinsap_session') || 
+                               localStorage.getItem('whinsap_session') || 
                                sessionId;
       
       console.log('[CAMPAIGNS] Cargando sesiones para:', currentSessionId);

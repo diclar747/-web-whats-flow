@@ -84,8 +84,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
   // VERIFICAR SI YA HAY SESIÓN ACTIVA AL CARGAR
   useEffect(() => {
     const checkExistingSession = async () => {
-      const savedSession = sessionStorage.getItem('whatsflow_session');
-      const deviceId = sessionStorage.getItem('whatsflow_device_id');
+      const savedSession = sessionStorage.getItem('whinsap_session');
+      const deviceId = sessionStorage.getItem('whinsap_device_id');
 
       // Primero verificar si hay sesión por deviceId (más confiable)
       if (deviceId && !isConnected) {
@@ -107,7 +107,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
               console.log('✅ [LANDING] Sesión activa encontrada por deviceId:', foundSessionId);
               setIsConnected(true);
               setSessionId(foundSessionId);
-              sessionStorage.setItem('whatsflow_session', foundSessionId);
+              sessionStorage.setItem('whinsap_session', foundSessionId);
               onQRSuccess(foundSessionId);
               navigate('/dashboard', { replace: true });
               return;
@@ -125,7 +125,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           const response = await fetch(`${getAPIBaseURL()}/api/session/${savedSession}/status`, {
             headers: {
               'x-device-id': deviceId || '',
-              'x-session-token': sessionStorage.getItem('whatsflow_session_token') || ''
+              'x-session-token': sessionStorage.getItem('whinsap_session_token') || ''
             }
           });
           const data = await response.json();
@@ -138,7 +138,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
             navigate('/dashboard', { replace: true });
           } else {
             console.log('⚠️ [LANDING] Sesión guardada no está conectada');
-            sessionStorage.removeItem('whatsflow_session');
+            sessionStorage.removeItem('whinsap_session');
           }
         } catch (error) {
           console.error('[LANDING] Error verificando sesión guardada:', error);
@@ -168,7 +168,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
             setSessionId(finalSessionId);
             setShowQRModal(false);
             setLoading(false);
-            sessionStorage.setItem('whatsflow_session', finalSessionId);
+            sessionStorage.setItem('whinsap_session', finalSessionId);
 
             if (check) clearInterval(check);
 
@@ -232,11 +232,11 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           setSessionId(finalSessionId);
           setShowQRModal(false);
           setLoading(false);
-          sessionStorage.setItem('whatsflow_session', finalSessionId);
+          sessionStorage.setItem('whinsap_session', finalSessionId);
 
           // Limpiar sesiones previas
           sessionStorage.removeItem('token');
-          sessionStorage.removeItem('whatsflow_token');
+          sessionStorage.removeItem('whinsap_token');
           sessionStorage.removeItem('userRole');
           sessionStorage.removeItem('userId');
           sessionStorage.removeItem('userName');
@@ -258,7 +258,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           setSessionId(finalSessionId);
           setShowQRModal(false);
           setLoading(false);
-          sessionStorage.setItem('whatsflow_session', finalSessionId);
+          sessionStorage.setItem('whinsap_session', finalSessionId);
 
           onQRSuccess(finalSessionId);
           setTimeout(() => {
@@ -272,10 +272,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
         setIsConnected(false);
         setSessionId(null);
         setQrDataUrl(null);
-        localStorage.removeItem('whatsflow_session');
-        localStorage.removeItem('whatsflow_user_type');
+        localStorage.removeItem('whinsap_session');
+        localStorage.removeItem('whinsap_user_type');
         sessionStorage.removeItem('token');
-        sessionStorage.removeItem('whatsflow_token');
+        sessionStorage.removeItem('whinsap_token');
         sessionStorage.removeItem('userRole');
         sessionStorage.removeItem('userId');
         sessionStorage.removeItem('userName');
@@ -315,7 +315,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
       setSessionId(finalSessionId);
       setShowQRModal(false);
       setLoading(false);
-      sessionStorage.setItem('whatsflow_session', finalSessionId);
+      sessionStorage.setItem('whinsap_session', finalSessionId);
 
       console.log('📱 [LANDING] Llamando onQRSuccess y navegando al dashboard...');
       onQRSuccess(finalSessionId);
@@ -365,15 +365,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
       console.log('🔄 Creando nueva sesión de WhatsApp...');
 
       // Leer preferencia de sincronización desde localStorage
-      const syncHistory = localStorage.getItem('whatsflow_sync_history') === 'true';
+      const syncHistory = localStorage.getItem('whinsap_sync_history') === 'true';
       console.log('📊 Sincronización de historial:', syncHistory ? 'ACTIVADA' : 'DESACTIVADA');
 
       const baseURL = getAPIBaseURL();
       // Vincular esta creación de sesión al dispositivo/navegador
-      let deviceId = sessionStorage.getItem('whatsflow_device_id');
+      let deviceId = sessionStorage.getItem('whinsap_device_id');
       if (!deviceId) {
         deviceId = crypto.randomUUID ? crypto.randomUUID() : `device_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-        sessionStorage.setItem('whatsflow_device_id', deviceId);
+        sessionStorage.setItem('whinsap_device_id', deviceId);
       }
 
       // ✅ CRÍTICO: Obtener userId del usuario logueado para vincular la sesión
@@ -457,7 +457,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
         setIsConnected(true);
         setSessionId(finalSessionId);
         setShowQRModal(false);
-        sessionStorage.setItem('whatsflow_session', finalSessionId);
+        sessionStorage.setItem('whinsap_session', finalSessionId);
 
         onQRSuccess(finalSessionId);
         navigate('/dashboard', { replace: true });
@@ -505,7 +505,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
                   <WhatsApp sx={{ color: 'white', fontSize: 24 }} />
                 </Box>
                 <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
-                  WhatsFlow
+                  Whinsap
                 </Typography>
               </Box>
             </Container>
@@ -724,7 +724,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
                 Confianza y resultados
               </Typography>
               <Typography variant="h6" sx={{ color: '#94a3b8' }}>
-                Equipos comerciales y de soporte ya optimizan su WhatsApp con WhatsFlow
+                Equipos comerciales y de soporte ya optimizan su WhatsApp con Whinsap
               </Typography>
             </Box>
             <Grid container spacing={3}>
@@ -989,7 +989,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           </Container>
         </Box>
 
-        {/* Beneficios - Por qué WhatsFlow */}
+        {/* Beneficios - Por qué Whinsap */}
         <Box
           sx={{
             bgcolor: '#0f172a',
@@ -1003,7 +1003,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
                 variant="h3"
                 sx={{ fontWeight: 700, color: 'white', mb: 2 }}
               >
-                ¿Por qué WhatsFlow?
+                ¿Por qué Whinsap?
               </Typography>
               <Typography variant="h6" sx={{ color: '#94a3b8', fontWeight: 400 }}>
                 Este sistema no puede faltar en su empresa: conecte, automatice y venda más.
@@ -1196,7 +1196,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           <Container maxWidth="lg">
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
-                © 2025 WhatsFlow - Plataforma Empresarial de WhatsApp
+                © 2025 Whinsap - Plataforma Empresarial de WhatsApp
               </Typography>
               <Typography variant="caption" sx={{ color: '#64748b' }}>
                 Todos los Derechos Reservados por <strong>CNID</strong> Centro-Nacional-Información-Digital NRO REG: 17789
@@ -1237,7 +1237,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
             },
           }}
           onClick={() => {
-            window.open('https://wa.me/595994854167?text=Hola%2C%20me%20interesa%20WhatsFlow', '_blank');
+            window.open('https://wa.me/595994854167?text=Hola%2C%20me%20interesa%20Whinsap', '_blank');
           }}
           aria-label="Contactar por WhatsApp"
         >
