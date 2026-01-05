@@ -25123,13 +25123,20 @@ app.post('/api/clients/:id/assign-plan', verifySuperAdmin, async (req, res) => {
         if (!plan_id) return res.status(400).json({ success: false, error: 'plan_id es requerido' });
         const connection = await pool.getConnection();
         try {
-            // Verificar que el plan existe
-            const [plans] = await connection.execute('SELECT id FROM plans WHERE id=?', [plan_id]);
+            // Verificar que el plan existe y obtener su nombre
+            const [plans] = await connection.execute('SELECT id, name FROM plans WHERE id=?', [plan_id]);
             if (plans.length === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
+            
+            const planName = plans[0].name;
 
-            // Actualizar tabla users
-            const [result] = await connection.execute('UPDATE users SET plan_id=? WHERE id=?', [plan_id, id]);
+            // ✅ Actualizar tabla users con plan_id Y subscription_plan (nombre del plan)
+            const [result] = await connection.execute(
+                'UPDATE users SET plan_id=?, subscription_plan=?, subscription_status="active" WHERE id=?', 
+                [plan_id, planName, id]
+            );
             if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Cliente no encontrado' });
+
+            console.log(`[ADMIN ASSIGN PLAN] ✅ Plan ${plan_id} (${planName}) asignado al usuario ID ${id} en tabla users`);
 
             // ✅ TAMBIÉN actualizar tabla user_sessions para mantener sincronización
             // Obtener el phone/email del usuario para buscar sus sesiones
@@ -25150,11 +25157,11 @@ app.post('/api/clients/:id/assign-plan', verifySuperAdmin, async (req, res) => {
                     [plan_id, userPhone, userEmail]
                 );
 
-                console.log(`[ADMIN ASSIGN PLAN] ✅ Plan ${plan_id} asignado al usuario ID ${id}`);
+                console.log(`[ADMIN ASSIGN PLAN] ✅ Plan actualizado en tabla users`);
                 console.log(`[ADMIN ASSIGN PLAN] 📱 Actualizadas ${updateSessions.affectedRows} sesiones en user_sessions`);
             }
 
-            res.json({ success: true });
+            res.json({ success: true, message: `Plan ${planName} asignado correctamente` });
         } finally {
             connection.release();
         }
