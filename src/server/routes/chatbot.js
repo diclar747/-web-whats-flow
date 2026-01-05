@@ -668,28 +668,14 @@ router.post('/process-message/:sessionId', async (req, res) => {
 
           console.log(`[CHATBOT-AI] 📝 System Prompt (primeros 200 chars): ${systemPrompt.substring(0, 200)}...`);
 
-          const deepseekResponse = await axios.post(
-            'https://api.deepseek.com/v1/chat/completions',
-            {
-              model: 'deepseek-chat',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: message }
-              ],
-              temperature: parseFloat(matchedFlow.aiConfig?.temperature) || 0.7,
-              max_tokens: parseInt(matchedFlow.aiConfig?.maxTokens) || 500,
-              stream: false
-            },
-            {
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer sk-1a63bb1681514e0982ab42b0a13377c8'
-              },
-              timeout: 30000
-            }
-          );
+          const { GoogleGenerativeAI } = require('@google/generative-ai');
+          const genAI = new GoogleGenerativeAI('AIzaSyAVuDMmr7hhARDpYyMBj_URbZYADkLQtsQ');
+          const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
-          const aiResponse = deepseekResponse.data.choices[0].message.content;
+          const fullPrompt = `${systemPrompt}\n\nUsuario: ${message}`;
+          const result = await model.generateContent(fullPrompt);
+          const response = await result.response;
+          const aiResponse = response.text();
 
           console.log(`[CHATBOT] 🤖 IA respondió: ${aiResponse.substring(0, 100)}...`);
 
@@ -900,7 +886,7 @@ router.post('/upload', async (req, res) => {
   }
 });
 
-// ==================== ENDPOINTS DE IA CON DEEPSEEK ====================
+// ==================== ENDPOINTS DE IA CON GOOGLE GEMINI ====================
 
 // POST - Scraping de URL
 router.post('/scrape-url', async (req, res) => {
@@ -990,7 +976,7 @@ router.post('/scrape-url', async (req, res) => {
   }
 });
 
-// POST - Respuesta con IA DeepSeek
+// POST - Respuesta con IA Google Gemini
 router.post('/ai-response', async (req, res) => {
   try {
     const { message, businessData, scrapedContent, temperature = 0.7, maxTokens = 500 } = req.body;
@@ -998,8 +984,6 @@ router.post('/ai-response', async (req, res) => {
     if (!message) {
       return res.status(400).json({ success: false, error: 'Mensaje requerido' });
     }
-
-    const axios = require('axios');
 
     // Construir contexto del negocio
     let systemPrompt = 'Eres un asistente virtual de servicio al cliente. Responde de manera amable, profesional y útil.';
@@ -1017,47 +1001,33 @@ router.post('/ai-response', async (req, res) => {
     systemPrompt += '\n\nResponde siempre basándote en la información proporcionada. Si no sabes algo, sé honesto y ofrece ayuda alternativa.';
 
     try {
-      const deepseekResponse = await axios.post(
-        'https://api.deepseek.com/v1/chat/completions',
-        {
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: message }
-          ],
-          temperature: temperature,
-          max_tokens: maxTokens,
-          stream: false
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer sk-1a63bb1681514e0982ab42b0a13377c8'
-          },
-          timeout: 30000
-        }
-      );
+      const { GoogleGenerativeAI } = require('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI('AIzaSyAVuDMmr7hhARDpYyMBj_URbZYADkLQtsQ');
+      const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
 
-      const aiResponse = deepseekResponse.data.choices[0].message.content;
+      const fullPrompt = `${systemPrompt}\n\nUsuario: ${message}`;
+      const result = await model.generateContent(fullPrompt);
+      const response = await result.response;
+      const aiResponse = response.text();
 
-      console.log('[DEEPSEEK-AI] ✅ Respuesta generada:', aiResponse.substring(0, 100) + '...');
+      console.log('[GEMINI-AI] ✅ Respuesta generada:', aiResponse.substring(0, 100) + '...');
 
       res.json({
         success: true,
         response: aiResponse,
-        model: 'deepseek-chat',
-        tokensUsed: deepseekResponse.data.usage?.total_tokens || 0
+        model: 'gemini-pro',
+        tokensUsed: 0
       });
     } catch (aiError) {
-      console.error('[DEEPSEEK-AI] ❌ Error de API:', aiError.response?.data || aiError.message);
+      console.error('[GEMINI-AI] ❌ Error de API:', aiError.message);
       res.status(500).json({
         success: false,
         error: 'Error al generar respuesta con IA',
-        details: aiError.response?.data?.error?.message || aiError.message
+        details: aiError.message
       });
     }
   } catch (error) {
-    console.error('[DEEPSEEK-AI] ❌ Error:', error);
+    console.error('[GEMINI-AI] ❌ Error:', error);
     res.status(500).json({ success: false, error: 'Error en el servidor' });
   }
 });
