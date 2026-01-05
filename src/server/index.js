@@ -12382,7 +12382,7 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
         if (!isAdminView) {
             // Verificar que el sessionId pertenece al usuario autenticado
             const [sessionCheck] = await connection.execute(
-                'SELECT email, phone FROM user_sessions WHERE session_id = ? OR phone = ? ORDER BY is_primary DESC LIMIT 1',
+                'SELECT email, phone FROM user_sessions WHERE session_id = ? OR phone = ? ORDER BY is_active DESC, is_primary DESC, created_at DESC LIMIT 1',
                 [sessionId, sessionId]
             );
 
@@ -13648,7 +13648,7 @@ app.get('/api/contacts/:contactJid/segments', authenticateToken, async (req, res
 
         try {
             const [sessionCheck] = await connection.execute(
-                'SELECT email FROM user_sessions WHERE session_id = ? OR phone = ? ORDER BY is_primary DESC LIMIT 1',
+                'SELECT email FROM user_sessions WHERE session_id = ? OR phone = ? ORDER BY is_active DESC, is_primary DESC, created_at DESC LIMIT 1',
                 [sessionId, sessionId]
             );
 

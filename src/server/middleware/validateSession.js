@@ -67,7 +67,8 @@ const validateSessionBelongsToUser = async (req, res, next) => {
                         `SELECT us.session_id, u.id as user_id, us.email as session_email 
                          FROM user_sessions us
                          LEFT JOIN users u ON (u.phone = us.phone OR u.email = us.email)
-                         WHERE us.session_id = ? OR us.phone = ? OR us.owner_phone_number = ? LIMIT 1`,
+                         WHERE us.session_id = ? OR us.phone = ? OR us.owner_phone_number = ? 
+                         ORDER BY us.is_active DESC, us.created_at DESC LIMIT 1`,
                         [sessionId, sessionId, sessionId]
                     );
 
