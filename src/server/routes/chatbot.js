@@ -560,7 +560,8 @@ router.post('/process-message/:sessionId', async (req, res) => {
         flowType: flowData.flowType || flow.flow_type || 'programmed',
         triggers: flowData.triggers || [],
         responses: flowData.responses || [],
-        aiConfig: flowData.aiConfig || {}
+        aiConfig: flowData.aiConfig || {},
+        kanbanBoardId: flowData.kanbanBoardId || null // 🔥 Extraer kanbanBoardId del JSON
       };
     });
 
@@ -607,12 +608,18 @@ router.post('/process-message/:sessionId', async (req, res) => {
       console.log(`[CHATBOT] 🎯 Flujo activado: ${matchedFlow.flow_name} (${matchedFlow.flowType}) por mensaje de ${from}`);
 
       // Si el flujo tiene un kanban asociado, agregar el contacto al kanban
-      const kanbanBoardId = matchedFlow.aiConfig?.kanbanBoardId || matchedFlow.kanban_board_id;
-      if (kanbanBoardId) {
+      // 🔥 El kanbanBoardId está en flowData.kanbanBoardId (JSON parseado)
+      const kanbanBoardId = matchedFlow.kanbanBoardId || matchedFlow.aiConfig?.kanbanBoardId;
+      console.log(`[CHATBOT] 📋 Verificando kanban: boardId=${kanbanBoardId}, flowData=${JSON.stringify(matchedFlow.aiConfig || {})}`);
+      
+      if (kanbanBoardId && kanbanBoardId.trim()) {
         try {
+          console.log(`[CHATBOT] 🔍 Intentando conectar a BD para agregar contacto a kanban...`);
           const connection2 = await mysql.createConnection(dbConfig);
+          console.log(`[CHATBOT] ✅ Conexión establecida`);
 
           // Verificar si el contacto ya existe en ese kanban
+          console.log(`[CHATBOT] 🔍 Verificando si contacto ${from} ya existe en board ${kanbanBoardId}...`);
           const [existingContact] = await connection2.query(
             'SELECT id FROM kanban_contacts WHERE board_id = ? AND contact_jid = ?',
             [kanbanBoardId, from]
@@ -620,20 +627,30 @@ router.post('/process-message/:sessionId', async (req, res) => {
 
           if (existingContact.length === 0) {
             // Agregar el contacto al kanban
-            await connection2.query(
+            console.log(`[CHATBOT] ➕ Insertando nuevo contacto ${from} en kanban ${kanbanBoardId}...`);
+            const [insertResult] = await connection2.query(
               'INSERT INTO kanban_contacts (board_id, contact_jid, notes) VALUES (?, ?, ?)',
               [kanbanBoardId, from, `Agregado automáticamente por chatbot: ${matchedFlow.flow_name}`]
             );
-            console.log(`[CHATBOT] 📋 Contacto ${from} agregado al kanban ${kanbanBoardId}`);
+            console.log(`[CHATBOT] ✅ Contacto ${from} agregado al kanban ${kanbanBoardId} (ID: ${insertResult.insertId})`);
           } else {
-            console.log(`[CHATBOT] 📋 Contacto ${from} ya existe en kanban ${kanbanBoardId}`);
+            console.log(`[CHATBOT] ℹ️ Contacto ${from} ya existe en kanban ${kanbanBoardId}`);
           }
 
           await connection2.end();
+          console.log(`[CHATBOT] ✅ Conexión cerrada correctamente`);
         } catch (kanbanError) {
-          console.error('[CHATBOT] Error agregando contacto al kanban:', kanbanError);
+          console.error('[CHATBOT] ❌ Error agregando contacto al kanban:', {
+            error: kanbanError.message,
+            code: kanbanError.code,
+            sqlMessage: kanbanError.sqlMessage,
+            boardId: kanbanBoardId,
+            contactJid: from
+          });
           // No fallar la respuesta del bot si falla el kanban
         }
+      } else {
+        console.log(`[CHATBOT] ⚠️ No hay kanban asociado a este flujo (boardId: ${kanbanBoardId})`);
       }
 
       let responses = [];
@@ -670,11 +687,11 @@ router.post('/process-message/:sessionId', async (req, res) => {
 
           const { GoogleGenerativeAI } = require('@google/generative-ai');
           const genAI = new GoogleGenerativeAI('AIzaSyAVuDMmr7hhARDpYyMBj_URbZYADkLQtsQ');
-          const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+          const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
           const fullPrompt = `${systemPrompt}\n\nUsuario: ${message}`;
           
-          console.log(`[GEMINI-AI] 🚀 Enviando prompt a Gemini...`);
+          console.log(`[GEMINI-AI] 🚀 Enviando prompt a Gemini (modelo: gemini-2.5-flash)...`);
           const result = await model.generateContent(fullPrompt);
           console.log(`[GEMINI-AI] ✅ Respuesta recibida de Gemini`);
           

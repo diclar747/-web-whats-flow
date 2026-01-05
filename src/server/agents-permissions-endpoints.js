@@ -101,13 +101,14 @@ module.exports = function (app, pool) {
 
                 // Obtener agentes del admin actual
                 // Buscar donde admin_phone sea el phone O el email del admin
+                // 🔥 FIX: Usar subconsulta para evitar duplicados cuando hay múltiples contacts con mismo jid
                 const query = `
                     SELECT
                         users.id,
                         users.name,
                         users.email,
                         users.phone,
-                        COALESCE(contacts.avatar_url, users.avatar_url) as avatar_url,
+                        COALESCE(c.avatar_url, users.avatar_url) as avatar_url,
                         users.status,
                         COALESCE(users.agent_status, 'offline') as agent_status,
                         users.last_activity,
@@ -121,7 +122,12 @@ module.exports = function (app, pool) {
                         users.created_at,
                         users.updated_at
                     FROM users
-                    LEFT JOIN contacts ON contacts.jid = CONCAT(users.phone, '@s.whatsapp.net')
+                    LEFT JOIN (
+                        SELECT jid, avatar_url, MAX(id) as max_id
+                        FROM contacts
+                        GROUP BY jid
+                    ) latest ON CONCAT(users.phone, '@s.whatsapp.net') = latest.jid
+                    LEFT JOIN contacts c ON latest.max_id = c.id
                     WHERE users.role = 'agent'
                     AND (users.admin_phone = ? OR users.admin_phone = ? OR users.session_id = ?)
                     ORDER BY users.created_at DESC

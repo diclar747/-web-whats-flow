@@ -581,7 +581,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     return `${getAPIBaseURL()}/api/avatar/${sessionId}/${jid}`;
   }, [sessionId]);
 
-  // ⚡ OPTIMIZACIÓN: Verificar conexión de WhatsApp cada 30s (antes 10s)
+  // ⚡ VERIFICAR CONEXIÓN: Verificar cada 10s + Escuchar evento de conexión en tiempo real
   useEffect(() => {
     const checkConnection = async () => {
       try {
@@ -608,10 +608,34 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     };
 
     checkConnection();
-    // Reducido de 10s a 30s para disminuir carga
-    const interval = setInterval(checkConnection, 30000);
+    // Verificar cada 10s para detectar nuevas conexiones rápidamente
+    const interval = setInterval(checkConnection, 10000);
     return () => clearInterval(interval);
   }, [sessionId]);
+
+  // 🔔 ESCUCHAR EVENTO EN TIEMPO REAL: Cuando se conecta un nuevo WhatsApp
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleWhatsAppConnected = (data: any) => {
+      console.log('[WhatsAppWebChat] 🟢 WhatsApp conectado (evento tiempo real):', data);
+      setWhatsappConnected(true);
+      setConnectionChecking(false);
+      
+      // Mostrar notificación
+      setSnackbar({
+        open: true,
+        message: `✅ WhatsApp conectado: ${data.phoneNumber}`,
+        severity: 'success'
+      });
+    };
+
+    socket.on('whatsapp-connected', handleWhatsAppConnected);
+
+    return () => {
+      socket.off('whatsapp-connected', handleWhatsAppConnected);
+    };
+  }, [socket]);
 
   // ✅ RECARGA AUTOMÁTICA DESACTIVADA - El sistema ya usa Socket.IO para tiempo real
   // WhatsAppContext maneja automáticamente los mensajes en tiempo real vía Socket.IO

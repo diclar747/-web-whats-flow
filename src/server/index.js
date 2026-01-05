@@ -9633,21 +9633,24 @@ app.get('/api/session/:sessionId/status', authenticateToken, validateSessionBelo
         let phoneNumber = null;
 
         // Buscar phone asociado al sessionId (puede ser user.id o phone directamente)
-        // 🔥 PRIORIZAR número principal (is_primary=1) si hay múltiples números
+        // 🔥 BUSCAR CUALQUIER SESIÓN ACTIVA del usuario (principal o adicional)
         if (pool) {
             try {
                 const connection = await pool.getConnection();
                 // Buscar por session_id O por phone (compatibilidad con sesiones QR)
-                // ORDER BY is_primary DESC para priorizar el número principal
+                // PRIORIZAR sesiones activas (is_active=1), luego principal, luego más reciente
                 const [rows] = await connection.execute(
-                    'SELECT phone FROM user_sessions WHERE session_id = ? OR phone = ? ORDER BY is_primary DESC, updated_at DESC LIMIT 1',
+                    `SELECT phone, is_active FROM user_sessions 
+                     WHERE session_id = ? OR phone = ? 
+                     ORDER BY is_active DESC, is_primary DESC, updated_at DESC 
+                     LIMIT 1`,
                     [sessionId, sessionId]
                 );
                 connection.release();
 
                 if (rows.length > 0) {
                     phoneNumber = rows[0].phone;
-                    console.log(`[SESSION-STATUS] 📱 Usuario ${sessionId} → Phone ${phoneNumber} (prioridad: principal)`);
+                    console.log(`[SESSION-STATUS] 📱 Usuario ${sessionId} → Phone ${phoneNumber} (activa: ${rows[0].is_active})`);
                 }
             } catch (err) {
                 console.warn(`[SESSION-STATUS] Error buscando phone:`, err.message);
@@ -9702,9 +9705,12 @@ app.get('/api/session/:sessionId/status', authenticateToken, validateSessionBelo
         const connection = await pool.getConnection();
         try {
             // Buscar por session_id = user.id O por phone (compatibilidad con sesiones QR antiguas)
-            // 🔥 PRIORIZAR número principal (is_primary=1) si hay múltiples números
+            // 🔥 PRIORIZAR SESIONES ACTIVAS primero, luego principal, luego más reciente
             let [rows] = await connection.execute(
-                'SELECT phone, is_active FROM user_sessions WHERE session_id = ? OR phone = ? ORDER BY is_primary DESC, updated_at DESC LIMIT 1',
+                `SELECT phone, is_active FROM user_sessions 
+                 WHERE session_id = ? OR phone = ? 
+                 ORDER BY is_active DESC, is_primary DESC, updated_at DESC 
+                 LIMIT 1`,
                 [sessionId, sessionId]
             );
 
@@ -15077,6 +15083,7 @@ app.get('/api/contacts/by-category/:sessionId', authenticateToken, validateSessi
 
             if (boardId) {
                 // Obtener contactos de un tablero específico
+                // 🔥 FIX: evitar duplicados cuando hay múltiples registros en contacts con mismo jid
                 query = `SELECT
                     c.jid,
                     c.name,
@@ -15087,12 +15094,19 @@ app.get('/api/contacts/by-category/:sessionId', authenticateToken, validateSessi
                     kc.notes,
                     kc.created_at as added_to_board_at
                 FROM kanban_contacts kc
-                JOIN contacts c ON kc.contact_jid = c.jid
+                JOIN (
+                    SELECT jid, MAX(id) AS max_id
+                    FROM contacts
+                    GROUP BY jid
+                ) latest ON kc.contact_jid = latest.jid
+                JOIN contacts c ON c.id = latest.max_id
                 WHERE kc.board_id = ?
+                GROUP BY c.jid
                 ORDER BY kc.created_at DESC`;
                 params = [boardId];
             } else {
                 // Obtener todos los contactos de todos los tableros de la sesión
+                // 🔥 FIX: evitar duplicados cuando hay múltiples registros en contacts con mismo jid
                 query = `SELECT
                     c.jid,
                     c.name,
@@ -15105,9 +15119,15 @@ app.get('/api/contacts/by-category/:sessionId', authenticateToken, validateSessi
                     kc.notes,
                     kc.created_at as added_to_board_at
                 FROM kanban_contacts kc
-                JOIN contacts c ON kc.contact_jid = c.jid
+                JOIN (
+                    SELECT jid, MAX(id) AS max_id
+                    FROM contacts
+                    GROUP BY jid
+                ) latest ON kc.contact_jid = latest.jid
+                JOIN contacts c ON c.id = latest.max_id
                 JOIN kanban_boards kb ON kc.board_id = kb.id
                 WHERE kb.session_id = ?
+                GROUP BY c.jid, kc.board_id
                 ORDER BY kc.created_at DESC`;
                 params = [phoneNumber];
             }
@@ -16571,9 +16591,14 @@ app.get('/api/kanban/contacts/:sessionId', authenticateToken, validateSessionBel
                                 ELSE c.name
                             END as name,
                             c.notify_name, c.avatar_url, c.session_id, c.is_group, c.created_at, c.updated_at
-                        FROM contacts c
-                        WHERE c.is_group = 0 AND c.session_id = ?
-                        AND c.jid NOT LIKE '%@broadcast%' AND c.jid NOT LIKE 'status@%'
+                        FROM (
+                            SELECT jid, MAX(id) AS max_id
+                            FROM contacts
+                            WHERE is_group = 0 AND session_id = ?
+                            GROUP BY jid
+                        ) latest
+                        INNER JOIN contacts c ON c.id = latest.max_id
+                        WHERE c.jid NOT LIKE '%@broadcast%' AND c.jid NOT LIKE 'status@%'
                         AND c.jid NOT IN (SELECT kc.contact_jid FROM kanban_contacts kc INNER JOIN kanban_boards kb ON kc.board_id = kb.id WHERE kb.session_id = ?)
                         ${search ? `AND (c.name LIKE '%${search}%' OR c.jid LIKE '%${search}%')` : ''}
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
@@ -16582,6 +16607,7 @@ app.get('/api/kanban/contacts/:sessionId', authenticateToken, validateSessionBel
                     contacts = rows;
                 } else {
                     // Consulta paginada para Tableros Personalizados
+                    // 🔥 FIX: Usar subconsulta para evitar duplicados cuando hay múltiples contacts con mismo jid
                     const [rows] = await connection.execute(`
                         SELECT
                             c.id, c.jid,
@@ -16592,8 +16618,14 @@ app.get('/api/kanban/contacts/:sessionId', authenticateToken, validateSessionBel
                             END as name,
                             c.notify_name, c.avatar_url, c.session_id, c.is_group, c.created_at, c.updated_at, kc.notes
                         FROM kanban_contacts kc
-                        INNER JOIN contacts c ON kc.contact_jid = c.jid
-                        WHERE kc.board_id = ? AND c.is_group = 0
+                        INNER JOIN (
+                            SELECT jid, MAX(id) as max_id
+                            FROM contacts
+                            WHERE is_group = 0
+                            GROUP BY jid
+                        ) latest ON kc.contact_jid = latest.jid
+                        INNER JOIN contacts c ON latest.max_id = c.id
+                        WHERE kc.board_id = ?
                         ${search ? `AND (c.name LIKE '%${search}%' OR c.jid LIKE '%${search}%')` : ''}
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
                         LIMIT ? OFFSET ?
@@ -16641,9 +16673,14 @@ app.get('/api/kanban/contacts/:sessionId', authenticateToken, validateSessionBel
                                 ELSE c.name
                             END as name,
                             c.notify_name, c.avatar_url, c.session_id, c.is_group, c.created_at, c.updated_at
-                        FROM contacts c
-                        WHERE c.is_group = 0 AND c.session_id = ?
-                        AND c.jid NOT LIKE '%@broadcast%' AND c.jid NOT LIKE 'status@%'
+                        FROM (
+                            SELECT jid, MAX(id) AS max_id
+                            FROM contacts
+                            WHERE is_group = 0 AND session_id = ?
+                            GROUP BY jid
+                        ) latest
+                        INNER JOIN contacts c ON c.id = latest.max_id
+                        WHERE c.jid NOT LIKE '%@broadcast%' AND c.jid NOT LIKE 'status@%'
                         AND c.jid NOT IN (SELECT kc.contact_jid FROM kanban_contacts kc INNER JOIN kanban_boards kb ON kc.board_id = kb.id WHERE kb.session_id = ?)
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
                         LIMIT ?
@@ -16666,8 +16703,14 @@ app.get('/api/kanban/contacts/:sessionId', authenticateToken, validateSessionBel
                             END as name,
                             c.notify_name, c.avatar_url, c.session_id, c.is_group, c.created_at, c.updated_at, kc.notes
                         FROM kanban_contacts kc
-                        INNER JOIN contacts c ON kc.contact_jid = c.jid
-                        WHERE kc.board_id = ? AND c.is_group = 0
+                        INNER JOIN (
+                            SELECT jid, MAX(id) AS max_id
+                            FROM contacts
+                            WHERE is_group = 0
+                            GROUP BY jid
+                        ) latest ON kc.contact_jid = latest.jid
+                        INNER JOIN contacts c ON latest.max_id = c.id
+                        WHERE kc.board_id = ?
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
                         LIMIT ?
                     `, [board.id, INITIAL_LIMIT]);
