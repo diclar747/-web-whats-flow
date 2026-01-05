@@ -18800,23 +18800,25 @@ app.post('/api/auth/logout', async (req, res) => {
         const { activeSessions } = require('./middleware/sessionValidator');
         const session = activeSessions.get(sessionToken);
 
-        if (session && session.userId) {
+        if (session && session.userId && pool) {
             try {
-                // Verificar si es un admin cerrando sesión
-                const [userRows] = await db.promise().query(
-                    'SELECT role, id FROM users WHERE id = ?',
-                    [session.userId]
-                );
-
-                if (userRows.length > 0 && userRows[0].role === 'admin') {
-                    const adminId = userRows[0].id;
-                    console.log('[AUTH] 👮 Admin cerrando sesión, ID:', adminId);
-
-                    // Buscar todos los agentes relacionados a este admin
-                    const [agentRows] = await db.promise().query(
-                        'SELECT id FROM users WHERE role = ? AND created_by = ?',
-                        ['agent', adminId]
+                const connection = await pool.getConnection();
+                try {
+                    // Verificar si es un admin cerrando sesión
+                    const [userRows] = await connection.execute(
+                        'SELECT role, id FROM users WHERE id = ?',
+                        [session.userId]
                     );
+
+                    if (userRows.length > 0 && userRows[0].role === 'admin') {
+                        const adminId = userRows[0].id;
+                        console.log('[AUTH] 👮 Admin cerrando sesión, ID:', adminId);
+
+                        // Buscar todos los agentes relacionados a este admin
+                        const [agentRows] = await connection.execute(
+                            'SELECT id FROM users WHERE role = ? AND created_by = ?',
+                            ['agent', adminId]
+                        );
 
                     if (agentRows.length > 0) {
                         console.log(`[AUTH] 🔐 Cerrando sesiones de ${agentRows.length} agentes relacionados al admin`);
@@ -18844,6 +18846,8 @@ app.post('/api/auth/logout', async (req, res) => {
 
                         console.log('[AUTH] ✅ Todas las sesiones de agentes relacionados han sido cerradas');
                     }
+                } finally {
+                    connection.release();
                 }
             } catch (error) {
                 console.error('[AUTH] ❌ Error al cerrar sesiones de agentes:', error);
