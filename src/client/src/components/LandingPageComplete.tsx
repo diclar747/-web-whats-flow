@@ -169,6 +169,51 @@ const LandingPageComplete: React.FC = () => {
         }
     ];
 
+    const showcaseModules = [
+        {
+            title: 'Bot de Inteligencia Artificial',
+            description: 'Chatbots avanzados que entienden el contexto y responden 24/7. Automatice sus ventas y soporte sin perder el toque humano con nuestra tecnología NEURAL.',
+            image: '/images/chatbot_module.png',
+            icon: <WhatsApp />,
+            color: '#10b981'
+        },
+        {
+            title: 'Panel Multi-Agente Profesional',
+            description: 'Centralice la atención de su empresa. Múltiples agentes atendiendo una sola línea con transferencias inteligentes y notas internas para su equipo.',
+            image: '/images/multiagent_module.png',
+            icon: <People />,
+            color: '#3b82f6'
+        },
+        {
+            title: 'Campañas Masivas y Analítica',
+            description: 'Llegue a miles de clientes con un solo clic. Mida la tasa de entrega, lectura y conversión en tiempo real con dashboards interactivos y detallados.',
+            image: '/images/campaigns_module.png',
+            icon: <BarChart />,
+            color: '#f59e0b'
+        },
+        {
+            title: 'CRM Kanban Integrado',
+            description: 'Visualice su embudo de ventas de manera intuitiva. Mueva sus leads entre etapas personalizables y asegure el cierre de cada negocio.',
+            image: '/images/kanban_module.png',
+            icon: <DashboardIcon />,
+            color: '#8b5cf6'
+        },
+        {
+            title: 'Agenda Electrónica Inteligente',
+            description: 'Gestione citas y reservas sin esfuerzo. El sistema envía recordatorios automáticos por WhatsApp para eliminar las inasistencias por completo.',
+            image: '/images/agenda_module.png',
+            icon: <Schedule />,
+            color: '#ef4444'
+        },
+        {
+            title: 'API REST para Desarrolladores',
+            description: 'Poderosa infraestructura escalable. Integre Whinsap con cualquier sistema externo mediante nuestra API robusta y de baja latencia.',
+            image: '/images/api_module.png',
+            icon: <Dns />,
+            color: '#06b6d4'
+        }
+    ];
+
     const renderPlanFeatures = (plan: Plan) => {
         const features = [];
         features.push(`${plan.max_channels} ${plan.max_channels === 1 ? 'canal' : 'canales'} WhatsApp`);
@@ -473,6 +518,100 @@ const LandingPageComplete: React.FC = () => {
                             </Grid>
                         ))}
                     </Grid>
+                </Container>
+            </Box>
+
+            {/* Showcase Section */}
+            <Box sx={{ py: 15, bgcolor: '#020617' }}>
+                <Container maxWidth="xl">
+                    <Box sx={{ textAlign: 'center', mb: 15 }}>
+                        <Typography variant="h2" sx={{ fontWeight: 800, mb: 3 }}>Potencia Sin Límites</Typography>
+                        <Typography variant="h5" sx={{ color: '#94a3b8', maxWidth: 800, mx: 'auto' }}>
+                            Explore los módulos especializados que hacen de Whinsap la herramienta más potente para escalar su negocio.
+                        </Typography>
+                    </Box>
+
+                    {showcaseModules.map((module, index) => (
+                        <Grid container spacing={8} key={index} alignItems="center" sx={{ mb: 20, flexDirection: index % 2 === 0 ? 'row' : 'row-reverse' }}>
+                            <Grid item xs={12} md={6}>
+                                <MotionBox
+                                    initial={{ opacity: 0, x: index % 2 === 0 ? -50 : 50 }}
+                                    whileInView={{ opacity: 1, x: 0 }}
+                                    viewport={{ once: true }}
+                                    transition={{ duration: 0.8 }}
+                                >
+                                    <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 3 }}>
+                                        <Box sx={{
+                                            p: 1.5,
+                                            borderRadius: '12px',
+                                            bgcolor: `${module.color}15`,
+                                            color: module.color,
+                                            display: 'flex'
+                                        }}>
+                                            {module.icon}
+                                        </Box>
+                                        <Typography variant="h6" sx={{ color: module.color, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' }}>
+                                            Módulo Especializado
+                                        </Typography>
+                                    </Stack>
+                                    <Typography variant="h3" sx={{ fontWeight: 800, mb: 3, lineHeight: 1.2 }}>
+                                        {module.title}
+                                    </Typography>
+                                    <Typography variant="h6" sx={{ color: '#94a3b8', mb: 5, lineHeight: 1.6, fontWeight: 400 }}>
+                                        {module.description}
+                                    </Typography>
+                                    <Button
+                                        variant="outlined"
+                                        endIcon={<ArrowForward />}
+                                        onClick={() => navigate('/register')}
+                                        sx={{
+                                            borderColor: 'rgba(255,255,255,0.1)',
+                                            color: 'white',
+                                            px: 4,
+                                            py: 1.5,
+                                            borderRadius: '12px',
+                                            '&:hover': { borderColor: module.color, bgcolor: `${module.color}05` }
+                                        }}
+                                    >
+                                        Saber más
+                                    </Button>
+                                </MotionBox>
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <MotionBox
+                                    initial={{ opacity: 0, scale: 0.9, rotateY: index % 2 === 0 ? 10 : -10 }}
+                                    whileInView={{ opacity: 1, scale: 1, rotateY: 0 }}
+                                    viewport={{ once: true }}
+                                    transition={{ duration: 1 }}
+                                    sx={{ perspective: '1000px' }}
+                                >
+                                    <Paper sx={{
+                                        p: 1,
+                                        bgcolor: 'rgba(30, 41, 59, 0.5)',
+                                        borderRadius: '30px',
+                                        backdropFilter: 'blur(20px)',
+                                        border: '1px solid rgba(255,255,255,0.1)',
+                                        boxShadow: `0 40px 100px ${module.color}15`,
+                                        overflow: 'hidden'
+                                    }}>
+                                        <Box
+                                            component="img"
+                                            src={module.image}
+                                            alt={module.title}
+                                            sx={{
+                                                width: '100%',
+                                                height: 'auto',
+                                                borderRadius: '24px',
+                                                display: 'block',
+                                                transition: 'transform 0.5s',
+                                                '&:hover': { transform: 'scale(1.02)' }
+                                            }}
+                                        />
+                                    </Paper>
+                                </MotionBox>
+                            </Grid>
+                        </Grid>
+                    ))}
                 </Container>
             </Box>
 
