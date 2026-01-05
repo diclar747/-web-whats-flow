@@ -593,11 +593,6 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
   };
 
   const filteredChats = chats.filter(chat => {
-    // 🆕 Exclude own phone number (self-chat)
-    const normalizedSessionId = normalizePhoneNumber(sessionId);
-    const normalizedChatId = normalizePhoneNumber(chat.id);
-    if (normalizedChatId === normalizedSessionId) return false;
-
     if (searchTerm && !chat.name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
     switch (filterType) {
       case 'unread': return chat.unreadCount && chat.unreadCount > 0;
@@ -1132,8 +1127,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                               fontSize: '0.7rem'
                             }}
                           >
-                            {/* Show Agent Name if exists, otherwise Admin (if really Admin) or 'Gestión' */}
-                            {msg.agent_name || (['claudio@cnid.com.py', '595985768793'].includes(sessionId) ? 'Admin' : 'Gestión')}
+                            {msg.agent_name && ['Super Admin', 'Admin', 'Carlos', 'Whinsap'].includes(msg.agent_name) ? 'ADMIN' : (msg.agent_name || 'Gestión')}
                           </Typography>
                         )}
 
@@ -1736,6 +1730,75 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                     )}
                   </Select>
                 </FormControl>
+
+                {/* Vista previa del agente seleccionado */}
+                {selectedAgent && (
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      bgcolor: isDarkMode ? '#2a3942' : '#f5f6f6',
+                      p: 2,
+                      mb: 2,
+                      borderRadius: 2,
+                      borderLeft: `4px solid #00a884`
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ color: isDarkMode ? '#aebac1' : '#667781', display: 'block', mb: 1 }}>
+                      Chat a transferir:
+                    </Typography>
+                    {(() => {
+                      const selectedAgentData = onlineAgents.find(a => a.userId === selectedAgent);
+                      const isOnline = selectedAgentData?.status === 'online' || selectedAgentData?.status === 'available';
+                      const isBusy = selectedAgentData?.status === 'busy';
+                      const isOffline = !selectedAgentData?.status || selectedAgentData?.status === 'offline' || selectedAgentData?.status === 'disconnected';
+
+                      return selectedAgentData ? (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Box sx={{ position: 'relative' }}>
+                            <Avatar
+                              src={selectedAgentData.avatar || undefined}
+                              sx={{
+                                width: 48,
+                                height: 48,
+                                bgcolor: isOffline ? '#bdbdbd' : '#00a884'
+                              }}
+                            >
+                              {selectedAgentData.userName?.charAt(0) || '?'}
+                            </Avatar>
+                            <Box
+                              sx={{
+                                position: 'absolute',
+                                bottom: 0,
+                                right: 0,
+                                width: 12,
+                                height: 12,
+                                borderRadius: '50%',
+                                bgcolor: isOnline ? '#44b700' : isBusy ? '#ff9800' : '#bdbdbd',
+                                border: '2px solid white'
+                              }}
+                            />
+                          </Box>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                              {selectedAgentData.userName}
+                            </Typography>
+                            <Typography variant="caption" color="textSecondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              {selectedAgentData.role} •
+                              <span style={{
+                                color: isOnline ? '#4caf50' : isBusy ? '#ff9800' : '#9e9e9e',
+                                fontWeight: 'bold'
+                              }}>
+                                {selectedAgentData.status === 'online' ? 'En línea' :
+                                  selectedAgentData.status === 'busy' ? 'Ocupado' :
+                                    selectedAgentData.status === 'available' ? 'Disponible' : 'Desconectado'}
+                              </span>
+                            </Typography>
+                          </Box>
+                        </Box>
+                      ) : null;
+                    })()}
+                  </Paper>
+                )}
 
                 <TextField
                   fullWidth
