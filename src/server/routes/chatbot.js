@@ -704,13 +704,12 @@ router.post('/process-message/:sessionId', async (req, res) => {
           // Logs adicionales para debugging
           console.error('[GEMINI-AI] Full error object:', JSON.stringify(aiError, Object.getOwnPropertyNames(aiError)));
 
-          // NO usar fallback - dejar que falle para debugging
-          return res.status(500).json({
-            success: false,
-            error: 'Error generando respuesta con IA',
-            details: aiError.message,
-            botResponse: null
-          });
+          // Usar respuesta de error pero continuar
+          responses = [{
+            id: '1',
+            type: 'text',
+            content: 'Lo siento, hay un problema técnico con el servicio de IA. Por favor, intenta más tarde.'
+          }];
         }
 
       } else {
