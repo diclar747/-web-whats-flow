@@ -670,14 +670,18 @@ router.post('/process-message/:sessionId', async (req, res) => {
 
           const { GoogleGenerativeAI } = require('@google/generative-ai');
           const genAI = new GoogleGenerativeAI('AIzaSyAVuDMmr7hhARDpYyMBj_URbZYADkLQtsQ');
-          const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+          const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
           const fullPrompt = `${systemPrompt}\n\nUsuario: ${message}`;
+          
+          console.log(`[GEMINI-AI] 🚀 Enviando prompt a Gemini...`);
           const result = await model.generateContent(fullPrompt);
+          console.log(`[GEMINI-AI] ✅ Respuesta recibida de Gemini`);
+          
           const response = await result.response;
           const aiResponse = response.text();
 
-          console.log(`[CHATBOT] 🤖 IA respondió: ${aiResponse.substring(0, 100)}...`);
+          console.log(`[CHATBOT] 🤖 IA respondió (${aiResponse.length} chars): ${aiResponse.substring(0, 100)}...`);
 
           responses = [{
             id: '1',
@@ -686,24 +690,27 @@ router.post('/process-message/:sessionId', async (req, res) => {
           }];
 
         } catch (aiError) {
-          console.error('[CHATBOT] ❌ Error con IA (DETALLES COMPLETOS):');
-          console.error('[CHATBOT] Error message:', aiError.message);
-          console.error('[CHATBOT] Error stack:', aiError.stack);
+          console.error('[GEMINI-AI] ❌ ERROR COMPLETO:');
+          console.error('[GEMINI-AI] Tipo de error:', aiError.constructor.name);
+          console.error('[GEMINI-AI] Mensaje:', aiError.message);
+          console.error('[GEMINI-AI] Stack:', aiError.stack);
+          
+          // Intentar obtener detalles específicos de Gemini
           if (aiError.response) {
-            console.error('[CHATBOT] API Response Status:', aiError.response.status);
-            console.error('[CHATBOT] API Response Data:', JSON.stringify(aiError.response.data, null, 2));
-            console.error('[CHATBOT] API Response Headers:', aiError.response.headers);
+            console.error('[GEMINI-AI] Response status:', aiError.response.status);
+            console.error('[GEMINI-AI] Response data:', JSON.stringify(aiError.response.data, null, 2));
           }
-          if (aiError.request) {
-            console.error('[CHATBOT] Request was made but no response:', aiError.request);
-          }
+          
+          // Logs adicionales para debugging
+          console.error('[GEMINI-AI] Full error object:', JSON.stringify(aiError, Object.getOwnPropertyNames(aiError)));
 
-          // Fallback a mensaje genérico
-          responses = [{
-            id: '1',
-            type: 'text',
-            content: 'Disculpa, estoy teniendo problemas para procesar tu mensaje. ¿Podrías intentar de nuevo?'
-          }];
+          // NO usar fallback - dejar que falle para debugging
+          return res.status(500).json({
+            success: false,
+            error: 'Error generando respuesta con IA',
+            details: aiError.message,
+            botResponse: null
+          });
         }
 
       } else {
@@ -1003,7 +1010,7 @@ router.post('/ai-response', async (req, res) => {
     try {
       const { GoogleGenerativeAI } = require('@google/generative-ai');
       const genAI = new GoogleGenerativeAI('AIzaSyAVuDMmr7hhARDpYyMBj_URbZYADkLQtsQ');
-      const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
       const fullPrompt = `${systemPrompt}\n\nUsuario: ${message}`;
       const result = await model.generateContent(fullPrompt);
@@ -1015,7 +1022,7 @@ router.post('/ai-response', async (req, res) => {
       res.json({
         success: true,
         response: aiResponse,
-        model: 'gemini-pro',
+        model: 'gemini-1.5-flash',
         tokensUsed: 0
       });
     } catch (aiError) {
