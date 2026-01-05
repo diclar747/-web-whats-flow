@@ -120,16 +120,33 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   };
 
   const handleCreateFlow = async () => {
-    if (!newFlow.name) { 
-      showNotification('⚠️ Ingresa un nombre para el flujo', 'warning'); 
-      return; 
+    console.log('🔍🔍🔍 [CHATBOT-DEBUG-v3] handleCreateFlow INICIADO');
+    console.log('🔍 [CHATBOT-v3] newFlow COMPLETO:', JSON.stringify(newFlow, null, 2));
+    console.log('🔍 [CHATBOT-v3] newFlow.triggers:', newFlow.triggers);
+    console.log('🔍 [CHATBOT-v3] triggers.length:', newFlow.triggers?.length);
+    console.log('🔍 [CHATBOT-v3] triggers es array?:', Array.isArray(newFlow.triggers));
+    console.log('🔍 [CHATBOT-v3] newFlow.responses:', newFlow.responses);
+    console.log('🔍 [CHATBOT-v3] responses.length:', newFlow.responses?.length);
+    console.log('🔍 [CHATBOT-v3] responses es array?:', Array.isArray(newFlow.responses));
+    console.log('🔍 [CHATBOT-v3] flowType:', newFlow.flowType);
+
+    if (!newFlow.name) {
+      console.log('❌ [CHATBOT-v3] Validación falló: NO HAY NOMBRE');
+      showNotification('⚠️ Ingresa un nombre para el flujo', 'warning');
+      return;
     }
 
     if (newFlow.flowType === 'programmed') {
-      if (!newFlow.triggers?.length || !newFlow.responses?.length) { 
-        showNotification('⚠️ Agrega al menos una palabra clave y una respuesta', 'warning'); 
-        return; 
+      console.log('🔍 [CHATBOT-v3] Es flujo programado, validando...');
+      console.log('🔍 [CHATBOT-v3] Condición 1 - !newFlow.triggers?.length:', !newFlow.triggers?.length);
+      console.log('🔍 [CHATBOT-v3] Condición 2 - !newFlow.responses?.length:', !newFlow.responses?.length);
+
+      if (!newFlow.triggers?.length || !newFlow.responses?.length) {
+        console.log('❌❌❌ [CHATBOT-v3] VALIDACIÓN FALLÓ - triggers.length:', newFlow.triggers?.length, 'responses.length:', newFlow.responses?.length);
+        showNotification('⚠️ Agrega al menos una palabra clave y una respuesta', 'warning');
+        return;
       }
+      console.log('✅ [CHATBOT-v3] Validación PASÓ, continuando...');
     } else if (newFlow.flowType === 'ai') {
       if (!newFlow.aiConfig?.businessData && !newFlow.aiConfig?.scrapedContent) {
         showNotification('⚠️ Ingresa información del negocio o extrae desde una URL', 'warning');
@@ -248,13 +265,22 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   };
 
   const addTrigger = () => {
-    if (!currentTrigger.trim()) return;
-    if (showCreateDialog) { 
-      setNewFlow({ ...newFlow, triggers: [...(newFlow.triggers||[]), currentTrigger.toLowerCase().trim()] }); 
-    } else if (selectedFlow) { 
-      setSelectedFlow({ ...selectedFlow, triggers: [...selectedFlow.triggers, currentTrigger.toLowerCase().trim()] }); 
+    console.log('🔍 [ADD-TRIGGER-v3] Iniciando - currentTrigger:', currentTrigger);
+    if (!currentTrigger.trim()) {
+      console.log('❌ [ADD-TRIGGER-v3] currentTrigger está vacío, saliendo');
+      return;
+    }
+    if (showCreateDialog) {
+      const newTriggers = [...(newFlow.triggers||[]), currentTrigger.toLowerCase().trim()];
+      console.log('✅ [ADD-TRIGGER-v3] Agregando a newFlow.triggers:', newTriggers);
+      setNewFlow({ ...newFlow, triggers: newTriggers });
+    } else if (selectedFlow) {
+      const newTriggers = [...selectedFlow.triggers, currentTrigger.toLowerCase().trim()];
+      console.log('✅ [ADD-TRIGGER-v3] Agregando a selectedFlow.triggers:', newTriggers);
+      setSelectedFlow({ ...selectedFlow, triggers: newTriggers });
     }
     setCurrentTrigger('');
+    console.log('✅ [ADD-TRIGGER-v3] Trigger agregado exitosamente');
   };
 
   const removeTrigger = (trigger: string) => {
@@ -294,40 +320,55 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   };
 
   const addResponse = async () => {
+    console.log('🔍 [ADD-RESPONSE-v3] Iniciando - responseType:', responseType, 'currentResponse:', currentResponse);
     const needsText = (responseType === 'text' || responseType === 'menu' || responseType === 'url');
-    if (needsText && !currentResponse.trim()) return;
-    if (!needsText && !selectedFile && !currentResponse.trim()) return;
-    
+    if (needsText && !currentResponse.trim()) {
+      console.log('❌ [ADD-RESPONSE-v3] Se necesita texto pero currentResponse está vacío');
+      return;
+    }
+    if (!needsText && !selectedFile && !currentResponse.trim()) {
+      console.log('❌ [ADD-RESPONSE-v3] No hay archivo ni texto');
+      return;
+    }
+
     setUploadingFile(true);
     try {
       let mediaUrl = '';
       let fileName = '';
-      
+
       if (selectedFile) {
+        console.log('🔍 [ADD-RESPONSE-v3] Subiendo archivo:', selectedFile.name);
         mediaUrl = await uploadFile(selectedFile);
         fileName = selectedFile.name;
       }
-      
-      const newResponse: Response = { 
-        id: Date.now().toString(), 
-        type: responseType, 
-        content: currentResponse, 
-        delay: 1000, 
+
+      const newResponse: Response = {
+        id: Date.now().toString(),
+        type: responseType,
+        content: currentResponse,
+        delay: 1000,
         options: responseType === 'menu' ? menuOptions : undefined,
         mediaUrl: mediaUrl || undefined,
         fileName: fileName || undefined
       };
-      
-      if (showCreateDialog) { 
-        setNewFlow({ ...newFlow, responses: [...(newFlow.responses||[]), newResponse] }); 
-      } else if (selectedFlow) { 
-        setSelectedFlow({ ...selectedFlow, responses: [...selectedFlow.responses, newResponse] }); 
+
+      console.log('🔍 [ADD-RESPONSE-v3] Nueva respuesta creada:', newResponse);
+
+      if (showCreateDialog) {
+        const newResponses = [...(newFlow.responses||[]), newResponse];
+        console.log('✅ [ADD-RESPONSE-v3] Agregando a newFlow.responses:', newResponses);
+        setNewFlow({ ...newFlow, responses: newResponses });
+      } else if (selectedFlow) {
+        const newResponses = [...selectedFlow.responses, newResponse];
+        console.log('✅ [ADD-RESPONSE-v3] Agregando a selectedFlow.responses:', newResponses);
+        setSelectedFlow({ ...selectedFlow, responses: newResponses });
       }
-      
-      setCurrentResponse(''); 
+
+      setCurrentResponse('');
       setMenuOptions([]);
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
+      console.log('✅ [ADD-RESPONSE-v3] Respuesta agregada exitosamente');
     } catch (error) {
       console.error('Error agregando respuesta:', error);
       showNotification('❌ Error al subir el archivo. Intenta de nuevo.', 'error');

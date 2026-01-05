@@ -467,10 +467,41 @@ router.post('/process-message/:sessionId', async (req, res) => {
 
     const connection = await mysql.createConnection(dbConfig);
 
+    // Construir lista de posibles sessionIds (sessionId, phone, owner_phone)
+    const candidateSessionIds = new Set([sessionId]);
+    try {
+      const [sessionMappings] = await connection.query(
+        'SELECT session_id, phone, owner_phone_number FROM user_sessions WHERE session_id = ? OR phone = ? OR owner_phone_number = ? LIMIT 5',
+        [sessionId, sessionId, sessionId]
+      );
+      sessionMappings.forEach(row => {
+        [row.session_id, row.phone, row.owner_phone_number].forEach(id => {
+          if (id) candidateSessionIds.add(String(id));
+        });
+      });
+
+      const [userMappings] = await connection.query(
+        'SELECT id, phone, admin_phone, session_id FROM users WHERE id = ? OR phone = ? OR admin_phone = ? OR session_id = ? LIMIT 5',
+        [sessionId, sessionId, sessionId, sessionId]
+      );
+      userMappings.forEach(row => {
+        [row.id, row.phone, row.admin_phone, row.session_id].forEach(id => {
+          if (id) candidateSessionIds.add(String(id));
+        });
+      });
+    } catch (mapErr) {
+      console.warn('[CHATBOT] ⚠️ No se pudo mapear sessionIds alternativos:', mapErr.message);
+    }
+
+    const candidateIds = Array.from(candidateSessionIds).filter(Boolean);
+    const placeholders = candidateIds.length > 0 ? candidateIds.map(() => '?').join(',') : '?';
+    const idsForQuery = candidateIds.length > 0 ? candidateIds : [sessionId];
+    console.log(`[CHATBOT] 🔑 sessionIds considerados: ${idsForQuery.join(', ')}`);
+
     // Obtener configuración del chatbot desde BD
     const [settingsRows] = await connection.query(
-      'SELECT * FROM chatbot_settings WHERE session_id = ?',
-      [sessionId]
+      `SELECT * FROM chatbot_settings WHERE session_id IN (${placeholders})`,
+      idsForQuery
     );
 
     // Si no hay configuración, usar valores por defecto (bot HABILITADO)
@@ -482,7 +513,8 @@ router.post('/process-message/:sessionId', async (req, res) => {
       };
       console.log(`[CHATBOT] ℹ️ No hay configuración para ${sessionId}, usando valores por defecto (HABILITADO)`);
     } else {
-      settings = settingsRows[0];
+      const preferredSettings = settingsRows.find(row => String(row.session_id) === String(sessionId)) || settingsRows[0];
+      settings = preferredSettings;
       if (!settings.enabled) {
         await connection.end();
         return res.json({ success: false, botResponse: null, reason: 'Bot desactivado' });
@@ -509,10 +541,10 @@ router.post('/process-message/:sessionId', async (req, res) => {
       }
     }
 
-    // Buscar flujos activos desde BD
+    // Buscar flujos activos desde BD (considerando IDs mapeados)
     const [flows] = await connection.query(
-      'SELECT * FROM chatbot_flows WHERE session_id = ? AND is_active = 1',
-      [sessionId]
+      `SELECT * FROM chatbot_flows WHERE session_id IN (${placeholders}) AND is_active = 1`,
+      idsForQuery
     );
 
     await connection.end();
