@@ -18801,55 +18801,8 @@ app.post('/api/auth/logout', async (req, res) => {
             const { activeSessions } = require('./middleware/sessionValidator');
             const session = activeSessions.get(sessionToken);
 
-            if (session && session.userId && pool) {
-                const connection = await pool.getConnection();
-                try {
-                    // Verificar si es un admin cerrando sesión
-                    const [userRows] = await connection.execute(
-                        'SELECT role, id FROM users WHERE id = ?',
-                        [session.userId]
-                    );
-
-                    if (userRows.length > 0 && userRows[0].role === 'admin') {
-                        const adminId = userRows[0].id;
-                        console.log('[AUTH] 👮 Admin cerrando sesión, ID:', adminId);
-
-                        // Buscar todos los agentes relacionados a este admin
-                        const [agentRows] = await connection.execute(
-                            'SELECT id FROM users WHERE role = ? AND created_by = ?',
-                            ['agent', adminId]
-                        );
-
-                        if (agentRows.length > 0) {
-                            console.log(`[AUTH] 🔐 Cerrando sesiones de ${agentRows.length} agentes relacionados al admin`);
-
-                            // Cerrar sesiones de todos los agentes relacionados
-                            const agentIds = agentRows.map(agent => agent.id);
-
-                            // Destruir todas las sesiones activas de estos agentes
-                            for (const agentId of agentIds) {
-                                // Buscar y destruir sesiones del agente
-                                for (const [token, agentSession] of activeSessions.entries()) {
-                                    if (agentSession && agentSession.userId === agentId) {
-                                        destroySession(token);
-                                        console.log(`[AUTH] ❌ Sesión cerrada para agente ID: ${agentId}`);
-                                    }
-                                }
-                            }
-
-                            // Emitir evento de cierre forzado a los agentes
-                            io.emit('force-logout', {
-                                userIds: agentIds,
-                                reason: 'Admin cerró sesión',
-                                timestamp: new Date().toISOString()
-                            });
-
-                            console.log('[AUTH] ✅ Todas las sesiones de agentes relacionados han sido cerradas');
-                        }
-                    }
-                } finally {
-                    connection.release();
-                }
+            if (session && session.userId) {
+                console.log('[AUTH] Usuario cerrando sesión, ID:', session.userId);
             }
 
             // Cerrar la sesión del usuario
