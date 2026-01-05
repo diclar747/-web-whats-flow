@@ -912,7 +912,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch(`${API_BASE} /api/qr - status`);
+      const response = await fetch(`${API_BASE}/api/qr-status`);
       const data = await response.json();
 
       if (data.success) {
@@ -968,14 +968,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
   // ⚡ OPTIMIZADO: Soporte para paginación y "Load More"
   const loadMessages = async (chatId: string, dateFilter: string = 'all', limit: number = 25, offset: number = 0, append: boolean = false): Promise<void> => {
-    // 🔧 FIX: Permitir cargar mensajes aunque la sesión de WhatsApp no esté "conectada" en memoria
-    // siempre que tengamos un sessionId (email o ID) para consultar la DB
-    const effectiveSessionId = session?.sessionId || sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
-
-    if (!effectiveSessionId) {
-      console.warn('[WhatsAppContext] ⚠️ No se puede cargar mensajes: No hay sessionId disponible');
-      return;
-    }
+    if (!session?.sessionId) return;
 
     try {
       // 1. Si no es "append" (carga inicial), intentar cargar desde cache para respuesta instantánea
@@ -990,10 +983,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         setIsLoading(true);
       }
 
-      console.log(`🔄[API] Cargando mensajes para ${chatId} usando sessionId: ${effectiveSessionId} (offset = ${offset}, limit = ${limit}, append = ${append})`);
+      console.log(`🔄[API] Cargando mensajes para ${chatId} (offset = ${offset}, limit = ${limit}, append = ${append})`);
 
       // ⚡ URL paginada
-      const response = await fetch(`${API_BASE}/api/messages/${effectiveSessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`);
+      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`);
       const data = await response.json();
 
       if (data.success && data.messages) {
