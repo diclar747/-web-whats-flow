@@ -912,7 +912,17 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch(`${API_BASE}/api/qr-status`);
+      // Obtener deviceId del almacenamiento
+      const deviceId = sessionStorage.getItem('device_id') 
+        || sessionStorage.getItem('whinsap_device_id')
+        || sessionStorage.getItem('whinsap_session_device_id')
+        || localStorage.getItem('device_id')
+        || localStorage.getItem('whinsap_device_id')
+        || localStorage.getItem('whinsap_session_device_id')
+        || crypto.randomUUID?.() 
+        || Date.now().toString(36) + Math.random().toString(36).substr(2);
+
+      const response = await fetch(`${API_BASE}/api/qr-status?deviceId=${encodeURIComponent(deviceId)}`);
       const data = await response.json();
 
       if (data.success) {

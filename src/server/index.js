@@ -18820,31 +18820,32 @@ app.post('/api/auth/logout', async (req, res) => {
                             ['agent', adminId]
                         );
 
-                    if (agentRows.length > 0) {
-                        console.log(`[AUTH] 🔐 Cerrando sesiones de ${agentRows.length} agentes relacionados al admin`);
+                        if (agentRows.length > 0) {
+                            console.log(`[AUTH] 🔐 Cerrando sesiones de ${agentRows.length} agentes relacionados al admin`);
 
-                        // Cerrar sesiones de todos los agentes relacionados
-                        const agentIds = agentRows.map(agent => agent.id);
+                            // Cerrar sesiones de todos los agentes relacionados
+                            const agentIds = agentRows.map(agent => agent.id);
 
-                        // Destruir todas las sesiones activas de estos agentes
-                        for (const agentId of agentIds) {
-                            // Buscar y destruir sesiones del agente
-                            for (const [token, agentSession] of activeSessions.entries()) {
-                                if (agentSession && agentSession.userId === agentId) {
-                                    destroySession(token);
-                                    console.log(`[AUTH] ❌ Sesión cerrada para agente ID: ${agentId}`);
+                            // Destruir todas las sesiones activas de estos agentes
+                            for (const agentId of agentIds) {
+                                // Buscar y destruir sesiones del agente
+                                for (const [token, agentSession] of activeSessions.entries()) {
+                                    if (agentSession && agentSession.userId === agentId) {
+                                        destroySession(token);
+                                        console.log(`[AUTH] ❌ Sesión cerrada para agente ID: ${agentId}`);
+                                    }
                                 }
                             }
+
+                            // Emitir evento de cierre forzado a los agentes
+                            io.emit('force-logout', {
+                                userIds: agentIds,
+                                reason: 'Admin cerró sesión',
+                                timestamp: new Date().toISOString()
+                            });
+
+                            console.log('[AUTH] ✅ Todas las sesiones de agentes relacionados han sido cerradas');
                         }
-
-                        // Emitir evento de cierre forzado a los agentes
-                        io.emit('force-logout', {
-                            userIds: agentIds,
-                            reason: 'Admin cerró sesión',
-                            timestamp: new Date().toISOString()
-                        });
-
-                        console.log('[AUTH] ✅ Todas las sesiones de agentes relacionados han sido cerradas');
                     }
                 } finally {
                     connection.release();
