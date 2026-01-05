@@ -607,8 +607,8 @@ async function getMaxChannelsForOwner(ownerPhone) {
         let isSuperAdmin = false;
 
         const [userRows] = await connection.execute(
-            'SELECT subscription_plan, subscription_status, is_super_admin FROM users WHERE phone = ? OR email = ? LIMIT 1',
-            [ownerPhone, ownerPhone]
+            'SELECT subscription_plan, subscription_status, is_super_admin FROM users WHERE phone = ? OR email = ? OR id = ? LIMIT 1',
+            [ownerPhone, ownerPhone, ownerPhone]
         );
 
         if (userRows.length > 0) {
@@ -672,8 +672,8 @@ async function countActiveSessionsForOwner(ownerPhone) {
         if (pool) {
             connection = await pool.getConnection();
             const [userRows] = await connection.execute(
-                'SELECT phone, email FROM users WHERE phone = ? OR email = ?',
-                [ownerPhone, ownerPhone]
+                'SELECT phone, email FROM users WHERE phone = ? OR email = ? OR id = ?',
+                [ownerPhone, ownerPhone, ownerPhone]
             );
             userRows.forEach(row => {
                 if (row.phone) aliases.add(row.phone);
@@ -8542,7 +8542,7 @@ app.post('/api/whatsapp/qr-code', async (req, res) => {
 
             return res.status(403).json({
                 success: false,
-                error: errorMessage,
+                message: errorMessage,
                 maxChannels: capacity.maxChannels,
                 activeSessions: capacity.activeCount
             });
@@ -9088,7 +9088,7 @@ app.get('/api/sessions/active', async (req, res) => {
                         [dbUserSessions] = await connection.execute(
                             `SELECT DISTINCT phone
                              FROM user_sessions
-                             WHERE (email = ? OR id = ?)
+                             WHERE (email = ? OR session_id = ?)
                              AND phone IS NOT NULL`,
                             [userEmail, userId]
                         );
@@ -9195,7 +9195,7 @@ app.get('/api/sessions/active', async (req, res) => {
                             [dbSessions] = await connection.execute(
                                 `SELECT phone, session_id, name, avatar_url, owner_phone_number, is_active, email, created_at, is_primary
                                  FROM user_sessions
-                                 WHERE (email = ? OR id = ?)
+                                 WHERE (email = ? OR session_id = ?)
                                  ORDER BY is_primary DESC, created_at DESC`,
                                 [userEmail, userId]
                             );
@@ -25085,12 +25085,12 @@ app.post('/api/clients/:id/assign-plan', verifySuperAdmin, async (req, res) => {
             // Verificar que el plan existe y obtener su nombre
             const [plans] = await connection.execute('SELECT id, name FROM plans WHERE id=?', [plan_id]);
             if (plans.length === 0) return res.status(404).json({ success: false, error: 'Plan no encontrado' });
-            
+
             const planName = plans[0].name;
 
             // ✅ Actualizar tabla users con plan_id Y subscription_plan (nombre del plan)
             const [result] = await connection.execute(
-                'UPDATE users SET plan_id=?, subscription_plan=?, subscription_status="active" WHERE id=?', 
+                'UPDATE users SET plan_id=?, subscription_plan=?, subscription_status="active" WHERE id=?',
                 [plan_id, planName, id]
             );
             if (result.affectedRows === 0) return res.status(404).json({ success: false, error: 'Cliente no encontrado' });
