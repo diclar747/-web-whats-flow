@@ -348,22 +348,21 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
       setUserName(savedUserName || 'Agente');
       console.log('✅ AgentId establecido:', userId);
 
-      // TODO: Implementar endpoint /api/users/:userId/profile en el backend
       // Obtener avatar del agente desde el backend
-      // try {
-      //   const avatarResponse = await fetch(`/api/users/${userId}/profile`, {
-      //     headers: { 'Authorization': `Bearer ${token}` }
-      //   });
-      //   const avatarData = await avatarResponse.json();
-      //   if (avatarData.success && avatarData.user?.avatar_url) {
-      //     setAgentAvatar(avatarData.user.avatar_url);
-      //     console.log('✅ Avatar del agente cargado:', avatarData.user.avatar_url);
-      //   } else {
-      //     console.log('⚠️ No se encontró avatar para el agente');
-      //   }
-      // } catch (error) {
-      //   console.error('Error cargando avatar del agente:', error);
-      // }
+      try {
+        const avatarResponse = await fetch(`${apiUrl}/api/users/${userId}/profile`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const avatarData = await avatarResponse.json();
+        if (avatarData.success && avatarData.user?.avatar_url) {
+          setAgentAvatar(avatarData.user.avatar_url);
+          console.log('✅ Avatar del agente cargado:', avatarData.user.avatar_url);
+        } else {
+          console.log('⚠️ No se encontró avatar para el agente');
+        }
+      } catch (error) {
+        console.error('Error cargando avatar del agente:', error);
+      }
 
       // Solicitar permisos de notificación de manera más efectiva
       if ('Notification' in window) {

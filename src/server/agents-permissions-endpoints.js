@@ -103,27 +103,28 @@ module.exports = function (app, pool) {
                 // Buscar donde admin_phone sea el phone O el email del admin
                 const query = `
                     SELECT
-                        id,
-                        name,
-                        email,
-                        phone,
-                        avatar_url,
-                        status,
-                        COALESCE(agent_status, 'offline') as agent_status,
-                        last_activity,
-                        COALESCE(max_concurrent_chats, 5) as max_concurrent_chats,
+                        users.id,
+                        users.name,
+                        users.email,
+                        users.phone,
+                        COALESCE(contacts.avatar_url, users.avatar_url) as avatar_url,
+                        users.status,
+                        COALESCE(users.agent_status, 'offline') as agent_status,
+                        users.last_activity,
+                        COALESCE(users.max_concurrent_chats, 5) as max_concurrent_chats,
                         (
                             SELECT COUNT(*)
                             FROM chat_assignments ca
                             WHERE ca.user_id = users.id
                             AND ca.status = 'active'
                         ) as active_chats_count,
-                        created_at,
-                        updated_at
+                        users.created_at,
+                        users.updated_at
                     FROM users
-                    WHERE role = 'agent'
-                    AND (admin_phone = ? OR admin_phone = ? OR session_id = ?)
-                    ORDER BY created_at DESC
+                    LEFT JOIN contacts ON contacts.jid = CONCAT(users.phone, '@s.whatsapp.net')
+                    WHERE users.role = 'agent'
+                    AND (users.admin_phone = ? OR users.admin_phone = ? OR users.session_id = ?)
+                    ORDER BY users.created_at DESC
                 `;
 
                 console.log('[AGENTS-LIST] 🔍 Ejecutando query para admin:', { phone: adminPhone, email: adminEmail, id: user.id });
@@ -1269,6 +1270,64 @@ module.exports = function (app, pool) {
                 error: 'Error actualizando estado',
                 details: error.message,
                 code: error.code || 'UNKNOWN'
+            });
+        }
+    });
+
+    /**
+     * Obtener perfil de un usuario (agente) incluyendo avatar desde contacts
+     * GET /api/users/:userId/profile
+     */
+    app.get('/api/users/:userId/profile', authenticateToken, async (req, res) => {
+        try {
+            const { userId } = req.params;
+
+            if (!pool) {
+                return res.status(503).json({ success: false, error: 'DB service unavailable' });
+            }
+
+            const connection = await pool.getConnection();
+
+            try {
+                const query = `
+                    SELECT
+                        users.id,
+                        users.name,
+                        users.email,
+                        users.phone,
+                        COALESCE(contacts.avatar_url, users.avatar_url) as avatar_url,
+                        users.role,
+                        users.agent_status,
+                        users.status
+                    FROM users
+                    LEFT JOIN contacts ON contacts.jid = CONCAT(users.phone, '@s.whatsapp.net')
+                    WHERE users.id = ?
+                    LIMIT 1
+                `;
+
+                const [users] = await connection.execute(query, [userId]);
+
+                if (users.length === 0) {
+                    connection.release();
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Usuario no encontrado'
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    user: users[0]
+                });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('[USER-PROFILE] Error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error obteniendo perfil de usuario',
+                details: error.message
             });
         }
     });
