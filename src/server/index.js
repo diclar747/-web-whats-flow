@@ -18797,7 +18797,8 @@ app.post('/api/auth/logout', async (req, res) => {
 
     if (sessionToken) {
         // Obtener la sesión para ver quién está cerrando sesión
-        const session = getSession(sessionToken);
+        const { activeSessions } = require('./middleware/sessionValidator');
+        const session = activeSessions.get(sessionToken);
 
         if (session && session.userId) {
             try {
@@ -18826,13 +18827,12 @@ app.post('/api/auth/logout', async (req, res) => {
                         // Destruir todas las sesiones activas de estos agentes
                         for (const agentId of agentIds) {
                             // Buscar y destruir sesiones del agente
-                            Object.keys(activeSessions).forEach(token => {
-                                const agentSession = activeSessions[token];
+                            for (const [token, agentSession] of activeSessions.entries()) {
                                 if (agentSession && agentSession.userId === agentId) {
                                     destroySession(token);
                                     console.log(`[AUTH] ❌ Sesión cerrada para agente ID: ${agentId}`);
                                 }
-                            });
+                            }
                         }
 
                         // Emitir evento de cierre forzado a los agentes
