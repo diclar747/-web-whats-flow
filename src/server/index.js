@@ -18795,13 +18795,13 @@ app.get('/api/public/plans', async (req, res) => {
 app.post('/api/auth/logout', async (req, res) => {
     const sessionToken = req.headers['x-session-token'] || req.body.sessionToken;
 
-    if (sessionToken) {
-        // Obtener la sesión para ver quién está cerrando sesión
-        const { activeSessions } = require('./middleware/sessionValidator');
-        const session = activeSessions.get(sessionToken);
+    try {
+        if (sessionToken) {
+            // Obtener la sesión para ver quién está cerrando sesión
+            const { activeSessions } = require('./middleware/sessionValidator');
+            const session = activeSessions.get(sessionToken);
 
-        if (session && session.userId && pool) {
-            try {
+            if (session && session.userId && pool) {
                 const connection = await pool.getConnection();
                 try {
                     // Verificar si es un admin cerrando sesión
@@ -18850,17 +18850,18 @@ app.post('/api/auth/logout', async (req, res) => {
                 } finally {
                     connection.release();
                 }
-            } catch (error) {
-                console.error('[AUTH] ❌ Error al cerrar sesiones de agentes:', error);
             }
+
+            // Cerrar la sesión del usuario
+            destroySession(sessionToken);
+            console.log('[AUTH] 👋 Sesión cerrada correctamente');
         }
 
-        // Cerrar la sesión del admin
-        destroySession(sessionToken);
-        console.log('[AUTH] 👋 Sesión cerrada correctamente');
+        res.json({ success: true, message: 'Logout successful' });
+    } catch (error) {
+        console.error('[AUTH] ❌ Error en logout:', error);
+        res.status(500).json({ success: false, error: 'Error al cerrar sesión' });
     }
-
-    res.json({ success: true, message: 'Logout successful' });
 });
 
 // GET - Verificar sesión (si se usa JWT o cookies)
