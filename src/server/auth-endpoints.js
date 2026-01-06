@@ -87,6 +87,10 @@ function registerAuthEndpoints(app, pool) {
                 const newUserId = result.insertId || result[0]?.id;
                 console.log(`[AUTH] Nuevo cliente registrado: ${email} (ID: ${newUserId})`);
 
+                // 🏗️ KANBAN: Crear tableros por defecto
+                const { createDefaultKanbanBoards } = require('./kanban-utils');
+                await createDefaultKanbanBoards(global.dbPool || pool, newUserId);
+
                 res.json({
                     success: true,
                     message: 'Usuario registrado exitosamente. Inicia sesión para comenzar.',
@@ -219,6 +223,13 @@ function registerAuthEndpoints(app, pool) {
                         console.log(`[AUTH] ✅ Sesión ${userSessionId} ya está activa en memoria`);
                     }
                 }
+
+                // 🏗️ KANBAN: Asegurar que existan tableros por defecto
+                const { createDefaultKanbanBoards } = require('./kanban-utils');
+                // No esperar a que termine para no bloquear respuesta
+                createDefaultKanbanBoards(global.dbPool || pool, user.id).catch(err => {
+                    console.error('[AUTH] ❌ Error creando tableros kanban en login:', err);
+                });
 
                 res.json({
                     success: true,

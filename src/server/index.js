@@ -2142,6 +2142,10 @@ async function getOrInsertWhatsAppGroup(jid, name = null, subject = null, phoneN
         const isAnnouncement = metadata?.announce || false;
         const isRestricted = metadata?.restrict || false;
 
+        // ✅ NORMALIZAR ID: Asegurar que usamos users.id
+        const ownerUserId = await getOwnerSessionId(phoneNumber);
+        console.log(`[DB-GROUP] Normalizando ${phoneNumber} -> ${ownerUserId}`);
+
         const [result] = await connection.execute(
             `INSERT INTO contact_groups (jid, name, session_id, description, participants_count, is_announcement, is_restricted)
              VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -2156,9 +2160,9 @@ async function getOrInsertWhatsAppGroup(jid, name = null, subject = null, phoneN
                 is_announcement = VALUES(is_announcement),
                 is_restricted = VALUES(is_restricted),
                 updated_at = CURRENT_TIMESTAMP`,
-            [jid, groupName, phoneNumber, description, participantCount, isAnnouncement, isRestricted]
+            [jid, groupName, ownerUserId, description, participantCount, isAnnouncement, isRestricted]
         );
-        console.log(`[DB-GROUP-SUCCESS] WhatsApp group ${jid} saved to contact_groups with name: ${groupName}`);
+        console.log(`[DB-GROUP-SUCCESS] WhatsApp group ${jid} saved to contact_groups for user ${ownerUserId}`);
 
         // Get the group ID
         if (result.insertId) {
@@ -2166,7 +2170,7 @@ async function getOrInsertWhatsAppGroup(jid, name = null, subject = null, phoneN
         } else {
             let [rows] = await connection.execute(
                 'SELECT id FROM contact_groups WHERE jid = ? AND session_id = ?',
-                [jid, phoneNumber]
+                [jid, ownerUserId]
             );
             return rows[0]?.id || null;
         }
@@ -2195,85 +2199,85 @@ async function insertGroupMembers(groupJid, participants = [], phoneNumber = nul
         return;
     }
 
-    // ===== LOGS DE DEPURACIÓN =====
-    console.log(`[DB-GROUP-MEMBERS-DEBUG] ==========================================`);
-    console.log(`[DB-GROUP-MEMBERS-DEBUG] Procesando grupo: ${groupJid}`);
-    console.log(`[DB-GROUP-MEMBERS-DEBUG] Total participantes: ${participants.length}`);
-    console.log(`[DB-GROUP-MEMBERS-DEBUG] Primeros 3 participantes completos:`,
-        JSON.stringify(participants.slice(0, 3), null, 2)
-    );
-    // ===== FIN LOGS DE DEPURACIÓN =====
-
     const connection = await pool.getConnection();
     try {
+        // ✅ NORMALIZAR ID: Asegurar que usamos users.id
+        const ownerUserId = await getOwnerSessionId(phoneNumber);
+
+        // 1. Obtener ID del grupo (Requerido por la tabla)
+        const [groupRows] = await connection.execute(
+            'SELECT id FROM contact_groups WHERE jid = ? AND session_id = ? LIMIT 1',
+            [groupJid, ownerUserId]
+        );
+
+        if (groupRows.length === 0) {
+            console.warn(`[DB-GROUP-MEMBERS] ⚠️ Grupo no encontrado en BD, no se pueden insertar miembros: ${groupJid}`);
+            return;
+        }
+        const groupId = groupRows[0].id;
+
+        console.log(`[DB-GROUP-MEMBERS] ✅ Grupo encontrado: ID=${groupId} para ${groupJid}`);
+
         for (const participant of participants) {
             const contactJid = participant.id || participant;
             const isAdmin = participant.admin === 'admin' || participant.admin === 'superadmin';
             const isSuperAdmin = participant.admin === 'superadmin';
 
-            // LOG: Ver qué contactJid se está usando
-            console.log(`[DB-GROUP-MEMBERS-DEBUG] Procesando participante: contactJid="${contactJid}", groupJid="${groupJid}"`);
+            // 2. Obtener/Crear ID del contacto (Requerido por la tabla)
+            // Llamamos a getOrInsertContact para asegurar que el contacto exista y obtener su ID
+            const contactId = await getOrInsertContact(contactJid, null, null, ownerUserId);
 
-            // Extraer número de teléfono del JID
-            let participantPhone = null;
-            if (contactJid.includes('@s.whatsapp.net')) {
-                // JID normal: "5491112345678@s.whatsapp.net"
-                participantPhone = contactJid.split('@')[0];
-                console.log(`[DB-GROUP-MEMBERS-DEBUG] ✅ JID normal, phone extraído: ${participantPhone}`);
-            } else if (contactJid.includes('@lid')) {
-                // LID: guardar null, el número real se intentará obtener después
-                participantPhone = null;
-                console.log(`[DB-GROUP-MEMBERS-DEBUG] ⚠️ LID detectado, phone=null, se resolverá después`);
-            } else if (typeof contactJid === 'string' && contactJid.match(/^\d+$/)) {
-                // Solo números
-                // VALIDACIÓN: Si el número es muy largo, probablemente es un LID sin el sufijo @lid.
-                if (contactJid.length > 14) {
-                    participantPhone = null; // Tratar como LID
-                    console.log(`[DB-GROUP-MEMBERS-DEBUG] ⚠️ Número largo (${contactJid.length} dígitos) detectado como LID, phone=null`);
-                } else {
-                    participantPhone = contactJid;
-                    console.log(`[DB-GROUP-MEMBERS-DEBUG] ✅ Solo números (longitud normal), phone: ${participantPhone}`);
-                }
-            } else {
-                console.log(`[DB-GROUP-MEMBERS-DEBUG] ❌ FORMATO DESCONOCIDO: contactJid="${contactJid}"`);
+            if (!contactId) {
+                console.warn(`[DB-GROUP-MEMBERS] ⚠️ No se pudo obtener ID para contacto ${contactJid}, saltando miembro.`);
+                continue;
             }
 
-            // Obtener nombre del participante si existe en contacts
+            // Extraer número de teléfono del JID para guardar en phone_number
+            let participantPhone = null;
+            if (contactJid.includes('@s.whatsapp.net')) {
+                participantPhone = contactJid.split('@')[0];
+            }
+
+            // Obtener nombre actual para guardar en la tabla de enlace (cache)
             let participantName = null;
             let participantNotifyName = null;
             try {
                 const [contactRows] = await connection.execute(
-                    'SELECT name, notify_name FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
-                    [contactJid, phoneNumber]
+                    'SELECT name, notify_name FROM contacts WHERE id = ? LIMIT 1',
+                    [contactId]
                 );
                 if (contactRows.length > 0) {
                     participantName = contactRows[0].name;
                     participantNotifyName = contactRows[0].notify_name;
-                    // Si no tenemos phone pero está en contacts, intentar extraerlo
-                    if (!participantPhone && contactRows[0].jid) {
-                        const contactJidStr = contactRows[0].jid;
-                        if (contactJidStr.includes('@s.whatsapp.net')) {
-                            participantPhone = contactJidStr.split('@')[0];
-                        }
-                    }
                 }
-            } catch (err) {
-                // Ignorar error, solo no tendremos nombre
-            }
+            } catch (err) { }
 
+            // 3. Insertar con IDs relacionales y nombre de columna corregido (phone -> phone_number)
             await connection.execute(
-                `INSERT INTO contact_group_members (contact_jid, group_jid, is_admin, is_super_admin, session_id, phone, name, notify_name)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                `INSERT INTO contact_group_members 
+                    (contact_id, contact_jid, group_id, group_jid, is_admin, is_super_admin, session_id, phone_number, name, notify_name)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                  ON DUPLICATE KEY UPDATE
                     is_admin = VALUES(is_admin),
                     is_super_admin = VALUES(is_super_admin),
-                    phone = IF(VALUES(phone) IS NOT NULL, VALUES(phone), phone),
+                    phone_number = IF(VALUES(phone_number) IS NOT NULL, VALUES(phone_number), phone_number),
                     name = IF(VALUES(name) IS NOT NULL, VALUES(name), name),
                     notify_name = IF(VALUES(notify_name) IS NOT NULL, VALUES(notify_name), notify_name)`,
-                [contactJid, groupJid, isAdmin, isSuperAdmin, phoneNumber, participantPhone, participantName, participantNotifyName]
+                [
+                    contactId,
+                    contactJid,
+                    groupId,
+                    groupJid,
+                    isAdmin,
+                    isSuperAdmin,
+                    ownerUserId,
+                    participantPhone,
+                    participantName,
+                    participantNotifyName
+                ]
             );
         }
-        console.log(`[DB-GROUP-MEMBERS-SUCCESS] Inserted ${participants.length} members for group ${groupJid} into contact_group_members`);
+        console.log(`[DB-GROUP-MEMBERS-SUCCESS] Inserted/Updated ${participants.length} members for group ${groupJid}`);
     } catch (error) {
         console.error(`[DB-GROUP-MEMBERS] Error inserting group members:`, error);
     } finally {
@@ -2314,6 +2318,7 @@ async function getOrInsertBroadcast(jid, name = null, phoneNumber = null, broadc
     const connection = await pool.getConnection();
     try {
         const broadcastName = name || jid;
+        const ownerUserId = await getOwnerSessionId(phoneNumber);
 
         const [result] = await connection.execute(
             `INSERT INTO broadcasts (jid, name, session_id, broadcast_type)
@@ -2321,16 +2326,16 @@ async function getOrInsertBroadcast(jid, name = null, phoneNumber = null, broadc
              ON DUPLICATE KEY UPDATE
                 name = IF(VALUES(name) IS NOT NULL AND VALUES(name) != '', VALUES(name), name),
                 updated_at = CURRENT_TIMESTAMP`,
-            [jid, broadcastName, phoneNumber, broadcastType]
+            [jid, broadcastName, ownerUserId, broadcastType]
         );
-        console.log(`[DB-BROADCAST-SUCCESS] Broadcast ${jid} saved.`);
+        console.log(`[DB-BROADCAST-SUCCESS] Broadcast ${jid} saved for user ${ownerUserId}.`);
 
         if (result.insertId) {
             return result.insertId;
         } else {
             let [rows] = await connection.execute(
                 'SELECT id FROM broadcasts WHERE jid = ? AND session_id = ?',
-                [jid, phoneNumber]
+                [jid, ownerUserId]
             );
             return rows[0]?.id || null;
         }
@@ -2486,7 +2491,8 @@ async function saveMessageToDB(sessionId, msg) {
             file_size = null,
             timestamp, // Should be a JS Date object or a string parsable by new Date()
             status = 'sent', // Default status, can be updated later
-            is_read = false // 🆕 Default is_read
+            is_read = false, // 🆕 Default is_read
+            sender_pushname = null // 🆕 pushName del remitente (para grupos)
         } = msg;
 
         // Usar agentes detectados
@@ -2605,7 +2611,14 @@ async function saveMessageToDB(sessionId, msg) {
         }
 
         // Ensure timestamp is in YYYY-MM-DD HH:MM:SS format for MySQL DATETIME
-        const mysqlTimestamp = new Date(timestamp).toISOString().slice(0, 19).replace('T', ' ');
+        // Baileys timestamps are usually in seconds, but we add a check
+        let ts = typeof timestamp === 'object' && timestamp?.low !== undefined ? Number(timestamp.low) : Number(timestamp);
+        // Safety check: if ts is "small" (e.g. seconds), multiply by 1000. If "large" (milliseconds), use as is.
+        // 10 billion is roughly year 2286 in seconds.
+        if (ts < 10000000000) {
+            ts = ts * 1000;
+        }
+        const mysqlTimestamp = new Date(ts).toISOString().slice(0, 19).replace('T', ' ');
 
         // Define los parámetros para la consulta, convirtiendo undefined a null donde sea necesario
         const finalSenderJid = sender_jid || chat_jid;
@@ -2613,30 +2626,40 @@ async function saveMessageToDB(sessionId, msg) {
         // 🆕 OBTENER NOMBRE Y AVATAR DEL REMITENTE DESDE CONTACTS
         let senderName = null;
         let senderAvatar = null;
+        const isGroup = chat_jid.includes('@g.us');
 
-        // Para TODOS los mensajes (enviados o recibidos), usar el nombre del contacto del chat
-        // LÓGICA: Si tienes el contacto guardado, usa tu nombre. Si no, usa el pushName (nombre de WhatsApp de esa persona)
-        try {
-            const [contactRows] = await connection.execute(
-                'SELECT name, notify_name, avatar_url FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
-                [chat_jid, ownerSessionId]
-            );
+        // Para mensajes de GRUPO, buscar el nombre del participante (sender_jid)
+        // Para mensajes INDIVIDUALES, buscar el nombre del chat
+        const jidToSearch = isGroup && sender_jid ? sender_jid : chat_jid;
 
-            if (contactRows.length > 0) {
-                const contact = contactRows[0];
-                // Usar el nombre que TÚ le pusiste al contacto
-                senderName = contact.name || contact.notify_name || chat_jid.split('@')[0];
-                senderAvatar = contact.avatar_url;
-                console.log(`[DB-MSG] 👤 Contacto guardado - Nombre: ${senderName}`);
-            } else {
-                // No tienes este contacto guardado, usar el número como fallback
-                // (el pushName debería haberse guardado cuando se creó el contacto)
-                senderName = chat_jid.split('@')[0];
-                console.log(`[DB-MSG] ⚠️ Contacto no encontrado, usando número: ${senderName}`);
+        // Si tenemos pushName directamente, usarlo como prioridad para grupos
+        if (sender_pushname && isGroup) {
+            senderName = sender_pushname;
+            console.log(`[DB-MSG] 👤 Grupo - Usando pushName: ${senderName}`);
+        }
+
+        // Buscar en contacts si no tenemos nombre aún
+        if (!senderName) {
+            try {
+                const [contactRows] = await connection.execute(
+                    'SELECT name, notify_name, avatar_url FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
+                    [jidToSearch, ownerSessionId]
+                );
+
+                if (contactRows.length > 0) {
+                    const contact = contactRows[0];
+                    senderName = contact.name || contact.notify_name || jidToSearch.split('@')[0];
+                    senderAvatar = contact.avatar_url;
+                    console.log(`[DB-MSG] 👤 Contacto guardado - Nombre: ${senderName}`);
+                } else {
+                    // Fallback: usar pushName si está disponible, sino el número
+                    senderName = sender_pushname || jidToSearch.split('@')[0];
+                    console.log(`[DB-MSG] ⚠️ Contacto no encontrado, usando: ${senderName}`);
+                }
+            } catch (err) {
+                console.error('[DB-MSG] Error obteniendo información del contacto:', err);
+                senderName = sender_pushname || jidToSearch.split('@')[0];
             }
-        } catch (err) {
-            console.error('[DB-MSG] Error obteniendo información del contacto:', err);
-            senderName = chat_jid.split('@')[0];
         }
 
         // Determinar el status correcto basándose en from_me
@@ -2667,7 +2690,7 @@ async function saveMessageToDB(sessionId, msg) {
             media_mime_type || null,
             caption || null,
             file_name || null,
-            file_size || null,
+            file_size ? (typeof file_size === 'object' ? Number(file_size.low || file_size) : Number(file_size)) : null,
             mysqlTimestamp,
             finalStatus,
             senderName, // Nombre del remitente
@@ -3680,60 +3703,7 @@ async function forceFullSync(sessionId, sock, userSessionId) {
 }
 
 // Función para crear tableros Kanban por defecto
-async function createDefaultKanbanBoards(userId) {
-    if (!pool) {
-        console.log(`[KANBAN-DEFAULT] Base de datos no disponible`);
-        return;
-    }
-
-    const connection = await pool.getConnection();
-    try {
-        // Verificar si ya existen tableros para este usuario
-        const [existing] = await connection.execute(
-            'SELECT COUNT(*) as count FROM kanban_boards WHERE session_id = ?',
-            [userId]
-        );
-
-        if (existing[0].count > 0) {
-            console.log(`[KANBAN-DEFAULT] Usuario ${userId} ya tiene ${existing[0].count} tableros. No se crean tableros por defecto.`);
-            return;
-        }
-
-        // Crear 5 tableros por defecto
-        const defaultBoards = [
-            { name: 'Sin Categoría', color: '#607d8b', order: 0, is_default: 1 },
-            { name: 'Interesados', color: '#2196f3', order: 1, is_default: 0 },
-            { name: 'Clientes', color: '#4caf50', order: 2, is_default: 0 },
-            { name: 'Prospectos', color: '#ff9800', order: 3, is_default: 0 },
-            { name: 'Varios', color: '#9c27b0', order: 4, is_default: 0 }
-        ];
-
-        console.log(`[KANBAN-DEFAULT] Creando ${defaultBoards.length} tableros por defecto para usuario ${userId}...`);
-
-        let sinCategoriaBoardId = null;
-
-        for (const board of defaultBoards) {
-            const boardId = `board_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            await connection.execute(
-                'INSERT INTO kanban_boards (id, session_id, name, color, board_order, is_default) VALUES (?, ?, ?, ?, ?, ?)',
-                [boardId, userId, board.name, board.color, board.order, board.is_default]
-            );
-            console.log(`[KANBAN-DEFAULT] ✅ Tablero "${board.name}" creado`);
-
-            // Guardar el ID del tablero "Sin Categoría"
-            if (board.name === 'Sin Categoría') {
-                sinCategoriaBoardId = boardId;
-            }
-        }
-
-        console.log(`[KANBAN-DEFAULT] ✅ Tableros por defecto creados exitosamente para usuario ${userId}`);
-
-    } catch (error) {
-        console.error(`[KANBAN-DEFAULT] Error creando tableros por defecto:`, error);
-    } finally {
-        connection.release();
-    }
-}
+const { createDefaultKanbanBoards } = require('./kanban-utils');
 
 // Función para cargar contactos en el tablero "Sin Categoría"
 async function loadContactsToDefaultBoard(userId) {
@@ -3753,25 +3723,16 @@ async function loadContactsToDefaultBoard(userId) {
         // Si no existe, crear los tableros por defecto
         if (boards.length === 0) {
             console.log(`[KANBAN-LOAD] Creando tableros por defecto para usuario ${userId}...`);
+            const { createDefaultKanbanBoards } = require('./kanban-utils');
+            await createDefaultKanbanBoards(pool, userId);
 
-            const defaultBoards = [
-                { name: 'Sin Categoría', color: '#607d8b', order: 0, is_default: 1 },
-                { name: 'Clientes', color: '#4caf50', order: 1, is_default: 0 },
-                { name: 'Prospectos', color: '#2196f3', order: 2, is_default: 0 },
-                { name: 'Nuevos', color: '#ff9800', order: 3, is_default: 0 }
-            ];
-
-            for (const board of defaultBoards) {
-                const boardId = `board_${crypto.randomBytes(8).toString('hex')}`;
-                await connection.execute(
-                    `INSERT INTO kanban_boards (id, session_id, name, color, board_order, is_default)
-                     VALUES (?, ?, ?, ?, ?, ?)`,
-                    [boardId, userId, board.name, board.color, board.order, board.is_default]
-                );
-
-                if (board.is_default) {
-                    boards = [{ id: boardId }];
-                }
+            // Recargar para obtener el ID
+            const [newBoards] = await connection.execute(
+                'SELECT id FROM kanban_boards WHERE session_id = ? AND is_default = 1 LIMIT 1',
+                [userId]
+            );
+            if (newBoards.length > 0) {
+                boards = newBoards;
             }
 
             console.log(`[KANBAN-LOAD] ✅ Tableros por defecto creados`);
@@ -3797,7 +3758,7 @@ async function loadContactsToDefaultBoard(userId) {
 
         // Obtener todos los contactos individuales del usuario (session_id = userId)
         const [contacts] = await connection.execute(
-            `SELECT jid FROM contacts WHERE session_id = ? AND jid LIKE "%@s.whatsapp.net"`,
+            `SELECT jid FROM contacts WHERE session_id = ? AND is_group = 0 AND jid LIKE "%@s.whatsapp.net"`,
             [userId]
         );
 
@@ -4202,7 +4163,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
                     `SELECT jid, name FROM contacts 
                      WHERE session_id = ? AND is_group = 0 
                      ORDER BY created_at DESC`,
-                    [sessionId]
+                    [userSessionId]
                 );
                 chatArray = existingContacts.map(c => ({ id: c.jid, name: c.name }));
                 console.log(`[FULL-SYNC] - Chats desde tabla contacts: ${chatArray.length}`);
@@ -4230,14 +4191,14 @@ async function performFullSync(sessionId, sock, userSessionId) {
                     if (!isGroup) {
                         const [existing] = await connection.query(
                             'SELECT id FROM contacts WHERE jid = ? AND session_id = ?',
-                            [chatId, sessionId]
+                            [chatId, userSessionId]
                         );
 
                         if (existing.length === 0) {
                             await connection.query(
                                 `INSERT INTO contacts (jid, name, session_id, is_group, created_at) 
                                  VALUES (?, ?, ?, ?, NOW())`,
-                                [chatId, chat.name || chatId.split('@')[0], sessionId, false]
+                                [chatId, chat.name || chatId.split('@')[0], userSessionId, false]
                             );
                             stats.chats++;
                         }
@@ -4264,7 +4225,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
                 try {
                     const [existing] = await connection.query(
                         'SELECT id FROM contact_groups WHERE jid = ? AND session_id = ?',
-                        [group.id, sessionId]
+                        [group.id, userSessionId]
                     );
 
                     let groupDbId;
@@ -4272,12 +4233,34 @@ async function performFullSync(sessionId, sock, userSessionId) {
                         const [result] = await connection.query(
                             `INSERT INTO contact_groups (jid, name, session_id, created_at) 
                              VALUES (?, ?, ?, NOW())`,
-                            [group.id, group.subject, sessionId]
+                            [group.id, group.subject || group.id.split('@')[0], userSessionId]
                         );
                         groupDbId = result.insertId;
                         stats.groups++;
                     } else {
                         groupDbId = existing[0].id;
+                        // Actualizar nombre si ha cambiado
+                        await connection.query(
+                            'UPDATE contact_groups SET name = ? WHERE id = ?',
+                            [group.subject || group.id.split('@')[0], groupDbId]
+                        );
+                    }
+
+                    // Asegurar que también esté en la tabla general de contacts
+                    const [existingContact] = await connection.query(
+                        'SELECT id FROM contacts WHERE jid = ? AND session_id = ?',
+                        [group.id, userSessionId]
+                    );
+                    if (existingContact.length === 0) {
+                        await connection.query(
+                            'INSERT INTO contacts (jid, name, session_id, is_group, created_at) VALUES (?, ?, ?, 1, NOW())',
+                            [group.id, group.subject || group.id.split('@')[0], userSessionId]
+                        );
+                    } else {
+                        await connection.query(
+                            'UPDATE contacts SET name = ?, is_group = 1 WHERE jid = ? AND session_id = ?',
+                            [group.subject || group.id.split('@')[0], group.id, userSessionId]
+                        );
                     }
 
                     // Guardar MIEMBROS del grupo
@@ -4287,7 +4270,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
                         // Primero limpiar miembros existentes
                         await connection.query(
                             'DELETE FROM contact_group_members WHERE group_jid = ? AND session_id = ?',
-                            [group.id, sessionId]
+                            [group.id, userSessionId]
                         );
 
                         // Insertar todos los miembros con phone, name y notify_name
@@ -4312,7 +4295,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
                                         participantPhone = contactJid.split('@')[0];
                                     } else if (contactJid.includes('@lid')) {
                                         // LID: intentar resolver usando la función mejorada
-                                        const lidInfo = await resolveLid(contactJid, sessionId, sock);
+                                        const lidInfo = await resolveLid(contactJid, userSessionId, sock);
                                         if (lidInfo && lidInfo.phone) {
                                             participantPhone = lidInfo.phone;
                                             participantName = lidInfo.name;
@@ -4331,7 +4314,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
                                         try {
                                             const [contactRows] = await connection.query(
                                                 'SELECT name, notify_name FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
-                                                [contactJid, sessionId]
+                                                [contactJid, userSessionId]
                                             );
                                             if (contactRows.length > 0) {
                                                 participantName = contactRows[0].name;
@@ -4409,6 +4392,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
 
             console.log(`[FULL-SYNC] - Contactos en store: ${contactList.length} (sin estados ni broadcasts)`);
 
+            /* 🚫 DESHABILITADO: No extraer contactos de miembros de grupos para evitar saturar el CRM
             // Si el store está vacío, obtener contactos de los participantes de grupos
             if (contactList.length === 0) {
                 console.log(`[FULL-SYNC] ⚠️ Store de contactos vacío, extrayendo de miembros de grupos...`);
@@ -4431,6 +4415,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
 
                 console.log(`[FULL-SYNC] - Contactos extraídos de grupos: ${contactList.length}`);
             }
+            */
 
             for (const contact of contactList) {
                 try {
@@ -4614,33 +4599,35 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         // La tabla messages usa session_id para almacenar el número de teléfono (datos históricos)
         // NO usar sessionId en la búsqueda porque causa mezcla de datos de múltiples usuarios
         const query = `
-                        SELECT
-                                m.chat_jid,
-                                COALESCE(
-                                        c.notify_name,
-                                        c.name,
-                                        (SELECT COALESCE(c2.notify_name, c2.name)
-                                         FROM contacts c2
-                                         WHERE c2.session_id = ?
-                                             AND SUBSTRING_INDEX(c2.jid, '@', 1) = SUBSTRING_INDEX(m.chat_jid, '@', 1)
-                                         LIMIT 1),
-                                        SUBSTRING_INDEX(m.chat_jid, '@', 1)
-                                ) AS contact_name,
-                                m.text_content AS last_message_text,
-                                m.timestamp AS last_message_timestamp,
-                                m.from_me AS last_message_from_me,
-                                m.status AS last_message_status,
-                                c.is_group,
-                                COALESCE(
-                                        c.avatar_url,
-                                        (SELECT c3.avatar_url
-                                         FROM contacts c3
-                                         WHERE c3.session_id = ?
-                                             AND c3.avatar_url IS NOT NULL AND c3.avatar_url != ''
-                                             AND SUBSTRING_INDEX(c3.jid, '@', 1) = SUBSTRING_INDEX(m.chat_jid, '@', 1)
-                                         LIMIT 1)
-                                ) AS avatar_url,
-                -- Contar mensajes no leídos (recibidos y con status != 'read')
+            SELECT
+                m.chat_jid,
+                COALESCE(
+                    cg.name,
+                    c.notify_name,
+                    c.name,
+                    (SELECT COALESCE(c2.notify_name, c2.name)
+                     FROM contacts c2
+                     WHERE c2.session_id = ?
+                       AND SUBSTRING_INDEX(c2.jid, '@', 1) = SUBSTRING_INDEX(m.chat_jid, '@', 1)
+                     LIMIT 1),
+                    SUBSTRING_INDEX(m.chat_jid, '@', 1)
+                ) AS contact_name,
+                m.text_content AS last_message_text,
+                m.timestamp AS last_message_timestamp,
+                m.from_me AS last_message_from_me,
+                m.status AS last_message_status,
+                CASE WHEN m.chat_jid LIKE '%@g.us' THEN 1 ELSE COALESCE(c.is_group, 0) END AS is_group,
+                COALESCE(
+                    cg.avatar_url,
+                    c.avatar_url,
+                    (SELECT c3.avatar_url
+                     FROM contacts c3
+                     WHERE c3.session_id = ?
+                       AND c3.avatar_url IS NOT NULL AND c3.avatar_url != ''
+                       AND SUBSTRING_INDEX(c3.jid, '@', 1) = SUBSTRING_INDEX(m.chat_jid, '@', 1)
+                     LIMIT 1)
+                ) AS avatar_url,
+                -- Contar mensajes no leídos
                 (SELECT COUNT(*)
                  FROM messages m2
                  WHERE m2.chat_jid = m.chat_jid
@@ -4648,7 +4635,6 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                    AND m2.from_me = 0
                    AND (m2.status IS NULL OR m2.status != 'read')
                 ) AS unread_count,
-                -- Si es LID, intentar obtener el número real del contacto con el mismo nombre
                 CASE
                     WHEN m.chat_jid LIKE '%@lid' THEN (
                         SELECT SUBSTRING_INDEX(c2.jid, '@', 1)
@@ -4662,23 +4648,25 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                 END AS phone
             FROM messages m
             LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = ?
+            LEFT JOIN contact_groups cg ON m.chat_jid = cg.jid AND cg.session_id = ?
             WHERE m.session_id = ?
               AND m.chat_jid NOT LIKE '%status@broadcast%'
               AND m.chat_jid NOT LIKE CONCAT(?, '@%')
               ${includeGroups ? '' : 'AND m.chat_jid NOT LIKE \'%@g.us\''}
               ${dateFilterSQL}
             ORDER BY m.timestamp DESC
-            LIMIT 1000;
+            LIMIT 3000;
         `;
 
         console.log(`[CHATLIST] 🔎 BUSCANDO EN BD: messages WHERE session_id = ${ownerSessionId}`);
         const [allRows] = await connection.execute(query, [
-            phoneNumber, // phone para subquery de LID
-            phoneNumber, // nombre fallback por phone
-            phoneNumber, // avatar fallback por phone
-            ownerSessionId, // c.session_id = ? (users.id)
-            ownerSessionId, // m.session_id = ? (users.id)
-            phoneNumber  // Parámetro para CONCAT en WHERE para excluir propio número
+            ownerSessionId, // 1. c2.session_id
+            ownerSessionId, // 2. c3.session_id
+            ownerSessionId, // 3. c2.session_id
+            ownerSessionId, // 4. c.session_id
+            ownerSessionId, // 5. cg.session_id
+            ownerSessionId, // 6. m.session_id
+            phoneNumber     // 7. CONCAT propio número
         ]);
 
         console.log(`[DB-CHATLIST] ⚡ SQL ejecutado con filtro SQL, total rows: ${allRows.length}`);
@@ -4727,7 +4715,6 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             .slice(0, limit)
             .map(row => {
                 const normalizedJid = normalizeJid(row.chat_jid);
-                // Usar phone de la query (que resuelve LIDs) o extraer del JID
                 const phoneOnly = row.phone || normalizedJid.split('@')[0];
                 return {
                     id: normalizedJid,
@@ -4739,9 +4726,44 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                     status: row.last_message_status || 'pending',
                     unreadCount: parseInt(row.unread_count) || 0,
                     avatar: row.avatar_url && row.avatar_url.trim() ? row.avatar_url : null,
-                    phoneNumber: phoneOnly // Agregar número de teléfono al objeto
+                    phoneNumber: phoneOnly
                 };
             });
+
+        // ➕ AGREGAR GRUPOS QUE NO TIENEN MENSAJES
+        if (includeGroups) {
+            try {
+                const [allUserGroups] = await connection.execute(
+                    'SELECT jid, name, avatar_url, updated_at FROM contact_groups WHERE session_id = ?',
+                    [ownerSessionId]
+                );
+
+                const existingGroupJids = new Set(chatList.filter(c => c.isGroup).map(c => c.id));
+
+                for (const group of allUserGroups) {
+                    if (!existingGroupJids.has(group.jid)) {
+                        chatList.push({
+                            id: group.jid,
+                            name: group.name || group.jid.split('@')[0],
+                            isGroup: true,
+                            lastMessage: 'Sin mensajes en BD',
+                            timestamp: group.updated_at ? new Date(group.updated_at).toISOString() : new Date().toISOString(),
+                            fromMe: false,
+                            status: 'read',
+                            unreadCount: 0,
+                            avatar: group.avatar_url && group.avatar_url.trim() ? group.avatar_url : null,
+                            phoneNumber: group.jid.split('@')[0]
+                        });
+                        existingGroupJids.add(group.jid);
+                    }
+                }
+
+                // Re-ordenar por fecha después de añadir los grupos extra
+                chatList.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            } catch (err) {
+                console.error(`[DB-CHATLIST] Error agregando grupos adicionales:`, err.message);
+            }
+        }
 
         console.log(`[DB-CHATLIST] ✅ RESULTADO FINAL: ${chatList.length} chats (removidos: ${removedCount}, limit: ${filteredRows.length - chatList.length})`);
         if (chatList.length > 0) {
@@ -5686,7 +5708,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                         // Crear tableros Kanban por defecto si es la primera vez
                         const ownerUserId = await getOwnerSessionId(userPhoneNumber);
-                        await createDefaultKanbanBoards(ownerUserId);
+                        await createDefaultKanbanBoards(pool, ownerUserId);
                     }
 
                     // Emitir estadísticas iniciales después de conectar
@@ -7054,7 +7076,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             file_size: fileSize,
                             timestamp: msg.messageTimestamp ? new Date(Number(msg.messageTimestamp) * 1000) : new Date(),
                             status: msg.key.fromMe ? 'sent' : 'received', // Estado inicial
-                            is_read: m.type === 'prepend' || msg.key.fromMe || false
+                            is_read: m.type === 'prepend' || msg.key.fromMe || false,
+                            sender_pushname: pushName // 🆕 Agregar pushName para grupos
                         };
 
                         await saveMessageToDB(sessionId, dbMessage);
@@ -7858,6 +7881,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 return;
             }
 
+            // ✅ CRÍTICO: Obtener el ID de usuario propietario (numérico como '1')
+            const ownerSessionId = await getOwnerSessionId(phoneNumber) || phoneNumber;
+            console.log(`[${sessionId}] 🔄 Usando ID de usuario propietario: ${ownerSessionId}`);
+
             // 💾 ACTUALIZAR STORE EN MEMORIA
             if (sock.store) {
                 if (historySet.contacts) {
@@ -7902,7 +7929,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         const contactJid = contact.id;
                         if (!contactJid || !contactJid.includes('@s.whatsapp.net')) continue;
 
-                        await getOrInsertContact(contactJid, contact.name, contact.notify, phoneNumber, sock);
+                        await getOrInsertContact(contactJid, contact.name, contact.notify, ownerSessionId, sock);
                     } catch (err) {
                         console.error(`[${sessionId}] Error guardando contacto:`, err.message);
                     }
@@ -7931,7 +7958,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     console.log(`[${sessionId}] 📋 Cargando contactos en tablero Kanban "Sin Categoría"...`);
                     if (phoneNumber && pool) {
                         const ownerUserIdForKanban2 = await getOwnerSessionId(phoneNumber);
-                        await loadContactsToDefaultBoard(ownerUserIdForKanban2);
+                        await loadContactsToDefaultBoard(ownerSessionId);
                     }
                 } catch (err) {
                     console.error(`[${sessionId}] Error cargando contactos a tablero:`, err.message);
@@ -7944,30 +7971,30 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             // ═══════════════════════════════════════════════════════════
             // ═══════════════════════════════════════════════════════════
 
-            // FILTRO DE GRUPOS: No procesar chats de grupos
+            // FILTRO DE GRUPOS: Permitir grupos en el historial
             // ═══════════════════════════════════════════════════════════
             const totalHistoryChats = historySet.chats?.length || 0;
-            historySet.chats = historySet.chats?.filter(chat => !chat.id?.includes('@g.us')) || [];
+            // historySet.chats = historySet.chats?.filter(chat => !chat.id?.includes('@g.us')) || []; // COMENTADO: Permitir grupos
 
-            if (totalHistoryChats > historySet.chats.length) {
-                console.log(`[${sessionId}] 🚫 FILTRADOS ${totalHistoryChats - historySet.chats.length} grupos del historial`);
-            }
+            console.log(`[${sessionId}] 📦 Procesando ${totalHistoryChats} chats del historial (incluyendo grupos)`);
 
-            // Filtrar mensajes de grupos Y que sean de las últimas 24 horas (Optimización)
+            // Filtrar mensajes: Aumentar ventana de tiempo de 24h a 30 días (Mejora solicitada)
             const totalHistoryMessages = historySet.messages?.length || 0;
-            const oneDayAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60); // Timestamp en segundos
+            const historyLimitDays = 30; // Aumentar a 30 días
+            const historyLimitSeconds = historyLimitDays * 24 * 60 * 60;
+            const historyStartTime = Math.floor(Date.now() / 1000) - historyLimitSeconds;
 
             historySet.messages = historySet.messages?.filter(msg => {
                 const isGroup = msg.key?.remoteJid?.includes('@g.us');
                 const msgTime = Number(msg.messageTimestamp);
-                const isRecent = msgTime > oneDayAgo;
+                const isRecent = msgTime > historyStartTime;
 
-                // Conservar si NO es grupo Y es reciente
-                return !isGroup && isRecent;
+                // Ahora permitimos grupos y mensajes de hasta 30 días
+                return isRecent;
             }) || [];
 
             if (totalHistoryMessages > historySet.messages.length) {
-                console.log(`[${sessionId}] 🚫 OPTIMIZACIÓN: Filtrados ${totalHistoryMessages - historySet.messages.length} mensajes (grupos o antiguos > 24h)`);
+                console.log(`[${sessionId}] 🚫 OPTIMIZACIÓN: Filtrados ${totalHistoryMessages - historySet.messages.length} mensajes antiguos (> ${historyLimitDays} días)`);
             }
             // ═══════════════════════════════════════════════════════════
 
@@ -7984,7 +8011,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         // Filtrar y clasificar por tipo de JID
                         if (chatJid.includes('@s.whatsapp.net')) {
                             // Contacto individual
-                            await getOrInsertContact(chatJid, chatName, chatName, phoneNumber, sock);
+                            await getOrInsertContact(chatJid, chatName, chatName, ownerSessionId, sock);
 
                             // Descargar avatar para contactos
                             try {
@@ -7994,7 +8021,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                     try {
                                         await connection.execute(
                                             'UPDATE contacts SET avatar_url = ? WHERE jid = ? AND session_id = ?',
-                                            [profilePicUrl, chatJid, phoneNumber]
+                                            [profilePicUrl, chatJid, ownerSessionId]
                                         );
                                         console.log(`[${sessionId}] 🖼️ Avatar descargado para contacto: ${chatName}`);
                                     } finally {
@@ -8006,7 +8033,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             }
                         } else if (chatJid.includes('@g.us')) {
                             // Grupo de WhatsApp
-                            await getOrInsertWhatsAppGroup(chatJid, chatName, chatName, phoneNumber, null, sock);
+                            await getOrInsertWhatsAppGroup(chatJid, chatName, chatName, ownerSessionId, null, sock);
 
                             // Descargar avatar para grupos
                             try {
@@ -8016,7 +8043,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                     try {
                                         await connection.execute(
                                             'UPDATE contact_groups SET avatar_url = ? WHERE jid = ? AND session_id = ?',
-                                            [profilePicUrl, chatJid, phoneNumber]
+                                            [profilePicUrl, chatJid, ownerSessionId]
                                         );
                                         console.log(`[${sessionId}] 🖼️ Avatar descargado para grupo: ${chatName}`);
                                     } finally {
@@ -8031,7 +8058,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             try {
                                 const metadata = await sock.groupMetadata(chatJid).catch(() => null);
                                 if (metadata && metadata.participants) {
-                                    await insertGroupMembers(chatJid, metadata.participants, phoneNumber);
+                                    await insertGroupMembers(chatJid, metadata.participants, ownerSessionId);
                                     console.log(`[${sessionId}] 👥 Miembros guardados para grupo: ${chatName}`);
                                 }
                             } catch (metaErr) {
@@ -8039,11 +8066,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             }
                         } else if (chatJid.includes('status@broadcast') || chatJid.includes('@broadcast')) {
                             // Status/Broadcast
-                            await getOrInsertBroadcast(chatJid, chatName || 'Status', phoneNumber, 'status');
+                            await getOrInsertBroadcast(chatJid, chatName || 'Status', ownerSessionId, 'status');
                             console.log(`[${sessionId}] 📢 Broadcast guardado: ${chatJid}`);
                         } else if (chatJid.includes('@lid')) {
                             // Newsletter
-                            await getOrInsertBroadcast(chatJid, chatName || 'Newsletter', phoneNumber, 'newsletter');
+                            await getOrInsertBroadcast(chatJid, chatName || 'Newsletter', ownerSessionId, 'newsletter');
                             console.log(`[${sessionId}] 📰 Newsletter guardado: ${chatJid}`);
                         } else {
                             console.log(`[${sessionId}] ⚠️ Unknown chat type: ${chatJid}`);
@@ -8071,7 +8098,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             // Contacto individual
                             // No usar contact.name o contact.notify directamente si son solo el número
                             // Dejar que getOrInsertContact obtenga el nombre más preciso de WhatsApp
-                            await getOrInsertContact(contactJid, contact.name, contact.notify, phoneNumber, sock);
+                            await getOrInsertContact(contactJid, contact.name, contact.notify, ownerSessionId, sock);
 
                             // Descargar avatar
                             try {
@@ -8081,7 +8108,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                     try {
                                         await connection.execute(
                                             'UPDATE contacts SET avatar_url = ? WHERE jid = ? AND session_id = ?',
-                                            [profilePicUrl, contactJid, phoneNumber]
+                                            [profilePicUrl, contactJid, ownerSessionId]
                                         );
                                         console.log(`[${sessionId}] 🖼️ Avatar descargado para contacto: ${contactName}`);
                                     } finally {
@@ -8093,7 +8120,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             }
                         } else if (contactJid.includes('@g.us')) {
                             // Grupo de WhatsApp
-                            const groupId = await getOrInsertWhatsAppGroup(contactJid, contactName, contactName, phoneNumber, null, sock);
+                            const groupId = await getOrInsertWhatsAppGroup(contactJid, contactName, contactName, ownerSessionId, null, sock);
 
                             // Descargar avatar
                             try {
@@ -9632,6 +9659,7 @@ app.get('/api/session/:sessionId/status', authenticateToken, validateSessionBelo
     // 🔥 LÓGICA CORRECTA:
     // sessionId = user.id (desde tabla users)
     // Necesitamos encontrar el phone asociado a ese user.id y verificar si está en memoria
+    console.log(`[SESSION-STATUS] 🔍 Checking status for sessionId: ${sessionId}, Device: ${deviceId}`);
 
     try {
         // 🔥 PASO 1: Obtener el teléfono asociado a este user.id (sessionId)
@@ -9667,8 +9695,12 @@ app.get('/api/session/:sessionId/status', authenticateToken, validateSessionBelo
         if (phoneNumber) {
             inMemorySession = sessions.get(phoneNumber);
             if (!inMemorySession) {
-                console.log(`[SESSION-STATUS] 📱 No hay sesión en memoria para ${phoneNumber}`);
+                console.log(`[SESSION-STATUS] 📱 No hay sesión en memoria para ${phoneNumber}. Keys disponibles:`, Array.from(sessions.keys()));
+            } else {
+                console.log(`[SESSION-STATUS] 🟢 Sesión encontrada en memoria para ${phoneNumber}`);
             }
+        } else {
+            console.log(`[SESSION-STATUS] ⚠️ No se pudo determinar phoneNumber para sessionId: ${sessionId}`);
         }
 
         // Si ya encontramos la sesión en memoria, devolver estado conectado
@@ -10755,20 +10787,20 @@ app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionB
             }
 
             // Query con filtro de fecha - OPTIMIZADO: Solo últimos N mensajes
-            // Buscar por session_id (ownerSessionId) O por phone (phoneNumber) para soportar ambos formatos
+            // Buscar por session_id con ownerSessionId O phoneNumber para soportar ambos formatos
             const query = `SELECT
                 m.id, m.session_id, m.chat_jid, m.sender_jid,
                 m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content,
                 m.media_url, m.media_mime_type, m.caption, m.file_name,
                 m.timestamp, m.status, m.sender_name, m.sender_avatar
             FROM messages m
-            WHERE (m.session_id = ? OR m.session_id = ? OR m.phone = ?)
+            WHERE (m.session_id = ? OR m.session_id = ?)
               AND m.chat_jid = ?
               ${dateCondition}
             ORDER BY m.timestamp DESC
             LIMIT ?`;
 
-            queryParams = [ownerSessionId, phoneNumber, phoneNumber, chatJid];
+            queryParams = [ownerSessionId, phoneNumber, chatJid];
             if (dateCondition && dateCondition.includes('DATE(m.timestamp) = ?')) {
                 queryParams.push(dateFilter);
             }
@@ -10784,9 +10816,9 @@ app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionB
             // Obtener el total de mensajes (sin filtro de fecha)
             const [totalResult] = await connection.execute(
                 `SELECT COUNT(*) as total FROM messages m
-                 WHERE (m.session_id = ? OR m.session_id = ? OR m.phone = ?)
+                 WHERE (m.session_id = ? OR m.session_id = ?)
                    AND m.chat_jid = ?`,
-                [ownerSessionId, phoneNumber, phoneNumber, chatJid]
+                [ownerSessionId, phoneNumber, chatJid]
             );
             const totalCount = totalResult[0]?.total || 0;
 
@@ -12671,19 +12703,34 @@ async function getUserDbIdentifier(sessionId) {
     if (!pool) return sessionId;
     try {
         const connection = await pool.getConnection();
-        // Buscar por session_id, owner_phone_number o phone
-        const [rows] = await connection.execute(
-            'SELECT session_id as db_session_id FROM user_sessions WHERE session_id = ? OR owner_phone_number = ? OR phone = ? LIMIT 1',
-            [sessionId, sessionId, sessionId]
-        );
-        connection.release();
+        let dbIdentifier = sessionId;
 
-        if (rows.length > 0) {
-            // Devolver el session_id de la BD (que es el ID numérico del usuario)
-            console.log(`[DB-ID] Resolved ${sessionId} to db_session_id: ${rows[0].db_session_id}`);
-            return rows[0].db_session_id;
+        // Lógica similar a getOwnerSessionId para obtener el ID real de usuario (dbIdentifier)
+        // 1. Buscar en user_sessions por session_id (puede ser hex antiguo o numérico)
+        const [sessionRows] = await connection.execute(
+            'SELECT us.session_id, us.phone, u.id as user_id FROM user_sessions us LEFT JOIN users u ON u.phone = us.phone WHERE us.session_id = ? OR us.owner_phone_number = ? LIMIT 1',
+            [sessionId, sessionId]
+        );
+
+        if (sessionRows.length > 0 && sessionRows[0].user_id) {
+            dbIdentifier = String(sessionRows[0].user_id);
+            console.log(`[DB-ID] Resolved ${sessionId} to user_id: ${dbIdentifier} via user_sessions`);
+        } else {
+            // 2. Si no está en sesiones, intentar buscar por teléfono directamente en users
+            if (sessionId.match(/^\+?\d{10,15}$/)) {
+                const [phoneRows] = await connection.execute(
+                    'SELECT id FROM users WHERE phone LIKE ? LIMIT 1',
+                    [`%${sessionId.replace(/\+/g, '')}%`]
+                );
+                if (phoneRows.length > 0) {
+                    dbIdentifier = String(phoneRows[0].id);
+                    console.log(`[DB-ID] Resolved ${sessionId} to user_id: ${dbIdentifier} via phone`);
+                }
+            }
         }
-        return sessionId;
+
+        connection.release();
+        return dbIdentifier;
     } catch (e) {
         console.error('Error resolving user DB identifier:', e);
         return sessionId;
@@ -15862,48 +15909,40 @@ app.post('/api/kanban/sync-all-contacts/:sessionId', async (req, res) => {
     }
 
     try {
-        const phoneNumber = await getUserPhoneNumber(sessionId);
-        if (!phoneNumber) {
+        // Obtener users.id en lugar de phoneNumber
+        const ownerUserId = await getOwnerSessionId(sessionId);
+        if (!ownerUserId) {
             return res.status(400).json({
                 success: false,
-                error: 'No se pudo obtener el número de teléfono para esta sesión'
+                error: 'No se pudo obtener el ID de usuario para esta sesión'
             });
         }
 
         const connection = await pool.getConnection();
         try {
             // 1. Obtener el tablero "Sin Categoría" (por defecto)
+            // KANBAN-FIX: Usar ownerUserId
             let [boards] = await connection.execute(
                 'SELECT id FROM kanban_boards WHERE session_id = ? AND name = ? LIMIT 1',
-                [phoneNumber, 'Sin Categoría']
+                [ownerUserId, 'Sin Categoría']
             );
 
             // Si no existe, crear los tableros por defecto
             if (boards.length === 0) {
-                console.log(`[KANBAN-SYNC] Creando tableros por defecto para usuario ${phoneNumber}...`);
+                console.log(`[KANBAN-SYNC] Creando tableros por defecto para usuario ${ownerUserId}...`);
+                const { createDefaultKanbanBoards } = require('./kanban-utils');
+                await createDefaultKanbanBoards(pool, ownerUserId);
+            }
 
-                // Crear los tableros por defecto
-                const defaultBoards = [
-                    { name: 'Sin Categoría', color: '#607d8b', order: 0, is_default: 1 },
-                    { name: 'Clientes', color: '#4caf50', order: 1, is_default: 0 },
-                    { name: 'Prospectos', color: '#2196f3', order: 2, is_default: 0 },
-                    { name: 'Nuevos', color: '#ff9800', order: 3, is_default: 0 }
-                ];
-
-                for (const board of defaultBoards) {
-                    const boardId = `board_${crypto.randomBytes(8).toString('hex')}`;
-                    await connection.execute(
-                        `INSERT INTO kanban_boards (id, session_id, name, color, board_order, is_default)
-                         VALUES (?, ?, ?, ?, ?, ?)`,
-                        [boardId, phoneNumber, board.name, board.color, board.order, board.is_default]
-                    );
-
-                    if (board.is_default) {
-                        boards = [{ id: boardId }];
-                    }
+            // Recargar para obtener el tablero "Sin Categoría" si fue creado
+            if (boards.length === 0) {
+                const [newBoards] = await connection.execute(
+                    'SELECT id FROM kanban_boards WHERE session_id = ? AND name = ? LIMIT 1',
+                    [ownerUserId, 'Sin Categoría']
+                );
+                if (newBoards.length > 0) {
+                    boards = newBoards;
                 }
-
-                console.log(`[KANBAN-SYNC] ✅ Tableros por defecto creados`);
             }
 
             if (boards.length === 0) {
@@ -15929,7 +15968,7 @@ app.post('/api/kanban/sync-all-contacts/:sessionId', async (req, res) => {
                     AND kb.session_id = ?
                 )
                 LIMIT 5000
-            `, [phoneNumber, phoneNumber]);
+            `, [ownerUserId, ownerUserId]);
 
             console.log(`[KANBAN-SYNC] Contactos a sincronizar: ${contactsToSync.length}`);
 
@@ -16553,7 +16592,9 @@ app.get('/api/kanban/boards/:sessionId', authenticateToken, validateSessionBelon
     const cacheKey = `kanban_boards_${sessionId}`;
 
     // Verificar si hay datos en caché
-    if (kanbanCache.has(cacheKey)) {
+    // Verificar si hay datos en caché
+    // KANBAN-FIX: Deshabilitar caché temporalmente para forzar recarga desde DB
+    /* if (kanbanCache.has(cacheKey)) {
         const cachedData = kanbanCache.get(cacheKey);
         if (Date.now() - cachedData.timestamp < CACHE_DURATION) {
             console.log(`[CACHE-KANBAN] Sirviendo tableros desde caché para ${sessionId}`);
@@ -16564,7 +16605,7 @@ app.get('/api/kanban/boards/:sessionId', authenticateToken, validateSessionBelon
                 fromCache: true
             });
         }
-    }
+    } */
 
     if (!pool) {
         return res.status(503).json({
@@ -16594,24 +16635,8 @@ app.get('/api/kanban/boards/:sessionId', authenticateToken, validateSessionBelon
             // Si no hay tableros, crear los por defecto
             if (existingBoards[0].count === 0) {
                 console.log(`[KANBAN-BOARDS] Creando tableros por defecto para usuario ${ownerUserId}...`);
-
-                const defaultBoards = [
-                    { name: 'Sin Categoría', color: '#607d8b', order: 0, is_default: 1 },
-                    { name: 'Clientes', color: '#4caf50', order: 1, is_default: 0 },
-                    { name: 'Prospectos', color: '#2196f3', order: 2, is_default: 0 },
-                    { name: 'Nuevos', color: '#ff9800', order: 3, is_default: 0 }
-                ];
-
-                for (const board of defaultBoards) {
-                    const boardId = `board_${crypto.randomBytes(8).toString('hex')}`;
-                    await connection.execute(
-                        `INSERT INTO kanban_boards (id, session_id, name, color, board_order, is_default)
-                         VALUES (?, ?, ?, ?, ?, ?)`,
-                        [boardId, ownerUserId, board.name, board.color, board.order, board.is_default]
-                    );
-                }
-
-                console.log(`[KANBAN-BOARDS] ✅ Tableros por defecto creados`);
+                const { createDefaultKanbanBoards } = require('./kanban-utils');
+                await createDefaultKanbanBoards(pool, ownerUserId);
             }
 
             // Consulta optimizada con timeout
@@ -16732,12 +16757,12 @@ app.get('/api/kanban/contacts/:sessionId', authenticateToken, validateSessionBel
                         FROM (
                             SELECT jid, MAX(id) AS max_id
                             FROM contacts
-                            WHERE is_group = 0 AND session_id = ?
+                            WHERE is_group = 0 AND session_id = ? AND jid LIKE "%@s.whatsapp.net"
                             GROUP BY jid
                         ) latest
                         INNER JOIN contacts c ON c.id = latest.max_id
-                        WHERE c.jid NOT LIKE '%@broadcast%' AND c.jid NOT LIKE 'status@%'
-                        AND c.jid NOT IN (SELECT kc.contact_jid FROM kanban_contacts kc INNER JOIN kanban_boards kb ON kc.board_id = kb.id WHERE kb.session_id = ?)
+                        WHERE c.jid LIKE "%@s.whatsapp.net" AND c.jid NOT LIKE '%@broadcast%' AND c.jid NOT LIKE 'status@%'
+                        AND c.jid NOT IN (SELECT kc.contact_jid FROM kanban_contacts kc INNER JOIN kanban_boards kb ON kc.board_id = kb.id WHERE kb.session_id = ? AND kb.is_default = 0)
                         ${search ? `AND (c.name LIKE '%${search}%' OR c.jid LIKE '%${search}%')` : ''}
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
                         LIMIT ? OFFSET ?
@@ -16759,11 +16784,11 @@ app.get('/api/kanban/contacts/:sessionId', authenticateToken, validateSessionBel
                         INNER JOIN (
                             SELECT jid, MAX(id) as max_id
                             FROM contacts
-                            WHERE is_group = 0
+                            WHERE is_group = 0 AND jid LIKE "%@s.whatsapp.net"
                             GROUP BY jid
                         ) latest ON kc.contact_jid = latest.jid
                         INNER JOIN contacts c ON latest.max_id = c.id
-                        WHERE kc.board_id = ?
+                        WHERE kc.board_id = ? AND c.jid LIKE "%@s.whatsapp.net"
                         ${search ? `AND (c.name LIKE '%${search}%' OR c.jid LIKE '%${search}%')` : ''}
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
                         LIMIT ? OFFSET ?
@@ -16814,12 +16839,12 @@ app.get('/api/kanban/contacts/:sessionId', authenticateToken, validateSessionBel
                         FROM (
                             SELECT jid, MAX(id) AS max_id
                             FROM contacts
-                            WHERE is_group = 0 AND session_id = ?
+                            WHERE is_group = 0 AND session_id = ? AND jid LIKE "%@s.whatsapp.net"
                             GROUP BY jid
                         ) latest
                         INNER JOIN contacts c ON c.id = latest.max_id
-                        WHERE c.jid NOT LIKE '%@broadcast%' AND c.jid NOT LIKE 'status@%'
-                        AND c.jid NOT IN (SELECT kc.contact_jid FROM kanban_contacts kc INNER JOIN kanban_boards kb ON kc.board_id = kb.id WHERE kb.session_id = ?)
+                        WHERE c.jid LIKE "%@s.whatsapp.net" AND c.jid NOT LIKE '%@broadcast%' AND c.jid NOT LIKE 'status@%'
+                        AND c.jid NOT IN (SELECT kc.contact_jid FROM kanban_contacts kc INNER JOIN kanban_boards kb ON kc.board_id = kb.id WHERE kb.session_id = ? AND kb.is_default = 0)
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
                         LIMIT ?
                     `, [userIdForBoards, userIdForBoards, INITIAL_LIMIT]);
@@ -16844,11 +16869,11 @@ app.get('/api/kanban/contacts/:sessionId', authenticateToken, validateSessionBel
                         INNER JOIN (
                             SELECT jid, MAX(id) AS max_id
                             FROM contacts
-                            WHERE is_group = 0
+                            WHERE is_group = 0 AND jid LIKE "%@s.whatsapp.net"
                             GROUP BY jid
                         ) latest ON kc.contact_jid = latest.jid
                         INNER JOIN contacts c ON latest.max_id = c.id
-                        WHERE kc.board_id = ?
+                        WHERE kc.board_id = ? AND c.jid LIKE "%@s.whatsapp.net"
                         ORDER BY CASE WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN c.name REGEXP '^[0-9]' THEN 1 ELSE 2 END, c.name ASC
                         LIMIT ?
                     `, [board.id, INITIAL_LIMIT]);
@@ -16902,6 +16927,12 @@ app.get('/api/kanban/board/:boardId/contacts', async (req, res) => {
         try {
             const offset = parseInt(page) * parseInt(limit);
 
+            // ✅ CRÍTICO: Resolver ID de usuario propietario
+            const ownerUserId = await getOwnerSessionId(sessionId);
+            if (!ownerUserId) {
+                return res.status(400).json({ success: false, error: 'ID de sesión inválido' });
+            }
+
             // Verificar si es el tablero por defecto (Sin Categoría)
             const [boardInfo] = await connection.execute(
                 'SELECT is_default FROM kanban_boards WHERE id = ?',
@@ -16925,15 +16956,15 @@ app.get('/api/kanban/board/:boardId/contacts', async (req, res) => {
                 const [countResult] = await connection.execute(`
                     SELECT COUNT(*) as total
                     FROM contacts c
-                    WHERE c.is_group = 0
+                    WHERE c.is_group = 0 AND c.jid LIKE "%@s.whatsapp.net"
                     AND c.session_id = ?
                     AND c.jid NOT IN (
                         SELECT kc.contact_jid
                         FROM kanban_contacts kc
                         INNER JOIN kanban_boards kb ON kc.board_id = kb.id
-                        WHERE kb.session_id = ?
+                        WHERE kb.session_id = ? AND kb.is_default = 0
                     )
-                `, [sessionId, sessionId]);
+                `, [ownerUserId, ownerUserId]);
 
                 totalCount = countResult[0].total;
 
@@ -16952,13 +16983,13 @@ app.get('/api/kanban/board/:boardId/contacts', async (req, res) => {
                         c.created_at,
                         c.updated_at
                     FROM contacts c
-                    WHERE c.is_group = 0
+                    WHERE c.is_group = 0 AND c.jid LIKE "%@s.whatsapp.net"
                     AND c.session_id = ?
                     AND c.jid NOT IN (
                         SELECT kc.contact_jid
                         FROM kanban_contacts kc
                         INNER JOIN kanban_boards kb ON kc.board_id = kb.id
-                        WHERE kb.session_id = ?
+                        WHERE kb.session_id = ? AND kb.is_default = 0
                     )
                     ORDER BY
                         CASE
@@ -16968,7 +16999,7 @@ app.get('/api/kanban/board/:boardId/contacts', async (req, res) => {
                         END,
                         c.name ASC
                     LIMIT ? OFFSET ?
-                `, [sessionId, sessionId, parseInt(limit), offset]);
+                `, [ownerUserId, ownerUserId, parseInt(limit), offset]);
 
                 contacts = contactsResult;
             } else {
@@ -16977,7 +17008,7 @@ app.get('/api/kanban/board/:boardId/contacts', async (req, res) => {
                     SELECT COUNT(*) as total
                     FROM kanban_contacts kc
                     INNER JOIN contacts c ON kc.contact_jid = c.jid
-                    WHERE kc.board_id = ? AND c.is_group = 0
+                    WHERE kc.board_id = ? AND c.is_group = 0 AND c.jid LIKE "%@s.whatsapp.net"
                 `, [boardId]);
 
                 totalCount = countResult[0].total;
@@ -16999,7 +17030,7 @@ app.get('/api/kanban/board/:boardId/contacts', async (req, res) => {
                         kc.notes
                     FROM kanban_contacts kc
                     INNER JOIN contacts c ON kc.contact_jid = c.jid
-                    WHERE kc.board_id = ? AND c.is_group = 0
+                    WHERE kc.board_id = ? AND c.is_group = 0 AND c.jid LIKE "%@s.whatsapp.net"
                     ORDER BY
                         CASE
                             WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0
@@ -19971,17 +20002,29 @@ app.get('/api/users/:userId/session', async (req, res) => {
                     });
                 }
             } else {
-                // Si es admin, usar su propia sesión
+                // Si es admin, intentar obtener su sesión activa
                 sessionId = user.session_id;
-                if (sessionId) {
+
+                // Si no hay sessionId en la tabla users, buscar por teléfono en user_sessions
+                if (!sessionId && user.phone) {
+                    console.log(`[USER-SESSION] 🔍 Buscando sesión activa por teléfono para admin: ${user.phone}`);
+                    const [sessionsByPhone] = await connection.execute(
+                        'SELECT session_id, phone FROM user_sessions WHERE phone = ? AND is_active = 1 ORDER BY last_activity DESC LIMIT 1',
+                        [user.phone]
+                    );
+
+                    if (sessionsByPhone.length > 0) {
+                        sessionId = sessionsByPhone[0].session_id;
+                        phoneNumber = sessionsByPhone[0].phone;
+                        console.log(`[USER-SESSION] ✅ Encontrada sesión activa por teléfono: ${sessionId}`);
+                    }
+                } else if (sessionId) {
                     const [sessions] = await connection.execute(
                         'SELECT phone FROM user_sessions WHERE session_id = ?',
                         [sessionId]
                     );
                     if (sessions.length > 0) {
-                        // Para admins, mantener la lógica existente pero asegurar consistencia si es necesario
                         phoneNumber = sessions[0].phone;
-                        // Opcional: si el admin también tiene problemas, considerar usar phone aquí también
                     }
                 }
             }
@@ -20141,7 +20184,7 @@ app.get('/api/agent/:userId/chats', async (req, res) => {
                      AND timestamp > ca.assigned_at) as unread_count
                 FROM chat_assignments ca
                 LEFT JOIN contacts c ON ca.chat_jid = c.jid
-                LEFT JOIN contact_groups cg ON ca.chat_jid = cg.jid AND cg.session_id = ca.session_id
+                LEFT JOIN contact_groups cg ON ca.chat_jid = cg.jid AND (cg.session_id = ca.session_id OR cg.session_id = ?)
                 WHERE ca.user_id = ? 
                 AND ca.status IN ('active', 'closed', 'pending')
                 ${sessionId ? 'AND ca.session_id = ?' : ''}
@@ -20156,8 +20199,8 @@ app.get('/api/agent/:userId/chats', async (req, res) => {
                     END,
                     ca.assigned_at DESC
             `, sessionId ?
-                [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, userId, sessionId] :
-                [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, userId]);
+                [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, userId, sessionId] :
+                [phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, phoneNumber, userId]);
 
             console.log(`[AGENT-CHATS] ✅ Agente ${userId} tiene ${assignments.length} chats (filtro: ${dateFilter})`);
 

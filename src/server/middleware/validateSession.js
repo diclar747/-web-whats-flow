@@ -100,7 +100,7 @@ const validateSessionBelongsToUser = async (req, res, next) => {
 
                 // 3. Verificar que el usuario del token es el dueño de la sesión
                 const [userRows] = await connection.execute(
-                    'SELECT id, email FROM users WHERE id = ?',
+                    'SELECT id, email, phone FROM users WHERE id = ?',
                     [userId]
                 );
 
@@ -128,11 +128,33 @@ const validateSessionBelongsToUser = async (req, res, next) => {
 
                 // Comparar email del token con email del dueño de la sesión
                 // Si alguno de los dos no tiene email, comparar por user ID
-                const isSameUser = (req.user.email && req.user.email === sessionOwner.email) ||
+                let isAuthorized = (req.user.email && req.user.email === sessionOwner.email) ||
                     (req.user.id && String(req.user.id) === String(userId)) ||
-                    (req.user.phone && req.user.phone === sessionOwner.email); // Admin con phone como email
+                    (req.user.phone && req.user.phone === sessionOwner.email);
 
-                if (!isSameUser) {
+                // ✅ NUEVO: Permitir Agentes/Supervisores acceder a la sesión de su Admin
+                if (!isAuthorized && (req.user.role === 'agent' || req.user.role === 'supervisor')) {
+                    // Obtener el admin_phone del usuario actual (si no viene en el token)
+                    let adminPhone = req.user.admin_phone;
+
+                    if (!adminPhone) {
+                        const [tokenUserRows] = await connection.execute(
+                            'SELECT admin_phone FROM users WHERE id = ? LIMIT 1',
+                            [req.user.id]
+                        );
+                        if (tokenUserRows.length > 0) {
+                            adminPhone = tokenUserRows[0].admin_phone;
+                        }
+                    }
+
+                    // Si el admin_phone del agente coincide con el phone del dueño de la sesión, autorizar
+                    if (adminPhone && sessionOwner.phone && adminPhone === sessionOwner.phone) {
+                        console.log(`[SESSION-VALIDATION] ✅ Agente autorizado por admin_phone: ${adminPhone}`);
+                        isAuthorized = true;
+                    }
+                }
+
+                if (!isAuthorized) {
                     console.warn(
                         `[SESSION-VALIDATION] ⚠️ INTENTO DE ACCESO NO AUTORIZADO: ` +
                         `Usuario ${req.user.email || req.user.phone || req.user.id} intentó acceder a sesión de ${sessionOwner.email} (sessionId=${sessionId})`
