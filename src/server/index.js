@@ -7169,8 +7169,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             console.log(`${'='.repeat(80)}\n`);
 
                             // SIEMPRE emitir a ambas salas
+                            console.log(`[${sessionId}] 📡 Emitiendo mensaje a sala: session-${sessionId}`);
                             io.to(`session-${sessionId}`).emit('message', clientMessage);
                             if (phoneNumber) {
+                                console.log(`[${sessionId}] 📡 Emitiendo mensaje a sala: session-${phoneNumber}`);
                                 io.to(`session-${phoneNumber}`).emit('message', clientMessage);
                             }
 
@@ -11067,8 +11069,12 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
     console.log('[SEND-MEDIA] 📎 Recibida solicitud de envío de archivo');
     // Los parámetros son los mismos que /api/messages/send
     // El handler ya está implementado arriba, así que simplemente lo procesamos igual
-    const { sessionId, chatJid, message, caption, agentId, agentName } = req.body;
+    const { sessionId, chatJid, message, caption, agentId, agentName, sentBy, sentByName } = req.body;
     const file = req.file;
+
+    // Soportar tanto agentId/agentName como sentBy/sentByName
+    const finalAgentId = agentId || sentBy;
+    const finalAgentNameParam = agentName || sentByName;
 
     // Usar caption si existe (para imágenes/videos)
     req.body.message = caption || message || '';
@@ -11076,8 +11082,8 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
     console.log('[SEND-MEDIA] 📋 Parámetros:', {
         sessionId,
         chatJid,
-        agentId,
-        agentName,
+        agentId: finalAgentId,
+        agentName: finalAgentNameParam,
         hasFile: !!file,
         fileName: file?.originalname
     });
@@ -11174,11 +11180,11 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
         const actualSessionId = session.sessionId || sessionId;
 
         // Obtener nombre del agente (priorizar el que viene del cliente)
-        let finalAgentName = agentName;
-        if (!finalAgentName && agentId && pool) {
+        let finalAgentName = finalAgentNameParam;
+        if (!finalAgentName && finalAgentId && pool) {
             try {
                 const conn = await pool.getConnection();
-                const [users] = await conn.execute('SELECT name FROM users WHERE id = ? LIMIT 1', [agentId]);
+                const [users] = await conn.execute('SELECT name FROM users WHERE id = ? LIMIT 1', [finalAgentId]);
                 conn.release();
                 if (users.length > 0) {
                     finalAgentName = users[0].name;
@@ -11197,7 +11203,7 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
             chat_jid: jid,
             sender_jid: ownJid,
             from_me: true,
-            agent_id: agentId || null,
+            agent_id: finalAgentId || null,
             agent_name: finalAgentName,
             message_type: messageType,
             text_content: req.body.message || '',
@@ -11207,7 +11213,7 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
             mime_type: mimetype,
             timestamp: new Date(Number(sentResult.messageTimestamp) * 1000 || Date.now()),
             status: 'pending',
-            assigned_user_id: agentId || null
+            assigned_user_id: finalAgentId || null
         };
         await saveMessageToDB(actualSessionId, dbMessage);
         console.log('[SEND-MEDIA] 💾 Guardado en BD con agente:', finalAgentName || 'Sin agente');

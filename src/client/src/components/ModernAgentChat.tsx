@@ -84,6 +84,8 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
   // Obtener userId y sessionId de props o sessionStorage
   const [userId] = useState(propUserId || sessionStorage.getItem('userId') || '');
   const [sessionId, setSessionId] = useState(propSessionId || sessionStorage.getItem('adminSessionId') || '');
+  const [userName] = useState(sessionStorage.getItem('userName') || 'Admin');
+  const [userRole] = useState(sessionStorage.getItem('userRole') || 'admin');
   // Estados principales
   const [assignedChats, setAssignedChats] = useState<AgentChat[]>([]);
   const [selectedChat, setSelectedChat] = useState<AgentChat | null>(null);
@@ -187,6 +189,8 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
         formData.append('sessionId', sessionId);
         formData.append('chatJid', selectedChat.chat_jid);
         formData.append('caption', tempMessage);
+        formData.append('sentBy', userId);
+        formData.append('sentByName', userName);
 
         const response = await fetch(`${apiUrl}/api/messages/send-media`, {
           method: 'POST',
@@ -210,7 +214,9 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
           body: JSON.stringify({
             sessionId,
             chatJid: selectedChat.chat_jid,
-            message: tempMessage
+            message: tempMessage,
+            sentBy: userId,
+            sentByName: userName
           })
         });
 
@@ -826,6 +832,26 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
                         boxShadow: '0 1px 2px rgba(0,0,0,0.3)'
                       }}
                     >
+                      {/* Etiqueta de respuesta - Solo para mensajes enviados por nosotros */}
+                      {msg.from_me && msg.agent_name && (
+                        <Chip
+                          label={msg.agent_name}
+                          size="small"
+                          sx={{
+                            mb: 0.5,
+                            height: '20px',
+                            fontSize: '0.7rem',
+                            fontWeight: 600,
+                            bgcolor: 'rgba(0, 168, 132, 0.2)',
+                            color: '#00e676',
+                            border: '1px solid rgba(0, 230, 118, 0.3)',
+                            '& .MuiChip-label': {
+                              px: 1
+                            }
+                          }}
+                        />
+                      )}
+
                       {/* Nombre del remitente */}
                       {msg.sender_name && (
                         <Typography
