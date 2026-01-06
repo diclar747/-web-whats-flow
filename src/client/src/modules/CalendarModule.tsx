@@ -729,10 +729,17 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     const template = templates.find(t => t.id === templateId);
     if (!template) return '';
 
-    const preview = template.message
-      .replace(/{nombre}/g, formData.patient_name || '[Nombre]')
-      .replace(/{fecha}/g, formData.appointment_date ? moment(formData.appointment_date).format('DD/MM/YYYY') : '[Fecha]')
-      .replace(/{hora}/g, formData.appointment_time || '[Hora]');
+    let preview = template.message;
+    const patientName = formData.patient_name || '[Nombre]';
+    const appointmentDate = formData.appointment_date ? moment(formData.appointment_date).format('DD/MM/YYYY') : '[Fecha]';
+    const appointmentTime = formData.appointment_time || '[Hora]';
+
+    // Soportar múltiples formatos de variables: {nombre}, [Nombre], etc.
+    preview = preview
+      .replace(/\{nombre\}|\[nombre\]|\[Nombre\]/gi, patientName)
+      .replace(/\{fecha\}|\[fecha\]|\[Fecha\]/gi, appointmentDate)
+      .replace(/\{hora\}|\[hora\]|\[Hora\]/gi, appointmentTime)
+      .replace(/\{doctor\}|\[doctor\]|\[Doctor\]/gi, '[Doctor]');
 
     return preview;
   };
@@ -1260,7 +1267,7 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
               </Typography>
 
               <Alert severity="info" sx={{ mb: 2 }}>
-                Usa las siguientes variables: <code>{'{nombre}'}</code>, <code>{'{fecha}'}</code>, <code>{'{hora}'}</code>
+                Usa variables como: <code>[Nombre]</code>, <code>[Fecha]</code>, <code>[Hora]</code> o <code>{'{nombre}'}</code>, <code>{'{fecha}'}</code>, <code>{'{hora}'}</code>
               </Alert>
 
               <List>
