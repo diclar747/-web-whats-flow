@@ -6478,9 +6478,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             // ═══════════════════════════════════════════════════════════
             const phoneNumber = await getUserPhoneNumber(sessionId);
 
-            // 🚫 CAPTURA DE LIDs DE GRUPOS DESHABILITADA - No procesar grupos
-            // Los grupos están completamente bloqueados, no necesitamos capturar LIDs de grupos
-            /* BLOQUEADO - NO SINCRONIZAR GRUPOS
+            // ✅ GRUPOS HABILITADOS - Los mensajes de grupos ahora se procesan normalmente
+            // La captura de LIDs de grupos permanece deshabilitada por ahora
+            /* DESHABILITADO - CAPTURA DE LIDs DE GRUPOS
             for (const msg of m.messages) {
                 // Si es mensaje de grupo y el participante es LID
                 if (msg.key?.remoteJid?.includes('@g.us') && msg.key?.participant?.includes('@lid')) {
@@ -6521,7 +6521,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 }
             }
             */
-            console.log(`[${sessionId}] 🚫 Captura de LIDs de grupos deshabilitada - Solo chats individuales`);
+            console.log(`[${sessionId}] ✅ Procesamiento de grupos habilitado - Captura de LIDs de grupos permanece deshabilitada`);
 
             // ═══════════════════════════════════════════════════════════
             // FILTRO DE MENSAJES NO DESEADOS
@@ -6693,21 +6693,21 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 // Rechazar status/estados
                 if (jid.includes('@broadcast') || jid.includes('status@')) return false;
 
-                // 🚫 RECHAZAR GRUPOS - Solo aceptar mensajes individuales
+                // ✅ ACEPTAR GRUPOS - Procesar tanto mensajes individuales como de grupos
                 if (jid.includes('@g.us')) {
-                    console.log(`[${sessionId}] 🚫 IGNORANDO mensaje de grupo: ${jid}`);
-                    return false;
+                    console.log(`[${sessionId}] ✅ Aceptando mensaje de grupo: ${jid}`);
+                    return true; // Permitir grupos
                 }
 
                 return jid.includes('@s.whatsapp.net');
             });
 
             if (m.messages.length === 0) {
-                console.log(`[${sessionId}] ⏭️ No hay mensajes individuales para procesar (${originalCount} filtrados)`);
+                console.log(`[${sessionId}] ⏭️ No hay mensajes para procesar (${originalCount} filtrados)`);
                 return;
             }
 
-            console.log(`[${sessionId}] ✅ Procesando ${m.messages.length} mensajes (${originalCount - m.messages.length} filtrados)`);
+            console.log(`[${sessionId}] ✅ Procesando ${m.messages.length} mensajes individuales y de grupos (${originalCount - m.messages.length} filtrados)`);
             // ═══════════════════════════════════════════════════════════
 
             // Verificar si se deben procesar mensajes históricos
@@ -6769,10 +6769,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     console.log(`[${sessionId}] ⚠️ Sin key o remoteJid`);
                     continue;
                 }
-                // 🚫 IGNORAR GRUPOS COMPLETAMENTE (incluyendo LIDs de grupos)
+                // ✅ GRUPOS HABILITADOS - Permitir emisión de mensajes de grupos
                 if (msg.key.remoteJid.includes('@g.us')) {
-                    console.log(`[${sessionId}] 🚫 GRUPO ignorado en emisión: ${msg.key.remoteJid}`);
-                    continue;
+                    console.log(`[${sessionId}] ✅ GRUPO procesado en emisión: ${msg.key.remoteJid}`);
+                    // No hacer continue - permitir que continúe el procesamiento
                 }
                 // ✅ PERMITIR LIDs de contactos individuales, pero seguir rechazando LIDs de grupos
                 // Los LIDs individuales ahora se procesan normalmente
@@ -6870,9 +6870,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             console.error(`[${sessionId}] Error guardando contacto:`, contactErr);
                         }
                     } else if (senderJid && senderJid.includes('@g.us')) {
-                        // 🚫 RECHAZAR GRUPOS COMPLETAMENTE - No procesar ni guardar
-                        console.log(`[${sessionId}] 🚫 IGNORANDO mensaje de grupo ${senderJid.split('@')[0]} - Grupos bloqueados`);
-                        continue; // Saltar al siguiente mensaje
+                        // ✅ GRUPOS HABILITADOS - Procesar mensajes de grupos
+                        console.log(`[${sessionId}] ✅ Procesando mensaje de grupo ${senderJid.split('@')[0]}`);
+                        // No hacer continue - permitir que continúe guardando en DB
                     }
 
                     // 2. Procesar y guardar mensaje en la DB
@@ -7662,8 +7662,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         }
                         await getOrInsertContact(chatJid, chatName, chatName, phoneNumber, sock);
                     } else if (chatJid.includes('@g.us')) {
-                        // 🚫 GRUPOS BLOQUEADOS - No guardar grupos
-                        console.log(`[${sessionId}] 🚫 Ignorando grupo: ${chatName || chatJid.split('@')[0]}`);
+                        // ✅ GRUPOS HABILITADOS - Guardar grupos como contactos de grupo
+                        console.log(`[${sessionId}] ✅ Guardando grupo: ${chatName || chatJid.split('@')[0]}`);
+                        await getOrInsertContact(chatJid, chatName, chatName, phoneNumber, sock);
                     } else if (chatJid.includes('status@broadcast') || chatJid.includes('@broadcast')) {
                         await getOrInsertBroadcast(chatJid, chatName || 'Status', phoneNumber, 'status');
                     } else if (chatJid.includes('@lid')) {
@@ -7771,8 +7772,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         // Guardar contacto con el mejor nombre encontrado
                         await getOrInsertContact(contactJid, bestName, bestNotify, phoneNumber, sock);
                     } else if (contactJid.includes('@g.us')) {
-                        // 🚫 GRUPOS BLOQUEADOS - No guardar grupos
-                        console.log(`[${sessionId}] 🚫 Ignorando grupo en contacts.set: ${contact.name || contactJid.split('@')[0]}`);
+                        // ✅ GRUPOS HABILITADOS - Guardar grupos como contactos
+                        console.log(`[${sessionId}] ✅ Guardando grupo en contacts.set: ${contact.name || contactJid.split('@')[0]}`);
+                        await getOrInsertContact(contactJid, contact.name || contactJid.split('@')[0], contact.notify, phoneNumber, sock);
                     } else if (contactJid.includes('status@broadcast') || contactJid.includes('@broadcast')) {
                         await getOrInsertBroadcast(contactJid, contact.name || 'Status', phoneNumber, 'status');
                     } else if (contactJid.includes('@lid')) {
@@ -10600,22 +10602,49 @@ app.post('/api/send/message', async (req, res) => {
 app.post('/api/send-message', async (req, res) => {
     const { sessionId, to, message } = req.body;
 
+    console.log('[SEND-MESSAGE] 📥 Request recibido:', { sessionId, to, message: message?.substring(0, 50) });
+
     // Redirigir al endpoint principal con el formato correcto
     req.body.number = to; // Convertir 'to' a 'number'
 
     // Reutilizar la lógica del endpoint principal
     if (!sessionId || !to || !message) {
+        console.log('[SEND-MESSAGE] ❌ Faltan parámetros:', { sessionId: !!sessionId, to: !!to, message: !!message });
         return res.status(400).json({ success: false, error: 'Faltan parámetros: sessionId, to, message' });
     }
 
-    const session = sessions.get(sessionId);
+    // Obtener el phoneNumber del usuario para buscar la sesión correcta
+    const phoneNumber = await getUserPhoneNumber(sessionId);
+    console.log('[SEND-MESSAGE] 📱 PhoneNumber del usuario:', phoneNumber);
+
+    // Buscar sesión por sessionId O por phoneNumber
+    let session = sessions.get(sessionId);
+    if (!session && phoneNumber) {
+        session = sessions.get(phoneNumber);
+    }
+
+    // Si aún no hay sesión, buscar por todas las sesiones activas
+    if (!session) {
+        for (const [sid, sess] of sessions.entries()) {
+            if (sess.isConnected && sess.sock) {
+                const sessPhone = sess.sock.user?.id?.split(':')[0];
+                if (sessPhone === phoneNumber) {
+                    session = sess;
+                    console.log('[SEND-MESSAGE] ✅ Sesión encontrada por phoneNumber match:', sid);
+                    break;
+                }
+            }
+        }
+    }
+
+    console.log('[SEND-MESSAGE] 🔍 Sesión encontrada:', !!session, 'Conectada:', session?.isConnected);
     if (!session || !session.sock || !session.isConnected) {
+        console.log('[SEND-MESSAGE] ❌ Sesión no disponible. sessionId:', sessionId, 'phoneNumber:', phoneNumber);
         return res.status(400).json({ success: false, error: 'Sesión no encontrada o WhatsApp no conectado' });
     }
 
     try {
         const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
-        const phoneNumber = await getUserPhoneNumber(sessionId);
         await getOrInsertContact(jid, null, null, jid.includes('@g.us'), phoneNumber);
 
         const sentResult = await session.sock.sendMessage(jid, { text: message });
@@ -10633,10 +10662,10 @@ app.post('/api/send-message', async (req, res) => {
             timestamp: new Date(Number(sentResult.messageTimestamp) * 1000 || Date.now()),
             status: 'pending'
         };
-        await saveMessageToDB(sessionId, dbMessage);
+        await saveMessageToDB(phoneNumber || sessionId, dbMessage);
 
-        // Emitir mensaje a la sesión
-        io.to(`session-${sessionId}`).emit('message', {
+        // Emitir mensaje a la sesión (emitir a ambas salas)
+        const messageEvent = {
             id: dbMessage.id,
             from: 'me',
             to: jid,
@@ -10646,15 +10675,25 @@ app.post('/api/send-message', async (req, res) => {
             type: dbMessage.message_type,
             isFromMe: true,
             status: dbMessage.status
-        });
+        };
+
+        io.to(`session-${sessionId}`).emit('message', messageEvent);
+        if (phoneNumber) {
+            io.to(`session-${phoneNumber}`).emit('message', messageEvent);
+        }
 
         // 🔄 Emitir evento para actualizar lista de chats en tiempo real
-        io.to(`session-${sessionId}`).emit('chat-list-update', {
+        const chatListEvent = {
             action: 'new-message',
             chatJid: jid,
             timestamp: dbMessage.timestamp.toISOString()
-        });
-        console.log(`[${sessionId}] 📡 Evento chat-list-update emitido para ${jid}`);
+        };
+
+        io.to(`session-${sessionId}`).emit('chat-list-update', chatListEvent);
+        if (phoneNumber) {
+            io.to(`session-${phoneNumber}`).emit('chat-list-update', chatListEvent);
+        }
+        console.log(`[${sessionId}] 📡 Eventos emitidos para ${jid}`);
 
         console.log(`[${sessionId}] ✅ Mensaje enviado desde chat rápido a ${jid}: ${message}`);
         res.json({ success: true, messageId: sentResult.key.id, message: 'Mensaje enviado correctamente' });
@@ -12048,8 +12087,8 @@ app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser
     const { dateFilter = 'all', limit = 500, offset = 0 } = req.query; // ⚡ OPTIMIZADO: Aumentado de 20 a 500
     const parsedLimit = parseInt(limit);
     const parsedOffset = parseInt(offset);
-    // 🚫 GRUPOS BLOQUEADOS - Siempre false, no permitir incluir grupos
-    const includeGroups = false; // Forzado a false - No sincronizar grupos
+    // ✅ GRUPOS HABILITADOS - Permitir incluir grupos en la lista de chats
+    const includeGroups = true; // Habilitado - Mostrar grupos
     const phoneNumber = await getUserPhoneNumber(sessionId);
     console.log(`[API][${sessionId}] 🔍 INICIANDO CARGA DE CHATS - phoneNumber obtenido: "${phoneNumber}"`);
     const session = sessions.get(sessionId) || (phoneNumber ? sessions.get(phoneNumber) : undefined);
@@ -12058,7 +12097,7 @@ app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser
     const isConnected = !!(session && session.isConnected);
 
     try {
-        console.log(`[API][${sessionId}] 📅 Solicitud de chats con filtro: ${dateFilter}.includeGroups: ${includeGroups} (FORZADO - grupos bloqueados)`);
+        console.log(`[API][${sessionId}] 📅 Solicitud de chats con filtro: ${dateFilter}, includeGroups: ${includeGroups}`);
 
         let chats = [];
         let source = 'database';
