@@ -10716,18 +10716,23 @@ app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionB
             }
 
             // Query con filtro de fecha - OPTIMIZADO: Solo últimos N mensajes
+            // Buscar por session_id (ownerSessionId) O por phone (phoneNumber) para soportar ambos formatos
             const query = `SELECT
                 m.id, m.session_id, m.chat_jid, m.sender_jid,
                 m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content,
                 m.media_url, m.media_mime_type, m.caption, m.file_name,
                 m.timestamp, m.status, m.sender_name, m.sender_avatar
             FROM messages m
-            WHERE m.session_id = ?
+            WHERE (m.session_id = ? OR m.session_id = ? OR m.phone = ?)
               AND m.chat_jid = ?
               ${dateCondition}
             ORDER BY m.timestamp DESC
             LIMIT ?`;
 
+            queryParams = [ownerSessionId, phoneNumber, phoneNumber, chatJid];
+            if (dateCondition && dateCondition.includes('DATE(m.timestamp) = ?')) {
+                queryParams.push(dateFilter);
+            }
             queryParams.push(parseInt(limit, 10));
 
             const [messagesDesc] = await connection.execute(query, queryParams);
@@ -10735,13 +10740,14 @@ app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionB
             const messages = messagesDesc.reverse();
 
             console.log('[AGENT-MESSAGES] ✅ Encontrados:', messages.length, 'mensajes para', dateFilter || 'sin filtro');
+            console.log('[AGENT-MESSAGES] 🔍 Buscando con ownerSessionId:', ownerSessionId, 'phoneNumber:', phoneNumber, 'chatJid:', chatJid);
 
             // Obtener el total de mensajes (sin filtro de fecha)
             const [totalResult] = await connection.execute(
                 `SELECT COUNT(*) as total FROM messages m
-                 WHERE (m.session_id = ? OR m.phone = ?)
+                 WHERE (m.session_id = ? OR m.session_id = ? OR m.phone = ?)
                    AND m.chat_jid = ?`,
-                [phoneNumber, phoneNumber, chatJid]
+                [ownerSessionId, phoneNumber, phoneNumber, chatJid]
             );
             const totalCount = totalResult[0]?.total || 0;
 
@@ -10749,10 +10755,10 @@ app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionB
             await connection.execute(
                 `UPDATE messages SET is_read = true
                  WHERE chat_jid = ?
-                   AND (session_id = ? OR phone = ?)
+                   AND (session_id = ? OR session_id = ? OR phone = ?)
                    AND from_me = false
                    AND COALESCE(is_read, false) = false`,
-                [chatJid, phoneNumber, phoneNumber]
+                [chatJid, ownerSessionId, phoneNumber, phoneNumber]
             );
 
             res.json({
