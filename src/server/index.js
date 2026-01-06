@@ -8459,7 +8459,8 @@ async function checkAndSendReminders() {
 }
 
 // Ejecutar verificación de recordatorios cada minuto
-setInterval(checkAndSendReminders, 60 * 1000);
+// El sistema de recordatorios ahora se maneja en calendar-reminders.js para mayor modularidad
+// setInterval(checkAndSendReminders, 60 * 1000);
 console.log('[REMINDERS] Sistema de recordatorios automáticos iniciado (verificación cada 60 segundos)');
 
 // ============= FIN SISTEMA DE RECORDATORIOS AUTOMÁTICOS =============
@@ -12887,15 +12888,16 @@ app.get('/api/contacts/:sessionId', authenticateToken, validateSessionBelongsToU
                     const placeholders = sessionIds.map(() => '?').join(',');
                     const [dbContacts] = await connection.execute(
                         `SELECT jid,
-                                CASE
+                                MAX(CASE
                                     WHEN name IS NULL OR name = '' OR name = '.' OR name = '..' OR name = '...' OR name = '....' THEN REPLACE(REPLACE(jid, '@s.whatsapp.net', ''), '@c.us', '')
                                     ELSE name
-                                END as name,
-                                notify_name,
-                                avatar_url,
-                                session_id
+                                END) as name,
+                                MAX(notify_name) as notify_name,
+                                MAX(avatar_url) as avatar_url,
+                                MAX(session_id) as session_id
                          FROM contacts
                          WHERE session_id IN(${placeholders}) AND jid LIKE '%@s.whatsapp.net'
+                         GROUP BY jid
                          ORDER BY
                             CASE
                                 -- Primero: nombres que empiezan con letras (A-Z, a-z, Á-ú)
@@ -12958,6 +12960,70 @@ app.get('/api/contacts/:sessionId', authenticateToken, validateSessionBelongsToU
             success: false,
             error: 'Error obteniendo contactos'
         });
+    }
+});
+
+// POST: Crear contacto manual
+app.post('/api/contacts', authenticateToken, async (req, res) => {
+    try {
+        const { sessionId, name, phone, category, tags } = req.body;
+
+        if (!sessionId || !phone || !name) {
+            return res.status(400).json({
+                success: false,
+                error: 'Campos requeridos: sessionId, name, phone'
+            });
+        }
+
+        console.log(`[API-POST-CONTACTS] Creando contacto: ${name} (${phone}) para sesión: ${sessionId}`);
+
+        // Identificar al propietario de la sesión
+        const phoneNumber = await getUserPhoneNumber(sessionId);
+        if (!phoneNumber) {
+            return res.status(404).json({ success: false, error: 'Sesión no encontrada o no válida' });
+        }
+
+        // Obtener el ID de usuario numérico para session_id en el DB
+        const ownerSessionId = await getOwnerSessionId(phoneNumber);
+
+        // Formatear JID
+        const cleanPhone = phone.replace(/[^0-9]/g, '');
+        const jid = `${cleanPhone}@s.whatsapp.net`;
+
+        // Intentar obtener sock para mejor resolución de nombre
+        let sock = null;
+        const session = sessions.get(sessionId) || sessions.get(phoneNumber);
+        if (session && session.sock) sock = session.sock;
+
+        // Usar la función centralizada para insertar/upsert
+        const contactId = await getOrInsertContact(jid, name, name, phoneNumber, sock);
+
+        if (contactId) {
+            // Si hay categoría o tags extra, actualizarlos (getOrInsertContact no los maneja todos)
+            if (category || (tags && tags.length > 0)) {
+                const connection = await pool.getConnection();
+                try {
+                    await connection.execute(
+                        'UPDATE contacts SET notify_name = COALESCE(?, notify_name) WHERE jid = ? AND session_id = ?',
+                        [name, jid, ownerSessionId]
+                    );
+                } finally {
+                    connection.release();
+                }
+            }
+
+            res.json({
+                success: true,
+                message: 'Contacto creado correctamente',
+                contactId: contactId
+            });
+        } else {
+            res.status(500).json({ success: false, error: 'Error al procesar el contacto en la base de datos' });
+        }
+
+    } catch (error) {
+        console.error('[API-POST-CONTACTS] ❌ Error crítico:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
@@ -14899,7 +14965,28 @@ app.post('/api/update-contacts-avatars/:sessionId', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
         }
 
-        const session = sessions.get(sessionId);
+        // ✅ ESTRATEGIA ROBUSTA: Buscar sesión activa por ID o por número de teléfono
+        let session = sessions.get(sessionId);
+
+        if (!session || !session.sock || !session.isConnected) {
+            console.log(`[AVATAR-UPDATE] 🔄 Sesión '${sessionId}' no válida, buscando por número '${phoneNumber}'...`);
+            session = sessions.get(phoneNumber);
+        }
+
+        if (!session || !session.sock || !session.isConnected) {
+            console.log(`[AVATAR-UPDATE] 🔍 Buscando sesión activa para usuario ${phoneNumber} en todas las sesiones...`);
+            for (const [sid, s] of sessions.entries()) {
+                if (s && s.sock && s.sock.user && s.isConnected) {
+                    let sessionPhone = s.sock.user.id.split(':')[0];
+                    if (sessionPhone === phoneNumber) {
+                        console.log(`[AVATAR-UPDATE] 🎯 Encontrada sesión coincidente: ${sid}`);
+                        session = s;
+                        break;
+                    }
+                }
+            }
+        }
+
         if (!session || !session.sock || !session.isConnected) {
             return res.status(400).json({ success: false, error: 'WhatsApp no conectado' });
         }
@@ -18585,13 +18672,13 @@ app.post('/api/appointments', async (req, res) => {
         const connection = await pool.getConnection();
         try {
             const [result] = await connection.execute(
-                `INSERT INTO appointments 
-                (session_id, patient_name, patient_phone, doctor_name, company_name, 
-                 description, appointment_date, appointment_time, status, notes, 
+                `INSERT INTO appointments
+                (session_id, patient_name, patient_phone, doctor_name, company_name,
+                 description, appointment_date, appointment_time, status, notes,
                  reminder_time, notification_template, category_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
-                    phoneNumber,
+                    sessionId,
                     patientName,
                     patientPhone,
                     doctorName || null,
@@ -20279,32 +20366,37 @@ app.get('/api/agents', async (req, res) => {
         const { sessionId } = req.query;
         const connection = await pool.getConnection();
         try {
-            // ✅ LEER AGENTES DESDE TABLA 'users' (la fuente de verdad)
-            // status = acceso al sistema (active/inactive), agent_status = estado de actividad (online/offline/paused/busy)
-            let query = `SELECT id, name, email, phone, status, agent_status, avatar_url, created_at, updated_at, session_id, role
-                         FROM users 
-                         WHERE role IN ('agent', 'supervisor')`;
-            let params = [];
+            // 🔒 OBTENER EL USER ID DEL USUARIO AUTENTICADO
+            // Solo usar el sessionId numérico del usuario (su ID en la tabla users)
+            const userId = await getOwnerSessionId(sessionId);
 
-            // Resolve both identifiers to ensure we find agents regardless of how they are linked
-            const phoneNumber = await getUserPhoneNumber(sessionId);
-            const ownerId = await getUserDbIdentifier(sessionId);
-
-            // Collect all unique non-null identifiers
-            const rawIds = [sessionId, phoneNumber, ownerId];
-            const uniqueIds = [...new Set(rawIds.filter(id => id))];
-
-            // Filtrar por admin (sessionId o teléfono del admin)
-            if (uniqueIds.length > 0) {
-                const placeholders = uniqueIds.map(() => '?').join(',');
-                query += ` AND (session_id IN (${placeholders}) OR admin_phone IN (${placeholders}))`;
-                params.push(...uniqueIds, ...uniqueIds);
+            if (!userId) {
+                return res.status(400).json({ success: false, error: 'Session ID inválido' });
             }
 
-            query += ` ORDER BY created_at DESC`;
+            // Obtener el phoneNumber del admin para filtrar agentes
+            const [adminData] = await connection.execute(
+                'SELECT phone FROM users WHERE id = ?',
+                [userId]
+            );
 
-            const [agents] = await connection.execute(query, params);
+            if (adminData.length === 0) {
+                return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+            }
 
+            const adminPhone = adminData[0].phone;
+
+            // ✅ LEER AGENTES DESDE TABLA 'users' (la fuente de verdad)
+            // Filtrar SOLO por admin_phone del usuario autenticado
+            const query = `SELECT id, name, email, phone, status, agent_status, avatar_url, created_at, updated_at, session_id, role
+                         FROM users
+                         WHERE role IN ('agent', 'supervisor')
+                         AND admin_phone = ?
+                         ORDER BY created_at DESC`;
+
+            const [agents] = await connection.execute(query, [adminPhone]);
+
+            console.log(`[AGENTS] Usuario ${userId} (${adminPhone}) tiene ${agents.length} agentes`);
             res.json({ success: true, agents });
         } finally {
             connection.release();
@@ -22226,15 +22318,16 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
         const connection = await pool.getConnection();
         try {
             // 🔧 FIX: Usar DATE_FORMAT y TIME_FORMAT para evitar conversiones de zona horaria
-            let query = `SELECT 
-                id, session_id, patient_name, patient_phone, doctor_name, company_name, 
-                description, 
+            // 🔧 FIX: Buscar por sessionId O phoneNumber para compatibilidad con citas antiguas
+            let query = `SELECT
+                id, session_id, patient_name, patient_phone, doctor_name, company_name,
+                description,
                 DATE_FORMAT(appointment_date, '%Y-%m-%d') as appointment_date,
                 TIME_FORMAT(appointment_time, '%H:%i') as appointment_time,
                 status, reminder_sent, notes, reminder_time, notification_template, category_id,
                 created_at, updated_at
-                FROM appointments WHERE session_id = ?`;
-            const params = [phoneNumber];
+                FROM appointments WHERE (session_id = ? OR session_id = ?)`;
+            const params = [sessionId, phoneNumber];
 
             if (startDate && endDate) {
                 query += ` AND appointment_date BETWEEN ? AND ?`;

@@ -29,106 +29,205 @@ function getDefaultTemplates() {
     ];
 }
 
-// Función para procesar plantilla con variables
-function processTemplate(template, appointment) {
-    let message = template.message;
-    
+// Función para procesar plantilla con variables de forma flexible
+function processTemplate(templateText, appointment) {
+    let message = templateText;
+
     // Formatear fecha correctamente
     let dateStr = appointment.appointment_date;
     if (typeof dateStr === 'string' && dateStr.includes('T')) {
         dateStr = dateStr.split('T')[0];
     }
     const formattedDate = moment(dateStr, 'YYYY-MM-DD').format('DD/MM/YYYY');
-    
-    // Formatear hora
-    const timeStr = appointment.appointment_time.toString().substring(0, 5);
 
-    message = message
-        .replace(/{nombre}/g, appointment.patient_name)
-        .replace(/{fecha}/g, formattedDate)
-        .replace(/{hora}/g, timeStr)
-        .replace(/{doctor}/g, appointment.doctor_name || 'el equipo');
+    // Formatear hora (asegurar formato HH:mm)
+    let timeStr = appointment.appointment_time.toString();
+    if (timeStr.includes(':')) {
+        const parts = timeStr.split(':');
+        timeStr = `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+    } else {
+        timeStr = timeStr.substring(0, 5);
+    }
+
+    const doctorName = appointment.doctor_name || 'el equipo';
+    const patientName = appointment.patient_name || 'Cliente';
+
+    // Soportar múltiples formatos de variables: {nombre}, [Nombre], {fecha}, [Fecha], etc.
+    const replacements = [
+        { regex: /\{nombre\}|\[nombre\]|\[Nombre\]/gi, value: patientName },
+        { regex: /\{fecha\}|\[fecha\]|\[Fecha\]/gi, value: formattedDate },
+        { regex: /\{hora\}|\[hora\]|\[Hora\]/gi, value: timeStr },
+        { regex: /\{doctor\}|\[doctor\]|\[Doctor\]/gi, value: doctorName },
+        { regex: /\{paciente\}|\[paciente\]|\[Paciente\]/gi, value: patientName }
+    ];
+
+    replacements.forEach(r => {
+        message = message.replace(r.regex, r.value);
+    });
 
     return message;
 }
 
 // Función para enviar recordatorio por WhatsApp
 async function sendReminder(pool, sessions, appointment) {
+    const connection = await pool.getConnection();
     try {
-        console.log(`[REMINDERS] Procesando recordatorio para cita ${appointment.id}`);
+        console.log(`[REMINDERS] --------------------------------------------------`);
+        console.log(`[REMINDERS] 🔍 PROCESANDO CITA #${appointment.id}`);
+        console.log(`[REMINDERS] 👤 Paciente: ${appointment.patient_name}`);
+        console.log(`[REMINDERS] 🔑 SessionId Original: ${appointment.session_id}`);
 
-        // Obtener sessionId desde session_id (phone_number)
-        const connection = await pool.getConnection();
-        let sessionId = null;
+        // 1. Identificar al dueño de la cita y buscar una sesión de WhatsApp activa
+        const originalSessionId = appointment.session_id;
+        let userPhone = null;
+        let candidateSessionIds = [originalSessionId];
 
-        try {
-            const [sessionRows] = await connection.execute(
-                'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 LIMIT 1',
-                [appointment.session_id]
+        // Buscar información del dueño en user_sessions
+        const [sessionRows] = await connection.execute(
+            'SELECT session_id, phone, owner_phone_number FROM user_sessions WHERE session_id = ? OR phone = ? OR owner_phone_number = ?',
+            [originalSessionId, originalSessionId, originalSessionId]
+        );
+
+        if (sessionRows.length > 0) {
+            userPhone = sessionRows[0].owner_phone_number || sessionRows[0].phone;
+            // Recolectar todos los session_ids posibles para este usuario
+            sessionRows.forEach(row => {
+                if (row.session_id && !candidateSessionIds.includes(row.session_id)) candidateSessionIds.push(row.session_id);
+                if (row.phone && !candidateSessionIds.includes(row.phone)) candidateSessionIds.push(row.phone);
+            });
+        }
+
+        console.log(`[REMINDERS] 📱 Dueño: ${userPhone || 'Desconocido'} | Candidatos: ${candidateSessionIds.join(', ')}`);
+
+        // 2. Obtener el mensaje de la plantilla
+        let templateText = '';
+        const templateId = appointment.notification_template || 'default';
+
+        // Primero buscar en las predeterminadas
+        const defaultTemplates = getDefaultTemplates();
+        const defaultTemplate = defaultTemplates.find(t => t.id === templateId);
+
+        if (defaultTemplate) {
+            templateText = defaultTemplate.message;
+        } else {
+            // Buscar en bases de datos usando todos los IDs candidatos
+            const placeholders = candidateSessionIds.map(() => '?').join(',');
+
+            // Intentar en notification_templates
+            const [customTemplates] = await connection.execute(
+                `SELECT message FROM notification_templates WHERE session_id IN (${placeholders}) AND (id = ? OR name = ?) LIMIT 1`,
+                [...candidateSessionIds, templateId, templateId]
             );
 
-            if (sessionRows.length > 0) {
-                sessionId = sessionRows[0].session_id;
+            if (customTemplates.length > 0) {
+                templateText = customTemplates[0].message;
+            } else {
+                // Fallback a appointment_templates
+                const [altTemplates] = await connection.execute(
+                    `SELECT message_text FROM appointment_templates WHERE session_id IN (${placeholders}) AND (id = ? OR name = ?) LIMIT 1`,
+                    [...candidateSessionIds, templateId, templateId]
+                );
+                if (altTemplates.length > 0) {
+                    templateText = altTemplates[0].message_text;
+                }
             }
-        } finally {
-            connection.release();
         }
 
-        if (!sessionId) {
-            console.log(`[REMINDERS] No hay sesión activa para ${appointment.session_id}`);
-            return false;
+        if (!templateText) {
+            console.warn(`[REMINDERS] ⚠️ Plantilla '${templateId}' no encontrada. Usando recordatorio genérico.`);
+            templateText = defaultTemplates[0].message;
         }
 
-        // Obtener plantilla
-        const templates = getDefaultTemplates();
-        const template = templates.find(t => t.id === (appointment.notification_template || 'default'));
+        // 3. Procesar mensaje con variables de forma flexible
+        const finalMessage = processTemplate(templateText, appointment);
 
-        if (!template) {
-            console.log(`[REMINDERS] Plantilla ${appointment.notification_template} no encontrada`);
-            return false;
+        // 4. Formatear destino
+        let patientPhone = appointment.patient_phone.toString().replace(/[^0-9]/g, '');
+        if (patientPhone.length === 9) patientPhone = '595' + patientPhone;
+        const jid = patientPhone.includes('@') ? patientPhone : `${patientPhone}@s.whatsapp.net`;
+
+        console.log(`[REMINDERS] 📤 Enviando a: ${patientPhone}`);
+
+        // 5. INTENTAR ENVÍO - Estrategia de múltiples intentos
+        let sent = false;
+
+        // PRIORIDAD: Buscar CUALQUIER sesión activa de este usuario que esté en memoria
+        for (const sid of candidateSessionIds) {
+            const memSession = sessions.get(sid);
+            if (memSession && memSession.sock && memSession.isConnected) {
+                try {
+                    await memSession.sock.sendMessage(jid, { text: finalMessage });
+                    console.log(`[REMINDERS] ✅ ENVIADO EXITOSAMENTE via sesión en memoria: ${sid}`);
+                    sent = true;
+                    break;
+                } catch (err) {
+                    console.error(`[REMINDERS] ❌ Error enviando via ${sid}:`, err.message);
+                }
+            }
         }
 
-        // Procesar mensaje
-        const message = processTemplate(template, appointment);
+        // NUEVA ESTRATEGIA: Buscar en TODAS las sesiones activas una que coincida con el phoneNumber del dueño
+        if (!sent && userPhone) {
+            console.log(`[REMINDERS] 🔍 Buscando sesión activa para usuario ${userPhone}...`);
+            let connectedCount = 0;
+            let totalSessions = 0;
+            for (const [sessionId, session] of sessions.entries()) {
+                totalSessions++;
+                // Verificar si tiene sock y sock.user (indica que está conectada)
+                if (session && session.sock && session.sock.user) {
+                    connectedCount++;
+                    // Obtener phoneNumber desde sock.user
+                    let sessionPhone = session.sock.user.id.split(':')[0];
 
-        // Formatear número de teléfono
-        let phoneNumber = appointment.patient_phone.toString().replace(/[^0-9]/g, '');
-        
-        // Asegurar que el número sea válido
-        if (!phoneNumber) {
-            console.log(`[REMINDERS] ❌ Número de teléfono inválido para cita ${appointment.id}`);
-            return false;
+                    if (connectedCount <= 5) {
+                        console.log(`[REMINDERS]   📱 Sesión ${sessionId.substring(0, 16)}...: phone=${sessionPhone}`);
+                    }
+
+                    if (sessionPhone === userPhone) {
+                        console.log(`[REMINDERS] 🎯 ENCONTRADA SESIÓN COINCIDENTE: ${sessionId}`);
+                        try {
+                            await session.sock.sendMessage(jid, { text: finalMessage });
+                            console.log(`[REMINDERS] ✅ ENVIADO EXITOSAMENTE via búsqueda global de sesión: ${sessionId}`);
+                            sent = true;
+                            break;
+                        } catch (err) {
+                            console.error(`[REMINDERS] ❌ Error enviando via ${sessionId}:`, err.message);
+                        }
+                    }
+                }
+            }
+            console.log(`[REMINDERS] 🔍 Total sesiones: ${totalSessions}, Conectadas: ${connectedCount}`);
         }
 
-        console.log(`[REMINDERS] 📤 Intentando enviar a ${phoneNumber} desde sesión ${sessionId}`);
-        console.log(`[REMINDERS] 💬 Mensaje: ${message}`);
-
-        // NUEVO: Usar whatsapp-loader para cargar la sesión automáticamente
-        const { sendWhatsAppMessage } = require('./whatsapp-loader');
-        const result = await sendWhatsAppMessage(sessionId, phoneNumber, message);
-
-        if (!result.success) {
-            console.log(`[REMINDERS] ❌ Falló el envío: ${result.error}`);
-            return false;
+        // TERCERA OPCIÓN: Usar whatsapp-loader para la sesión original
+        if (!sent) {
+            console.log(`[REMINDERS] 🔄 Intentando carga bajo demanda para ${originalSessionId}...`);
+            const { sendWhatsAppMessage } = require('./whatsapp-loader');
+            const result = await sendWhatsAppMessage(originalSessionId, patientPhone, finalMessage);
+            if (result.success) {
+                console.log(`[REMINDERS] ✅ ENVIADO EXITOSAMENTE via whatsapp-loader`);
+                sent = true;
+            } else {
+                console.error(`[REMINDERS] ❌ Error whatsapp-loader: ${result.error}`);
+            }
         }
 
-        // Marcar como enviado
-        const connection2 = await pool.getConnection();
-        try {
-            await connection2.execute(
+        if (sent) {
+            await connection.execute(
                 'UPDATE appointments SET reminder_sent = TRUE, updated_at = NOW() WHERE id = ?',
                 [appointment.id]
             );
-        } finally {
-            connection2.release();
+            return true;
         }
 
-        console.log(`[REMINDERS] ✅ Recordatorio enviado para cita ${appointment.id}`);
-        return true;
+        console.error(`[REMINDERS] 🛑 FALLÓ ENVÍO FINAL para cita #${appointment.id}`);
+        return false;
 
     } catch (error) {
-        console.error(`[REMINDERS] ❌ Error enviando recordatorio para cita ${appointment.id}:`, error);
+        console.error(`[REMINDERS] 🛑 ERROR CRÍTICO:`, error);
         return false;
+    } finally {
+        connection.release();
     }
 }
 
