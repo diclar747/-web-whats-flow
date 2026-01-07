@@ -86,6 +86,18 @@ const validateSessionBelongsToUser = async (req, res, next) => {
                         );
                         if (phoneRows.length > 0) {
                             userId = phoneRows[0].id;
+                        } else {
+                            // 🆕 Buscar en user_sessions por owner_phone_number (números adicionales)
+                            const [ownerRows] = await connection.execute(
+                                `SELECT u.id FROM user_sessions us
+                                 JOIN users u ON u.phone = us.owner_phone_number
+                                 WHERE us.phone = ? LIMIT 1`,
+                                [sessionId]
+                            );
+                            if (ownerRows.length > 0) {
+                                userId = ownerRows[0].id;
+                                console.log(`[SESSION-VALIDATION] 📱 Número adicional ${sessionId} vinculado a user_id=${userId}`);
+                            }
                         }
                     }
                 }

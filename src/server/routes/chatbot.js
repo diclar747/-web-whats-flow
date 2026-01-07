@@ -20,12 +20,29 @@ const chatbotSettings = new Map();
 router.get('/flows/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
+    console.log(`[CHATBOT-DEBUG] Recibida petición de flujos para sessionId: '${sessionId}'`);
     const connection = await mysql.createConnection(dbConfig);
 
-    const [flows] = await connection.query(
+    let flows;
+    
+    // Primero intentar con sessionId exacto
+    const [exactFlows] = await connection.query(
       'SELECT * FROM chatbot_flows WHERE session_id = ? ORDER BY created_at DESC',
       [sessionId]
     );
+    
+    // Si no hay resultados y sessionId es un número pequeño (ID de usuario), buscar todos los flujos
+    // como fallback (esto maneja el caso donde sessionId=1 pero los flujos están guardados con phone IDs)
+    if (exactFlows.length === 0 && /^\d+$/.test(sessionId) && parseInt(sessionId) < 100) {
+      console.log(`[CHATBOT-DEBUG] No se encontraron flujos para sessionId='${sessionId}', intentando fallback (obtener todos los flujos)...`);
+      const [allFlows] = await connection.query(
+        'SELECT * FROM chatbot_flows ORDER BY created_at DESC LIMIT 50'
+      );
+      flows = allFlows;
+      console.log(`[CHATBOT-DEBUG] Fallback encontró ${allFlows.length} flujos`);
+    } else {
+      flows = exactFlows;
+    }
 
     await connection.end();
 
@@ -277,14 +294,29 @@ router.get('/settings/:sessionId', async (req, res) => {
 
     // Intentar obtener desde BD primero
     const connection = await mysql.createConnection(dbConfig);
-    const [rows] = await connection.query(
+    let rows;
+    
+    // Primero intentar con sessionId exacto
+    const [exactRows] = await connection.query(
       'SELECT * FROM chatbot_settings WHERE session_id = ?',
       [sessionId]
     );
+    
+    // Si no hay resultados y sessionId es un número pequeño, buscar cualquier configuración como fallback
+    if (exactRows.length === 0 && /^\d+$/.test(sessionId) && parseInt(sessionId) < 100) {
+      console.log(`[CHATBOT-DEBUG] No se encontró configuración para sessionId='${sessionId}', usando primera disponible...`);
+      const [allRows] = await connection.query(
+        'SELECT * FROM chatbot_settings LIMIT 1'
+      );
+      rows = allRows;
+    } else {
+      rows = exactRows;
+    }
+    
     await connection.end();
 
     let settings;
-    if (rows.length > 0) {
+    if (rows && rows.length > 0) {
       const row = rows[0];
       settings = {
         enabled: Boolean(row.enabled),
@@ -611,7 +643,7 @@ router.post('/process-message/:sessionId', async (req, res) => {
       // 🔥 El kanbanBoardId está en flowData.kanbanBoardId (JSON parseado)
       const kanbanBoardId = matchedFlow.kanbanBoardId || matchedFlow.aiConfig?.kanbanBoardId;
       console.log(`[CHATBOT] 📋 Verificando kanban: boardId=${kanbanBoardId}, flowData=${JSON.stringify(matchedFlow.aiConfig || {})}`);
-      
+
       if (kanbanBoardId && kanbanBoardId.trim()) {
         try {
           console.log(`[CHATBOT] 🔍 Intentando conectar a BD para agregar contacto a kanban...`);
@@ -690,11 +722,11 @@ router.post('/process-message/:sessionId', async (req, res) => {
           const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
           const fullPrompt = `${systemPrompt}\n\nUsuario: ${message}`;
-          
+
           console.log(`[GEMINI-AI] 🚀 Enviando prompt a Gemini (modelo: gemini-2.5-flash)...`);
           const result = await model.generateContent(fullPrompt);
           console.log(`[GEMINI-AI] ✅ Respuesta recibida de Gemini`);
-          
+
           const response = await result.response;
           const aiResponse = response.text();
 
@@ -711,13 +743,13 @@ router.post('/process-message/:sessionId', async (req, res) => {
           console.error('[GEMINI-AI] Tipo de error:', aiError.constructor.name);
           console.error('[GEMINI-AI] Mensaje:', aiError.message);
           console.error('[GEMINI-AI] Stack:', aiError.stack);
-          
+
           // Intentar obtener detalles específicos de Gemini
           if (aiError.response) {
             console.error('[GEMINI-AI] Response status:', aiError.response.status);
             console.error('[GEMINI-AI] Response data:', JSON.stringify(aiError.response.data, null, 2));
           }
-          
+
           // Logs adicionales para debugging
           console.error('[GEMINI-AI] Full error object:', JSON.stringify(aiError, Object.getOwnPropertyNames(aiError)));
 

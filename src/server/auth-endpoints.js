@@ -195,9 +195,13 @@ function registerAuthEndpoints(app, pool) {
                 const sessions = global.sessions;
                 if (sessions && user.phone_number) {
                     const userSessionId = String(user.id);
+                    const phoneNumber = user.phone_number;
 
-                    // Verificar si ya existe en memoria
-                    if (!sessions.has(userSessionId)) {
+                    // Verificar si ya existe en memoria (buscar por ambas claves: userSessionId y phoneNumber)
+                    const sessionExistsById = sessions.has(userSessionId);
+                    const sessionExistsByPhone = sessions.has(phoneNumber);
+
+                    if (!sessionExistsById && !sessionExistsByPhone) {
                         // Buscar si tiene archivos de credenciales guardados
                         const path = require('path');
                         const fs = require('fs');
@@ -205,7 +209,7 @@ function registerAuthEndpoints(app, pool) {
                         const credsPath = path.join(authPath, 'creds.json');
 
                         if (fs.existsSync(credsPath)) {
-                            console.log(`[AUTH] 🚀 Levantando sesión automáticamente para usuario ${user.id} (${user.phone_number})`);
+                            console.log(`[AUTH] 🚀 Levantando sesión automáticamente para usuario ${user.id} (${phoneNumber})`);
 
                             // Levantar sesión de forma asíncrona (no esperar para responder rápido)
                             const createSession = global.createSession;
@@ -220,7 +224,11 @@ function registerAuthEndpoints(app, pool) {
                             console.log(`[AUTH] ℹ️ Usuario ${user.id} no tiene sesión guardada (necesitará escanear QR)`);
                         }
                     } else {
-                        console.log(`[AUTH] ✅ Sesión ${userSessionId} ya está activa en memoria`);
+                        if (sessionExistsById) {
+                            console.log(`[AUTH] ✅ Sesión ${userSessionId} ya está activa en memoria (por ID)`);
+                        } else {
+                            console.log(`[AUTH] ✅ Sesión ${phoneNumber} ya está activa en memoria (por phone)`);
+                        }
                     }
                 }
 
@@ -235,7 +243,7 @@ function registerAuthEndpoints(app, pool) {
                     success: true,
                     token,
                     sessionToken, // 🔐 Importante para el fetchInterceptor
-                    sessionId: String(user.id), // sessionId es el user.id para usuarios normales
+                    sessionId: String(user.id), // Volver a usar ID de usuario como sesión principal
                     user: {
                         id: user.id,
                         full_name: user.full_name,
@@ -258,12 +266,37 @@ function registerAuthEndpoints(app, pool) {
     });
 
     // ==================== VERIFICAR TOKEN ====================
-    app.get('/api/auth/verify', authenticateJWT, validateUniqueSession, async (req, res) => {
+    // ✅ CORREGIDO: Hacer validateUniqueSession opcional para permitir reconexión
+    app.get('/api/auth/verify', authenticateJWT, async (req, res) => {
         try {
             const dbPool = global.dbPool || pool;
             if (!dbPool || typeof dbPool.getConnection !== 'function') {
                 return res.status(503).json({ success: false, error: 'Database not initialized' });
             }
+
+            // 🆕 Validar sesión única solo si se proporcionan las credenciales
+            const sessionToken = req.headers['x-session-token'];
+            const deviceId = req.headers['x-device-id'];
+
+            if (sessionToken && deviceId) {
+                console.log('[AUTH-VERIFY] ✅ Validando sesión única (X-Session-Token y X-Device-Id presentes)');
+                // Llamar manualmente al middleware de validación
+                const { validateUniqueSession } = require('./middleware/sessionValidator');
+                try {
+                    await new Promise((resolve, reject) => {
+                        validateUniqueSession(req, res, (err) => {
+                            if (err) reject(err);
+                            else resolve();
+                        });
+                    });
+                } catch (validationError) {
+                    console.log('[AUTH-VERIFY] ⚠️ Validación de sesión falló:', validationError.message);
+                    // NO retornar error 401 - permitir continuar sin sesión única
+                }
+            } else {
+                console.log('[AUTH-VERIFY] ℹ️ Sin X-Session-Token/X-Device-Id - saltando validación de sesión única');
+            }
+
             const connection = await dbPool.getConnection();
 
             try {

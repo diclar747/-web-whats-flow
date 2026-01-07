@@ -306,6 +306,23 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       console.log('[WhatsAppContext] 🛑 Omitiendo loadChats: sessionId es nulo o indefinido');
       return;
     }
+
+    // 🔐 VERIFICAR SI ES SESIÓN PRIMARIA - Solo las sesiones primarias pueden cargar chats
+    // Los números adicionales (is_primary=0) solo se usan para campañas
+    try {
+      const isPrimaryResponse = await fetch(`${API_BASE}/api/session/${sessionId}/is-primary`);
+      const isPrimaryData = await isPrimaryResponse.json();
+
+      if (!isPrimaryData.isPrimary) {
+        console.log(`[WhatsAppContext] 📵 Sesión ${sessionId} es adicional (no primaria). No cargar chats.`);
+        return;
+      }
+      console.log(`[WhatsAppContext] ✅ Sesión ${sessionId} es primaria. Procediendo a cargar chats.`);
+    } catch (err) {
+      console.warn(`[WhatsAppContext] ⚠️ No se pudo verificar si es sesión primaria. Asumiendo que sí:`, err);
+      // Continuar cargando chats en caso de error (fallback para compatibilidad)
+    }
+
     console.log('[WhatsAppContext] 🚀 loadChats llamado con:', {
       sessionId,
       dateFilter,
@@ -336,7 +353,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         : `${API_BASE}/api/chats/${sessionId}?dateFilter=${dateFilter}&limit=${limit}&offset=${offsetParam}`;
 
       console.log(`🔄 Cargando chats desde API (${isAgent ? 'AGENTE' : 'ADMIN'}) con filtro: ${dateFilter}`, endpoint);
-      const response = await fetch(endpoint);
+      
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const response = await fetch(endpoint, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
       const data = await response.json();
 
       console.log('[WhatsAppContext] 📦 Respuesta de API recibida:', {
@@ -610,6 +631,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       if (isActiveChat) {
         console.log('✅ [REAL-TIME] Mensaje pertenece al chat activo, actualizando UI...');
+        console.log(`[DEBUG] activeChatId: ${activeChatId}, msgChatJid: ${mappedMessage.chatJid}, chatPhone: ${chatPhone}`);
         requestAnimationFrame(() => {
           setMessages(prev => {
             // Evitar duplicados por ID
@@ -649,7 +671,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           }, 50);
         });
       } else {
-        console.log('ℹ️ [REAL-TIME] Mensaje NO es del chat activo:', { activeChatId, msgChat: mappedMessage.chatJid });
+        console.log('ℹ️ [REAL-TIME] Mensaje NO es del chat activo:', { activeChatId, msgChat: mappedMessage.chatJid, chatPhone });
+        console.log(`[DEBUG] Comparison failed: Is ${activeChatId} === ${mappedMessage.chatJid}? OR ${activeChatId?.split('@')[0]} === ${chatPhone}?`);
       }
 
       // ⚡ OPTIMIZACIÓN: Actualizar lista de chats (Historial)
@@ -824,7 +847,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           phoneNumber: data.phoneNumber
         });
         setConnectionStatus('connected');
-        sessionStorage.setItem('whinsap_session', newSid);
+        // ❌ NO sobrescribir whinsap_session - debe mantener el user.id del usuario logueado
+        // sessionStorage.setItem('whinsap_session', newSid);
         loadChats(newSid);
       } else if (data.status === 'disconnected') {
         console.log('⚠️ [WhatsAppContext] WhatsApp desconectado');
@@ -1044,7 +1068,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       console.log(`🔄[API] Cargando mensajes para ${chatId} (offset = ${offset}, limit = ${limit}, append = ${append})`);
 
       // ⚡ URL paginada
-      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
       const data = await response.json();
 
       if (data.success && data.messages) {
@@ -1246,7 +1273,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     if (!session?.sessionId) return [];
 
     try {
-      const response = await fetch(`${API_BASE} /api/messages / ${session.sessionId}?number = ${chatId}& search=${encodeURIComponent(query)} `);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const response = await fetch(`${API_BASE} /api/messages / ${session.sessionId}?number = ${chatId}& search=${encodeURIComponent(query)} `, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
       const data = await response.json();
 
       if (data.success && data.messages) {
@@ -1327,9 +1357,13 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         return msg;
       }));
 
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      
       const response = await fetch(`${API_BASE} /api/messages / ${messageId}/reactions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           sessionId: session.sessionId,
           reaction,
@@ -1360,9 +1394,13 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     if (!session?.sessionId) return;
 
     try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      
       const response = await fetch(`${API_BASE}/api/messages/${messageId}/reactions`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           sessionId: session.sessionId,
           userJid: session.sessionId
@@ -1387,7 +1425,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     if (!session?.sessionId) return [];
 
     try {
-      const response = await fetch(`${API_BASE}/api/messages/${messageId}/reactions?sessionId=${session.sessionId}`);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const response = await fetch(`${API_BASE}/api/messages/${messageId}/reactions?sessionId=${session.sessionId}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
       const data = await response.json();
 
       if (data.success) {

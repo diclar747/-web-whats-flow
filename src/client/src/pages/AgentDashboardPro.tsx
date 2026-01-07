@@ -247,7 +247,7 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
         secondary: '#ffffff',
         chat: '#efeae2',
         header: '#2c3e50', // Azul oscuro elegante
-        messageOwn: '#e3f2fd', // System Blue Light
+        messageOwn: '#ffffff', // Mismo color que mensajes recibidos
         messageOther: '#ffffff'
       },
       text: {
@@ -265,7 +265,7 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
         secondary: '#202c33',
         chat: '#0b141a',
         header: '#1a252f', // Gris azulado oscuro
-        messageOwn: '#0a3d91', // System Blue Dark
+        messageOwn: '#202c33', // Mismo color que mensajes recibidos
         messageOther: '#202c33'
       },
       text: {
@@ -590,16 +590,16 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
 
             return {
               id: chat.chatJid,
-              name: chat.name || chat.contact_name || chat.chatName || chat.chat_name || chat.chatJid?.replace('@s.whatsapp.net', '') || 'Sin nombre',
-              avatar: chat.avatar || chat.avatar_url || chat.profilePictureUrl || chat.profile_picture || '',
+              name: chat.name || chat.chatJid?.replace('@s.whatsapp.net', '') || 'Sin nombre',
+              avatar: chat.avatar || '',
               lastMessage: chat.lastMessage || 'Sin mensajes',
               timestamp: chat.lastMessageTimestamp || chat.assignedAt,
               unreadCount: chat.unreadCount || 0,
               assignedAt: chat.assignedAt,
-              phoneNumber: chat.phoneNumber || chat.phone_number || chat.chatJid?.replace('@s.whatsapp.net', '') || '',
+              phoneNumber: chat.chatJid?.replace('@s.whatsapp.net', '') || '',
               isOnline: false,
               isTyping: false,
-              status: status,
+              status,
               closedAt: chat.closedAt
             };
           });
@@ -701,6 +701,21 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
     }
   }, [selectedChat, loadMessages]);
 
+  // 🔌 NUEVA: Suscribirse a salas de sesión para mensajes en tiempo real
+  useEffect(() => {
+    if (!socket || !selectedChat || !sessionId) {
+      console.log('[AGENT-PRO] ⚠️ No se puede suscribir:', { socket: !!socket, selectedChat: !!selectedChat, sessionId });
+      return;
+    }
+
+    console.log(`🔌 [AGENT-PRO] Suscribiendo a sala session-${sessionId} para chat ${selectedChat.id}`);
+    socket.emit('join-session', { sessionId });
+
+    return () => {
+      console.log(`🔌 [AGENT-PRO] Abandonando sala session-${sessionId}`);
+      socket.emit('leave-session', { sessionId });
+    };
+  }, [socket, selectedChat, sessionId]);
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);

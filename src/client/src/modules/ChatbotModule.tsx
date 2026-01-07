@@ -65,8 +65,11 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
 
   const loadFlows = async () => {
     try { 
-      setLoading(true); 
-      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/flows/${sessionId}`); 
+      setLoading(true);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/flows/${sessionId}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      }); 
       const data = await response.json(); 
       if (data.success) {
         // Asegurar que cada flujo tenga flowType
@@ -85,8 +88,11 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   };
 
   const loadSettings = async () => {
-    try { 
-      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/settings/${sessionId}`); 
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/settings/${sessionId}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      }); 
       const data = await response.json(); 
       if (data.success && data.settings) {
         // Solo cargar enabled
@@ -98,8 +104,11 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   };
 
   const loadStats = async () => {
-    try { 
-      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/stats/${sessionId}`); 
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const response = await fetch(`${getAPIBaseURL()}/api/chatbot/stats/${sessionId}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      }); 
       const data = await response.json(); 
       if (data.success) setStats(data.stats || stats); 
     } catch (error) { 
@@ -155,10 +164,13 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
     }
 
     try { 
-      setLoading(true); 
+      setLoading(true);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const response = await fetch(`${getAPIBaseURL()}/api/chatbot/flows/${sessionId}`, { 
         method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
+        headers, 
         body: JSON.stringify({ 
           ...newFlow, 
           createdAt: new Date().toISOString(), 
@@ -184,10 +196,13 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   const handleUpdateFlow = async () => {
     if (!selectedFlow) return;
     try { 
-      setLoading(true); 
+      setLoading(true);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const response = await fetch(`${getAPIBaseURL()}/api/chatbot/flows/${sessionId}/${selectedFlow.id}`, { 
         method: 'PUT', 
-        headers: { 'Content-Type': 'application/json' }, 
+        headers, 
         body: JSON.stringify(selectedFlow) 
       }); 
       const data = await response.json(); 
@@ -213,9 +228,11 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   const confirmDeleteFlow = async () => {
     if (!flowToDelete) return;
     try { 
-      setLoading(true); 
+      setLoading(true);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const response = await fetch(`${getAPIBaseURL()}/api/chatbot/flows/${sessionId}/${flowToDelete}`, { 
-        method: 'DELETE' 
+        method: 'DELETE',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       }); 
       const data = await response.json(); 
       if (data.success) { 
@@ -233,10 +250,13 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   };
 
   const handleToggleFlow = async (flowId: string, active: boolean) => {
-    try { 
+    try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const response = await fetch(`${getAPIBaseURL()}/api/chatbot/flows/${sessionId}/${flowId}/toggle`, { 
         method: 'PATCH', 
-        headers: { 'Content-Type': 'application/json' }, 
+        headers, 
         body: JSON.stringify({ active }) 
       }); 
       const data = await response.json(); 
@@ -247,11 +267,14 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
   };
 
   const handleSaveSettings = async () => {
-    try { 
-      setLoading(true); 
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const response = await fetch(`${getAPIBaseURL()}/api/chatbot/settings/${sessionId}`, { 
         method: 'PUT', 
-        headers: { 'Content-Type': 'application/json' }, 
+        headers, 
         body: JSON.stringify(settings) 
       }); 
       const data = await response.json(); 
@@ -309,8 +332,13 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
     formData.append('file', file);
     formData.append('sessionId', sessionId);
     
+    const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    
     const response = await fetch(`${getAPIBaseURL()}/api/chatbot/upload`, {
       method: 'POST',
+      headers,
       body: formData
     });
     
@@ -441,9 +469,12 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
 
     setScrapingUrl(true);
     try {
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const response = await fetch(`${getAPIBaseURL()}/api/chatbot/scrape-url`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ url })
       });
 

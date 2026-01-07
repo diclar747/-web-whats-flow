@@ -48,6 +48,7 @@ import {
     BarChart
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
+import WhinsapLogo from './WhinsapLogo';
 
 interface Plan {
     id: number;
@@ -258,13 +259,13 @@ const LandingPageComplete: React.FC = () => {
                                 width: 42,
                                 height: 42,
                                 borderRadius: '12px',
-                                bgcolor: '#10b981',
+                                bgcolor: 'rgba(255,255,255,0.05)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                boxShadow: '0 0 20px rgba(16, 185, 129, 0.3)'
+                                boxShadow: '0 0 20px rgba(16, 185, 129, 0.1)'
                             }}>
-                                <WhatsApp sx={{ color: 'white', fontSize: 28 }} />
+                                <WhinsapLogo sx={{ fontSize: 32 }} />
                             </Box>
                             <Typography variant="h5" sx={{
                                 fontWeight: 800,

@@ -2846,11 +2846,10 @@ async function saveMessageToDB(sessionId, msg) {
             shouldEmit: !chat_jid.includes('@g.us') // Solo rechazar grupos, permitir LIDs individuales
         });
 
-        // 🔧 CORREGIDO: Emitir mensajes individuales (incluyendo LIDs), pero NO grupos
-        if (!chat_jid.includes('@g.us')) {
+        // 🔧 EMITIR MENSAJES (incluye grupos) a salas de sesión y agentes asignados
+        {
             console.log(`[${sessionId}] 🚀💾 EMITIENDO desde saveMessageToDB:`, messageId.substring(0, 20), from_me ? '(FROM_ME)' : '(ENTRANTE)');
-            console.log(`[${sessionId}] 📡 Emitiendo a sala: session-${phoneNumber}`);
-            io.to(`session-${sessionId}`).emit('message', {
+            const payload = {
                 id: messageId,
                 from: sender_jid || chat_jid,
                 chatJid: chat_jid,
@@ -2859,25 +2858,67 @@ async function saveMessageToDB(sessionId, msg) {
                 timestamp: new Date(timestamp).toISOString(),
                 type: message_type?.replace('Message', '').toLowerCase() || 'text',
                 isFromMe: Boolean(from_me),
-                isGroup: false, // Ya filtramos grupos arriba
+                isGroup: chat_jid.includes('@g.us'),
                 status: status
-            });
+            };
+
+            const roomById = `session-${sessionId}`;
+            const roomByPhone = `session-${phoneNumber}`;
+            console.log(`[${sessionId}] 📡 Emitiendo a salas: ${roomById} y ${roomByPhone}`);
+            io.to(roomById).emit('message', payload);
+            io.to(roomByPhone).emit('message', payload);
+
+            // Emitir también a agentes asignados a este chat
+            try {
+                const [assignRows] = await pool.query(
+                    `SELECT user_id FROM chat_assignments WHERE chat_jid = ? AND session_id = ? AND status = 'active'`,
+                    [chat_jid, phoneNumber]
+                );
+                if (assignRows && assignRows.length > 0) {
+                    const agentIds = assignRows.map(r => r.user_id).filter(Boolean);
+                    console.log(`[${sessionId}] 👥 Emitiendo a agentes asignados:`, agentIds);
+                    for (const agentId of agentIds) {
+                        io.to(`agent-${agentId}`).emit('message', payload);
+                    }
+                }
+            } catch (emitAgentErr) {
+                console.warn(`[${sessionId}] ⚠️ No se pudo emitir a agentes asignados:`, emitAgentErr.message);
+            }
+
             console.log(`[${sessionId}] ✅💾 Mensaje emitido desde BD`);
 
             // 🆕 EMITIR CHAT UPDATE para actualizar la lista lateral
             const chatJidPhone = chat_jid.split('@')[0];
             console.log(`[${sessionId}] 🔍 [MONITOR] Emitiendo chat-update para chat_jid=${chat_jid}, phone=${chatJidPhone}, phoneNumber=${phoneNumber}`);
 
-            // 🚫 NO emitir si el chat_jid es el propio número
+            // Emitir chat-update a ambas salas (evitando el propio número)
             if (chatJidPhone !== phoneNumber) {
-                io.to(`session-${sessionId}`).emit('chat-update', {
+                const updatePayload = {
                     id: chat_jid,
                     lastMessage: text_content || 'Media',
                     timestamp: new Date(timestamp).toISOString(),
-                    unreadCount: !from_me ? 1 : 0, // Incrementará en el frontend si no es enviado por mi
+                    unreadCount: !from_me ? 1 : 0,
                     name: senderName || chat_jid.split('@')[0],
                     profilePicUrl: senderAvatar
-                });
+                };
+                io.to(roomById).emit('chat-update', updatePayload);
+                io.to(roomByPhone).emit('chat-update', updatePayload);
+
+                // También a agentes asignados
+                try {
+                    const [assignRows] = await pool.query(
+                        `SELECT user_id FROM chat_assignments WHERE chat_jid = ? AND session_id = ? AND status = 'active'`,
+                        [chat_jid, phoneNumber]
+                    );
+                    if (assignRows && assignRows.length > 0) {
+                        for (const r of assignRows) {
+                            io.to(`agent-${r.user_id}`).emit('chat-update', updatePayload);
+                        }
+                    }
+                } catch (emitAgentErr) {
+                    console.warn(`[${sessionId}] ⚠️ No se pudo emitir chat-update a agentes asignados:`, emitAgentErr.message);
+                }
+
                 console.log(`[${sessionId}] 📡 chat-update emitido para ${chat_jid}`);
             } else {
                 console.log(`[${sessionId}] 🚫 chat-update NO emitido (propio número): ${chat_jid}`);
@@ -10020,6 +10061,54 @@ app.get('/api/session/:sessionId/status-json', async (req, res) => {
     }
 });
 
+// 🆕 Endpoint para verificar si una sesión es primaria (is_primary=1)
+app.get('/api/session/:sessionId/is-primary', async (req, res) => {
+    const { sessionId } = req.params;
+
+    try {
+        if (!pool) {
+            return res.json({
+                success: false,
+                isPrimary: false,
+                error: 'Base de datos no disponible'
+            });
+        }
+
+        const connection = await pool.getConnection();
+        try {
+            // Buscar en user_sessions por session_id o phone
+            const [rows] = await connection.execute(
+                'SELECT is_primary FROM user_sessions WHERE session_id = ? OR phone = ? LIMIT 1',
+                [sessionId, sessionId]
+            );
+
+            if (rows.length === 0) {
+                // Si no se encuentra, asumir que es primaria (compatibilidad con sesiones antiguas)
+                console.log(`[IS-PRIMARY] ⚠️ Sesión ${sessionId} no encontrada en user_sessions. Asumiendo primaria.`);
+                return res.json({ success: true, isPrimary: true, assumed: true });
+            }
+
+            const isPrimary = rows[0].is_primary === 1;
+            console.log(`[IS-PRIMARY] 📋 Sesión ${sessionId}: is_primary=${isPrimary}`);
+
+            return res.json({
+                success: true,
+                isPrimary: isPrimary,
+                sessionId: sessionId
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error(`[IS-PRIMARY] ❌ Error:`, error);
+        return res.json({
+            success: false,
+            isPrimary: false,
+            error: 'Error verificando sesión'
+        });
+    }
+});
+
 // Nuevo endpoint: Verificar sesión activa por deviceId (para detectar conexión recién establecida)
 app.post('/api/session/check-by-device', async (req, res) => {
     const { deviceId } = req.body;
@@ -12217,7 +12306,13 @@ app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser
     // ✅ GRUPOS HABILITADOS - Permitir incluir grupos en la lista de chats
     const includeGroups = true; // Habilitado - Mostrar grupos
     const phoneNumber = await getUserPhoneNumber(sessionId);
-    console.log(`[API][${sessionId}] 🔍 INICIANDO CARGA DE CHATS - phoneNumber obtenido: "${phoneNumber}"`);
+    console.log(`[API-CHATS] ============================================`);
+    console.log(`[API-CHATS] 🔍 INICIANDO CARGA DE CHATS`);
+    console.log(`[API-CHATS] sessionId recibido: "${sessionId}"`);
+    console.log(`[API-CHATS] phoneNumber obtenido: "${phoneNumber}"`);
+    console.log(`[API-CHATS] dateFilter: "${dateFilter}"`);
+    console.log(`[API-CHATS] limit: ${parsedLimit}, offset: ${parsedOffset}`);
+    console.log(`[API-CHATS] ============================================`);
     const session = sessions.get(sessionId) || (phoneNumber ? sessions.get(phoneNumber) : undefined);
 
     // No bloquear la UI si no hay conexión: intentar cargar desde DB igualmente
@@ -12577,17 +12672,31 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
             const sessionOwnerEmail = sessionCheck[0].email;
             const sessionOwnerPhone = sessionCheck[0].phone;
 
-            // Verificar que el email o phone del token coincide con el dueño de la sesión
-            // Soportar usuarios que iniciaron sesión con phone en lugar de email
-            const isOwner = (userEmail && userEmail === sessionOwnerEmail) ||
-                (userPhone && userPhone === sessionOwnerPhone);
+            // Permitir roles privilegiados
+            const isPrivilegedRole = ['super_admin', 'superadmin', 'admin', 'supervisor'].includes(userRole);
+            if (isPrivilegedRole) {
+                console.log(`[API - HISTORY] 👑 Acceso por rol ${userRole} a sessionId ${sessionId}`);
+            } else {
+                // Permitir acceso si el usuario tiene asignaciones activas en esta sesión
+                const [assignRows] = await connection.execute(
+                    'SELECT COUNT(*) AS cnt FROM chat_assignments WHERE session_id = ? AND user_id = ? AND status = "active"',
+                    [activeSessionId, req.user.id]
+                );
 
-            if (!isOwner) {
-                console.warn(`[API - HISTORY] ⚠️ INTENTO DE ACCESO NO AUTORIZADO: Usuario ${userEmail || userPhone} intentó acceder al historial de ${sessionOwnerEmail || sessionOwnerPhone}`);
-                return res.status(403).json({ success: false, error: 'No tienes permiso para ver este historial' });
+                const hasActiveAssignment = assignRows[0] && assignRows[0].cnt > 0;
+
+                // Verificar que el email o phone del token coincide con el dueño de la sesión
+                // O si tiene asignaciones activas en la sesión
+                const isOwner = (userEmail && userEmail === sessionOwnerEmail) ||
+                    (userPhone && userPhone === sessionOwnerPhone);
+
+                if (!isOwner && !hasActiveAssignment) {
+                    console.warn(`[API - HISTORY] ⚠️ INTENTO DE ACCESO NO AUTORIZADO: Usuario ${userEmail || userPhone} intentó acceder al historial de ${sessionOwnerEmail || sessionOwnerPhone}`);
+                    return res.status(403).json({ success: false, error: 'No tienes permiso para ver este historial' });
+                }
+
+                console.log(`[API - HISTORY] ✅ Acceso autorizado: ${userEmail || userPhone} a sessionId ${sessionId}`);
             }
-
-            console.log(`[API - HISTORY] ✅ Acceso autorizado: ${userEmail || userPhone} a sessionId ${sessionId}`);
         } else {
             console.log(`[API - HISTORY] 👑 Modo Admin: SuperAdmin ${userEmail || userPhone} viendo todo el historial`);
         }
@@ -13098,11 +13207,8 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
                          GROUP BY jid
                          ORDER BY
                             CASE
-                                -- Primero: nombres que empiezan con letras (A-Z, a-z, Á-ú)
                                 WHEN name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0
-                                -- Segundo: nombres inválidos (puntos) reemplazados por números
                                 WHEN name REGEXP '^[0-9]' THEN 1
-                                -- Tercero: caracteres especiales (@, ., ,, ;, etc.)
                                 ELSE 2
                             END,
                             name ASC`,

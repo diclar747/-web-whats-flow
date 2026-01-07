@@ -145,7 +145,11 @@ export const setupFetchInterceptor = (): void => {
       }
 
       return response;
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        console.log('[FETCH-INTERCEPTOR] ⛔ Petición abortada (no es error):', normalizedUrl);
+        throw error; // Mantener semántica de fetch: promesa rechazada por aborto
+      }
       console.error('[FETCH-INTERCEPTOR] ❌ Error en petición:', error);
       throw error;
     }

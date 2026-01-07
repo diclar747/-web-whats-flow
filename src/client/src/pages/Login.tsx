@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { Box } from '@mui/material';
+import WhinsapLogo from '../components/WhinsapLogo';
 import './AuthPages.css';
 
 interface LoginProps {
@@ -102,6 +104,9 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         <div className="auth-container">
             <div className="auth-card">
                 <div className="auth-header">
+                    <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                        <WhinsapLogo sx={{ fontSize: 60 }} />
+                    </Box>
                     <h1>Whinsap</h1>
                     <h2>Iniciar sesión</h2>
                 </div>

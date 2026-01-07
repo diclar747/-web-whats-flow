@@ -360,7 +360,12 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       const cacheKey = `history_data_${activeSessionId}`;
 
       // 1. Cargar mensajes y analíticas
-      const response = await fetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${activeSessionId}`, { signal });
+      const offset = (page - 1) * rowsPerPage;
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const response = await fetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${activeSessionId}&limit=${rowsPerPage}&offset=${offset}`, {
+        signal,
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
       const data = await response.json();
 
       console.log('📦 Respuesta de la API /api/history/messages:', data);
@@ -557,6 +562,11 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         setAnalytics(null);
       }
     } catch (error) {
+      // Ignorar errores de abort (peticiones canceladas)
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('⏭️ Petición cancelada (normal al cambiar de vista)');
+        return;
+      }
       console.error('❌ Error cargando historial:', error);
       setError(`Error de conexión al cargar el historial: ${error}`);
       setMessages([]);
@@ -565,7 +575,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, page, rowsPerPage]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -577,7 +587,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     }
 
     return () => controller.abort();
-  }, [loadHistoryData, sessionId, diagnoseSession]);
+  }, [loadHistoryData, sessionId, page, rowsPerPage, diagnoseSession]);
 
   const loadGroups = async (activeSessionId?: string) => {
     try {

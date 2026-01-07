@@ -792,7 +792,10 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
       console.log('[CRM] Loading WhatsApp data for sessionId:', sessionId);
 
       // Cargar contactos sincronizados de WhatsApp
-      const contactsResponse = await fetch(`${getAPIBaseURL()}/api/contacts/${sessionId}`);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const contactsResponse = await fetch(`${getAPIBaseURL()}/api/contacts/${sessionId}`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
       const contactsData = await contactsResponse.json();
 
       console.log('[CRM] Contacts response:', contactsData);

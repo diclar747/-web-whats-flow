@@ -854,8 +854,9 @@ const App: React.FC = () => {
       setToken(authToken);
       setUserType(userData.role === 'super_admin' ? 'admin' : 'agent');
 
-      // ✅ CRÍTICO: Establecer sessionId = user.id (string) si no viene explícito
-      const effectiveSessionId = sessionIdFromLogin || String(userData.id);
+      // ✅ CRÍTICO: Establecer sessionId = phone (si existe) o id
+      // Prioridad: 1. sessionId explícito, 2. session_id en user, 3. phone en user, 4. id de usuario
+      const effectiveSessionId = sessionIdFromLogin || userData.session_id || userData.phone || String(userData.id);
 
       // Guardar datos en localStorage y sessionStorage
       const storageKeys = [

@@ -77,6 +77,7 @@ import IncomingCall from '../components/IncomingCall';
 import AgentChatView from '../components/AgentChatView';
 import ModernAlert from '../components/ModernAlert';
 import RequiresWhatsApp from '../components/RequiresWhatsApp';
+import WhinsapLogo from '../components/WhinsapLogo';
 
 // Lazy loading de módulos para mejor rendimiento
 const WhatsAppWebChat = lazy(() => import('../modules/WhatsAppWebChat'));
@@ -599,7 +600,7 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
     } catch (error) {
       console.error('Error fetching dashboard stats:', error);
     }
-  }, [sessionId, sessionValid]);
+  }, [sessionId]); // ✅ Removed sessionValid dependency
 
   // Actualizar título de página con mensajes no leídos
   useEffect(() => {
@@ -640,7 +641,7 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
 
   const handleConnectionUpdate = useCallback((data: any) => {
     console.log('[SOCKET] 📱 Estado de conexión actualizado:', data);
-    if (data.status === 'connected') {
+    if (data.status === 'connected' || data.isConnected === true) {
       setWhatsappStatus('connected');
 
       const localToken = localStorage.getItem('token') || sessionStorage.getItem('token');
@@ -651,14 +652,21 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
         console.log('[SOCKET] ⏳ Conectado pero esperando token de autenticación... (Activando modo autenticación)');
         setIsAuthenticating(true);
       }
-    } else if (data.status === 'disconnected') {
+
+      // ✅ ACTUALIZAR STATS - Importante para reflejar líneas activas y límites
+      setTimeout(() => {
+        fetchDashboardStats();
+      }, 1000);
+    } else if (data.status === 'disconnected' || data.isConnected === false) {
       setWhatsappStatus('disconnected');
       setIsAuthenticating(false);
+      // Actualizar stats para reflejar que hay menos líneas activas
+      fetchDashboardStats();
     } else {
       setWhatsappStatus('connecting');
     }
     setLastConnectionCheck(new Date());
-  }, []);
+  }, [fetchDashboardStats]);
 
   const handleSessionLoggedOut = useCallback((data: any) => {
     console.log('[SOCKET] 👋 Sesión cerrada desde el teléfono:', data);
@@ -769,10 +777,14 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
 
     // Verificar estado de WhatsApp inicialmente (sin polling!)
     checkWhatsappStatus();
+  }, [sessionId, checkSessionValidity, checkWhatsappStatus]); // ✅ Removed fetchDashboardStats
 
-    // Obtener estadísticas iniciales (solo una vez)
-    fetchDashboardStats();
-  }, [sessionId, fetchDashboardStats]);
+  // ✅ Obtener estadísticas cuando sessionId o sessionValid cambien a true
+  useEffect(() => {
+    if (sessionId && sessionValid !== false) {
+      fetchDashboardStats();
+    }
+  }, [sessionId, sessionValid, fetchDashboardStats]);
 
   // ✅ Usar Socket.IO del contexto global (evitar conexiones duplicadas)
   const { socket, isConnected } = useSocket();
@@ -902,13 +914,14 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
                 width: 40,
                 height: 40,
                 borderRadius: 3,
-                background: 'linear-gradient(135deg, #0088cc 0%, #00a2ff 100%)', // Telegram Blue
+                background: 'rgba(255, 255, 255, 0.05)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 8px 16px rgba(0, 136, 204, 0.3)'
+                boxShadow: '0 8px 16px rgba(0, 0, 0, 0.2)'
               }}>
-                <Telegram sx={{ color: 'white', fontSize: 24 }} />
+                {/* El logo ya tiene gradiente interno, usamos fondo neutro o transparente */}
+                <WhinsapLogo sx={{ fontSize: 32 }} />
               </Box>
               <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em', color: 'white' }}>
                 Whinsap
@@ -919,13 +932,13 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
               width: 40,
               height: 40,
               borderRadius: 3,
-              background: 'linear-gradient(135deg, #0088cc 0%, #00a2ff 100%)', // Telegram Blue
+              background: 'rgba(255, 255, 255, 0.05)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer'
             }} onClick={() => setDrawerMinimized(false)}>
-              <Telegram sx={{ color: 'white', fontSize: 24 }} />
+              <WhinsapLogo sx={{ fontSize: 32 }} />
             </Box>
           )}
 

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useWhatsApp } from '../context/WhatsAppContext';
+import { useSocket } from '../context/SocketContext';
 import { getAPIBaseURL } from '../utils/socketConfig';
-import io from 'socket.io-client';
 import {
   TextField,
   Button,
@@ -52,7 +52,6 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const [showQRPrompt, setShowQRPrompt] = useState<boolean>(false);
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const socketRef = useRef<any>(null);
 
   // Hook del contexto - debe estar ANTES de cualquier lógica condicional
   // Los hooks deben llamarse incondicionalmente al principio del componente
@@ -115,82 +114,73 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
     return () => clearInterval(interval);
   }, [sessionId]);
 
-  // 🚀 INICIALIZAR SOCKET Y ESCUCHAR EVENTOS DE CONEXIÓN EN TIEMPO REAL
+  // 🚀 SOCKET: Usar el contexto global que ya está conectado y autenticado
+  // Esto asegura que estemos en la room correcta (session-{sessionId})
+  const { socket, isConnected } = useSocket();
+
+  // ESCUCHAR EVENTOS DE CONEXIÓN Y MENSAJES EN TIEMPO REAL
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !socket) return;
 
-    try {
-      // Inicializar socket si no existe
-      if (!socketRef.current) {
-        socketRef.current = io(getAPIBaseURL(), {
-          reconnection: true,
-          reconnectionDelay: 1000,
-          reconnectionDelayMax: 5000,
-          reconnectionAttempts: 5
-        });
+    console.log('🔌 [ModernWhatsAppChat] Configurando listeners en socket global:', socket.id);
 
-        console.log('🔌 Socket.IO inicializado en ModernWhatsAppChat');
+    // Handler para eventos de conexión
+    const handleConnectionUpdate = (data: any) => {
+      console.log('✅ [REALTIME] Evento connection-update recibido:', data);
+      if (data.status === 'connected') {
+        console.log('✅ WhatsApp conectado en tiempo real');
+        setConnectionStatus('connected');
+        setWhatsappConnected(true);
+        setShowQRPrompt(false);
+        setLoadError(null);
       }
+    };
 
-      const socket = socketRef.current;
+    const handleWhatsAppConnected = (data: any) => {
+      console.log('✅ [REALTIME] Evento whatsapp-connected recibido:', data);
+      if (data.success) {
+        setConnectionStatus('connected');
+        setWhatsappConnected(true);
+        setShowQRPrompt(false);
+        setLoadError(null);
+      }
+    };
 
-      // ESCUCHAR EVENTO DE CONEXIÓN EXITOSA DE WHATSAPP
-      socket.on('connection-update', (data: any) => {
-        console.log('✅ [REALTIME] Evento connection-update recibido:', data);
-        if (data.status === 'connected') {
-          console.log('✅ WhatsApp conectado en tiempo real');
-          setConnectionStatus('connected');
-          setWhatsappConnected(true);
-          setShowQRPrompt(false);
-          setLoadError(null);
-        }
-      });
+    const handleWhatsAppDisconnected = (data: any) => {
+      console.log('❌ [REALTIME] Evento whatsapp-disconnected recibido:', data);
+      setConnectionStatus('disconnected');
+      setWhatsappConnected(false);
+      setShowQRPrompt(true);
+      setLoadError('WhatsApp desconectado. Por favor, escanea el código QR nuevamente.');
+    };
 
-      // ESCUCHAR EVENTO DE CONEXIÓN EXITOSA DE WHATSAPP (alternativo)
-      socket.on('whatsapp-connected', (data: any) => {
-        console.log('✅ [REALTIME] Evento whatsapp-connected recibido:', data);
-        if (data.success) {
-          console.log('✅ WhatsApp conectado en tiempo real (whatsapp-connected)');
-          setConnectionStatus('connected');
-          setWhatsappConnected(true);
-          setShowQRPrompt(false);
-          setLoadError(null);
-        }
-      });
+    const handleSessionStatus = (data: any) => {
+      console.log('📊 [REALTIME] Cambio de estado de sesión:', data);
+      if (data.isConnected) {
+        setConnectionStatus('connected');
+        setWhatsappConnected(true);
+        setShowQRPrompt(false);
+      }
+    };
 
-      // ESCUCHAR EVENTO DE DESCONEXIÓN DE WHATSAPP
-      socket.on('whatsapp-disconnected', (data: any) => {
-        console.log('❌ [REALTIME] Evento whatsapp-disconnected recibido:', data);
-        setConnectionStatus('disconnected');
-        setWhatsappConnected(false);
-        setShowQRPrompt(true);
-        setLoadError('WhatsApp desconectado. Por favor, escanea el código QR nuevamente.');
-      });
+    // Suscribirse a eventos
+    socket.on('connection-update', handleConnectionUpdate);
+    socket.on('whatsapp-connected', handleWhatsAppConnected);
+    socket.on('whatsapp-disconnected', handleWhatsAppDisconnected);
+    socket.on('session-status', handleSessionStatus);
 
-      // ESCUCHAR CAMBIOS DE ESTADO DE SESIÓN
-      socket.on('session-status', (data: any) => {
-        console.log('📊 [REALTIME] Cambio de estado de sesión:', data);
-        if (data.isConnected) {
-          setConnectionStatus('connected');
-          setWhatsappConnected(true);
-          setShowQRPrompt(false);
-        }
-      });
+    // IMPORTANTE: Asegurarse de que estamos unidos a la sala de la sesión
+    // El SocketContext lo hace, pero si el sessionId cambia, reforzamos
+    socket.emit('join-session', { sessionId });
 
-      return () => {
-        // NO desconectar el socket aquí, solo remover listeners
-        if (socketRef.current) {
-          socketRef.current.off('connection-update');
-          socketRef.current.off('whatsapp-connected');
-          socketRef.current.off('whatsapp-disconnected');
-          socketRef.current.off('session-status');
-        }
-      };
-    } catch (error) {
-      console.error('❌ Error inicializando socket en ModernWhatsAppChat:', error);
-      return undefined;
-    }
-  }, [sessionId]);
+    return () => {
+      // Limpiar listeners al desmontar
+      socket.off('connection-update', handleConnectionUpdate);
+      socket.off('whatsapp-connected', handleWhatsAppConnected);
+      socket.off('whatsapp-disconnected', handleWhatsAppDisconnected);
+      socket.off('session-status', handleSessionStatus);
+    };
+  }, [sessionId, socket]);
 
   // Hooks de efectos - deben estar DESPUÉS de los hooks de estado y contexto
   useEffect(() => {

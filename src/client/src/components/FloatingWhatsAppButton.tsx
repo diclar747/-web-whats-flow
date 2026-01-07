@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Fab, Tooltip, Zoom, keyframes } from '@mui/material';
-import { Telegram } from '@mui/icons-material';
+import WhinsapLogo from './WhinsapLogo';
 
 // Animación de pulso
 const pulse = keyframes`
@@ -60,7 +60,7 @@ const FloatingWhatsAppButton: React.FC = () => {
               },
             }}
           >
-            <Telegram sx={{ fontSize: 36 }} />
+            <WhinsapLogo sx={{ fontSize: 36, color: 'white' }} />
           </Fab>
         </Tooltip>
       </Box>
