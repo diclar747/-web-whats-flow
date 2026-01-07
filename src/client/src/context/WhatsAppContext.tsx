@@ -581,7 +581,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         const messagePreview = mappedMessage.message || 'Nuevo mensaje multimedia';
 
         // 1. Mostrar notificación visual (si estamos en segundo plano o no es el chat activo)
-        if (document.hidden || !isActiveChat) {
+        const isCurrentChatActive = activeChatRef.current?.id === mappedMessage.chatJid;
+        if (document.hidden || !isCurrentChatActive) {
           showBrowserNotification({
             title: `💬 ${senderName}`,
             body: messagePreview.length > 50 ? messagePreview.substring(0, 50) + '...' : messagePreview,

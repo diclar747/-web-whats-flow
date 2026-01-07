@@ -40,6 +40,7 @@ import {
   DialogContentText
 } from '@mui/material';
 import {
+  Telegram,
   WhatsApp,
   Dashboard as DashboardIcon,
   Chat as ChatIcon,
@@ -901,13 +902,13 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
                 width: 40,
                 height: 40,
                 borderRadius: 3,
-                background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                background: 'linear-gradient(135deg, #0088cc 0%, #00a2ff 100%)', // Telegram Blue
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 8px 16px rgba(79, 70, 229, 0.3)'
+                boxShadow: '0 8px 16px rgba(0, 136, 204, 0.3)'
               }}>
-                <WhatsApp sx={{ color: 'white', fontSize: 24 }} />
+                <Telegram sx={{ color: 'white', fontSize: 24 }} />
               </Box>
               <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em', color: 'white' }}>
                 Whinsap
@@ -918,13 +919,13 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
               width: 40,
               height: 40,
               borderRadius: 3,
-              background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+              background: 'linear-gradient(135deg, #0088cc 0%, #00a2ff 100%)', // Telegram Blue
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer'
             }} onClick={() => setDrawerMinimized(false)}>
-              <WhatsApp sx={{ color: 'white', fontSize: 24 }} />
+              <Telegram sx={{ color: 'white', fontSize: 24 }} />
             </Box>
           )}
 
