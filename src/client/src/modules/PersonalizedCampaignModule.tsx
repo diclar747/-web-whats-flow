@@ -1006,40 +1006,127 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
         maxWidth="lg"
         fullWidth
       >
-        <DialogTitle>
-          {selectedCampaign?.name}
-          <Typography variant="caption" display="block" color="text.secondary">
-            Creada: {selectedCampaign?.created_at && new Date(selectedCampaign.created_at).toLocaleDateString()}
-          </Typography>
+        <DialogTitle sx={{ p: 0 }}>
+          <Box sx={{
+            p: 3,
+            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            borderBottom: '1px solid rgba(255,255,255,0.1)'
+          }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <Box>
+                <Typography variant="h6" sx={{ color: 'white', fontWeight: 600, mb: 0.5 }}>
+                  {selectedCampaign?.name}
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CalendarToday sx={{ fontSize: 14 }} />
+                  {selectedCampaign?.created_at && new Date(selectedCampaign.created_at).toLocaleDateString('es-ES', {
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+                  })}
+                </Typography>
+              </Box>
+              <Chip
+                label={selectedCampaign?.status === 'active' ? 'ACTIVA' :
+                  selectedCampaign?.status === 'paused' ? 'PAUSADA' :
+                    selectedCampaign?.status === 'completed' ? 'COMPLETADA' :
+                      selectedCampaign?.status.toUpperCase()}
+                color={selectedCampaign?.status === 'active' ? 'success' : selectedCampaign?.status === 'paused' ? 'warning' : 'default'}
+                size="small"
+                sx={{ fontWeight: 'bold' }}
+              />
+            </Box>
+          </Box>
         </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ mt: 2 }}>
           {selectedCampaign && (
             <Stack spacing={3}>
-              {/* Dashboard de estadísticas */}
-              <Grid container spacing={2}>
+              {/* Dashboard de estadísticas - Diseño Compacto */}
+              <Grid container spacing={1.5}>
                 <Grid item xs={6} sm={3}>
-                  <Paper sx={{ p: 2, textAlign: 'center' }}>
-                    <Typography variant="h4">{selectedCampaign.total_recipients}</Typography>
-                    <Typography variant="caption" color="text.secondary">Total</Typography>
-                  </Paper>
+                  <Card sx={{
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    transition: 'all 0.2s',
+                    '&:hover': { transform: 'translateY(-2px)', boxShadow: 4 }
+                  }}>
+                    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                        <Typography variant="body2" sx={{ color: 'white', fontSize: '0.75rem', fontWeight: 600 }}>
+                          Total
+                        </Typography>
+                      </Box>
+                      <Typography variant="h5" sx={{ color: 'white', fontWeight: 700 }}>
+                        {selectedCampaign.total_recipients}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.7rem' }}>
+                        Destinatarios
+                      </Typography>
+                    </CardContent>
+                  </Card>
                 </Grid>
                 <Grid item xs={6} sm={3}>
-                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'info.light' }}>
-                    <Typography variant="h4">{selectedCampaign.sent_count}</Typography>
-                    <Typography variant="caption">Enviados</Typography>
-                  </Paper>
+                  <Card sx={{
+                    background: 'linear-gradient(135deg, #2196f3 0%, #1976d2 100%)',
+                    transition: 'all 0.2s',
+                    '&:hover': { transform: 'translateY(-2px)', boxShadow: 4 }
+                  }}>
+                    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                        <Send sx={{ color: 'white', mr: 0.5, fontSize: 16 }} />
+                        <Typography variant="body2" sx={{ color: 'white', fontSize: '0.75rem', fontWeight: 600 }}>
+                          Enviados
+                        </Typography>
+                      </Box>
+                      <Typography variant="h5" sx={{ color: 'white', fontWeight: 700 }}>
+                        {selectedCampaign.sent_count}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.7rem' }}>
+                        Mensajes
+                      </Typography>
+                    </CardContent>
+                  </Card>
                 </Grid>
                 <Grid item xs={6} sm={3}>
-                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'success.light' }}>
-                    <Typography variant="h4">{selectedCampaign.read_count}</Typography>
-                    <Typography variant="caption">Vistos</Typography>
-                  </Paper>
+                  <Card sx={{
+                    background: 'linear-gradient(135deg, #00c853 0%, #00e676 100%)',
+                    transition: 'all 0.2s',
+                    '&:hover': { transform: 'translateY(-2px)', boxShadow: 4 }
+                  }}>
+                    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                        <Visibility sx={{ color: 'white', mr: 0.5, fontSize: 16 }} />
+                        <Typography variant="body2" sx={{ color: 'white', fontSize: '0.75rem', fontWeight: 600 }}>
+                          Vistos
+                        </Typography>
+                      </Box>
+                      <Typography variant="h5" sx={{ color: 'white', fontWeight: 700 }}>
+                        {selectedCampaign.read_count}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.7rem' }}>
+                        Confirmados
+                      </Typography>
+                    </CardContent>
+                  </Card>
                 </Grid>
                 <Grid item xs={6} sm={3}>
-                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'warning.light' }}>
-                    <Typography variant="h4">{selectedCampaign.paid_count}</Typography>
-                    <Typography variant="caption">Pagados</Typography>
-                  </Paper>
+                  <Card sx={{
+                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                    transition: 'all 0.2s',
+                    '&:hover': { transform: 'translateY(-2px)', boxShadow: 4 }
+                  }}>
+                    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                        <AttachMoney sx={{ color: 'white', mr: 0.5, fontSize: 16 }} />
+                        <Typography variant="body2" sx={{ color: 'white', fontSize: '0.75rem', fontWeight: 600 }}>
+                          Pagados
+                        </Typography>
+                      </Box>
+                      <Typography variant="h5" sx={{ color: 'white', fontWeight: 700 }}>
+                        {selectedCampaign.paid_count}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.7rem' }}>
+                        Cobranzas
+                      </Typography>
+                    </CardContent>
+                  </Card>
                 </Grid>
               </Grid>
 
@@ -1112,17 +1199,32 @@ const PersonalizedCampaignModule: React.FC<PersonalizedCampaignModuleProps> = ({
                         <TableCell>{recipient.installments}</TableCell>
                         <TableCell>
                           <Chip
-                            label={getStatusLabel(recipient.status)}
-                            color={getStatusColor(recipient.status)}
+                            label={
+                              recipient.status === 'read' ? 'VISTO' :
+                                recipient.status === 'delivered' ? 'ENTREGADO' :
+                                  recipient.status === 'sent' ? 'ENVIADO' :
+                                    recipient.status === 'failed' ? 'FALLIDO' :
+                                      'PENDIENTE'
+                            }
+                            color={
+                              recipient.status === 'read' ? 'success' :
+                                recipient.status === 'delivered' ? 'info' :
+                                  recipient.status === 'sent' ? 'primary' :
+                                    recipient.status === 'failed' ? 'error' :
+                                      'default'
+                            }
                             size="small"
                           />
                         </TableCell>
                         <TableCell>
-                          {recipient.paid ? (
-                            <Chip label="Pagado" color="success" size="small" icon={<Done />} />
-                          ) : (
-                            <Chip label="Pendiente" size="small" />
-                          )}
+                          <Chip
+                            label={
+                              recipient.paid ? 'PAGADO' : 'PENDIENTE'
+                            }
+                            color={recipient.paid ? 'success' : 'default'}
+                            size="small"
+                            icon={recipient.paid ? <Done /> : undefined}
+                          />
                         </TableCell>
                         <TableCell>
                           <Stack direction="row" spacing={0.5}>
