@@ -1155,21 +1155,24 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
 
                           <div
                             style={{
-                              padding: msg.type !== 'document' && msg.type !== 'image' && msg.type !== 'video' && msg.type !== 'audio' ? '8px 12px' : '4px',
-                              borderRadius: msg.type !== 'document' && msg.type !== 'image' && msg.type !== 'video' && msg.type !== 'audio' ? '7.5px' : '8px',
+                              padding: msg.type !== 'document' && msg.type !== 'image' && msg.type !== 'video' && msg.type !== 'audio' ? '8px 14px' : '4px',
+                              borderRadius: msg.isFromMe ? '12px 0px 12px 12px' : '0px 12px 12px 12px',
                               backgroundColor: msg.isFromMe
-                                ? isDarkMode ? '#005c4b' : '#d9fdd3'  // WhatsApp green for sent
-                                : isDarkMode ? '#2a3942' : '#ffffff', // Default for received
-                              color: isDarkMode ? '#e9edef' : '#111b21',
+                                ? isDarkMode ? '#0d47a1' : '#e3f2fd'  // System Blue: Deep Blue (Dark) / Light Blue (Light)
+                                : isDarkMode ? '#202c33' : '#ffffff', // Dark Slate / White
+                              color: msg.isFromMe
+                                ? isDarkMode ? '#ffffff' : '#0d47a1'
+                                : isDarkMode ? '#e9edef' : '#111b21',
                               position: 'relative',
                               cursor: 'pointer',
                               border: msg.isFromMe
-                                ? '1px solid rgba(37, 211, 102, 0.3)'  // Subtle green border for sent
-                                : '1px solid rgba(185, 214, 243, 0.3)', // Subtle blue border for received
-                              boxShadow: '0 1px 0.5px rgba(0, 0, 0, 0.05)',
+                                ? 'none'
+                                : `1px solid ${isDarkMode ? 'rgba(134, 150, 160, 0.15)' : 'rgba(11, 20, 26, 0.08)'}`,
+                              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)',
                               maxWidth: '75%',
                               wordWrap: 'break-word',
-                              alignSelf: msg.isFromMe ? 'flex-end' : 'flex-start'
+                              alignSelf: msg.isFromMe ? 'flex-end' : 'flex-start',
+                              backgroundImage: msg.isFromMe && isDarkMode ? 'linear-gradient(135deg, #1565c0 0%, #0d47a1 100%)' : 'none'
                             }}
                             onContextMenu={(e) => handleMessageRightClick(e, msg.id)}
                           >

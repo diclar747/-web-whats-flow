@@ -10,7 +10,7 @@ import {
     Typography,
     Chip
 } from '@mui/material';
-import { People } from '@mui/icons-material';
+import { People, Image as ImageIcon, Videocam, Mic } from '@mui/icons-material';
 import { useDrag } from 'react-dnd';
 import { getAPIBaseURL } from '../utils/socketConfig';
 
@@ -22,6 +22,7 @@ interface ChatListItemProps {
     onSelect: (chat: any) => void;
     formatTime: (date: string) => string;
     sessionId: string | null;
+    typingStatus?: { [chatId: string]: string };
 }
 
 export const ChatListItem: React.FC<ChatListItemProps> = ({
@@ -31,7 +32,8 @@ export const ChatListItem: React.FC<ChatListItemProps> = ({
     colors,
     onSelect,
     formatTime,
-    sessionId
+    sessionId,
+    typingStatus
 }) => {
     const [{ isDragging }, drag] = useDrag(() => ({
         type: 'CHAT_ITEM',
@@ -54,10 +56,32 @@ export const ChatListItem: React.FC<ChatListItemProps> = ({
                 py: 1.5,
                 opacity: isDragging ? 0.5 : 1,
                 cursor: 'grab',
+                position: 'relative',
+                overflow: 'hidden',
+                transition: 'all 0.3s ease',
                 '&.Mui-selected': { backgroundColor: colors.selected },
-                '&:hover': { backgroundColor: colors.hover }
+                '&:hover': { backgroundColor: colors.hover },
+                // 🟢 Animación de pulso cuando llega un mensaje
+                animation: chat.lastUpdate && (Date.now() - chat.lastUpdate < 3000) ? 'pulse-new 2s ease-out' : 'none',
+                '@keyframes pulse-new': {
+                    '0%': { backgroundColor: 'transparent' },
+                    '10%': { backgroundColor: '#25d36622' },
+                    '100%': { backgroundColor: 'transparent' }
+                }
             }}
         >
+            {/* Indicador lateral de mensaje nuevo */}
+            {chat.unreadCount > 0 && (
+                <Box sx={{
+                    position: 'absolute',
+                    left: 0,
+                    top: '15%',
+                    bottom: '15%',
+                    width: 4,
+                    bgcolor: '#25d366',
+                    borderRadius: '0 4px 4px 0'
+                }} />
+            )}
             <ListItemAvatar sx={{ minWidth: chatListCollapsed ? 'auto' : 56, justifyContent: 'center', display: 'flex' }}>
                 <Tooltip title={chatListCollapsed ? chat.name : ''} placement="right">
                     <Badge
@@ -118,16 +142,23 @@ export const ChatListItem: React.FC<ChatListItemProps> = ({
                         </Box>
                     }
                     secondary={
-                        <Typography
-                            variant="body2"
-                            noWrap
-                            sx={{
-                                color: colors.textSecondary,
-                                fontWeight: chat.unreadCount ? 500 : 400
-                            }}
-                        >
-                            {chat.lastMessage || 'Toca para chatear'}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            {chat.lastMessage?.includes('📷 Imagen') && <ImageIcon sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
+                            {chat.lastMessage?.includes('🎥 Video') && <Videocam sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
+                            {chat.lastMessage?.includes('🔊 Audio') && <Mic sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
+                            <Typography
+                                variant="body2"
+                                noWrap
+                                sx={{
+                                    color: typingStatus?.[chat.id] ? '#25d366' : colors.textSecondary,
+                                    fontWeight: (chat.unreadCount || typingStatus?.[chat.id]) ? 500 : 400,
+                                    fontStyle: typingStatus?.[chat.id] ? 'italic' : 'normal',
+                                    fontSize: '0.85rem'
+                                }}
+                            >
+                                {typingStatus?.[chat.id] || chat.lastMessage || 'Toca para chatear'}
+                            </Typography>
+                        </Box>
                     }
                 />
             )}

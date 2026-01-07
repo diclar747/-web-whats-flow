@@ -716,6 +716,49 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // ✅ LISTENER GLOBAL PARA ACTUALIZAR SESIÓN SIN RELOAD
+  useEffect(() => {
+    const handleSessionEstablished = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { sessionId: newSessionId, userId, userRole, token } = customEvent.detail;
+
+      console.log('📣 [APP] Evento session-established recibido:', newSessionId);
+
+      if (newSessionId) {
+        setSessionId(newSessionId);
+
+        // Actualizar storage si es necesario
+        sessionStorage.setItem('whinsap_session', newSessionId);
+        localStorage.setItem('whinsap_session', newSessionId);
+
+        // Si hay otros datos, actualizar también
+        if (userId) {
+          sessionStorage.setItem('userId', String(userId));
+          localStorage.setItem('userId', String(userId));
+        }
+
+        // Guardar token si viene en el evento
+        if (token) {
+          sessionStorage.setItem('token', token);
+          localStorage.setItem('token', token);
+          setToken(token);
+          console.log('[APP] ✅ Token JWT guardado desde evento');
+        }
+
+        if (userRole) {
+          setUserType(userRole === 'admin' ? 'admin' : 'agent');
+          sessionStorage.setItem('userRole', userRole);
+          localStorage.setItem('userRole', userRole);
+        }
+      }
+    };
+
+    window.addEventListener('whinsap-session-established', handleSessionEstablished);
+    return () => {
+      window.removeEventListener('whinsap-session-established', handleSessionEstablished);
+    };
+  }, []);
+
   // FUNCIÓN ELIMINADA POR SEGURIDAD
   // fetchActiveSession permitía acceder a sesiones de otros usuarios
   // Ahora cada usuario debe escanear su propio QR code

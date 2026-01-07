@@ -147,6 +147,7 @@ export interface WhatsAppChat {
   participantsCount?: number;
   assigned_agent_name?: string;
   status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'pending';
+  lastUpdate?: number; // 🔥 NUEVO: Timestamp del último cambio para animaciones
 }
 
 interface MessageReaction {
@@ -216,6 +217,7 @@ interface WhatsAppContextType {
   setTransferRequest: (request: any | null) => void;
   setMessages: React.Dispatch<React.SetStateAction<any[]>>;
   setChats: React.Dispatch<React.SetStateAction<WhatsAppChat[]>>;
+  typingStatus: { [chatId: string]: string };
 }
 
 const WhatsAppContext = createContext<WhatsAppContextType | undefined>(undefined);
@@ -248,6 +250,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   const messagesCacheRef = useRef<Map<string, WhatsAppMessage[]>>(new Map());
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
   const messagesRef = useRef<WhatsAppMessage[]>([]); // Ref para acceso síncrono en listeners
+  const [typingStatus, setTypingStatus] = useState<Map<string, string>>(new Map()); // 🔥 NUEVO: Estado de escritura
 
   // Sincronizar ref con state
   useEffect(() => {
@@ -586,6 +589,9 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             silent: false
           });
 
+          // Play sound if not from me and not active chat
+          if (!isActiveChat) playNotificationSound();
+
           // ⚡ Actualizar título
           const currentTitle = document.title;
           if (!currentTitle.startsWith('(')) {
@@ -606,19 +612,14 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         console.log('✅ [REAL-TIME] Mensaje pertenece al chat activo, actualizando UI...');
         requestAnimationFrame(() => {
           setMessages(prev => {
-            // Evitar duplicados
+            // Evitar duplicados por ID
             if (prev.some(msg => msg.id === mappedMessage.id)) return prev;
 
-            // Sort logic preserved...
-            const lastTimestamp = prev.length > 0 ? new Date(prev[prev.length - 1].timestamp).getTime() : 0;
-            const newTimestamp = new Date(mappedMessage.timestamp).getTime();
-
-            // Reemplazar mensaje temporal si existe
+            // Lógica de reemplazo de temporales optimizada
             if (mappedMessage.isFromMe) {
               const tempIndex = prev.findIndex(msg =>
                 msg.id.startsWith('temp-') &&
-                msg.message === mappedMessage.message &&
-                Math.abs(new Date(msg.timestamp).getTime() - new Date(mappedMessage.timestamp).getTime()) < 10000
+                msg.message === mappedMessage.message
               );
               if (tempIndex !== -1) {
                 const newArr = [...prev];
@@ -627,29 +628,25 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
               }
             }
 
-            if (newTimestamp >= lastTimestamp) {
-              const updated = [...prev, mappedMessage];
-              // Actualizar cache
-              if (activeChatId) messagesCacheRef.current.set(activeChatId, updated);
-              return updated;
-            } else {
-              const updated = [...prev, mappedMessage].sort((a, b) =>
-                new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
-              );
-              // Actualizar cache
-              if (activeChatId) messagesCacheRef.current.set(activeChatId, updated);
-              return updated;
-            }
+            const updated = [...prev, mappedMessage].sort((a, b) =>
+              new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
+            );
+
+            // Actualizar cache
+            if (activeChatId) messagesCacheRef.current.set(activeChatId, updated);
+            return updated;
           });
 
-          // Scroll
-          const scheduleScroll = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 0));
-          scheduleScroll(() => {
-            const messagesContainer = document.querySelector('[data-messages-container]');
-            if (messagesContainer) {
-              messagesContainer.scrollTop = messagesContainer.scrollHeight;
+          // Scroll más agresivo y fiable (como WhatsApp Web)
+          setTimeout(() => {
+            const container = document.querySelector('[data-messages-container]');
+            if (container) {
+              container.scrollTo({
+                top: container.scrollHeight,
+                behavior: 'smooth'
+              });
             }
-          }, { timeout: 300 });
+          }, 50);
         });
       } else {
         console.log('ℹ️ [REAL-TIME] Mensaje NO es del chat activo:', { activeChatId, msgChat: mappedMessage.chatJid });
@@ -665,15 +662,16 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         if (chatIndex !== -1) {
           console.log('[REAL-TIME] Actualizando chat existente en lista:', prev[chatIndex].name);
           const chat = prev[chatIndex];
-          const shouldIncrementUnread = !mappedMessage.isFromMe && !isActiveChat;
+          const isMsgForActiveChat = activeChatRef.current?.id === (chat.id || mappedMessage.chatJid);
+          const shouldIncrementUnread = !mappedMessage.isFromMe && !isMsgForActiveChat;
 
           const updatedChat = {
             ...chat,
             lastMessage: mappedMessage.message,
             timestamp: mappedMessage.timestamp,
-            // Asegurar que el ID sea consistente con el mensaje recibido si es necesario, o mantener el del chat
-            unreadCount: shouldIncrementUnread ? (chat.unreadCount || 0) + 1 : (chat.unreadCount || 0),
-            status: mappedMessage.status || 'delivered'
+            unreadCount: shouldIncrementUnread ? (chat.unreadCount || 0) + 1 : (isMsgForActiveChat ? 0 : chat.unreadCount || 0),
+            status: mappedMessage.status || 'delivered',
+            lastUpdate: Date.now() // 🔥 Marcar actualización para animación
           };
 
           const newChats = [...prev];
@@ -706,7 +704,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             isOnline: !mappedMessage.chatJid.includes('@g.us'),
             unreadCount: mappedMessage.isFromMe ? 0 : 1,
             avatar: undefined,
-            status: mappedMessage.status || 'delivered'
+            status: 'delivered'
           };
 
           // ⚡ ORDENAMIENTO ESTRICTO: Siempre ordenar por fecha descendente
@@ -747,18 +745,68 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
     const handleMessageStatusUpdate = ({ id, status, chatJid }: { id: string; status: string; chatJid?: string }) => {
       console.log('📊 [WhatsAppContext] Estado mensaje actualizado:', id, status, chatJid);
-      setMessages(prev =>
-        prev.map(msg => (msg.id === id ? { ...msg, status: status as 'sending' | 'sent' | 'delivered' | 'read' } : msg))
-      );
 
-      // Actualizar también el status en la lista de chats
+      const statusOrder: Record<string, number> = { 'read': 4, 'visto': 4, 'delivered': 3, 'entregado': 3, 'sent': 2, 'enviado': 2, 'pending': 1, 'received': 0 };
+      const newOrder = statusOrder[status] || 0;
+
+      setMessages(prev => {
+        const index = prev.findIndex(m => m.id === id);
+        if (index === -1) return prev;
+
+        const currentOrder = statusOrder[prev[index].status || ''] || 0;
+        if (newOrder <= currentOrder) return prev; // No degradar
+
+        const newMessages = [...prev];
+        newMessages[index] = { ...newMessages[index], status: status as any };
+        return newMessages;
+      });
+
+      // También actualizar estado en la lista de chats si es el último mensaje
       if (chatJid) {
-        setChats(prev => prev.map(chat => {
-          if (chat.id === chatJid || chat.id.includes(chatJid)) {
-            return { ...chat, status: status as any };
+        setChats(prev => {
+          const index = prev.findIndex(c => c.id === chatJid);
+          if (index === -1) return prev;
+
+          const currentOrder = statusOrder[prev[index].status || ''] || 0;
+          if (newOrder <= currentOrder) return prev; // No degradar
+
+          const newChats = [...prev];
+          newChats[index] = { ...newChats[index], status: status as any };
+          return newChats;
+        });
+      }
+    };
+
+    // 🔥 NUEVO: Manejar actualización de presencia (typing/recording)
+    const handlePresenceUpdate = (data: any) => {
+      const { chatJid, presences } = data;
+      const jid = Object.keys(presences)[0];
+      const presence = presences[jid];
+
+      if (presence && presence.lastKnownPresence) {
+        setTypingStatus(prev => {
+          const newMap = new Map(prev);
+          if (presence.lastKnownPresence === 'composing') {
+            newMap.set(chatJid, 'escribiendo...');
+          } else if (presence.lastKnownPresence === 'recording') {
+            newMap.set(chatJid, 'grabando audio...');
+          } else {
+            newMap.delete(chatJid);
           }
-          return chat;
-        }));
+          return newMap;
+        });
+
+        // Limpieza automática tras 5 segundos si no hay más updates
+        setTimeout(() => {
+          setTypingStatus(prev => {
+            if (prev.has(chatJid)) {
+              const newMap = new Map(prev);
+              newMap.delete(chatJid);
+              return newMap;
+            }
+            return prev;
+          });
+        }, 5000);
       }
     };
 
@@ -913,13 +961,13 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       setError(null);
 
       // Obtener deviceId del almacenamiento
-      const deviceId = sessionStorage.getItem('device_id') 
+      const deviceId = sessionStorage.getItem('device_id')
         || sessionStorage.getItem('whinsap_device_id')
         || sessionStorage.getItem('whinsap_session_device_id')
         || localStorage.getItem('device_id')
         || localStorage.getItem('whinsap_device_id')
         || localStorage.getItem('whinsap_session_device_id')
-        || crypto.randomUUID?.() 
+        || crypto.randomUUID?.()
         || Date.now().toString(36) + Math.random().toString(36).substr(2);
 
       const response = await fetch(`${API_BASE}/api/qr-status?deviceId=${encodeURIComponent(deviceId)}`);
@@ -1445,7 +1493,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     transferRequest,
     setTransferRequest,
     setMessages,
-    setChats
+    setChats,
+    typingStatus: Object.fromEntries(typingStatus)
   }), [
     session,
     chats,
@@ -1477,7 +1526,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     removeReaction,
     loadMessageReactions,
     markChatAsRead,
-    markAllChatsAsRead
+    markAllChatsAsRead,
+    typingStatus
   ]);
 
   // Escuchar evento de recarga de chats asignados

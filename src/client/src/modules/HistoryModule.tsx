@@ -132,7 +132,7 @@ interface MessageHistory {
   fileName?: string;
   timestamp: string;
   isFromMe: boolean;
-  status: 'sent' | 'delivered' | 'read' | 'failed';
+  status: 'sent' | 'delivered' | 'read' | 'failed' | 'pending' | 'received' | 'visto' | 'entregado' | 'enviado';
   agentId?: number;
   agentName?: string;
   campaignId?: string;
@@ -178,7 +178,7 @@ interface CampaignRecipient {
   id: number;
   contact_jid: string;
   contact_name?: string;
-  status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
+  status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed' | 'visto' | 'entregado' | 'enviado';
   message_id?: string;
   sent_at?: string;
   delivered_at?: string;
@@ -313,82 +313,31 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     }
   };
 
-  // Función de diagnóstico para verificar el sessionId y estado del servidor
-  const diagnoseSession = useCallback(async () => {
+  const diagnoseSession = useCallback(async (signal?: AbortSignal) => {
     console.log('🔍 Diagnóstico del módulo de historial');
-    console.log('SessionId recibido:', sessionId);
-    console.log('Longitud del sessionId:', sessionId?.length || 0);
-
-    if (!sessionId) {
-      console.error('❌ SessionId está vacío o undefined');
-      setDebugInfo({
-        error: 'SessionId vacío',
-        sessionId: sessionId,
-        timestamp: new Date().toISOString()
-      });
-      return;
-    }
+    if (!sessionId) return undefined;
 
     try {
-      // Verificar sessionId en localStorage
-      const localStorageSessionId = localStorage.getItem('whinsap_session');
+      const activeSessionId = sessionId;
+      const response = await fetch(`${getAPIBaseURL()}/api/session/${activeSessionId}/status`, { signal });
+      const data = await response.json();
 
-      // Primero intentar con el sessionId recibido
-      let activeSessionId = sessionId;
-      let sessionResponse = await fetch(`${getAPIBaseURL()}/api/session/${sessionId}/status`);
-      let sessionData = await sessionResponse.json();
-
-      // Si la sesión recibida no está activa, intentar con la de localStorage
-      if (!sessionData.success || !sessionData.isConnected) {
-        if (localStorageSessionId && localStorageSessionId !== sessionId) {
-          console.log('🔄 Probando con sessionId de localStorage:', localStorageSessionId);
-          sessionResponse = await fetch(`${getAPIBaseURL()}/api/session/${localStorageSessionId}/status`);
-          sessionData = await sessionResponse.json();
-
-          if (sessionData.success && sessionData.isConnected) {
-            activeSessionId = localStorageSessionId;
-            console.log('✅ Usando sessionId de localStorage:', activeSessionId);
-          }
-        }
-      }
-
-      console.log('Estado de la sesión:', sessionData);
-
-      // Verificar contactos disponibles con el sessionId activo
-      const contactsResponse = await fetch(`${getAPIBaseURL()}/api/contacts/${activeSessionId}`);
-      const contactsData = await contactsResponse.json();
-      console.log('Contactos disponibles:', contactsData);
-
-      // Verificar mensajes disponibles con el sessionId activo
-      const messagesResponse = await fetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${activeSessionId}&limit=5`);
-      const messagesData = await messagesResponse.json();
-      console.log('Mensajes disponibles:', messagesData);
+      if (signal?.aborted) return undefined;
 
       setDebugInfo({
-        receivedSessionId: sessionId,
-        localStorageSessionId: localStorageSessionId,
-        activeSessionId: activeSessionId,
-        sessionStatus: sessionData,
-        contactsCount: contactsData.contacts?.length || 0,
-        messagesCount: messagesData.messages?.length || 0,
+        sessionId: activeSessionId,
+        status: data,
         timestamp: new Date().toISOString()
       });
-
-      // Retornar el sessionId activo para usar en otras funciones
       return activeSessionId;
-
     } catch (error) {
+      if (signal?.aborted) return undefined;
       console.error('Error en diagnóstico:', error);
-      setDebugInfo({
-        error: error instanceof Error ? error.message : String(error),
-        sessionId: sessionId,
-        timestamp: new Date().toISOString()
-      });
-      return sessionId;
+      return undefined;
     }
   }, [sessionId]);
 
-  const loadHistoryData = useCallback(async (forceReload = false) => {
+  const loadHistoryData = useCallback(async (forceReload = false, signal?: AbortSignal) => {
     try {
       setLoading(true);
       setError(null);
@@ -398,44 +347,20 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       if (!activeSessionId || activeSessionId.trim() === '') {
         activeSessionId = localStorage.getItem('whinsap_session') || '';
         if (activeSessionId) {
-          console.log('✅ [HistoryModule] Recuperado sessionId de localStorage:', activeSessionId);
+          console.log('📍 Recuperado sessionId de localStorage:', activeSessionId);
         }
       }
 
-      console.log('🔄 Cargando historial de mensajes para sessionId:', activeSessionId);
-
-      // Validar que el sessionId sea válido
-      if (!activeSessionId || activeSessionId.trim() === '') {
-        console.error('❌ SessionId no válido:', activeSessionId);
-        setError('No se encontró sesión activa. Por favor, recarga o vuelve a conectar.');
-        setMessages([]);
-        setConversations([]);
-        setAnalytics(null);
+      if (!activeSessionId) {
+        if (signal?.aborted) return;
         setLoading(false);
         return;
       }
 
-      const cacheKey = `history_${sessionId}`;
-      const cachedData = localStorage.getItem(cacheKey);
+      const cacheKey = `history_data_${activeSessionId}`;
 
-      if (!forceReload && cachedData) {
-        const parsedData = JSON.parse(cachedData);
-
-        const cacheTime = parsedData.timestamp;
-        const now = Date.now();
-        const ttl = 60 * 1000;
-
-        if (now - cacheTime < ttl) {
-          setMessages(parsedData.messages);
-          setConversations(parsedData.conversations);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // ⚡ OPTIMIZADO: Cargar TODO el historial de mensajes (sin límite)
-      // El backend ya está optimizado con índices para carga rápida
-      const response = await fetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${sessionId}&limit=100000&offset=0`);
+      // 1. Cargar mensajes y analíticas
+      const response = await fetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${activeSessionId}`, { signal });
       const data = await response.json();
 
       console.log('📦 Respuesta de la API /api/history/messages:', data);
@@ -643,14 +568,15 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   }, [sessionId]);
 
   useEffect(() => {
+    const controller = new AbortController();
+
     if (sessionId) {
-      console.log('🚀 HistoryModule iniciado con sessionId:', sessionId);
-      loadHistoryData();
+      loadHistoryData(false, controller.signal);
     } else {
-      console.error('❌ HistoryModule iniciado sin sessionId');
-      setError('No se recibió sessionId válido');
-      diagnoseSession();
+      diagnoseSession(controller.signal);
     }
+
+    return () => controller.abort();
   }, [loadHistoryData, sessionId, diagnoseSession]);
 
   const loadGroups = async (activeSessionId?: string) => {
@@ -681,12 +607,22 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     const handleMessageStatusUpdate = (data: any) => {
       console.log('📬 [HistoryModule] message-status-update recibido:', data);
 
-      // Actualizar el estado del mensaje en la lista
-      setMessages(prev => prev.map(msg =>
-        msg.id === data.messageId || msg.id === data.id
-          ? { ...msg, status: data.status }
-          : msg
-      ));
+      // Actualizar el estado del mensaje en la lista con protección de degradación
+      setMessages(prev => prev.map(msg => {
+        if (msg.id === data.messageId || msg.id === data.id) {
+          // Jerarquía: read > delivered > sent > pending
+          const statusOrder: Record<string, number> = { 'read': 4, 'visto': 4, 'delivered': 3, 'entregado': 3, 'sent': 2, 'enviado': 2, 'pending': 1, 'received': 0 };
+          const currentOrder = statusOrder[msg.status] || 0;
+          const newOrder = statusOrder[data.status] || 0;
+
+          if (newOrder > currentOrder) {
+            console.log(`[HistoryModule] 📈 Actualizando status ${msg.id}: ${msg.status} -> ${data.status}`);
+            return { ...msg, status: data.status };
+          }
+          return msg;
+        }
+        return msg;
+      }));
 
       const cacheKey = `history_${sessionId}`;
       const cachedData = localStorage.getItem(cacheKey);
@@ -720,17 +656,79 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     };
   }, [socket, isConnected, sessionId, on, off, emit]);
 
+  const loadCampaigns = useCallback(async () => {
+    try {
+      console.log('📢 Cargando historial de campañas...');
+      const response = await fetch(`${getAPIBaseURL()}/api/campaigns/${sessionId}`);
+      const data = await response.json();
+
+      console.log('📊 Respuesta de API /api/campaigns:', data);
+
+      if (data.success && data.data && data.data.campaigns && Array.isArray(data.data.campaigns)) {
+        const campaignsData: CampaignHistory[] = data.data.campaigns.map((campaign: any) => ({
+          id: campaign.id,
+          name: campaign.name || 'Sin nombre',
+          message_template: campaign.message_template || '',
+          status: campaign.status || 'pending',
+          total_recipients: campaign.total_recipients || 0,
+          sent_count: campaign.sent_count || 0,
+          delivered_count: campaign.delivered_count || 0,
+          read_count: campaign.read_count || 0,
+          failed_count: campaign.failed_count || 0,
+          pending_count: campaign.pending_count || 0,
+          created_at: campaign.created_at || new Date().toISOString(),
+          updated_at: campaign.updated_at || new Date().toISOString(),
+          use_random_timing: campaign.use_random_timing || false,
+          random_timing_msg_count: campaign.random_timing_msg_count,
+          random_timing_time_span_minutes: campaign.random_timing_time_span_minutes,
+          message_media_url: campaign.message_media_url,
+          message_media_type: campaign.message_media_type
+        }));
+
+        console.log('✅ Campañas cargadas:', campaignsData.length);
+        setCampaigns(campaignsData);
+      } else {
+        console.log('⚠️ No se encontraron campañas');
+        setCampaigns([]);
+      }
+    } catch (error) {
+      console.error('❌ Error cargando campañas:', error);
+      setCampaigns([]);
+    }
+  }, [sessionId]);
+
+  const loadStatuses = useCallback(async (activeSessionId?: string) => {
+    try {
+      const currentSessionId = activeSessionId || sessionId;
+      const response = await fetch(`${getAPIBaseURL()}/api/statuses/${currentSessionId}`);
+      const data = await response.json();
+      if (data.success) {
+        setStatuses(data.statuses || []);
+        setStatusHistory(data.history || []);
+        console.log(`✅ ${data.statuses?.length || 0} estados pendientes, ${data.history?.length || 0} en historial`);
+      } else {
+        setStatuses([]);
+        setStatusHistory([]);
+      }
+    } catch (error) {
+      console.error('Error cargando estados:', error);
+      setStatuses([]);
+      setStatusHistory([]);
+    }
+  }, [sessionId]);
+
   useEffect(() => {
+    const controller = new AbortController();
     if (sessionId) {
-      // Ya NO cargamos grupos - solo campañas y estados si es necesario
-      diagnoseSession().then((activeSessionId) => {
+      diagnoseSession(controller.signal).then((activeSessionId) => {
+        if (controller.signal.aborted) return;
         const currentSessionId = activeSessionId || sessionId;
-        // loadGroups(currentSessionId); // ❌ ELIMINADO - No cargar grupos
         loadStatuses(currentSessionId);
-        loadCampaigns(); // Cargar campañas
+        loadCampaigns();
       });
     }
-  }, [sessionId, diagnoseSession]);
+    return () => controller.abort();
+  }, [sessionId, diagnoseSession, loadCampaigns, loadStatuses]);
 
   const handleRefreshData = async () => {
     // Obtener el sessionId activo primero
@@ -754,25 +752,9 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     setShowMembersDialog(true);
   };
 
-  const loadStatuses = async (activeSessionId?: string) => {
-    try {
-      const currentSessionId = activeSessionId || sessionId;
-      const response = await fetch(`${getAPIBaseURL()}/api/statuses/${currentSessionId}`);
-      const data = await response.json();
-      if (data.success) {
-        setStatuses(data.statuses || []);
-        setStatusHistory(data.history || []);
-        console.log(`✅ ${data.statuses?.length || 0} estados pendientes, ${data.history?.length || 0} en historial`);
-      } else {
-        setStatuses([]);
-        setStatusHistory([]);
-      }
-    } catch (error) {
-      console.error('Error cargando estados:', error);
-      setStatuses([]);
-      setStatusHistory([]);
-    }
-  };
+
+
+
 
   // Manejar selección de imagen para estado
   const handleStatusImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -960,46 +942,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   };
 
 
-  const loadCampaigns = async () => {
-    try {
-      console.log('📢 Cargando historial de campañas...');
-      const response = await fetch(`${getAPIBaseURL()}/api/campaigns/${sessionId}`);
-      const data = await response.json();
 
-      console.log('📊 Respuesta de API /api/campaigns:', data);
-
-      if (data.success && data.data && data.data.campaigns && Array.isArray(data.data.campaigns)) {
-        const campaignsData: CampaignHistory[] = data.data.campaigns.map((campaign: any) => ({
-          id: campaign.id,
-          name: campaign.name || 'Sin nombre',
-          message_template: campaign.message_template || '',
-          status: campaign.status || 'pending',
-          total_recipients: campaign.total_recipients || 0,
-          sent_count: campaign.sent_count || 0,
-          delivered_count: campaign.delivered_count || 0,
-          read_count: campaign.read_count || 0,
-          failed_count: campaign.failed_count || 0,
-          pending_count: campaign.pending_count || 0,
-          created_at: campaign.created_at || new Date().toISOString(),
-          updated_at: campaign.updated_at || new Date().toISOString(),
-          use_random_timing: campaign.use_random_timing || false,
-          random_timing_msg_count: campaign.random_timing_msg_count,
-          random_timing_time_span_minutes: campaign.random_timing_time_span_minutes,
-          message_media_url: campaign.message_media_url,
-          message_media_type: campaign.message_media_type
-        }));
-
-        console.log('✅ Campañas cargadas:', campaignsData.length);
-        setCampaigns(campaignsData);
-      } else {
-        console.log('⚠️ No se encontraron campañas');
-        setCampaigns([]);
-      }
-    } catch (error) {
-      console.error('❌ Error cargando campañas:', error);
-      setCampaigns([]);
-    }
-  };
 
   const loadCampaignDetails = async (campaignId: number) => {
     try {
@@ -2169,26 +2112,26 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                   {message.isFromMe ? (
                                     <>
-                                      {message.status === 'read' && (
+                                      {(message.status === 'read' || message.status === 'visto') && (
                                         <>
                                           <DoneAll sx={{ fontSize: 18, color: '#0088cc' }} />
-                                          <Typography variant="body2" sx={{ color: '#0088cc' }}>
+                                          <Typography variant="body2" sx={{ color: '#0088cc', ml: 0.5 }}>
                                             Visto
                                           </Typography>
                                         </>
                                       )}
-                                      {message.status === 'delivered' && (
+                                      {(message.status === 'delivered' || message.status === 'entregado') && (
                                         <>
                                           <DoneAll sx={{ fontSize: 18, color: '#64748b' }} />
-                                          <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                          <Typography variant="body2" sx={{ color: '#64748b', ml: 0.5 }}>
                                             Entregado
                                           </Typography>
                                         </>
                                       )}
-                                      {message.status === 'sent' && (
+                                      {(message.status === 'sent' || message.status === 'enviado') && (
                                         <>
                                           <Check sx={{ fontSize: 18, color: '#64748b' }} />
-                                          <Typography variant="body2" sx={{ color: '#64748b' }}>
+                                          <Typography variant="body2" sx={{ color: '#64748b', ml: 0.5 }}>
                                             Enviado
                                           </Typography>
                                         </>
@@ -2196,15 +2139,15 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                                       {message.status === 'failed' && (
                                         <>
                                           <ErrorIcon sx={{ fontSize: 18, color: '#ef4444' }} />
-                                          <Typography variant="body2" sx={{ color: '#ef4444' }}>
+                                          <Typography variant="body2" sx={{ color: '#ef4444', ml: 0.5 }}>
                                             Fallido
                                           </Typography>
                                         </>
                                       )}
-                                      {!message.status && (
+                                      {(message.status === 'pending' || !message.status) && (
                                         <>
                                           <Schedule sx={{ fontSize: 18, color: '#f59e0b' }} />
-                                          <Typography variant="body2" sx={{ color: '#f59e0b' }}>
+                                          <Typography variant="body2" sx={{ color: '#f59e0b', ml: 0.5 }}>
                                             Pendiente
                                           </Typography>
                                         </>

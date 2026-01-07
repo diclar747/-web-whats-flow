@@ -76,9 +76,15 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
   // Cargar plan de suscripción y límites
   useEffect(() => {
     const fetchSubscriptionLimits = async () => {
-      let identifier = resolvedSessionId;
+      // 🔥 PRIORIDAD: Usar teléfono guardado en localStorage
+      let identifier = localStorage.getItem('userPhone')
+        || sessionStorage.getItem('userPhone')
+        || localStorage.getItem('phone')
+        || sessionStorage.getItem('phone')
+        || resolvedSessionId;
 
-      if (!identifier || /^\d+$/.test(identifier)) {
+      // Si no hay teléfono, intentar extraer del user guardado
+      if (!identifier || /^[a-f0-9]{16}$/.test(identifier)) {
         try {
           const savedUser = localStorage.getItem('user');
           if (savedUser) {
@@ -89,6 +95,8 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
           console.warn('[SUBSCRIPTION] Error parse user:', e);
         }
       }
+
+      console.log('[SUBSCRIPTION] 🔍 Buscando plan para:', identifier);
 
       if (!identifier) {
         setNormalizedMaxChannels(1);
@@ -103,17 +111,25 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
 
         if (response.ok) {
           const data = await response.json();
+          console.log('[SUBSCRIPTION] 📦 Respuesta:', data);
           const sub = data?.subscription;
           setSubscriptionStatus(sub?.subscription_status || 'inactive');
 
           const maxChannels = sub?.plan_details?.max_channels || sub?.max_channels;
+          console.log('[SUBSCRIPTION] 📊 max_channels:', maxChannels);
+
           if (typeof maxChannels === 'number' && maxChannels > 0) {
             setNormalizedMaxChannels(maxChannels);
+            console.log('[SUBSCRIPTION] ✅ Plan:', maxChannels, 'líneas');
           } else if (maxChannels === 'unlimited' || maxChannels === -1) {
             setNormalizedMaxChannels(Infinity);
+            console.log('[SUBSCRIPTION] ✅ Plan ilimitado');
           } else {
             setNormalizedMaxChannels(1);
+            console.log('[SUBSCRIPTION] ⚠️ Usando 1 línea por defecto');
           }
+        } else {
+          console.error('[SUBSCRIPTION] ❌ HTTP:', response.status);
         }
       } catch (err) {
         console.error('[SUBSCRIPTION] Error al cargar límites:', err);
@@ -204,7 +220,70 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       setWaError(''); // Limpiar errores
       stopQrPolling(); // Detener polling si estaba activo
       setQrState(prev => ({ ...prev, isLoading: false, qrDataUrl: '' })); // Limpiar QR
+      setQrState(prev => ({ ...prev, isLoading: false, qrDataUrl: '' })); // Limpiar QR
       fetchActiveSessions(); // Refrescar lista inmediatamente
+
+      // 🔥 DISPARAR EVENTO GLOBAL PARA ACTUALIZAR APP
+      try {
+        window.dispatchEvent(new CustomEvent('whinsap-session-established', {
+          detail: {
+            sessionId: data.sessionId || resolvedSessionId,
+            userId: sessionStorage.getItem('userId'),
+            userRole: sessionStorage.getItem('userRole')
+          }
+        }));
+        console.log('📣 Evento whinsap-session-established emitido (socket)');
+      } catch (e) {
+        console.error('Error emitiendo evento:', e);
+      }
+    });
+
+    // 🔐 Escuchar token JWT del servidor
+    socket.on('auth_token', (data: any) => {
+      console.log('[WA-CONNECTION] 🔐 Token JWT recibido:', data);
+      if (data.token) {
+        // Guardar token en localStorage y sessionStorage
+        localStorage.setItem('token', data.token);
+        sessionStorage.setItem('token', data.token);
+
+        // Guardar rol y datos de usuario
+        if (data.user) {
+          if (data.user.role) {
+            localStorage.setItem('userRole', data.user.role);
+            sessionStorage.setItem('userRole', data.user.role);
+          }
+          if (data.user.phone) {
+            localStorage.setItem('userPhone', data.user.phone);
+            sessionStorage.setItem('userPhone', data.user.phone);
+          }
+          if (data.user.sessionId) {
+            localStorage.setItem('whinsap_session', data.user.sessionId);
+            sessionStorage.setItem('whinsap_session', data.user.sessionId);
+          }
+        }
+
+        console.log('[WA-CONNECTION] ✅ Token JWT guardado correctamente');
+
+        // 🔥 RECARGAR PLAN después de guardar el teléfono
+        setTimeout(() => {
+          window.location.reload(); // Recargar para que se actualice el plan
+        }, 500);
+
+        // Disparar evento para que App.tsx actualice el estado
+        try {
+          window.dispatchEvent(new CustomEvent('whinsap-session-established', {
+            detail: {
+              sessionId: data.user?.sessionId || resolvedSessionId,
+              userId: sessionStorage.getItem('userId'),
+              userRole: data.user?.role || 'admin',
+              token: data.token
+            }
+          }));
+          console.log('📣 Evento whinsap-session-established emitido (auth_token)');
+        } catch (e) {
+          console.error('Error emitiendo evento:', e);
+        }
+      }
     });
 
     return () => {
@@ -285,7 +364,22 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
               stopQrPolling();
               setQrState({ sessionId: '', qrDataUrl: '', isLoading: false });
               setWaError('');
+              setWaError('');
               await fetchActiveSessions();
+
+              // 🔥 DISPARAR EVENTO GLOBAL PARA ACTUALIZAR APP
+              try {
+                window.dispatchEvent(new CustomEvent('whinsap-session-established', {
+                  detail: {
+                    sessionId: foundSession.sessionId,
+                    userId: sessionStorage.getItem('userId'),
+                    userRole: sessionStorage.getItem('userRole')
+                  }
+                }));
+                console.log('📣 Evento whinsap-session-established emitido (polling)');
+              } catch (e) {
+                console.error('Error emitiendo evento:', e);
+              }
             }
           }
         } catch (err) {

@@ -206,16 +206,16 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
     const deliveredMessages = dash.messages?.delivered || 0;
     const readMessages = dash.messages?.read || 0;
     const failedMessages = dash.messages?.failed || 0;
-    
+
     const deliveryRate = dash.deliveryRate || 0;
     const readRate = dash.readRate || 0;
-    
+
     const activeCampaigns = dash.campaigns?.active || 0;
     const totalCampaigns = dash.campaigns?.total || 0;
-    
+
     const onlineAgents = dash.agents?.online || 0;
     const totalAgents = dash.agents?.total || 0;
-    
+
     const activeChatbots = dash.chatbots || 0;
     const kanbanBoards = dash.kanbans || 0;
     const activeConnections = dash.connections || 0;  // Ahora viene del backend
@@ -518,7 +518,7 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
 
     React.useEffect(() => {
       // Cargar campañas reales desde la base de datos
-      fetch(`/api/campaigns?sessionId=${sessionId}`)
+      fetch(`/api/campaigns/${sessionId}`)
         .then(res => res.json())
         .then(data => {
           if (data.success && data.campaigns) {

@@ -1180,7 +1180,7 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
             <Divider orientation="vertical" flexItem sx={{ bgcolor: 'rgba(255,255,255,0.1)', mx: 1 }} />
 
             {/* 4. Mensajes */}
-            <Tooltip title={`Mensajes hoy: ${dashboardStats.messagesToday || 0}`}>
+            <Tooltip title={`Mensajes totales: ${dashboardStats.messages || 0} (${dashboardStats.messagesToday || 0} hoy)`}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <MessageIcon sx={{ fontSize: 18, color: '#10b981' }} />
                 <Box>
@@ -1188,7 +1188,7 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
                     Mensajes
                   </Typography>
                   <Typography variant="body2" sx={{ fontWeight: 600, color: 'white', fontSize: '0.8rem', lineHeight: 1 }}>
-                    {dashboardStats.messagesToday || 0}
+                    {dashboardStats.messages || 0}
                   </Typography>
                 </Box>
               </Box>

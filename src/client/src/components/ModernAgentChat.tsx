@@ -552,7 +552,7 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
     chatListBg: '#111b21',
     chatBg: '#0b141a',
     headerBg: '#202c33',
-    myMessage: '#005c4b',
+    myMessage: '#2a3942', // Cambiado de verde a gris oscuro moderno
     theirMessage: '#202c33',
     inputBg: '#2a3942',
     text: '#e9edef',

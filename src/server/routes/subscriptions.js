@@ -20,33 +20,42 @@ function getSessions(req) {
   return req.app.get('whatsappSessions') || global.whatsappSessions || new Map();
 }
 
-// Resolver sessionId cuando viene como owner_phone_number (hex) o phone (numérico)
+// Resolver sessionId cuando viene como owner_phone_number (hex), phone (numérico) o email
 async function resolveSessionId(req, rawId) {
   if (!rawId) return rawId;
   try {
     const pool = getPool(req);
     const connection = await pool.getConnection();
     try {
-      // Si parece un owner_phone_number (16 hex)
+      // 1. Si parece un owner_phone_number (16 hex)
       if (typeof rawId === 'string' && rawId.length === 16 && /^[a-f0-9]{16}$/i.test(rawId)) {
         const [rows] = await connection.query(
-          'SELECT session_id FROM user_sessions WHERE owner_phone_number = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
+          'SELECT session_id FROM user_sessions WHERE owner_phone_number = ? AND is_active = 1 ORDER BY last_activity DESC LIMIT 1',
           [rawId]
         );
         if (rows.length > 0 && rows[0].session_id) {
-          console.log(`[SUBSCRIPTIONS] 🔄 owner_phone_number ${rawId} → session_id ${rows[0].session_id}`);
           return rows[0].session_id;
         }
       }
 
-      // Si parece un número de teléfono, mapear a session_id
+      // 2. Si es un email
+      if (typeof rawId === 'string' && rawId.includes('@')) {
+        const [rows] = await connection.query(
+          'SELECT session_id FROM user_sessions WHERE email = ? AND is_active = 1 ORDER BY last_activity DESC LIMIT 1',
+          [rawId]
+        );
+        if (rows.length > 0 && rows[0].session_id) {
+          return rows[0].session_id;
+        }
+      }
+
+      // 3. Si parece un número de teléfono, mapear a session_id
       if (/^\d{6,}$/.test(String(rawId))) {
         const [rows] = await connection.query(
-          'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
+          'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 ORDER BY last_activity DESC LIMIT 1',
           [String(rawId)]
         );
         if (rows.length > 0 && rows[0].session_id) {
-          console.log(`[SUBSCRIPTIONS] 🔄 phone ${rawId} → session_id ${rows[0].session_id}`);
           return rows[0].session_id;
         }
       }
@@ -515,8 +524,11 @@ router.get('/my-subscription', async (req, res) => {
 
       // 2. Buscar en user_sessions (Clientes/Líneas)
       const [userSessions] = await connection.query(`
-        SELECT * FROM user_sessions WHERE (phone = ? OR session_id = ?) AND is_active = 1 LIMIT 1
-      `, [effectiveIdentifier, effectiveIdentifier]);
+        SELECT * FROM user_sessions 
+        WHERE (phone = ? OR session_id = ? OR owner_phone_number = ? OR email = ?) 
+        AND is_active = 1 
+        ORDER BY last_activity DESC LIMIT 1
+      `, [effectiveIdentifier, effectiveIdentifier, effectiveIdentifier, effectiveIdentifier]);
 
       if (userSessions.length > 0) {
         const session = userSessions[0];

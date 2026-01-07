@@ -106,6 +106,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     loadChats,
     loadMessages,
     sendMessage,
+    typingStatus,
     setActiveChat,
     replyMessage,
     setReplyMessage,
@@ -621,7 +622,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       console.log('[WhatsAppWebChat] 🟢 WhatsApp conectado (evento tiempo real):', data);
       setWhatsappConnected(true);
       setConnectionChecking(false);
-      
+
       // Mostrar notificación
       setSnackbar({
         open: true,
@@ -1528,6 +1529,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                 }}
                 formatTime={formatTime}
                 sessionId={sessionId}
+                typingStatus={typingStatus}
               />
             ))}
 
@@ -1606,9 +1608,15 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.3 }}>
-                  <Typography variant="caption" sx={{ color: colors.textSecondary, fontSize: '12.5px' }}>
-                    {activeChat.isGroup ? `Grupo · ${messages.length} mensajes` : `${normalizePhoneNumber(activeChat.id.split('@')[0])}`}
-                  </Typography>
+                  {typingStatus[activeChat.id] ? (
+                    <Typography variant="caption" sx={{ color: '#25d366', fontSize: '12.5px', fontWeight: 600, fontStyle: 'italic' }}>
+                      {typingStatus[activeChat.id]}
+                    </Typography>
+                  ) : (
+                    <Typography variant="caption" sx={{ color: colors.textSecondary, fontSize: '12.5px' }}>
+                      {activeChat.isGroup ? `Grupo · ${messages.length} mensajes` : `${normalizePhoneNumber(activeChat.id.split('@')[0])}`}
+                    </Typography>
+                  )}
                   {activeChat.unreadCount && activeChat.unreadCount > 0 && (
                     <Chip
                       label={`${activeChat.unreadCount} sin leer`}
