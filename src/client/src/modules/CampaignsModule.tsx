@@ -231,7 +231,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
 
   const [selectedKanbanBoards, setSelectedKanbanBoards] = useState<string[]>([]);
-  const [manualContacts, setManualContacts] = useState<Array<{phone: string, name: string}>>([]);
+  const [manualContacts, setManualContacts] = useState<Array<{ phone: string, name: string }>>([]);
   const [manualContactText, setManualContactText] = useState('');
   const [selectedMedia, setSelectedMedia] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
@@ -415,7 +415,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
         return { phone: parts[0], name: parts[0].split('@')[0] };
       }
       return null;
-    }).filter(Boolean) as Array<{phone: string, name: string}>;
+    }).filter(Boolean) as Array<{ phone: string, name: string }>;
 
     setManualContacts(parsed);
   };
@@ -458,7 +458,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
   };
 
   const loadCampaignsData = async () => {
-    
+
     try {
       setLoading(true);
 
@@ -636,8 +636,8 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
               await fetch(`${getAPIBaseURL()}/api/segments/create`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  sessionId, 
+                body: JSON.stringify({
+                  sessionId,
                   name: segment.name,
                   description: segment.description
                 })
@@ -715,12 +715,12 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
     try {
       // ✅ Obtener sessionId del usuario actual
-      const currentSessionId = sessionStorage.getItem('whinsap_session') || 
-                               localStorage.getItem('whinsap_session') || 
-                               sessionId;
-      
+      const currentSessionId = sessionStorage.getItem('whinsap_session') ||
+        localStorage.getItem('whinsap_session') ||
+        sessionId;
+
       console.log('[CAMPAIGNS] Cargando sesiones para:', currentSessionId);
-      
+
       // ✅ Pasar sessionId en el query y token en headers
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const headers: any = {};
@@ -728,7 +728,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active?sessionId=${currentSessionId}`, {
+      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active`, {
         headers
       });
       const data = await response.json();
@@ -797,7 +797,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
   const filteredCampaigns = campaigns.filter(campaign => {
     const matchesSearch = campaign.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         campaign.description.toLowerCase().includes(searchTerm.toLowerCase());
+      campaign.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = filterStatus === 'all' || campaign.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -818,7 +818,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
   // Función para enviar la campaña al backend
   const submitCampaign = async () => {
-    
+
     try {
       setLoading(true);
 
@@ -833,7 +833,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
       // Si hay archivo multimedia, subirlo primero
       let mediaUrl = null;
       let mediaType = null;
-      
+
       if (selectedMedia) {
         console.log('📤 Subiendo archivo multimedia...');
         const formData = new FormData();
@@ -846,7 +846,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
         });
 
         const uploadResult = await uploadResponse.json();
-        
+
         if (uploadResult.success) {
           mediaUrl = uploadResult.data.mediaUrl;
           mediaType = uploadResult.data.mediaType;
@@ -978,7 +978,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
               } else if (campaignData.contactSelectionType === 'kanban') {
                 recipientCount = campaignData.kanbanContacts?.length || 0;
               }
-      
+
               alert(`🎉 Campaña "${campaignData.name}" creada e iniciada exitosamente!\n\nDestinatarios: ${recipientCount}\nID de campaña: ${result.campaignId}\n\nLos mensajes se están enviando en segundo plano.`);
             } else {
               console.warn('⚠️ Campaña creada pero no pudo iniciarse automáticamente:', startResult);
@@ -1034,7 +1034,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
 
   // Función para crear segmento
   const handleCreateSegment = async () => {
-    
+
     try {
       setLoading(true);
 
@@ -1594,7 +1594,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                   <Button
                     startIcon={<ContentPaste />}
                     onClick={async () => {
-    
+
                       try {
                         const text = await navigator.clipboard.readText();
                         setManualContactText(text);
@@ -1708,7 +1708,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                     sum + (kanbanBoardContacts[boardId]?.length || 0), 0
                   )} contacto{selectedKanbanBoards.reduce((sum, boardId) =>
                     sum + (kanbanBoardContacts[boardId]?.length || 0), 0) !== 1 ? 's' : ''} total{selectedKanbanBoards.reduce((sum, boardId) =>
-                    sum + (kanbanBoardContacts[boardId]?.length || 0), 0) !== 1 ? 'es' : ''}
+                      sum + (kanbanBoardContacts[boardId]?.length || 0), 0) !== 1 ? 'es' : ''}
                 </Typography>
               </Box>
             )}
@@ -1760,7 +1760,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                 <FormControlLabel value="optimal" control={<Radio />} label="Hora óptima automática" />
               </RadioGroup>
             </FormControl>
-            
+
             <TextField
               fullWidth
               label="Fecha y Hora de Envío"
@@ -1768,7 +1768,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
               InputLabelProps={{ shrink: true }}
               sx={{ mb: 2 }}
             />
-            
+
             <Alert severity="warning" sx={{ mb: 2 }}>
               <Typography variant="body2">
                 <strong>Recomendación:</strong> Los mejores horarios para envío son entre 10:00-12:00 y 15:00-17:00.
@@ -1840,10 +1840,10 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Box sx={{ 
-        mb: 4, 
-        display: 'flex', 
-        justifyContent: 'space-between', 
+      <Box sx={{
+        mb: 4,
+        display: 'flex',
+        justifyContent: 'space-between',
         alignItems: 'center',
         background: 'linear-gradient(135deg, #e91e63 0%, #ad1457 100%)',
         borderRadius: 3,
@@ -1921,9 +1921,9 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
           <Grid container spacing={3}>
             {filteredCampaigns.map((campaign) => (
               <Grid item xs={12} md={6} lg={4} key={campaign.id}>
-                <Card 
+                <Card
                   elevation={3}
-                  sx={{ 
+                  sx={{
                     height: '100%',
                     borderRadius: 3,
                     transition: 'all 0.3s ease',
@@ -2054,7 +2054,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                           startIcon={<PlayArrow />}
                           sx={{ color: '#4caf50' }}
                           onClick={async () => {
-    
+
                             try {
                               setLoading(true);
                               const response = await fetch(`${getAPIBaseURL()}/api/campaigns/${campaign.id}/start`, {
@@ -2087,7 +2087,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                           startIcon={<Pause />}
                           sx={{ color: '#ff9800' }}
                           onClick={async () => {
-    
+
                             try {
                               setLoading(true);
                               const response = await fetch(`${getAPIBaseURL()}/api/campaigns/${campaign.id}/pause`, {
@@ -2120,7 +2120,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                           startIcon={<PlayArrow />}
                           sx={{ color: '#4caf50' }}
                           onClick={async () => {
-    
+
                             try {
                               setLoading(true);
                               const response = await fetch(`${getAPIBaseURL()}/api/campaigns/${campaign.id}/start`, {
@@ -2154,7 +2154,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                           startIcon={<Delete />}
                           sx={{ color: '#f44336' }}
                           onClick={async () => {
-    
+
                             if (window.confirm(`¿Estás seguro de eliminar la campaña "${campaign.name}"?`)) {
                               try {
                                 setLoading(true);
@@ -2403,10 +2403,10 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
       </Dialog>
 
       {/* Dialog de Analytics detallados */}
-      <Dialog 
-        open={showAnalytics} 
-        onClose={() => setShowAnalytics(false)} 
-        maxWidth="lg" 
+      <Dialog
+        open={showAnalytics}
+        onClose={() => setShowAnalytics(false)}
+        maxWidth="lg"
         fullWidth
       >
         <DialogTitle>
