@@ -569,36 +569,35 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         agent_name: (newMessage as any).agent_name
       };
 
-      // ⚡ OPTIMIZACIÓN: Notificaciones asíncronas
+      // ⚡ OPTIMIZACIÓN: Notificaciones Inmediatas (Sin requestIdleCallback)
       if (!mappedMessage.isFromMe) {
-        const scheduleNotification = (window as any).requestIdleCallback || ((cb: any) => setTimeout(cb, 0));
-        scheduleNotification(() => {
-          // Buscar chat de forma robusta
-          const chat = chatsRef.current.find(c =>
-            c.id === mappedMessage.chatJid || c.id.split('@')[0] === chatPhone
-          );
-          const senderName = chat?.name || mappedMessage.from?.split('@')[0] || 'Contacto';
-          const messagePreview = mappedMessage.message || 'Nuevo mensaje multimedia';
+        console.log('🔔 [REAL-TIME] Procesando notificación para mensaje entrante...');
 
+        // Buscar chat de forma robusta
+        const chat = chatsRef.current.find(c =>
+          c.id === mappedMessage.chatJid || c.id.split('@')[0] === chatPhone
+        );
+        const senderName = chat?.name || mappedMessage.from?.split('@')[0] || 'Contacto';
+        const messagePreview = mappedMessage.message || 'Nuevo mensaje multimedia';
+
+        // 1. Mostrar notificación visual (si estamos en segundo plano o no es el chat activo)
+        if (document.hidden || !isActiveChat) {
           showBrowserNotification({
             title: `💬 ${senderName}`,
             body: messagePreview.length > 50 ? messagePreview.substring(0, 50) + '...' : messagePreview,
             icon: chat?.avatar || '/favicon.ico',
             tag: `chat-${mappedMessage.chatJid}`,
             requireInteraction: false,
-            silent: false
+            silent: false // El sonido se maneja dentro de showBrowserNotification o fallback
           });
+        }
 
-          // Play sound if not from me and not active chat
-          if (!isActiveChat) playNotificationSound();
-
-          // ⚡ Actualizar título
-          const currentTitle = document.title;
-          if (!currentTitle.startsWith('(')) {
-            const unreadCount = chatsRef.current.reduce((total, c) => total + (c.unreadCount || 0), 0) + 1;
-            document.title = `(${unreadCount}) ${currentTitle}`;
-          }
-        }, { timeout: 2000 });
+        // ⚡ Actualizar título dinámicamente
+        const currentTitle = document.title;
+        if (!currentTitle.startsWith('(')) {
+          const unreadCount = chatsRef.current.reduce((total, c) => total + (c.unreadCount || 0), 0) + 1;
+          document.title = `(${unreadCount}) ${currentTitle}`;
+        }
       }
 
       // ⚡ OPTIMIZACIÓN: Actualizar mensajes del chat activo de forma robusta
