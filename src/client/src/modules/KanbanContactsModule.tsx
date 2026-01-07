@@ -560,7 +560,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
 
     try {
       setAddingContactToBoard(prev => ({ ...prev, [uniqueKey]: boardId }));
-      
+
       const response = await fetch(`${getAPIBaseURL()}/api/kanban/move-contact`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1427,75 +1427,89 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
       </Dialog>
 
       {/* Diálogo de Chat Rápido */}
+
       <Dialog
         open={quickChatOpen}
-        onClose={() => !sendingMessage && setQuickChatOpen(false)}
+        onClose={() => setQuickChatOpen(false)}
         maxWidth="sm"
         fullWidth
         PaperProps={{
-          sx: {
-            borderRadius: 4,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          style: {
+            borderRadius: 16,
+            overflow: 'visible',
+            backgroundColor: '#1e293b', // Fondo oscuro principal
+            color: '#f1f5f9', // Texto claro
+            border: '1px solid #334155' // Borde sutil
+          }
+        }}
+        BackdropProps={{
+          style: {
+            backdropFilter: 'blur(3px)',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
           }
         }}
       >
         <DialogTitle
           sx={{
-            background: 'rgba(255,255,255,0.95)',
-            borderBottom: '2px solid rgba(102, 126, 234, 0.3)',
-            pb: 2,
+            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            color: 'white',
+            borderBottom: '1px solid #334155',
+            p: 2.5,
+            borderTopLeftRadius: 16,
+            borderTopRightRadius: 16,
           }}
         >
-          <Stack direction="row" alignItems="center" spacing={2}>
-            {quickChatContact && (
-              <>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Box sx={{ position: 'relative' }}>
                 <Avatar
-                  src={getContactAvatar(quickChatContact)}
+                  src={quickChatContact ? getContactAvatar(quickChatContact) : undefined}
                   sx={{
-                    width: 56,
-                    height: 56,
-                    border: '3px solid #667eea',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    width: 50,
+                    height: 50,
+                    border: '3px solid #3b82f6',
+                    bgcolor: '#334155',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
                   }}
                 >
-                  {quickChatContact.name?.charAt(0).toUpperCase()}
+                  <Message />
                 </Avatar>
-                <Box sx={{ flex: 1 }}>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: '#1a1a1a' }}>
-                    💬 Chat Rápido
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary">
-                    Enviar mensaje a {quickChatContact.name || cleanPhoneNumber(quickChatContact.phone)}
-                  </Typography>
-                </Box>
-                <IconButton
-                  onClick={() => setQuickChatOpen(false)}
-                  disabled={sendingMessage}
+                <Box
                   sx={{
-                    color: '#999',
-                    '&:hover': { bgcolor: 'rgba(0,0,0,0.05)', color: '#f44336' }
+                    position: 'absolute',
+                    bottom: 0,
+                    right: 0,
+                    width: 14,
+                    height: 14,
+                    borderRadius: '50%',
+                    bgcolor: '#22c55e',
+                    border: '2px solid #1e293b'
                   }}
-                >
-                  <Close />
-                </IconButton>
-              </>
-            )}
-          </Stack>
+                />
+              </Box>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
+                  Chat Rápido
+                </Typography>
+                <Typography variant="body2" sx={{ opacity: 0.8, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <TrendingUp sx={{ fontSize: 14 }} />
+                  Enviar mensaje a {quickChatContact?.name || quickChatContact?.phone || '...'}
+                </Typography>
+              </Box>
+            </Box>
+            <IconButton onClick={() => setQuickChatOpen(false)} sx={{ color: 'rgba(255,255,255,0.7)', '&:hover': { bgcolor: 'rgba(255,255,255,0.1)', color: 'white' } }}>
+              <Close />
+            </IconButton>
+          </Box>
         </DialogTitle>
 
-        <DialogContent
-          sx={{
-            background: 'rgba(255,255,255,0.98)',
-            pt: 3,
-            pb: 2,
-          }}
-        >
-          <Box sx={{ position: 'relative' }}>
+        <DialogContent sx={{ p: 3, bgcolor: '#1e293b' }}>
+          <Box sx={{ mt: 1, position: 'relative' }}>
             <TextField
               fullWidth
               multiline
               rows={4}
+              variant="outlined"
               value={quickChatMessage}
               onChange={(e) => setQuickChatMessage(e.target.value)}
               placeholder="Escribe tu mensaje aquí..."
@@ -1508,17 +1522,24 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: 3,
-                  bgcolor: 'white',
+                  bgcolor: '#0f172a', // Fondo input muy oscuro
+                  color: '#f8fafc', // Texto blanco
                   fontSize: '1rem',
                   '& fieldset': {
-                    borderColor: 'rgba(102, 126, 234, 0.3)',
-                    borderWidth: 2,
+                    borderColor: '#334155',
+                    borderWidth: 1,
                   },
                   '&:hover fieldset': {
-                    borderColor: 'rgba(102, 126, 234, 0.5)',
+                    borderColor: '#475569',
                   },
                   '&.Mui-focused fieldset': {
-                    borderColor: '#667eea',
+                    borderColor: '#3b82f6', // Azul focus
+                  },
+                },
+                '& .MuiInputBase-input': {
+                  '&::placeholder': {
+                    color: '#64748b',
+                    opacity: 1,
                   },
                 },
               }}
@@ -1531,15 +1552,13 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                           e.preventDefault();
                           e.stopPropagation();
                           setShowEmojiPicker(!showEmojiPicker);
-                          console.log('[Emoji] Picker toggled:', !showEmojiPicker);
                         }}
                         disabled={sendingMessage}
                         sx={{
-                          color: showEmojiPicker ? '#667eea' : '#999',
-                          bgcolor: showEmojiPicker ? 'rgba(102, 126, 234, 0.1)' : 'transparent',
+                          color: showEmojiPicker ? '#3b82f6' : '#94a3b8',
                           '&:hover': {
-                            bgcolor: 'rgba(102, 126, 234, 0.15)',
-                            color: '#667eea',
+                            bgcolor: 'rgba(59, 130, 246, 0.1)',
+                            color: '#3b82f6',
                           }
                         }}
                       >
@@ -1557,28 +1576,28 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                   position: 'absolute',
                   bottom: 'calc(100% + 8px)',
                   right: 0,
-                  bgcolor: 'white',
+                  bgcolor: '#1e293b', // Fondo picker oscuro
                   borderRadius: 3,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
-                  border: '2px solid rgba(102, 126, 234, 0.3)',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                  border: '1px solid #334155',
                   zIndex: 9999,
                   maxWidth: 360,
                 }}
               >
                 <Box sx={{
                   p: 1.5,
-                  borderBottom: '1px solid rgba(0,0,0,0.08)',
+                  borderBottom: '1px solid #334155',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
                 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600, color: '#667eea' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600, color: '#f1f5f9' }}>
                     😊 Selecciona un emoji
                   </Typography>
                   <IconButton
                     size="small"
                     onClick={() => setShowEmojiPicker(false)}
-                    sx={{ p: 0.5 }}
+                    sx={{ p: 0.5, color: '#94a3b8' }}
                   >
                     <Close fontSize="small" />
                   </IconButton>
@@ -1601,11 +1620,11 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
                           p: 1,
                           borderRadius: 2,
                           transition: 'all 0.2s',
-                          bgcolor: 'rgba(0,0,0,0.02)',
+                          // bgcolor: 'rgba(255,255,255,0.02)',
                           '&:hover': {
-                            bgcolor: 'rgba(102, 126, 234, 0.15)',
+                            bgcolor: 'rgba(59, 130, 246, 0.2)',
                             transform: 'scale(1.25)',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
                           },
                           '&:active': {
                             transform: 'scale(0.95)',
@@ -1620,17 +1639,19 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
             )}
           </Box>
 
-          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#999' }}>
+          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#94a3b8' }}>
             💡 Presiona Ctrl + Enter para enviar rápidamente
           </Typography>
         </DialogContent>
 
         <DialogActions
           sx={{
-            background: 'rgba(255,255,255,0.95)',
-            borderTop: '1px solid rgba(0,0,0,0.05)',
+            bgcolor: '#1e293b',
+            borderTop: '1px solid #334155',
             p: 2,
             gap: 1,
+            borderBottomLeftRadius: 16,
+            borderBottomRightRadius: 16,
           }}
         >
           <Button
@@ -1641,11 +1662,12 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
               borderRadius: 2,
               textTransform: 'none',
               px: 3,
-              borderColor: '#ddd',
-              color: '#666',
+              borderColor: '#475569',
+              color: '#94a3b8',
               '&:hover': {
-                borderColor: '#999',
-                bgcolor: 'rgba(0,0,0,0.02)',
+                borderColor: '#64748b',
+                bgcolor: 'rgba(255,255,255,0.05)',
+                color: '#f1f5f9'
               }
             }}
           >
@@ -1660,16 +1682,19 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
               borderRadius: 2,
               textTransform: 'none',
               px: 3,
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
+              background: 'linear-gradient(135deg, #25d366 0%, #128c7e 100%)', // Verde WhatsApp
+              boxShadow: '0 4px 12px rgba(37, 211, 102, 0.3)',
+              color: '#fff',
+              fontWeight: 600,
               '&:hover': {
-                background: 'linear-gradient(135deg, #5568d3 0%, #653a8b 100%)',
-                boxShadow: '0 6px 16px rgba(102, 126, 234, 0.5)',
+                background: 'linear-gradient(135deg, #20bd5a 0%, #0e7a6d 100%)',
+                boxShadow: '0 6px 16px rgba(37, 211, 102, 0.4)',
                 transform: 'translateY(-2px)',
               },
               '&:disabled': {
-                background: '#ddd',
-                color: '#999',
+                background: '#334155',
+                color: '#64748b',
+                boxShadow: 'none'
               },
               transition: 'all 0.2s',
             }}
@@ -1795,7 +1820,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
           {error}
         </Alert>
       </Snackbar>
-    </Box>
+    </Box >
   );
 };
 
