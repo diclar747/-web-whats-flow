@@ -41,7 +41,7 @@ const pool = mysql.createPool({
 router.get('/:sessionId', async (req, res) => {
   try {
     let { sessionId } = req.params;
-    
+
     // ✅ CRÍTICO: Resolver sessionId a user.id
     sessionId = await resolveToUserId(sessionId);
     if (!sessionId) {
@@ -82,7 +82,7 @@ router.get('/:sessionId', async (req, res) => {
         else if (c.status === 'completed') estadoTexto = 'completada';
         else if (c.status === 'paused') estadoTexto = 'pausada';
         else if (c.status === 'active') estadoTexto = 'activa';
-        
+
         return {
           ...c,
           estado: estadoTexto,
@@ -137,7 +137,7 @@ router.post('/create', upload.single('archivo'), async (req, res) => {
       return contactDate > new Date();
     });
     const initialStatus = hasFutureDates ? 'scheduled' : 'active';
-    
+
     // Insertar en la base de datos
     await pool.execute(
       `INSERT INTO campaigns (
@@ -406,7 +406,7 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
 router.post('/reprogram/:campaignId', async (req, res) => {
   try {
     const { campaignId } = req.params;
-    
+
     // Obtener campaña de la base de datos
     const [campaigns] = await pool.execute(
       'SELECT * FROM campaigns WHERE id = ?',
@@ -715,7 +715,21 @@ router.post('/send-now/:campaignId', async (req, res) => {
     let enviados = 0;
     let errores = 0;
 
+    // Obtener configuración de envíos para respetar intervalos de seguridad
+    const [settings] = await pool.execute(
+      `SELECT interval_min_seconds, interval_max_seconds
+       FROM campaign_settings 
+       WHERE session_id = ?`,
+      [sessionId]
+    );
+
+    const config = settings[0] || {
+      interval_min_seconds: 60,
+      interval_max_seconds: 120
+    };
+
     console.log(`🚀 Iniciando envío inmediato de campaña: ${campaign.name} con ${contactos.length} contactos`);
+    console.log(`⏱️ Configuración de velocidad: ${config.interval_min_seconds}s - ${config.interval_max_seconds}s entre mensajes`);
 
     // Cambiar estado a 'active' - enviando
     await pool.execute(
@@ -786,9 +800,13 @@ router.post('/send-now/:campaignId', async (req, res) => {
           console.error('[CAMPAIGN-MSG] Error guardando mensaje:', dbError);
         }
 
-        // Esperar entre 2-5 segundos entre mensajes
-        const delay = Math.floor(Math.random() * 3000) + 2000;
-        await new Promise(resolve => setTimeout(resolve, delay));
+        // Esperar tiempo aleatorio entre mensajes según configuración (seguridad anti-ban)
+        const minDelay = (config.interval_min_seconds || 60) * 1000;
+        const maxDelay = (config.interval_max_seconds || 120) * 1000;
+        const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+
+        console.log(`⏱️  Esperando ${Math.floor(randomDelay / 1000)} segundos antes del próximo envío...`);
+        await new Promise(resolve => setTimeout(resolve, randomDelay));
 
       } catch (error) {
         console.error(`❌ Error enviando a ${contact.numero}:`, error);
@@ -839,7 +857,7 @@ router.post('/send-now/:campaignId', async (req, res) => {
 router.post('/pause/:campaignId', async (req, res) => {
   try {
     const { campaignId } = req.params;
-    
+
     await pool.execute(
       'UPDATE campaigns SET status = ? WHERE id = ?',
       ['paused', campaignId]
@@ -856,7 +874,7 @@ router.post('/pause/:campaignId', async (req, res) => {
 router.post('/resume/:campaignId', async (req, res) => {
   try {
     const { campaignId } = req.params;
-    
+
     await pool.execute(
       'UPDATE campaigns SET status = ? WHERE id = ?',
       ['active', campaignId]

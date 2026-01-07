@@ -387,25 +387,32 @@ const App: React.FC = () => {
           console.log('📡 Respuesta de /api/sessions/active:', sessionsData);
 
           if (sessionsData.success && sessionsData.sessions && sessionsData.sessions.length > 0) {
-            const activeSession = sessionsData.sessions[0];
-            const foundSessionId = activeSession.sessionId;
+            // FIX: Verificar si la sesión guardada sigue activa
+            const savedSessionIsActive = sessionsData.sessions.some((s: any) => s.sessionId === savedSessionId);
 
-            // Si el sessionId del backend es diferente, actualizarlo
-            if (savedSessionId !== foundSessionId) {
-              console.log(`🔄 Actualizando sessionId: ${savedSessionId} → ${foundSessionId}`);
+            if (savedSessionId && savedSessionIsActive) {
+              console.log('✅ SessionId guardado sigue activo, MANTENIENDO sesión principal:', savedSessionId);
+              // Asegurar que el estado local coincida
+              if (sessionId !== savedSessionId) {
+                setSessionId(savedSessionId);
+              }
+            } else {
+              // Si la sesión guardada NO está activa (o no existe), usar la primera disponible (fallback)
+              const activeSession = sessionsData.sessions[0];
+              const foundSessionId = activeSession.sessionId;
+
+              console.log(`🔄 Actualizando a nueva sesión activa (anterior ${savedSessionId} inactiva): ${foundSessionId}`);
               sessionStorage.setItem('whinsap_session', foundSessionId);
               localStorage.setItem('whinsap_session', foundSessionId);
               setSessionId(foundSessionId);
-            } else {
-              console.log('✅ SessionId confirmado con backend:', foundSessionId);
             }
           } else {
-            // Backend no tiene sesiones activas, pero mantenemos el guardado
-            console.log('⚠️ Backend sin sesiones activas, manteniendo sessionId guardado:', savedSessionId);
+            // Backend no tiene sesiones activas
+            console.log('⚠️ Backend sin sesiones activas, manteniendo estado actual');
           }
         } catch (fetchError) {
           console.error('❌ Error verificando sessionId:', fetchError);
-          // En caso de error, ya tenemos el sessionId guardado establecido
+          // En caso de error, mantener lo que tenemos guardado
           console.log('⚠️ Manteniendo sessionId guardado por error de red:', savedSessionId);
         }
 
