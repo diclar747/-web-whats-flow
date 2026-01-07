@@ -99,6 +99,8 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
   const [connectionsData, setConnectionsData] = useState<any>(null);
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
 
+  const [activeSessionsCount, setActiveSessionsCount] = useState(0);
+
   const loadAllData = async () => {
     setLoading(true);
     setError(null);
@@ -107,7 +109,7 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
       const params = `sessionId=${sessionId}&startDate=${startDate.format('YYYY-MM-DD')}&endDate=${endDate.format('YYYY-MM-DD')}`;
 
       // Load all analytics data in parallel
-      const [dashRes, msgRes, campRes, kanRes, agentRes, botRes, connRes, sysRes] = await Promise.allSettled([
+      const [dashRes, msgRes, campRes, kanRes, agentRes, botRes, connRes, sysRes, sessionsRes] = await Promise.allSettled([
         sessionFetch(`/api/analytics/dashboard?sessionId=${sessionId}`),
         sessionFetch(`/api/analytics/messages?${params}`),
         sessionFetch(`/api/analytics/campaigns?${params}`),
@@ -115,8 +117,18 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
         sessionFetch(`/api/analytics/agents?${params}`),
         sessionFetch(`/api/analytics/chatbots?${params}`),
         sessionFetch(`/api/session/${sessionId}/status`),
-        sessionFetch(`/api/system/metrics`)
+        sessionFetch(`/api/system/metrics`),
+        sessionFetch(`/api/sessions/active`) // Fetch active sessions count
       ]);
+
+      // Process sessions count
+      if (sessionsRes.status === 'fulfilled' && sessionsRes.value.ok) {
+        const json = await sessionsRes.value.json();
+        setActiveSessionsCount(json.sessions?.length || 0);
+      } else {
+        // Fallback si falla la API de lista
+        setActiveSessionsCount(1);
+      }
 
       // Process dashboard data
       if (dashRes.status === 'fulfilled' && dashRes.value.ok) {
@@ -161,7 +173,6 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
         setChatbotsData(json.data || json);
       }
 
-      // Process connections data
       // Process connections data
       if (connRes.status === 'fulfilled' && connRes.value.ok) {
         const json = await connRes.value.json();
@@ -218,7 +229,9 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
 
     const activeChatbots = dash.chatbots || 0;
     const kanbanBoards = dash.kanbans || 0;
-    const activeConnections = dash.connections || 0;  // Ahora viene del backend
+
+    // ✅ FIX: Usar conteo real de sesiones
+    const activeConnections = activeSessionsCount;
     const failureRate = dash.failureRate || 0;
 
     const kpis = [
@@ -228,7 +241,7 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
       { label: 'Campañas Activas', value: formatNumber(activeCampaigns), icon: <Campaign />, color: CHART_COLORS.warning, trend: `${formatNumber(totalCampaigns)} total` },
       { label: 'Agentes Online', value: formatNumber(onlineAgents), icon: <People />, color: CHART_COLORS.success, trend: `de ${formatNumber(totalAgents)} total` },
       { label: 'Chatbots Activos', value: formatNumber(activeChatbots), icon: <SmartToy />, color: CHART_COLORS.purple, trend: 'Sistema activo' },
-      { label: 'Conexiones Activas', value: formatNumber(activeConnections), icon: <Badge />, color: activeConnections > 0 ? CHART_COLORS.success : CHART_COLORS.warning, trend: activeConnections > 0 ? '✅ WhatsApp conectado' : '⚠️ Sin conexión' },
+      { label: 'Conexiones Activas', value: formatNumber(activeConnections), icon: <Badge />, color: activeConnections > 0 ? CHART_COLORS.success : CHART_COLORS.warning, trend: activeConnections > 0 ? `${activeConnections} líneas conectadas` : '⚠️ Sin conexión' },
       { label: 'Mensajes Fallidos', value: formatNumber(failedMessages), icon: <ErrorIcon />, color: CHART_COLORS.error, trend: `${formatPercentage(failureRate)} tasa fallo` }
     ];
 
