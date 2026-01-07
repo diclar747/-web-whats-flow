@@ -1310,8 +1310,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     header: '#1e293b',         // Slate 800
     chatBg: '#0f172a',         // Deep Slate
 
-    myMessage: '#4f46e5',      // Indigo 600 (mensajes enviados)
-    myMessageHover: '#4338ca', // Indigo 700
+    myMessage: '#005c4b',      // WhatsApp Dark Green (mensajes enviados)
+    myMessageHover: '#004b3e', // Darker Green
     theirMessage: '#1e293b',   // Slate 800 (mensajes recibidos)
     theirMessageHover: '#334155', // Slate 700
 
@@ -2018,7 +2018,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
                             fontWeight: 700,
                             fontSize: '0.75rem',
                             color: msg.isFromMe
-                              ? '#075E54'  // Verde oscuro para mensajes propios
+                              ? '#e9edef'  // Blanco suave para mensajes propios (buen contraste con verde)
                               : '#00897B', // Teal para mensajes recibidos
                             display: 'block',
                             mb: 0.5,
