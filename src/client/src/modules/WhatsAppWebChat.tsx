@@ -1310,8 +1310,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
     header: '#1e293b',         // Slate 800
     chatBg: '#0f172a',         // Deep Slate
 
-    myMessage: '#005c4b',      // WhatsApp Dark Green (mensajes enviados)
-    myMessageHover: '#004b3e', // Darker Green
+    myMessage: '#273252',      // Dark Blue (Requested by user)
+    myMessageHover: '#202942', // Darker Blue for hover
     theirMessage: '#1e293b',   // Slate 800 (mensajes recibidos)
     theirMessageHover: '#334155', // Slate 700
 
