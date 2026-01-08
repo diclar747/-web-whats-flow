@@ -5,6 +5,7 @@ import { getAPIBaseURL } from '../utils/socketConfig';
 import { SubscriptionGuard } from '../components/SubscriptionGuard';
 import ModernMessageMedia from '../components/ModernMessageMedia';
 import ModernMessageActions from '../components/ModernMessageActions';
+import SessionTabs, { SessionTab } from '../components/SessionTabs';
 import {
   TextField,
   Button,
@@ -110,6 +111,12 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<'all' | 'unread' | 'groups' | 'contacts'>('all');
   const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all'>('all');
+  
+  // Estados para multi-canal
+  const [sessions, setSessions] = useState<SessionTab[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string>(sessionId);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  
   const [isTyping, setIsTyping] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [showReactionMenu, setShowReactionMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
@@ -146,6 +153,77 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
     'Manos': ['👏', '🙌', '👐', '🤲', '🤝', '🙏', '✍️', '💪', '🦾', '🤳', '👍', '👎', '👊', '✊', '🤛', '🤜', '🤞', '✌️', '🤟', '🤘', '👌', '🤏', '👈', '👉', '👆', '👇', '☝️', '✋', '🤚', '🖐️'],
     'Objetos': ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '⭐', '🌟', '✨', '⚡', '🔥', '💥', '💯', '✅', '❌']
   };
+
+  // Cargar sesiones activas (números conectados)
+  const loadActiveSessions = async () => {
+    try {
+      setLoadingSessions(true);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const response = await fetch(`${getAPIBaseURL()}/api/sessions/active`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
+      
+      const data = await response.json();
+      
+      if (data.success && data.sessions && data.sessions.length > 0) {
+        const mappedSessions: SessionTab[] = data.sessions.map((s: any) => ({
+          sessionId: s.phoneNumber || s.sessionId,
+          phoneNumber: s.phoneNumber || s.sessionId,
+          isPrimary: s.isPrimary || false,
+          name: s.name || null,
+          isActive: s.isConnected || false,
+          unreadCount: 0 // TODO: Calcular mensajes no leídos
+        }));
+        
+        setSessions(mappedSessions);
+        
+        // Si no hay sesión activa, seleccionar la primera (preferiblemente la primaria)
+        if (!activeSessionId || !mappedSessions.find(s => s.sessionId === activeSessionId)) {
+          const primarySession = mappedSessions.find(s => s.isPrimary) || mappedSessions[0];
+          setActiveSessionId(primarySession.sessionId);
+        }
+        
+        console.log(`[MULTI-CANAL] 📱 Cargadas ${mappedSessions.length} sesiones`, mappedSessions);
+      } else {
+        console.warn('[MULTI-CANAL] ⚠️ No se encontraron sesiones activas');
+        // Fallback: usar sessionId prop
+        setSessions([{
+          sessionId: sessionId,
+          phoneNumber: sessionId,
+          isPrimary: true,
+          isActive: true,
+          unreadCount: 0
+        }]);
+        setActiveSessionId(sessionId);
+      }
+    } catch (error) {
+      console.error('[MULTI-CANAL] ❌ Error cargando sesiones:', error);
+      // Fallback: usar sessionId prop
+      setSessions([{
+        sessionId: sessionId,
+        phoneNumber: sessionId,
+        isPrimary: true,
+        isActive: true,
+        unreadCount: 0
+      }]);
+      setActiveSessionId(sessionId);
+    } finally {
+      setLoadingSessions(false);
+    }
+  };
+
+  // Cargar sesiones al montar el componente
+  useEffect(() => {
+    loadActiveSessions();
+  }, []);
+
+  // Recargar chats cuando cambia la sesión activa
+  useEffect(() => {
+    if (activeSessionId) {
+      console.log('[MULTI-CANAL] 🔄 Cambiando a sesión:', activeSessionId);
+      loadChats(activeSessionId);
+    }
+  }, [activeSessionId, loadChats]);
 
   useEffect(() => {
     console.log('RealChatModule: Cargando chats para sessionId:', sessionId);
@@ -610,9 +688,27 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
 
       <div style={{
         display: 'flex',
+        flexDirection: 'column',
         height: 'calc(100vh - 64px)', // Adjust height to account for the top app bar
         backgroundColor: isDarkMode ? '#0c1317' : '#f0f2f5'
       }}>
+        {/* Pestañas de sesiones múltiples */}
+        <SessionTabs
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSessionChange={(newSessionId) => {
+            console.log('[MULTI-CANAL] 🔄 Usuario cambió a sesión:', newSessionId);
+            setActiveSessionId(newSessionId);
+          }}
+          isDarkMode={isDarkMode}
+        />
+
+        {/* Contenedor principal de chat */}
+        <div style={{
+          display: 'flex',
+          flex: 1,
+          overflow: 'hidden'
+        }}>
         {/* Sidebar de contactos */}
         <div style={{
           width: '30%',
@@ -2039,7 +2135,8 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
             </Button>
           </DialogActions>
         </Dialog>
-      </div>
+        </div> {/* Cierre del contenedor principal de chat */}
+      </div> {/* Cierre del contenedor flex column */}
     </>
   );
 };
