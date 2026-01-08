@@ -561,22 +561,35 @@ const App: React.FC = () => {
                       }
                     });
                     const sessionsData = await sessionsResp.json();
-                    if (sessionsData.success && sessionsData.sessions && sessionsData.sessions.length > 0) {
-                      const activeSession = sessionsData.sessions[0];
-                      const foundSessionId = activeSession.sessionId;
-                      console.log('✅ SessionId encontrado automáticamente:', foundSessionId);
-                      sessionStorage.setItem('whinsap_session', foundSessionId);
-                      localStorage.setItem('whinsap_session', foundSessionId);
-                      setSessionId(foundSessionId);
+                    if (sessionsData.success && Array.isArray(sessionsData.sessions) && sessionsData.sessions.length > 0) {
+                      // Prioridad de selección: 1) isPrimary y isConnected, 2) isConnected, 3) primera con hasAuth
+                      const sessions = sessionsData.sessions as any[];
+                      const byPrimaryConnected = sessions.find(s => s.isPrimary && s.isConnected);
+                      const byConnected = sessions.find(s => s.isConnected);
+                      const byAuthOnly = sessions.find((s: any) => s.hasAuth);
+                      const selected = byPrimaryConnected || byConnected || byAuthOnly;
+
+                      if (selected) {
+                        const foundSessionId = selected.sessionId;
+                        console.log('✅ SessionId seleccionado automáticamente:', foundSessionId, '| isPrimary:', selected.isPrimary, '| isConnected:', selected.isConnected);
+                        sessionStorage.setItem('whinsap_session', foundSessionId);
+                        localStorage.setItem('whinsap_session', foundSessionId);
+                        setSessionId(foundSessionId);
+                      } else {
+                        console.log('⚠️ No hay sesión conectada ni credenciales válidas');
+                        setSessionId(null);
+                      }
                     } else {
                       console.log('⚠️ No se encontró sesión activa de WhatsApp');
                       setSessionId(null);
                     }
                   } catch (fetchError) {
                     console.error('Error buscando sessionId:', fetchError);
-                    setSessionId(savedSessionId);
+                    // Mantener nulo para evitar usar identificadores incorrectos
+                    setSessionId(null);
                   }
                 } else {
+                  // Mantener la sesión previamente guardada sin auto-reemplazar
                   setSessionId(savedSessionId);
                 }
 
@@ -854,9 +867,10 @@ const App: React.FC = () => {
       setToken(authToken);
       setUserType(userData.role === 'super_admin' ? 'admin' : 'agent');
 
-      // ✅ CRÍTICO: Establecer sessionId = phone (si existe) o id
-      // Prioridad: 1. sessionId explícito, 2. session_id en user, 3. phone en user, 4. id de usuario
-      const effectiveSessionId = sessionIdFromLogin || userData.session_id || userData.phone || String(userData.id);
+      // ✅ CRÍTICO: Establecer sessionId SOLO si existe sesión de WhatsApp real
+      // Prioridad: 1. sessionId explícito, 2. session_id en user, 3. phone en user
+      // IMPORTANTE: NO usar el userId como sessionId (causa /api/chats/1, 401)
+      const effectiveSessionId = sessionIdFromLogin || userData.session_id || userData.phone || '';
 
       // Guardar datos en localStorage y sessionStorage
       const storageKeys = [
@@ -867,29 +881,42 @@ const App: React.FC = () => {
         { key: 'userId', value: userData.id.toString() },
         { key: 'userEmail', value: userData.email },
         { key: 'whinsap_user_type', value: userData.role === 'super_admin' ? 'admin' : 'agent' },
-        { key: 'whinsap_session', value: effectiveSessionId }, // ✅ Guardar sessionId
-        { key: 'sessionId', value: effectiveSessionId } // ✅ Compatibilidad
+        // Solo guardar sessionId si existe (evitar guardar '1' por userId)
+        // Se agregarán estas claves condicionalmente más abajo
       ];
 
       storageKeys.forEach(({ key, value }) => {
         localStorage.setItem(key, value);
         sessionStorage.setItem(key, value);
       });
-
-      setSessionId(effectiveSessionId); // ✅ Establecer en estado
+      // Guardar y establecer sessionId solo si es válido (no vacío)
+      if (effectiveSessionId && effectiveSessionId.trim().length > 0) {
+        localStorage.setItem('whinsap_session', effectiveSessionId);
+        sessionStorage.setItem('whinsap_session', effectiveSessionId);
+        localStorage.setItem('sessionId', effectiveSessionId);
+        sessionStorage.setItem('sessionId', effectiveSessionId);
+        setSessionId(effectiveSessionId); // ✅ Establecer en estado
+      } else {
+        // Mantener sessionId nulo; se resolverá con /api/sessions/active
+        setSessionId(null);
+      }
 
       try {
-        window.dispatchEvent(new CustomEvent('whinsap-session-established', {
-          detail: {
-            sessionId: effectiveSessionId,
-            userId: userData.id,
-            userRole: userData.role
-          }
-        }));
-        console.log('📣 Evento whinsap-session-established emitido (login)');
+        if (effectiveSessionId && effectiveSessionId.trim().length > 0) {
+          window.dispatchEvent(new CustomEvent('whinsap-session-established', {
+            detail: {
+              sessionId: effectiveSessionId,
+              userId: userData.id,
+              userRole: userData.role
+            }
+          }));
+          console.log('📣 Evento whinsap-session-established emitido (login)');
+        } else {
+          console.log('ℹ️ Login sin sessionId de WhatsApp; se buscará sesión activa posteriormente');
+        }
       } catch { }
 
-      console.log('✅ Usuario autenticado con JWT:', userData.full_name, '| sessionId:', effectiveSessionId);
+      console.log('✅ Usuario autenticado con JWT:', userData.full_name, '| sessionId:', effectiveSessionId || '(none)');
 
       // ✅ NAVEGACIÓN: Redirigir al dashboard después del login exitoso
       setTimeout(() => {

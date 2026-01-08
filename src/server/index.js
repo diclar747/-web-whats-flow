@@ -628,14 +628,31 @@ async function getMaxChannelsForOwner(ownerPhone) {
             isSuperAdmin = !!userRows[0].is_super_admin;
         } else {
             // 2. Fallback a user_sessions (por phone o session_id)
+            //    Obtener también email y owner_phone_number para resolver plan desde users
             const [sessionRows] = await connection.execute(
-                'SELECT subscription_plan, subscription_status FROM user_sessions WHERE (phone = ? OR session_id = ?) AND subscription_plan IS NOT NULL LIMIT 1',
+                'SELECT subscription_plan, subscription_status, email, owner_phone_number FROM user_sessions WHERE (phone = ? OR session_id = ?) LIMIT 1',
                 [ownerPhone, ownerPhone]
             );
 
             if (sessionRows.length > 0) {
-                planName = sessionRows[0].subscription_plan;
-                subscriptionStatus = sessionRows[0].subscription_status;
+                const sRow = sessionRows[0];
+                planName = sRow.subscription_plan;
+                subscriptionStatus = sRow.subscription_status;
+
+                // Si el registro de sesión no tiene plan definido, resolver desde tabla users
+                if (!planName) {
+                    const ownerEmail = sRow.email;
+                    const ownerMasterPhone = sRow.owner_phone_number;
+                    const [uRows] = await connection.execute(
+                        'SELECT subscription_plan, subscription_status FROM users WHERE email = ? OR phone = ? LIMIT 1',
+                        [ownerEmail, ownerMasterPhone]
+                    );
+                    if (uRows.length > 0) {
+                        planName = uRows[0].subscription_plan;
+                        // Preferir estado del usuario si existe
+                        subscriptionStatus = uRows[0].subscription_status || subscriptionStatus;
+                    }
+                }
             }
         }
 
@@ -2969,7 +2986,33 @@ async function getUserPhoneNumber(sessionId) {
         return session.phoneNumber;
     }
 
-    // Intento 3: Buscar en BD por email (si sessionId es un email)
+    // Intento 3a: Buscar en BD por userId (si sessionId es un número pequeño, probablemente es un ID)
+    if (pool && !memoryStorage.isMemoryMode && !isNaN(sessionId) && parseInt(sessionId) < 1000000) {
+        try {
+            const connection = await pool.getConnection();
+            try {
+                // El sessionId parece ser un ID de usuario - buscar en tabla users
+                const [userRows] = await connection.execute(
+                    'SELECT phone FROM users WHERE id = ? LIMIT 1',
+                    [parseInt(sessionId)]
+                );
+                if (userRows.length > 0) {
+                    const phoneNumber = userRows[0].phone;
+                    if (phoneNumber) {
+                        phoneNumberCache.set(sessionId, phoneNumber);
+                        console.log(`[${sessionId}] ✅ Usuario identificado desde tabla users (userId): ${phoneNumber}`);
+                        return phoneNumber;
+                    }
+                }
+            } finally {
+                connection.release();
+            }
+        } catch (err) {
+            console.log(`[${sessionId}] ⚠️ Error buscando userId en users:`, err.message);
+        }
+    }
+
+    // Intento 3b: Buscar en BD por email (si sessionId es un email)
     if (pool && !memoryStorage.isMemoryMode && sessionId.includes('@')) {
         try {
             const connection = await pool.getConnection();
@@ -5594,11 +5637,33 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         if (!sessionInfo.userId && pool) {
                             try {
                                 const userConn = await pool.getConnection();
-                                const [userRows] = await userConn.execute(
-                                    'SELECT id FROM users WHERE phone = ? LIMIT 1',
+                                
+                                // Primero buscar por phone
+                                let [userRows] = await userConn.execute(
+                                    'SELECT id, email FROM users WHERE phone = ? LIMIT 1',
                                     [userPhoneNumber]
                                 );
-                                userConn.release();
+
+                                // Si no se encuentra, buscar por ownerIdentifier (puede ser email)
+                                if (userRows.length === 0) {
+                                    const ownerIdent = sessionOwnerMap.get(sessionId);
+                                    if (ownerIdent && ownerIdent.includes('@')) {
+                                        console.log(`[${sessionId}] 🔍 No se encontró usuario por phone, buscando por email: ${ownerIdent}`);
+                                        [userRows] = await userConn.execute(
+                                            'SELECT id, email FROM users WHERE email = ? LIMIT 1',
+                                            [ownerIdent]
+                                        );
+                                        
+                                        // Si se encuentra el usuario por email, actualizar su phone
+                                        if (userRows.length > 0) {
+                                            console.log(`[${sessionId}] ✅ Usuario encontrado por email: ${ownerIdent}, actualizando phone a ${userPhoneNumber}`);
+                                            await userConn.execute(
+                                                'UPDATE users SET phone = ? WHERE id = ?',
+                                                [userPhoneNumber, userRows[0].id]
+                                            );
+                                        }
+                                    }
+                                }
 
                                 if (userRows.length > 0) {
                                     sessionInfo.userId = userRows[0].id;
@@ -5606,6 +5671,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 } else {
                                     console.log(`[${sessionId}] ⚠️ No se encontró userId para phone ${userPhoneNumber} en tabla users`);
                                 }
+                                
+                                userConn.release();
                             } catch (userErr) {
                                 console.warn(`[${sessionId}] ⚠️ Error buscando userId:`, userErr.message);
                             }
@@ -5937,33 +6004,73 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     console.error(`[${newSessionId}] ❌ Error actualizando agentes:`, agentUpdateError);
                 }
 
-                // 🔐 GENERAR TOKEN JWT PARA ADMIN (Login por QR)
+                // 🔐 GENERAR/ACTUALIZAR TOKEN JWT PARA ADMIN
                 try {
-                    console.log(`[${newSessionId}] 🔐 Generando token JWT para admin: ${userPhoneNumber}`);
+                    // Buscar userId y email si ya existe el usuario en BD
+                    let userId = sessionInfo.userId; // Ya lo guardamos antes
+                    let userEmail = null;
+                    
+                    if (!userId && pool) {
+                        const connection = await pool.getConnection();
+                        try {
+                            const [userRows] = await connection.execute(
+                                'SELECT id, email FROM users WHERE phone = ? LIMIT 1',
+                                [userPhoneNumber]
+                            );
+                            if (userRows.length > 0) {
+                                userId = userRows[0].id;
+                                userEmail = userRows[0].email;
+                                console.log(`[${newSessionId}] ✅ Usuario encontrado en BD: id=${userId}, email=${userEmail}`);
+                            }
+                        } finally {
+                            connection.release();
+                        }
+                    }
+
+                    // Preparar payload del token JWT
+                    const tokenPayload = {
+                        phone: userPhoneNumber,
+                        role: 'admin',
+                        sessionId: newSessionId,
+                        type: userId ? 'whatsapp_connected' : 'qr_login', // Diferenciar si es conexión de usuario existente
+                        iat: Math.floor(Date.now() / 1000)
+                    };
+
+                    // Incluir userId y email si existen
+                    if (userId) {
+                        tokenPayload.userId = userId;
+                        tokenPayload.id = userId; // Algunos componentes usan 'id' en lugar de 'userId'
+                    }
+                    if (userEmail) {
+                        tokenPayload.email = userEmail;
+                    }
+
+                    console.log(`[${newSessionId}] 🔐 Generando token JWT con payload:`, { ...tokenPayload, sessionId: newSessionId.substring(0, 10) + '...' });
 
                     const adminToken = jwt.sign(
-                        {
-                            phone: userPhoneNumber,
-                            role: 'admin',
-                            sessionId: newSessionId,
-                            type: 'qr_login',
-                            iat: Math.floor(Date.now() / 1000)
-                        },
+                        tokenPayload,
                         process.env.JWT_SECRET || 'tu-secret-key',
                         { expiresIn: '30d' }
                     );
 
-                    // Emitir token al cliente via Socket.IO
-                    io.emit('auth_token', {
+                    // Emitir token al cliente via Socket.IO (SOLO si NO hay token previo)
+                    // Si el usuario ya está logueado, NO sobrescribir su token
+                    io.emit('whatsapp-session-updated', {
                         token: adminToken,
+                        sessionId: newSessionId,
+                        phoneNumber: userPhoneNumber,
                         user: {
+                            id: userId,
+                            userId: userId,
                             phone: userPhoneNumber,
+                            email: userEmail,
                             role: 'admin',
                             sessionId: newSessionId
-                        }
+                        },
+                        message: 'WhatsApp conectado - sesión actualizada'
                     });
 
-                    console.log(`[${newSessionId}] ✅ Token JWT generado y emitido para admin ${userPhoneNumber}`);
+                    console.log(`[${newSessionId}] ✅ Token JWT generado y emitido (userId: ${userId || 'N/A'}, email: ${userEmail || 'N/A'})`);
                 } catch (tokenError) {
                     console.error(`[${newSessionId}] ❌ Error generando token JWT:`, tokenError);
                 }
@@ -8649,6 +8756,25 @@ app.post('/api/whatsapp/qr-code', async (req, res) => {
 
         let ownerIdentifier = rawIdentifier;
 
+        // 🛡️ Extraer usuario desde JWT si está presente para operar a nivel de cuenta
+        try {
+            if (req.headers.authorization) {
+                const token = req.headers.authorization.split(' ')[1];
+                const jwt = require('jsonwebtoken');
+                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                // Priorizar email del usuario autenticado como identificador de dueño
+                if (decoded && decoded.email) {
+                    ownerIdentifier = decoded.email;
+                    console.log(`[QR-ENDPOINT] 🔐 JWT detectado, usando email del usuario: ${ownerIdentifier}`);
+                } else if (decoded && decoded.userId) {
+                    ownerIdentifier = String(decoded.userId);
+                    console.log(`[QR-ENDPOINT] 🔐 JWT detectado, usando userId: ${ownerIdentifier}`);
+                }
+            }
+        } catch (jwtErr) {
+            console.warn('[QR-ENDPOINT] ⚠️ JWT inválido o no presente:', jwtErr.message);
+        }
+
         // Resolver a número de teléfono si es posible
         if (global.dbPool) {
             const conn = await global.dbPool.getConnection();
@@ -10176,13 +10302,18 @@ app.post('/api/session/check-by-device', async (req, res) => {
 });
 
 // Crear nueva sesión de WhatsApp
-app.post('/api/create-session', async (req, res) => {
+app.post('/api/create-session', authenticateToken, async (req, res) => {
     // ⚡ OPTIMIZACIÓN: Por defecto FALSE - Solo sincronizar si es la primera vez
     let syncHistory = req.body.syncHistory !== undefined ? req.body.syncHistory : false;
     const deviceId = req.body.deviceId; // ID único del dispositivo/navegador
     const ownerPhone = req.body.ownerPhone || req.body.phone || null;
 
-    console.log(`[SESSION] 🔄 Solicitud de sesión con deviceId: ${deviceId?.substring(0, 20)}...`);
+    // 🔥 CRÍTICO: Obtener userId del usuario autenticado desde el token JWT
+    const authenticatedUserId = req.user?.id;
+    const authenticatedEmail = req.user?.email;
+    
+    console.log(`[SESSION] 🔄 Solicitud de sesión para usuario autenticado: ${authenticatedEmail} (ID: ${authenticatedUserId})`);
+    console.log(`[SESSION] 🔄 DeviceId: ${deviceId?.substring(0, 20)}...`);
 
     // Validar capacidad del plan antes de crear una nueva sesión
     if (ownerPhone) {
@@ -10244,8 +10375,18 @@ app.post('/api/create-session', async (req, res) => {
     }
 
     // Si no existe sesión activa, crear una nueva
-    const sessionId = req.body.sessionId || crypto.randomBytes(8).toString('hex');
-    console.log(`[SESSION] 🆕 Creando nueva sesión: ${sessionId}`);
+    // 🔥 CRÍTICO: Usar user.id como sessionId para vincular usuario con sesión de WhatsApp
+    const sessionId = authenticatedUserId
+        ? String(authenticatedUserId)
+        : (req.body.sessionId || crypto.randomBytes(8).toString('hex'));
+    
+    console.log(`[SESSION] 🆕 Creando nueva sesión: ${sessionId} (userId: ${authenticatedUserId})`);
+
+    // 🔥 Guardar email del usuario para vincular sesión
+    if (authenticatedEmail) {
+        sessionUserEmailMap.set(sessionId, authenticatedEmail);
+        console.log(`[SESSION] ✅ Email vinculado a sesión: ${authenticatedEmail} -> ${sessionId}`);
+    }
 
     if (ownerPhone) {
         sessionOwnerMap.set(sessionId, ownerPhone);
@@ -25734,6 +25875,12 @@ server.listen(PORT, '0.0.0.0', async () => {
         console.log(`[BOOT] 📂 Encontrados ${authDirs.length} directorios en ${BASE_AUTH_DIR}`);
         let restoredCount = 0;
 
+        // 🔥 RESTAURACIÓN AUTOMÁTICA DESACTIVADA
+        // Las sesiones solo se cargan cuando el usuario se conecta manualmente
+        // Esto evita que sesiones viejas/inválidas se carguen y desconecten constantemente
+        console.log(`\n⚠️ Restauración automática desactivada - Las sesiones se cargarán bajo demanda\n`);
+        
+        /*
         for (const dirName of authDirs) {
             const authPath = path.join(BASE_AUTH_DIR, dirName);
             const credsPath = path.join(authPath, 'creds.json');
@@ -25758,11 +25905,12 @@ server.listen(PORT, '0.0.0.0', async () => {
                 }
             }
         }
+        */
 
         if (restoredCount > 0) {
             console.log(`\n✅ ${restoredCount} sesión(es) restaurada(s) automáticamente`);
         } else {
-            console.log(`\n📝 No hay sesiones guardadas para restaurar`);
+            console.log(`\n📝 No hay sesiones guardadas para restaurar (restauración automática desactivada)`);
         }
 
         // 🔥 BUSCAR userId PARA SESIONES RESTAURADAS

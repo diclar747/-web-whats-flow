@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getAPIBaseURL } from '../utils/socketConfig';
+import { sessionFetch } from '../utils/sessionFetch';
 import { useSocket } from '../context/SocketContext';
 import {
   Box,
@@ -362,7 +363,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       // 1. Cargar mensajes y analíticas
       const offset = (page - 1) * rowsPerPage;
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const response = await fetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${activeSessionId}&limit=${rowsPerPage}&offset=${offset}`, {
+      const response = await sessionFetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${activeSessionId}&limit=${rowsPerPage}&offset=${offset}`, {
         signal,
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });

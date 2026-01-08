@@ -1,9 +1,9 @@
 /**
- * Service Worker para WhatsFlow React PWA
+ * Service Worker para Whinsap React PWA
  * Maneja cache, sincronización en background y notificaciones push
  */
 
-const CACHE_NAME = 'whatsflow-v1.0.0';
+const CACHE_NAME = 'whinsap-v1.0.6';
 const API_URL = self.location.origin;
 
 // Archivos estáticos a cachear
@@ -207,7 +207,7 @@ self.addEventListener('notificationclick', (event) => {
 // IndexedDB Helpers
 function openDB() {
     return new Promise((resolve, reject) => {
-        const request = indexedDB.open('WhatsFlowPWA', 1);
+        const request = indexedDB.open('WhinsapPWA', 1);
 
         request.onerror = () => reject(request.error);
         request.onsuccess = () => resolve(request.result);

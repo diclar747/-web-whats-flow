@@ -240,50 +240,71 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
 
     // 🔐 Escuchar token JWT del servidor
     socket.on('auth_token', (data: any) => {
-      console.log('[WA-CONNECTION] 🔐 Token JWT recibido:', data);
-      if (data.token) {
-        // Guardar token en localStorage y sessionStorage
+      console.log('[WA-CONNECTION] 🔐 Token JWT recibido:', { hasToken: !!data?.token, user: data?.user });
+      if (!data?.token) return;
+
+      // Si ya hay un JWT de usuario, NO lo sobrescribimos para evitar perder el contexto (email/rol)
+      const existingUserToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const storedUserJson = localStorage.getItem('user') || sessionStorage.getItem('user');
+      const storedUserEmail = (() => {
+        try { return storedUserJson ? JSON.parse(storedUserJson)?.email : null; } catch { return null; }
+      })();
+      const incomingEmail = data?.user?.email;
+
+      const shouldReplaceToken = !existingUserToken || (incomingEmail && storedUserEmail && incomingEmail === storedUserEmail);
+
+      if (shouldReplaceToken) {
         localStorage.setItem('token', data.token);
         sessionStorage.setItem('token', data.token);
+        console.log('[WA-CONNECTION] ✅ Token principal actualizado');
+      } else {
+        // Guardar token de conexión WhatsApp en claves separadas para APIs específicas si hiciera falta
+        localStorage.setItem('wh_session_token', data.token);
+        sessionStorage.setItem('wh_session_token', data.token);
+        console.log('[WA-CONNECTION] 🧪 Token alterno guardado en wh_session_token (no se reemplaza el del usuario)');
+      }
 
-        // Guardar rol y datos de usuario
-        if (data.user) {
-          if (data.user.role) {
-            localStorage.setItem('userRole', data.user.role);
-            sessionStorage.setItem('userRole', data.user.role);
-          }
-          if (data.user.phone) {
-            localStorage.setItem('userPhone', data.user.phone);
-            sessionStorage.setItem('userPhone', data.user.phone);
-          }
-          if (data.user.sessionId) {
+      // Guardar datos de la sesión de WhatsApp sin afectar datos del usuario logueado
+      if (data.user) {
+        if (data.user.role) {
+          localStorage.setItem('userRole', data.user.role);
+          sessionStorage.setItem('userRole', data.user.role);
+        }
+        if (data.user.phone) {
+          localStorage.setItem('userPhone', data.user.phone);
+          sessionStorage.setItem('userPhone', data.user.phone);
+        }
+        if (data.user.sessionId) {
+          const existingSession = localStorage.getItem('whinsap_session') || sessionStorage.getItem('whinsap_session');
+          if (!existingSession) {
             localStorage.setItem('whinsap_session', data.user.sessionId);
             sessionStorage.setItem('whinsap_session', data.user.sessionId);
+            console.log('[WA-CONNECTION] ✅ whinsap_session inicializada');
+          } else {
+            localStorage.setItem('whinsap_alt_session', data.user.sessionId);
+            sessionStorage.setItem('whinsap_alt_session', data.user.sessionId);
+            console.log('[WA-CONNECTION] 🧭 Sesión WhatsApp adicional guardada en whinsap_alt_session (principal conservada)');
           }
         }
-
-        console.log('[WA-CONNECTION] ✅ Token JWT guardado correctamente');
-
-        // 🔥 RECARGAR PLAN después de guardar el teléfono
-        setTimeout(() => {
-          window.location.reload(); // Recargar para que se actualice el plan
-        }, 500);
-
-        // Disparar evento para que App.tsx actualice el estado
-        try {
-          window.dispatchEvent(new CustomEvent('whinsap-session-established', {
-            detail: {
-              sessionId: data.user?.sessionId || resolvedSessionId,
-              userId: sessionStorage.getItem('userId'),
-              userRole: data.user?.role || 'admin',
-              token: data.token
-            }
-          }));
-          console.log('📣 Evento whinsap-session-established emitido (auth_token)');
-        } catch (e) {
-          console.error('Error emitiendo evento:', e);
-        }
       }
+
+      // En lugar de recargar toda la app, emitir evento para que los módulos se actualicen
+      try {
+        window.dispatchEvent(new CustomEvent('whinsap-session-established', {
+          detail: {
+            sessionId: data.user?.sessionId || resolvedSessionId,
+            userId: sessionStorage.getItem('userId'),
+            userRole: data.user?.role || sessionStorage.getItem('userRole') || 'admin',
+            token: shouldReplaceToken ? data.token : (existingUserToken || data.token)
+          }
+        }));
+        console.log('📣 Evento whinsap-session-established emitido (auth_token, sin recarga)');
+      } catch (e) {
+        console.error('Error emitiendo evento:', e);
+      }
+
+      // Refrescar lista de sesiones y plan sin recargar la página
+      fetchActiveSessions();
     });
 
     return () => {

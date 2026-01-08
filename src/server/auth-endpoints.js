@@ -243,7 +243,8 @@ function registerAuthEndpoints(app, pool) {
                     success: true,
                     token,
                     sessionToken, // 🔐 Importante para el fetchInterceptor
-                    sessionId: String(user.id), // Volver a usar ID de usuario como sesión principal
+                    sessionId: user.phone_number || String(user.id), // Priorizar phoneNumber si existe
+                    whatsappSessionId: user.phone_number,
                     user: {
                         id: user.id,
                         full_name: user.full_name,

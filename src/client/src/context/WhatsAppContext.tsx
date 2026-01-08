@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, ReactNode } from 'react';
 import { getSocketURL, getAPIBaseURL } from '../utils/socketConfig';
+import { sessionFetch } from '../utils/sessionFetch';
 import { useSocket } from './SocketContext';
 
 declare global {
@@ -310,14 +311,21 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     // 🔐 VERIFICAR SI ES SESIÓN PRIMARIA - Solo las sesiones primarias pueden cargar chats
     // Los números adicionales (is_primary=0) solo se usan para campañas
     try {
-      const isPrimaryResponse = await fetch(`${API_BASE}/api/session/${sessionId}/is-primary`);
-      const isPrimaryData = await isPrimaryResponse.json();
+      try {
+        const tokenForAuth = localStorage.getItem('token') || sessionStorage.getItem('token');
+        const isPrimaryResponse = await sessionFetch(`${API_BASE}/api/session/${sessionId}/is-primary`, {
+          headers: tokenForAuth ? { 'Authorization': `Bearer ${tokenForAuth}` } : {}
+        });
+        const isPrimaryData = await isPrimaryResponse.json();
 
-      if (!isPrimaryData.isPrimary) {
-        console.log(`[WhatsAppContext] 📵 Sesión ${sessionId} es adicional (no primaria). No cargar chats.`);
-        return;
+        if (!isPrimaryData.isPrimary) {
+          console.log(`[WhatsAppContext] 📵 Sesión ${sessionId} es adicional. Ignorando carga de chats.`);
+          return;
+        }
+        console.log(`[WhatsAppContext] ✅ Sesión ${sessionId} es primaria.`);
+      } catch (err) {
+        console.warn(`[WhatsAppContext] ⚠️ Error verificando is-primary, continuando:`, err);
       }
-      console.log(`[WhatsAppContext] ✅ Sesión ${sessionId} es primaria. Procediendo a cargar chats.`);
     } catch (err) {
       console.warn(`[WhatsAppContext] ⚠️ No se pudo verificar si es sesión primaria. Asumiendo que sí:`, err);
       // Continuar cargando chats en caso de error (fallback para compatibilidad)
@@ -355,7 +363,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       console.log(`🔄 Cargando chats desde API (${isAgent ? 'AGENTE' : 'ADMIN'}) con filtro: ${dateFilter}`, endpoint);
       
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const response = await fetch(endpoint, {
+      const response = await sessionFetch(endpoint, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       const data = await response.json();
@@ -863,10 +871,110 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
     const handleWhatsAppConnected = (data: any) => {
       console.log('🎉 [WhatsAppContext] Evento whatsapp-connected recibido:', data);
-      // Recargar chats cuando WhatsApp se conecta
-      if (session?.sessionId) {
-        console.log('🔄 [WhatsAppContext] Recargando chats después de conectar WhatsApp...');
+      
+      // 🔥 CRÍTICO: Actualizar whinsap_session SIEMPRE que WhatsApp se conecta
+      const newSessionId = data.sessionId || data.phoneNumber;
+      if (newSessionId) {
+        sessionStorage.setItem('whinsap_session', newSessionId);
+        localStorage.setItem('whinsap_session', newSessionId);
+        console.log('🔄 [WhatsAppContext] whinsap_session actualizado a:', newSessionId);
+      }
+      
+      // Guardar el phoneNumber de WhatsApp para futuros usos
+      if (data.phoneNumber) {
+        console.log('📱 [WhatsAppContext] Guardando phoneNumber de WhatsApp:', data.phoneNumber);
+        sessionStorage.setItem('whatsappPhone', data.phoneNumber);
+        localStorage.setItem('whatsappPhone', data.phoneNumber);
+      }
+      
+      // Actualizar sesión con el nuevo sessionId (phoneNumber)
+      if (newSessionId) {
+        console.log('🔄 [WhatsAppContext] Actualizando session con nuevo sessionId:', newSessionId);
+        setSession({
+          sessionId: newSessionId,
+          isConnected: true,
+          status: 'connected',
+          lastActivity: new Date().toISOString(),
+          phoneNumber: data.phoneNumber
+        });
+        setConnectionStatus('connected');
+        
+        // Recargar chats con el nuevo sessionId
+        console.log('🔄 [WhatsAppContext] Recargando chats con sessionId:', newSessionId);
+        loadChats(newSessionId);
+      } else if (session?.sessionId) {
+        console.log('🔄 [WhatsAppContext] Recargando chats con sessionId actual:', session.sessionId);
         loadChats(session.sessionId);
+      }
+    };
+
+    const handleWhatsAppSessionUpdated = (data: any) => {
+      console.log('🔄 [WhatsAppContext] Evento whatsapp-session-updated recibido:', data);
+      
+      // Si el usuario ya tiene un token (ya estaba logueado), NO sobrescribir
+      const existingToken = sessionStorage.getItem('token') || localStorage.getItem('token');
+      
+      if (existingToken) {
+        console.log('✅ [WhatsAppContext] Usuario ya autenticado, manteniendo token existente');
+        
+        // 🔥 CRÍTICO: Actualizar whinsap_session para que socket use el phoneNumber correcto
+        if (data.sessionId) {
+          sessionStorage.setItem('whinsap_session', data.sessionId);
+          localStorage.setItem('whinsap_session', data.sessionId);
+          console.log('🔄 [WhatsAppContext] whinsap_session actualizado a:', data.sessionId);
+        }
+        
+        // Solo actualizar sessionId y phoneNumber en localStorage
+        if (data.phoneNumber) {
+          sessionStorage.setItem('whatsappPhone', data.phoneNumber);
+          localStorage.setItem('whatsappPhone', data.phoneNumber);
+        }
+        
+        // Actualizar sesión
+        if (data.sessionId) {
+          setSession({
+            sessionId: data.sessionId,
+            isConnected: true,
+            status: 'connected',
+            lastActivity: new Date().toISOString(),
+            phoneNumber: data.phoneNumber
+          });
+          setConnectionStatus('connected');
+          
+          // Recargar chats
+          console.log('🔄 [WhatsAppContext] Recargando chats con sessionId:', data.sessionId);
+          loadChats(data.sessionId);
+        }
+      } else {
+        console.log('🆕 [WhatsAppContext] Usuario sin autenticación previa, guardando nuevo token');
+        
+        // Guardar token y datos de usuario
+        if (data.token) {
+          sessionStorage.setItem('token', data.token);
+          localStorage.setItem('token', data.token);
+        }
+        
+        if (data.user) {
+          sessionStorage.setItem('user', JSON.stringify(data.user));
+          localStorage.setItem('user', JSON.stringify(data.user));
+          
+          if (data.user.phone) {
+            sessionStorage.setItem('userPhone', data.user.phone);
+            localStorage.setItem('userPhone', data.user.phone);
+          }
+        }
+        
+        if (data.sessionId) {
+          setSession({
+            sessionId: data.sessionId,
+            isConnected: true,
+            status: 'connected',
+            lastActivity: new Date().toISOString(),
+            phoneNumber: data.phoneNumber
+          });
+          setConnectionStatus('connected');
+          loadChats(data.sessionId);
+        }
       }
     };
 
@@ -935,6 +1043,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     socket.on('chat-update', handleChatUpdate);
     socket.on('sync-complete', handleSyncComplete);
     socket.on('whatsapp-connected', handleWhatsAppConnected);
+    socket.on('whatsapp-session-updated', handleWhatsAppSessionUpdated);
     if (userId) {
       socket.on(`agent-${userId}-transfer-request`, handleTransferRequest);
     }
@@ -957,6 +1066,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       socket.off('chat-update', handleChatUpdate);
       socket.off('sync-complete', handleSyncComplete);
       socket.off('whatsapp-connected', handleWhatsAppConnected);
+      socket.off('whatsapp-session-updated', handleWhatsAppSessionUpdated);
       if (userId) {
         socket.off(`agent-${userId}-transfer-request`, handleTransferRequest);
       }

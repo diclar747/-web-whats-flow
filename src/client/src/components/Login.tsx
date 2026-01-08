@@ -116,13 +116,13 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         console.log('📦 Sesión única guardada en sessionStorage');
 
         // IMPORTANTE: Si el backend devuelve sessionId o whatsappSessionId, guardarlo
-        const whatsappSession = data.whatsappSessionId || data.sessionId;
+        const whatsappSession = data.whatsappSessionId || data.sessionId || data.user.id.toString();
         if (whatsappSession) {
           sessionStorage.setItem('whinsap_session', whatsappSession);
           if (rememberMe) {
             localStorage.setItem('whinsap_session', whatsappSession);
           }
-          console.log('✅ WhatsApp SessionId desde BD:', whatsappSession);
+          console.log('✅ WhatsApp SessionId guardado:', whatsappSession, '(userId por defecto)');
         }
 
         // Llamar al callback con los datos de usuario Y sessionId
