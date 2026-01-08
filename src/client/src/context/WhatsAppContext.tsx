@@ -345,7 +345,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       // Si es agente, usar endpoint de chats asignados
       const isAgent = userRole && userRole !== 'admin';
-      const limit = 500; // ⚡ OPTIMIZADO: Aumentado de 20 a 500 para cargar todos los chats
+      const limit = 25; // ⚡ OPTIMIZADO: Cargar solo los últimos 25 chats más recientes
       const offsetParam = offset || 0; // Si no se pasa, es 0
 
       if (append) {
@@ -1177,9 +1177,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       console.log(`🔄[API] Cargando mensajes para ${chatId} (offset = ${offset}, limit = ${limit}, append = ${append})`);
 
-      // ⚡ URL paginada
+      // ⚡ URL paginada - Usar userId en lugar de session.sessionId
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const response = await fetch(`${API_BASE}/api/messages/${session.sessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`, {
+      const effectiveSessionId = userId || session?.sessionId || '1'; // Usar userId si está disponible
+      const response = await fetch(`${API_BASE}/api/messages/${effectiveSessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       const data = await response.json();

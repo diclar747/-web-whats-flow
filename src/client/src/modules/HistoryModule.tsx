@@ -1060,7 +1060,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
 
   // Filtrar solo mensajes de chat (sin grupos)
   const getChatOnlyMessages = () => {
-    // Filtrar solo mensajes de chat (excluir grupos Y estados de WhatsApp)
+    // Filtrar solo mensajes de chat individual (excluir grupos Y estados de WhatsApp)
     return filteredMessages.filter(m => {
       const isNotGroup = !m.isGroup;
       const isNotStatus = !m.contactPhone.includes('status') && !m.conversationId.includes('status@broadcast');

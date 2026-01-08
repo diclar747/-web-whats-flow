@@ -3,8 +3,739 @@
 > react-scripts build
 
 Creating an optimized production build...
-Failed to compile.
+Compiled with warnings.
 
-TS1161: Unterminated regular expression literal.
+[eslint] 
+src/App.tsx
+  Line 5:27:    'MuiThemeProvider' is defined but never used                                                                  @typescript-eslint/no-unused-vars
+  Line 5:45:    'createTheme' is defined but never used                                                                       @typescript-eslint/no-unused-vars
+  Line 6:106:   'CssBaseline' is defined but never used                                                                       @typescript-eslint/no-unused-vars
+  Line 17:8:    'AgentLogin' is defined but never used                                                                        @typescript-eslint/no-unused-vars
+  Line 18:8:    'AgentDashboard' is defined but never used                                                                    @typescript-eslint/no-unused-vars
+  Line 20:8:    'ModernAgentChat' is defined but never used                                                                   @typescript-eslint/no-unused-vars
+  Line 21:8:    'AdminChatAssignment' is defined but never used                                                               @typescript-eslint/no-unused-vars
+  Line 53:9:    'location' is assigned a value but never used                                                                 @typescript-eslint/no-unused-vars
+  Line 280:38:  Unexpected mix of '&' and '|'. Use parentheses to clarify the intended order of operations                    no-mixed-operators
+  Line 280:44:  Unexpected mix of '&' and '|'. Use parentheses to clarify the intended order of operations                    no-mixed-operators
+  Line 679:6:   React Hook useEffect has a missing dependency: 'sessionId'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  Line 786:9:   'verifyToken' is assigned a value but never used                                                              @typescript-eslint/no-unused-vars
+  Line 831:9:   'verifyAdminToken' is assigned a value but never used                                                         @typescript-eslint/no-unused-vars
 
+src/components/APIRestSettings.tsx
+  Line 81:23:  'setTestFileUrl' is assigned a value but never used                                                             @typescript-eslint/no-unused-vars
+  Line 82:24:  'setTestFilename' is assigned a value but never used                                                            @typescript-eslint/no-unused-vars
+  Line 89:10:  'whatsappStatus' is assigned a value but never used                                                             @typescript-eslint/no-unused-vars
+  Line 90:10:  'statusLoading' is assigned a value but never used                                                              @typescript-eslint/no-unused-vars
+  Line 102:6:  React Hook useEffect has a missing dependency: 'loadAPIKeys'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/AdminAgentManagement.tsx
+  Line 38:11:   'EditIcon' is defined but never used                                                                         @typescript-eslint/no-unused-vars
+  Line 39:13:   'DeleteIcon' is defined but never used                                                                       @typescript-eslint/no-unused-vars
+  Line 125:10:  'selectedContact' is assigned a value but never used                                                         @typescript-eslint/no-unused-vars
+  Line 148:6:   React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/AdminSubscriptionPanel.tsx
+  Line 38:3:   'History' is defined but never used                                                                          @typescript-eslint/no-unused-vars
+  Line 167:6:  React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/AgentChatView.tsx
+  Line 54:6:  React Hook useEffect has a missing dependency: 'loadAssignedChats'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/AgentPermissionsManager.tsx
+  Line 6:3:    'Grid' is defined but never used                                                                                                   @typescript-eslint/no-unused-vars
+  Line 16:3:   'Paper' is defined but never used                                                                                                  @typescript-eslint/no-unused-vars
+  Line 24:3:   'FormControl' is defined but never used                                                                                            @typescript-eslint/no-unused-vars
+  Line 25:3:   'InputLabel' is defined but never used                                                                                             @typescript-eslint/no-unused-vars
+  Line 26:3:   'Select' is defined but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 27:3:   'MenuItem' is defined but never used                                                                                               @typescript-eslint/no-unused-vars
+  Line 31:3:   'Badge' is defined but never used                                                                                                  @typescript-eslint/no-unused-vars
+  Line 38:3:   'Divider' is defined but never used                                                                                                @typescript-eslint/no-unused-vars
+  Line 45:18:  'ActiveIcon' is defined but never used                                                                                             @typescript-eslint/no-unused-vars
+  Line 46:13:  'InactiveIcon' is defined but never used                                                                                           @typescript-eslint/no-unused-vars
+  Line 94:10:  'modules' is assigned a value but never used                                                                                       @typescript-eslint/no-unused-vars
+  Line 144:6:  React Hook useEffect has missing dependencies: 'loadAgents' and 'loadModules'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/AgentsSidebar.tsx
+  Line 11:5:  'Paper' is defined but never used  @typescript-eslint/no-unused-vars
+  Line 13:5:  'Chip' is defined but never used   @typescript-eslint/no-unused-vars
+
+src/components/CustomConfirmDialog.tsx
+  Line 10:3:   'Icon' is defined but never used               @typescript-eslint/no-unused-vars
+  Line 162:9:  'isMobile' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+src/components/CustomSnackbar.tsx
+  Line 2:20:  'Alert' is defined but never used  @typescript-eslint/no-unused-vars
+
+src/components/IncomingCall.tsx
+  Line 2:10:  'Box' is defined but never used           @typescript-eslint/no-unused-vars
+  Line 2:15:  'Typography' is defined but never used    @typescript-eslint/no-unused-vars
+  Line 2:27:  'Button' is defined but never used        @typescript-eslint/no-unused-vars
+  Line 2:35:  'Avatar' is defined but never used        @typescript-eslint/no-unused-vars
+  Line 3:19:  'PhoneIcon' is defined but never used     @typescript-eslint/no-unused-vars
+  Line 3:42:  'VideocamIcon' is defined but never used  @typescript-eslint/no-unused-vars
+
+src/components/KanbanSelectorModal.tsx
+  Line 72:6:  React Hook useEffect has a missing dependency: 'loadBoards'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/LandingPageComplete.tsx
+  Line 20:5:    'IconButton' is defined but never used                @typescript-eslint/no-unused-vars
+  Line 21:5:    'useScrollTrigger' is defined but never used          @typescript-eslint/no-unused-vars
+  Line 22:5:    'Fade' is defined but never used                      @typescript-eslint/no-unused-vars
+  Line 24:5:    'Avatar' is defined but never used                    @typescript-eslint/no-unused-vars
+  Line 33:5:    'Analytics' is defined but never used                 @typescript-eslint/no-unused-vars
+  Line 36:5:    'Security' is defined but never used                  @typescript-eslint/no-unused-vars
+  Line 43:13:   'MenuIcon' is defined but never used                  @typescript-eslint/no-unused-vars
+  Line 50:18:   'AnimatePresence' is defined but never used           @typescript-eslint/no-unused-vars
+  Line 67:7:    'MotionGrid' is assigned a value but never used       @typescript-eslint/no-unused-vars
+  Line 185:11:  'showcaseModules' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+src/components/PlanSelector.tsx
+  Line 14:3:   'Chip' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 69:10:  'successDialogOpen' is assigned a value but never used                                                       @typescript-eslint/no-unused-vars
+  Line 69:29:  'setSuccessDialogOpen' is assigned a value but never used                                                    @typescript-eslint/no-unused-vars
+  Line 77:6:   React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/components/ProtectedRoute.tsx
+  Line 24:26:  'hasModuleAccess' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+src/components/StatusList.tsx
+  Line 2:158:  'Divider' is defined but never used                                                                                                            @typescript-eslint/no-unused-vars
+  Line 161:6:  React Hook useEffect has missing dependencies: 'loadContactStatuses' and 'loadMyStatuses'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/context/SocketContext.tsx
+  Line 251:6:  React Hook useEffect has a missing dependency: 'socket'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/context/WhatsAppContext.tsx
+  Line 2:10:    'getSocketURL' is defined but never used                                                                           @typescript-eslint/no-unused-vars
+  Line 245:9:   'lastChatsLoadAtRef' is assigned a value but never used                                                            @typescript-eslint/no-unused-vars
+  Line 286:9:   'requestNotificationPermission' is assigned a value but never used                                                 @typescript-eslint/no-unused-vars
+  Line 529:6:   React Hook useCallback has a missing dependency: 'chats.length'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  Line 812:11:  'handlePresenceUpdate' is assigned a value but never used                                                          @typescript-eslint/no-unused-vars
+  Line 1649:7:  React Hook useMemo has a missing dependency: 'transferRequest'. Either include it or remove the dependency array   react-hooks/exhaustive-deps
+
+src/modules/AgentsManagementModule.tsx
+  Line 34:3:    'Tabs' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 35:3:    'Tab' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 38:3:    'Divider' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 47:3:    'Block' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 60:3:    'Person' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 61:3:    'SupervisorAccount' is defined but never used                                                                  @typescript-eslint/no-unused-vars
+  Line 62:3:    'AdminPanelSettings' is defined but never used                                                                 @typescript-eslint/no-unused-vars
+  Line 104:10:  'selectedTab' is assigned a value but never used                                                               @typescript-eslint/no-unused-vars
+  Line 104:23:  'setSelectedTab' is assigned a value but never used                                                            @typescript-eslint/no-unused-vars
+  Line 107:28:  'isConnected' is assigned a value but never used                                                               @typescript-eslint/no-unused-vars
+  Line 143:6:   React Hook useEffect has a missing dependency: 'loadAgents'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/modules/AnalyticsModule.tsx
+  Line 3:38:    'useMemo' is defined but never used                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  Line 4:10:    'getAPIBaseURL' is defined but never used                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+  Line 7:45:    'Button' is defined but never used                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+  Line 9:3:     'Divider' is defined but never used                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  Line 9:12:    'Tooltip' is defined but never used                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+  Line 10:40:   'Select' is defined but never used                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+  Line 10:48:   'MenuItem' is defined but never used                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+  Line 10:58:   'FormControl' is defined but never used                                                                                                                                                                                                       @typescript-eslint/no-unused-vars
+  Line 11:3:    'InputLabel' is defined but never used                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  Line 14:26:   'TrendingDown' is defined but never used                                                                                                                                                                                                      @typescript-eslint/no-unused-vars
+  Line 15:16:   'DashboardIcon' is defined but never used                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+  Line 15:40:   'ShowChart' is defined but never used                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+  Line 15:51:   'Assessment' is defined but never used                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  Line 17:32:   'PersonAdd' is defined but never used                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+  Line 18:41:   'PieChartIcon' is defined but never used                                                                                                                                                                                                      @typescript-eslint/no-unused-vars
+  Line 19:21:   'Reply' is defined but never used                                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+  Line 19:28:   'Done' is defined but never used                                                                                                                                                                                                              @typescript-eslint/no-unused-vars
+  Line 19:43:   'AccessTime' is defined but never used                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  Line 19:55:   'CalendarToday' is defined but never used                                                                                                                                                                                                     @typescript-eslint/no-unused-vars
+  Line 20:17:   'Memory' is defined but never used                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+  Line 20:25:   'SettingsInputComponent' is defined but never used                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+  Line 23:3:    'LineChart' is defined but never used                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+  Line 23:14:   'Line' is defined but never used                                                                                                                                                                                                              @typescript-eslint/no-unused-vars
+  Line 67:7:    'COLORS' is assigned a value but never used                                                                                                                                                                                                   @typescript-eslint/no-unused-vars
+  Line 88:10:   'error' is assigned a value but never used                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+  Line 198:6:   React Hook useEffect has a missing dependency: 'loadAllData'. Either include it or remove the dependency array                                                                                                                                react-hooks/exhaustive-deps
+  Line 210:9:   'connections' is assigned a value but never used                                                                                                                                                                                              @typescript-eslint/no-unused-vars
+  Line 231:11:  'kanbanBoards' is assigned a value but never used                                                                                                                                                                                             @typescript-eslint/no-unused-vars
+  Line 551:8:   React Hook React.useEffect has an unnecessary dependency: 'sessionId'. Either exclude it or remove the dependency array. Outer scope values like 'sessionId' aren't valid dependencies because mutating them doesn't re-render the component  react-hooks/exhaustive-deps
+  Line 779:8:   React Hook React.useEffect has an unnecessary dependency: 'sessionId'. Either exclude it or remove the dependency array. Outer scope values like 'sessionId' aren't valid dependencies because mutating them doesn't re-render the component  react-hooks/exhaustive-deps
+  Line 1040:8:  React Hook useEffect has an unnecessary dependency: 'sessionId'. Either exclude it or remove the dependency array. Outer scope values like 'sessionId' aren't valid dependencies because mutating them doesn't re-render the component        react-hooks/exhaustive-deps
+
+src/modules/CalendarModule.tsx
+  Line 25:3:   'Snackbar' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 41:3:   'CheckCircle' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 42:12:  'ErrorIcon' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 45:15:  'CategoryIcon' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 324:6:  React Hook useEffect has a missing dependency: 'loadAppointments'. Either include it or remove the dependency array      react-hooks/exhaustive-deps
+  Line 431:6:  React Hook useEffect has a missing dependency: 'searchContactsByName'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/modules/ChatbotModule.tsx
+  Line 3:326:  'Radio' is defined but never used                                                                                                                                    @typescript-eslint/no-unused-vars
+  Line 3:333:  'RadioGroup' is defined but never used                                                                                                                               @typescript-eslint/no-unused-vars
+  Line 4:45:   'PlayArrow' is defined but never used                                                                                                                                @typescript-eslint/no-unused-vars
+  Line 4:109:  'ExpandMore' is defined but never used                                                                                                                               @typescript-eslint/no-unused-vars
+  Line 4:121:  'Refresh' is defined but never used                                                                                                                                  @typescript-eslint/no-unused-vars
+  Line 4:163:  'RestartAlt' is defined but never used                                                                                                                               @typescript-eslint/no-unused-vars
+  Line 4:190:  'Close' is defined but never used                                                                                                                                    @typescript-eslint/no-unused-vars
+  Line 6:10:   'SubscriptionGuard' is defined but never used                                                                                                                        @typescript-eslint/no-unused-vars
+  Line 54:10:  'scrapingUrl' is assigned a value but never used                                                                                                                     @typescript-eslint/no-unused-vars
+  Line 56:86:  React Hook useEffect has missing dependencies: 'loadFlows', 'loadKanbanBoards', 'loadSettings', and 'loadStats'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  Line 416:9:  'addMenuOption' is assigned a value but never used                                                                                                                   @typescript-eslint/no-unused-vars
+  Line 422:9:  'removeMenuOption' is assigned a value but never used                                                                                                                @typescript-eslint/no-unused-vars
+  Line 463:9:  'handleScrapeUrl' is assigned a value but never used                                                                                                                 @typescript-eslint/no-unused-vars
+
+src/modules/ContactsManagerModule.tsx
+  Line 23:3:    'Tab' is defined but never used                                                                                                                          @typescript-eslint/no-unused-vars
+  Line 24:3:    'Tabs' is defined but never used                                                                                                                         @typescript-eslint/no-unused-vars
+  Line 27:3:    'Checkbox' is defined but never used                                                                                                                     @typescript-eslint/no-unused-vars
+  Line 32:3:    'Badge' is defined but never used                                                                                                                        @typescript-eslint/no-unused-vars
+  Line 41:3:    'PersonAdd' is defined but never used                                                                                                                    @typescript-eslint/no-unused-vars
+  Line 42:3:    'GroupAdd' is defined but never used                                                                                                                     @typescript-eslint/no-unused-vars
+  Line 43:3:    'Upload' is defined but never used                                                                                                                       @typescript-eslint/no-unused-vars
+  Line 44:3:    'Download' is defined but never used                                                                                                                     @typescript-eslint/no-unused-vars
+  Line 54:3:    'CheckCircle' is defined but never used                                                                                                                  @typescript-eslint/no-unused-vars
+  Line 102:10:  'syncedGroups' is assigned a value but never used                                                                                                        @typescript-eslint/no-unused-vars
+  Line 104:10:  'currentTab' is assigned a value but never used                                                                                                          @typescript-eslint/no-unused-vars
+  Line 104:22:  'setCurrentTab' is assigned a value but never used                                                                                                       @typescript-eslint/no-unused-vars
+  Line 108:10:  'syncGroupsLoading' is assigned a value but never used                                                                                                   @typescript-eslint/no-unused-vars
+  Line 111:10:  'syncStats' is assigned a value but never used                                                                                                           @typescript-eslint/no-unused-vars
+  Line 112:10:  'groupsSyncStats' is assigned a value but never used                                                                                                     @typescript-eslint/no-unused-vars
+  Line 203:9:   'handleUpdateAvatars' is assigned a value but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 275:9:   'handleSyncGroups' is assigned a value but never used                                                                                                    @typescript-eslint/no-unused-vars
+  Line 369:9:   'loadGroupMembers' is assigned a value but never used                                                                                                    @typescript-eslint/no-unused-vars
+  Line 542:6:   React Hook useEffect has missing dependencies: 'loadContacts', 'loadGroups', and 'loadKanbanBoards'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  Line 767:9:   'exportContacts' is assigned a value but never used                                                                                                      @typescript-eslint/no-unused-vars
+  Line 783:9:   'filteredContacts' is assigned a value but never used                                                                                                    @typescript-eslint/no-unused-vars
+  Line 788:9:   'filteredGroups' is assigned a value but never used                                                                                                      @typescript-eslint/no-unused-vars
+
+src/modules/DashboardOverview.tsx
+  Line 2:10:    'getAPIBaseURL' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 11:3:    'IconButton' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 16:3:    'List' is defined but never used                                                                                      @typescript-eslint/no-unused-vars
+  Line 17:3:    'ListItem' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 18:3:    'ListItemText' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 19:3:    'ListItemAvatar' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 20:3:    'Divider' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 23:3:    'Table' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 24:3:    'TableBody' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 25:3:    'TableCell' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 26:3:    'TableContainer' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 27:3:    'TableHead' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 28:3:    'TableRow' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 31:3:    'Alert' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 41:3:    'Schedule' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 43:3:    'Warning' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 45:3:    'Phone' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 46:3:    'VideoCall' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 49:3:    'Speed' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 52:3:    'Notifications' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 57:3:    'ThumbUp' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 58:3:    'Block' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 61:3:    'SignalWifi4Bar' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 140:10:  'activities' is assigned a value but never used                                                                       @typescript-eslint/no-unused-vars
+  Line 158:6:   React Hook useEffect has a missing dependency: 'loadDashboardData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  Line 388:13:  'mockTopAgents' is assigned a value but never used                                                                    @typescript-eslint/no-unused-vars
+  Line 585:9:   'getActivityIcon' is assigned a value but never used                                                                  @typescript-eslint/no-unused-vars
+
+src/modules/HistoryModule.tsx
+  Line 16:3:    'Menu' is defined but never used                            @typescript-eslint/no-unused-vars
+  Line 38:3:    'Tabs' is defined but never used                            @typescript-eslint/no-unused-vars
+  Line 39:3:    'Tab' is defined but never used                             @typescript-eslint/no-unused-vars
+  Line 44:3:    'ListItemIcon' is defined but never used                    @typescript-eslint/no-unused-vars
+  Line 50:3:    'Accordion' is defined but never used                       @typescript-eslint/no-unused-vars
+  Line 51:3:    'AccordionSummary' is defined but never used                @typescript-eslint/no-unused-vars
+  Line 52:3:    'AccordionDetails' is defined but never used                @typescript-eslint/no-unused-vars
+  Line 55:3:    'Fab' is defined but never used                             @typescript-eslint/no-unused-vars
+  Line 59:3:    'History' is defined but never used                         @typescript-eslint/no-unused-vars
+  Line 61:3:    'FilterList' is defined but never used                      @typescript-eslint/no-unused-vars
+  Line 62:3:    'Download' is defined but never used                        @typescript-eslint/no-unused-vars
+  Line 63:3:    'DateRange' is defined but never used                       @typescript-eslint/no-unused-vars
+  Line 65:3:    'Phone' is defined but never used                           @typescript-eslint/no-unused-vars
+  Line 76:3:    'Warning' is defined but never used                         @typescript-eslint/no-unused-vars
+  Line 77:3:    'Info' is defined but never used                            @typescript-eslint/no-unused-vars
+  Line 78:3:    'TrendingUp' is defined but never used                      @typescript-eslint/no-unused-vars
+  Line 79:3:    'TrendingDown' is defined but never used                    @typescript-eslint/no-unused-vars
+  Line 80:3:    'Analytics' is defined but never used                       @typescript-eslint/no-unused-vars
+  Line 82:3:    'ExpandMore' is defined but never used                      @typescript-eslint/no-unused-vars
+  Line 86:3:    'Archive' is defined but never used                         @typescript-eslint/no-unused-vars
+  Line 89:3:    'Share' is defined but never used                           @typescript-eslint/no-unused-vars
+  Line 93:3:    'AccessTime' is defined but never used                      @typescript-eslint/no-unused-vars
+  Line 96:3:    'Reply' is defined but never used                           @typescript-eslint/no-unused-vars
+  Line 97:3:    'Forward' is defined but never used                         @typescript-eslint/no-unused-vars
+  Line 98:3:    'Block' is defined but never used                           @typescript-eslint/no-unused-vars
+  Line 99:3:    'Report' is defined but never used                          @typescript-eslint/no-unused-vars
+  Line 100:3:   'Timeline' is defined but never used                        @typescript-eslint/no-unused-vars
+  Line 102:3:   'MoreVert' is defined but never used                        @typescript-eslint/no-unused-vars
+  Line 219:10:  'analytics' is assigned a value but never used              @typescript-eslint/no-unused-vars
+  Line 222:25:  'setSelectedAgent' is assigned a value but never used       @typescript-eslint/no-unused-vars
+  Line 223:29:  'setSelectedDirection' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  Line 225:23:  'setRowsPerPage' is assigned a value but never used         @typescript-eslint/no-unused-vars
+  Line 228:23:  'setSelectedTab' is assigned a value but never used         @typescript-eslint/no-unused-vars
+  Line 232:10:  'error' is assigned a value but never used                  @typescript-eslint/no-unused-vars
+  Line 236:10:  'syncLoading' is assigned a value but never used            @typescript-eslint/no-unused-vars
+  Line 237:10:  'syncStats' is assigned a value but never used              @typescript-eslint/no-unused-vars
+  Line 238:10:  'debugInfo' is assigned a value but never used              @typescript-eslint/no-unused-vars
+  Line 240:10:  'showMessageDialog' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  Line 241:10:  'selectedMessage' is assigned a value but never used        @typescript-eslint/no-unused-vars
+  Line 243:10:  'showDeleteDialog' is assigned a value but never used       @typescript-eslint/no-unused-vars
+  Line 246:10:  'deleteLoading' is assigned a value but never used          @typescript-eslint/no-unused-vars
+  Line 248:10:  'showMembersDialog' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  Line 249:10:  'selectedGroup' is assigned a value but never used          @typescript-eslint/no-unused-vars
+  Line 251:10:  'statuses' is assigned a value but never used               @typescript-eslint/no-unused-vars
+  Line 381:19:  'senderJid' is assigned a value but never used              @typescript-eslint/no-unused-vars
+  Line 1010:9:  'getStatusTypeIcon' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  Line 1020:9:  'getStatusTypeColor' is assigned a value but never used     @typescript-eslint/no-unused-vars
+  Line 1030:9:  'getStatusIcon' is assigned a value but never used          @typescript-eslint/no-unused-vars
+  Line 1040:9:  'getStatusLabel' is assigned a value but never used         @typescript-eslint/no-unused-vars
+  Line 1072:9:  'getStatusMessages' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  Line 1087:9:  'getMessageCountByType' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  Line 1504:9:  'handleSyncContacts' is assigned a value but never used     @typescript-eslint/no-unused-vars
+  Line 1533:9:  'handleSyncGroups' is assigned a value but never used       @typescript-eslint/no-unused-vars
+  Line 1562:9:  'handleUpdateAvatars' is assigned a value but never used    @typescript-eslint/no-unused-vars
+  Line 1589:9:  'handleViewMessage' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  Line 1600:9:  'handleDeleteChat' is assigned a value but never used       @typescript-eslint/no-unused-vars
+  Line 1624:9:  'confirmDelete' is assigned a value but never used          @typescript-eslint/no-unused-vars
+
+src/modules/KanbanContactsModule.tsx
+  Line 82:10:  'searchQuery' is assigned a value but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 82:23:  'setSearchQuery' is assigned a value but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 95:10:  'selectedBoardForAdd' is assigned a value but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 95:31:  'setSelectedBoardForAdd' is assigned a value but never used                                                                         @typescript-eslint/no-unused-vars
+  Line 192:6:  React Hook useEffect has missing dependencies: 'loadBoards' and 'loadContacts'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/modules/MobileStatusPublisher.tsx
+  Line 12:5:  'ListItem' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 13:5:  'ListItemText' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 14:5:  'ListItemSecondaryAction' is defined but never used                                                                   @typescript-eslint/no-unused-vars
+  Line 17:5:  'Divider' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 25:5:  'NotificationsActive' is defined but never used                                                                       @typescript-eslint/no-unused-vars
+  Line 50:8:  React Hook useEffect has a missing dependency: 'checkRegistration'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/modules/PersonalizedCampaignModule.tsx
+  Line 41:3:   'Refresh' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 44:3:   'HourglassEmpty' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 49:3:   'Person' is defined but never used                                                                                      @typescript-eslint/no-unused-vars
+  Line 50:3:   'Phone' is defined but never used                                                                                       @typescript-eslint/no-unused-vars
+  Line 52:3:   'Close' is defined but never used                                                                                       @typescript-eslint/no-unused-vars
+  Line 171:6:  React Hook useEffect has a missing dependency: 'loadCampaigns'. Either include it or remove the dependency array        react-hooks/exhaustive-deps
+  Line 212:6:  React Hook useCallback has a missing dependency: 'handleExcelUpload'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  Line 604:9:  'getStatusColor' is assigned a value but never used                                                                     @typescript-eslint/no-unused-vars
+  Line 614:9:  'getStatusLabel' is assigned a value but never used                                                                     @typescript-eslint/no-unused-vars
+
+src/modules/RealCampaignsModule.tsx
+  Line 5:10:     'SubscriptionGuard' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 41:3:     'ListItemButton' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 66:3:     'PersonAdd' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 73:3:     'Image' is defined but never used                                                                                        @typescript-eslint/no-unused-vars
+  Line 83:14:    'Socket' is defined but never used                                                                                       @typescript-eslint/no-unused-vars
+  Line 182:11:   'isDarkMode' is assigned a value but never used                                                                          @typescript-eslint/no-unused-vars
+  Line 265:10:   'loading' is assigned a value but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 332:6:    React Hook useCallback has an unnecessary dependency: 'campaigns'. Either exclude it or remove the dependency array      react-hooks/exhaustive-deps
+  Line 621:6:    React Hook useEffect has a missing dependency: 'loadSenderSessions'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+  Line 670:6:    React Hook useEffect has a missing dependency: 'loadWhatsAppContacts'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  Line 781:9:    'generateIdFlow' is assigned a value but never used                                                                      @typescript-eslint/no-unused-vars
+  Line 791:9:    'getIdFlowSizes' is assigned a value but never used                                                                      @typescript-eslint/no-unused-vars
+  Line 807:9:    'calculateTimeDistribution' is assigned a value but never used                                                           @typescript-eslint/no-unused-vars
+  Line 834:39:   Unnecessary escape character: \(                                                                                         no-useless-escape
+  Line 834:41:   Unnecessary escape character: \)                                                                                         no-useless-escape
+  Line 834:43:   Unnecessary escape character: \.                                                                                         no-useless-escape
+  Line 834:45:   Unnecessary escape character: \+                                                                                         no-useless-escape
+  Line 906:9:    'handleGroupSelection' is assigned a value but never used                                                                @typescript-eslint/no-unused-vars
+  Line 988:9:    'handleSelectAllWhatsAppGroups' is assigned a value but never used                                                       @typescript-eslint/no-unused-vars
+  Line 1010:9:   'handleLocalGroupSelection' is assigned a value but never used                                                           @typescript-eslint/no-unused-vars
+  Line 1022:9:   'handleSelectAllLocalGroups' is assigned a value but never used                                                          @typescript-eslint/no-unused-vars
+  Line 1817:35:  'isPast' is assigned a value but never used                                                                              @typescript-eslint/no-unused-vars
+
+src/modules/SettingsModule.tsx
+  Line 1:38:    'useRef' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 24:3:    'DialogContentText' is defined but never used                                                                        @typescript-eslint/no-unused-vars
+  Line 30:3:    'Stack' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 31:3:    'Tooltip' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 35:3:    'List' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 36:3:    'ListItem' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 37:3:    'ListItemText' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 38:3:    'ListItemAvatar' is defined but never used                                                                           @typescript-eslint/no-unused-vars
+  Line 39:3:    'ListItemIcon' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 42:3:    'Accordion' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 43:3:    'AccordionSummary' is defined but never used                                                                         @typescript-eslint/no-unused-vars
+  Line 44:3:    'AccordionDetails' is defined but never used                                                                         @typescript-eslint/no-unused-vars
+  Line 45:3:    'Divider' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 48:3:    'ToggleButtonGroup' is defined but never used                                                                        @typescript-eslint/no-unused-vars
+  Line 49:3:    'ToggleButton' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 50:3:    'Table' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 51:3:    'TableBody' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 52:3:    'TableCell' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 53:3:    'TableContainer' is defined but never used                                                                           @typescript-eslint/no-unused-vars
+  Line 54:3:    'TableHead' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 55:3:    'TableRow' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 56:3:    'Badge' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 57:3:    'Menu' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 60:3:    'Slider' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 61:3:    'Radio' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 62:3:    'RadioGroup' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 63:3:    'FormGroup' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 64:3:    'Stepper' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 65:3:    'Step' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 66:3:    'StepLabel' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 67:3:    'StepContent' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 71:3:    'Settings' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 72:3:    'Security' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 75:3:    'Notifications' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 76:3:    'Language' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 77:3:    'Palette' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 78:3:    'Code' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 79:3:    'CloudUpload' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 80:3:    'CloudDownload' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 81:3:    'VpnKey' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 86:3:    'PersonAdd' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 87:3:    'Group' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 88:3:    'Edit' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 91:3:    'VisibilityOff' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 93:3:    'Cancel' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 94:3:    'Refresh' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 95:3:    'Download' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 96:3:    'Upload' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 98:3:    'Link' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 99:3:    'Computer' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 100:3:   'Smartphone' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 101:3:   'Tablet' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 103:3:   'Memory' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 104:3:   'Speed' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 105:3:   'NetworkCheck' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 106:3:   'Wifi' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 107:3:   'Bluetooth' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 108:3:   'LocationOn' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 109:3:   'AccessTime' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 110:3:   'Schedule' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 111:3:   'CalendarToday' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 112:3:   'NotificationImportant' is defined but never used                                                                    @typescript-eslint/no-unused-vars
+  Line 114:3:   'Sms' is defined but never used                                                                                      @typescript-eslint/no-unused-vars
+  Line 116:3:   'Telegram' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 117:3:   'Facebook' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 118:3:   'Twitter' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 119:3:   'Instagram' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 120:3:   'LinkedIn' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 121:3:   'YouTube' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 122:3:   'GitHub' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 123:3:   'Google' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 124:3:   'Microsoft' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 125:3:   'Apple' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 126:3:   'Amazon' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 127:3:   'Slack' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 128:3:   'Discord' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 129:3:   'Zoom' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 130:3:   'Teams' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 131:3:   'Dropbox' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 132:3:   'OneDrive' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 133:3:   'GoogleDrive' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 134:3:   'PayPal' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 135:3:   'Stripe' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 136:3:   'CreditCard' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 138:3:   'Receipt' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 139:3:   'AttachMoney' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 140:3:   'TrendingUp' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 142:3:   'Assessment' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 143:3:   'Dashboard' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 144:3:   'Report' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 145:3:   'FileDownload' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 146:3:   'FileUpload' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 147:3:   'FolderOpen' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 148:3:   'Archive' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 150:3:   'Restore' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 151:3:   'History' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 152:3:   'Update' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 153:3:   'Build' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 154:3:   'BugReport' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 155:3:   'Feedback' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 156:3:   'HelpOutline' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 157:3:   'Support' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 158:3:   'ContactSupport' is defined but never used                                                                           @typescript-eslint/no-unused-vars
+  Line 159:3:   'LiveHelp' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 161:3:   'MoreVert' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 162:3:   'ExpandMore' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 164:3:   'Remove' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 165:3:   'Check' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 167:3:   'Warning' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 168:12:  'ErrorIcon' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 169:3:   'Info' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 170:3:   'Star' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 171:3:   'Flag' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 172:3:   'Label' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 173:3:   'Category' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 174:3:   'Tag' is defined but never used                                                                                      @typescript-eslint/no-unused-vars
+  Line 175:3:   'LocalOffer' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 176:3:   'Discount' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 177:3:   'Loyalty' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 178:3:   'CardGiftcard' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 179:3:   'Campaign' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 181:3:   'Psychology' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 182:3:   'SmartToy' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 183:3:   'Api' is defined but never used                                                                                      @typescript-eslint/no-unused-vars
+  Line 184:3:   'QrCode' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 186:3:   'Plugin' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 187:3:   'IntegrationInstructions' is defined but never used                                                                  @typescript-eslint/no-unused-vars
+  Line 188:3:   'Webhook' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 189:3:   'Transform' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 190:3:   'DataUsage' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 191:3:   'Insights' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 192:3:   'Tune' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 193:3:   'FilterList' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 194:3:   'Sort' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 195:3:   'Search' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 196:3:   'FindReplace' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 197:3:   'Compare' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 198:3:   'SwapHoriz' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 199:3:   'ImportExport' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 200:3:   'SyncAlt' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 201:3:   'Loop' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 202:3:   'PlayArrow' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 203:3:   'Pause' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 204:3:   'Stop' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 205:3:   'Replay' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 206:3:   'SkipNext' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 207:3:   'SkipPrevious' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 208:3:   'FastForward' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 209:3:   'FastRewind' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 210:3:   'VolumeUp' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 211:3:   'VolumeDown' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 212:3:   'VolumeMute' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 213:3:   'Brightness4' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 214:3:   'Brightness7' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 215:3:   'DarkMode' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 216:3:   'LightMode' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 217:3:   'Contrast' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 218:3:   'InvertColors' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 219:3:   'FormatColorFill' is defined but never used                                                                          @typescript-eslint/no-unused-vars
+  Line 220:3:   'ColorLens' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 221:3:   'Image' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 222:3:   'PhotoCamera' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 223:3:   'Videocam' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 224:3:   'Mic' is defined but never used                                                                                      @typescript-eslint/no-unused-vars
+  Line 225:3:   'MicOff' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+  Line 226:3:   'RecordVoiceOver' is defined but never used                                                                          @typescript-eslint/no-unused-vars
+  Line 227:3:   'GraphicEq' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 228:3:   'Equalizer' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 229:3:   'QueueMusic' is defined but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 230:3:   'MusicNote' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 231:3:   'Album' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 232:3:   'LibraryMusic' is defined but never used                                                                             @typescript-eslint/no-unused-vars
+  Line 233:3:   'Headset' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 234:3:   'Speaker' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 235:3:   'SurroundSound' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 236:3:   'HighQuality' is defined but never used                                                                              @typescript-eslint/no-unused-vars
+  Line 237:3:   'Hd' is defined but never used                                                                                       @typescript-eslint/no-unused-vars
+  Line 238:3:   'FourK' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 239:3:   'VideoSettings' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 240:3:   'CameraEnhance' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 241:3:   'FlashOn' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 242:3:   'FlashOff' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 243:3:   'Timer' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 244:3:   'TimerOff' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 245:3:   'Alarm' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 246:3:   'AlarmOn' is defined but never used                                                                                  @typescript-eslint/no-unused-vars
+  Line 247:3:   'AlarmOff' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 248:3:   'Event' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 249:3:   'EventNote' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 250:3:   'Today' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 251:3:   'DateRange' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 252:3:   'Timeline' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 253:3:   'Gantt' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 387:9:   'socket' is assigned a value but never used                                                                          @typescript-eslint/no-unused-vars
+  Line 390:10:  'users' is assigned a value but never used                                                                           @typescript-eslint/no-unused-vars
+  Line 392:10:  'integrations' is assigned a value but never used                                                                    @typescript-eslint/no-unused-vars
+  Line 394:10:  'billingInfo' is assigned a value but never used                                                                     @typescript-eslint/no-unused-vars
+  Line 397:10:  'showIntegrationDialog' is assigned a value but never used                                                           @typescript-eslint/no-unused-vars
+  Line 397:33:  'setShowIntegrationDialog' is assigned a value but never used                                                        @typescript-eslint/no-unused-vars
+  Line 398:10:  'selectedIntegration' is assigned a value but never used                                                             @typescript-eslint/no-unused-vars
+  Line 398:31:  'setSelectedIntegration' is assigned a value but never used                                                          @typescript-eslint/no-unused-vars
+  Line 450:9:   'normalizedMaxChannels' is assigned a value but never used                                                           @typescript-eslint/no-unused-vars
+  Line 460:6:   React Hook useEffect has a missing dependency: 'loadSettingsData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  Line 836:9:   'handleOpenUserDialog' is assigned a value but never used                                                            @typescript-eslint/no-unused-vars
+  Line 935:9:   'openDeleteUserConfirmation' is assigned a value but never used                                                      @typescript-eslint/no-unused-vars
+  Line 980:9:   'handleOpenPermissionsDialog' is assigned a value but never used                                                     @typescript-eslint/no-unused-vars
+  Line 1045:9:  'getRoleIcon' is assigned a value but never used                                                                     @typescript-eslint/no-unused-vars
+  Line 1055:9:  'getStatusColor' is assigned a value but never used                                                                  @typescript-eslint/no-unused-vars
+  Line 1067:9:  'getIntegrationIcon' is assigned a value but never used                                                              @typescript-eslint/no-unused-vars
+
+src/modules/UsersModule.tsx
+  Line 33:3:   'Badge' is defined but never used                                                                                                                                                            @typescript-eslint/no-unused-vars
+  Line 44:3:   'Work' is defined but never used                                                                                                                                                             @typescript-eslint/no-unused-vars
+  Line 45:15:  'CategoryIcon' is defined but never used                                                                                                                                                     @typescript-eslint/no-unused-vars
+  Line 50:3:   'People' is defined but never used                                                                                                                                                           @typescript-eslint/no-unused-vars
+  Line 51:3:   'TrendingUp' is defined but never used                                                                                                                                                       @typescript-eslint/no-unused-vars
+  Line 52:3:   'Assignment' is defined but never used                                                                                                                                                       @typescript-eslint/no-unused-vars
+  Line 95:10:  'loading' is assigned a value but never used                                                                                                                                                 @typescript-eslint/no-unused-vars
+  Line 146:6:  React Hook useEffect has missing dependencies: 'loadCategories', 'loadChatAssignments', 'loadDepartments', 'loadStats', and 'loadUsers'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/modules/WhatsAppConnectionModule.tsx
+  Line 314:6:  React Hook useEffect has a missing dependency: 'fetchActiveSessions'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/modules/WhatsAppStatusModule.tsx
+  Line 24:5:   'ListItemSecondaryAction' is defined but never used                                                              @typescript-eslint/no-unused-vars
+  Line 37:5:   'Edit' is defined but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 45:5:   'PlayArrow' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+  Line 46:5:   'Pause' is defined but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 47:5:   'Visibility' is defined but never used                                                                           @typescript-eslint/no-unused-vars
+  Line 89:12:  'editingStatus' is assigned a value but never used                                                               @typescript-eslint/no-unused-vars
+  Line 111:8:  React Hook useEffect has a missing dependency: 'loadStatuses'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/modules/WhatsAppWebChat.tsx
+  Line 6:10:    'io' is defined but never used                                                                                                           @typescript-eslint/no-unused-vars
+  Line 15:3:    'ListItem' is defined but never used                                                                                                     @typescript-eslint/no-unused-vars
+  Line 17:3:    'ListItemAvatar' is defined but never used                                                                                               @typescript-eslint/no-unused-vars
+  Line 18:3:    'ListItemText' is defined but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 19:3:    'Badge' is defined but never used                                                                                                        @typescript-eslint/no-unused-vars
+  Line 31:3:    'DialogContentText' is defined but never used                                                                                            @typescript-eslint/no-unused-vars
+  Line 66:3:    'Info' is defined but never used                                                                                                         @typescript-eslint/no-unused-vars
+  Line 67:3:    'VolumeOff' is defined but never used                                                                                                    @typescript-eslint/no-unused-vars
+  Line 73:12:   'ImageIcon' is defined but never used                                                                                                    @typescript-eslint/no-unused-vars
+  Line 75:3:    'FilterList' is defined but never used                                                                                                   @typescript-eslint/no-unused-vars
+  Line 76:20:   'CalendarIcon' is defined but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 97:9:    'theme' is assigned a value but never used                                                                                               @typescript-eslint/no-unused-vars
+  Line 133:10:  'showReactionMenu' is assigned a value but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 134:10:  'hoveredMessageId' is assigned a value but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 134:28:  'setHoveredMessageId' is assigned a value but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 157:10:  'incomingTransfer' is assigned a value but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 157:28:  'setIncomingTransfer' is assigned a value but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 445:9:   'socketRef' is assigned a value but never used                                                                                           @typescript-eslint/no-unused-vars
+  Line 447:9:   'commonReactions' is assigned a value but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 654:9:   'performFullSync' is assigned a value but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 719:6:   React Hook useEffect has a missing dependency: 'chats.length'. Either include it or remove the dependency array                          react-hooks/exhaustive-deps
+  Line 978:9:   'handleReactToMessage' is assigned a value but never used                                                                                @typescript-eslint/no-unused-vars
+  Line 1288:6:  React Hook useMemo has missing dependencies: 'normalizePhoneNumber' and 'sessionId'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/AgentDashboardPro.tsx
+  Line 13:3:     'AppBar' is defined but never used                                                                                                                                                                                                                                                                       @typescript-eslint/no-unused-vars
+  Line 14:3:     'Toolbar' is defined but never used                                                                                                                                                                                                                                                                      @typescript-eslint/no-unused-vars
+  Line 51:12:    'ImageIcon' is defined but never used                                                                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+  Line 53:15:    'VideoIcon' is defined but never used                                                                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+  Line 76:18:    'formatDistanceToNow' is defined but never used                                                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+  Line 81:8:     'StatusList' is defined but never used                                                                                                                                                                                                                                                                   @typescript-eslint/no-unused-vars
+  Line 83:8:     'ModernAgentChatList' is defined but never used                                                                                                                                                                                                                                                          @typescript-eslint/no-unused-vars
+  Line 84:8:     'WhatsAppStyleMessages' is defined but never used                                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  Line 85:8:     'MessageInputComponent' is defined but never used                                                                                                                                                                                                                                                        @typescript-eslint/no-unused-vars
+  Line 170:10:   'notifications' is assigned a value but never used                                                                                                                                                                                                                                                       @typescript-eslint/no-unused-vars
+  Line 198:10:   'leftPanelView' is assigned a value but never used                                                                                                                                                                                                                                                       @typescript-eslint/no-unused-vars
+  Line 198:25:   'setLeftPanelView' is assigned a value but never used                                                                                                                                                                                                                                                    @typescript-eslint/no-unused-vars
+  Line 460:6:    React Hook useEffect has a missing dependency: 'apiUrl'. Either include it or remove the dependency array                                                                                                                                                                                                react-hooks/exhaustive-deps
+  Line 524:9:    'showConfirmDialog' is assigned a value but never used                                                                                                                                                                                                                                                   @typescript-eslint/no-unused-vars
+  Line 930:5:    Unreachable code                                                                                                                                                                                                                                                                                         no-unreachable
+  Line 940:5:    Unreachable code                                                                                                                                                                                                                                                                                         no-unreachable
+  Line 959:5:    Unreachable code                                                                                                                                                                                                                                                                                         no-unreachable
+  Line 980:5:    Unreachable code                                                                                                                                                                                                                                                                                         no-unreachable
+  Line 1001:5:   Unreachable code                                                                                                                                                                                                                                                                                         no-unreachable
+  Line 1021:5:   Unreachable code                                                                                                                                                                                                                                                                                         no-unreachable
+  Line 1054:5:   Unreachable code                                                                                                                                                                                                                                                                                         no-unreachable
+  Line 1060:5:   Unreachable code                                                                                                                                                                                                                                                                                         no-unreachable
+  Line 1081:5:   Unreachable code                                                                                                                                                                                                                                                                                         no-unreachable
+  Line 1092:5:   Unreachable code                                                                                                                                                                                                                                                                                         no-unreachable
+  Line 1103:5:   Unreachable code                                                                                                                                                                                                                                                                                         no-unreachable
+  Line 1119:6:   React Hook useEffect has missing dependencies: 'chatListDateFilter', 'navigate', 'playNotificationSound', and 'sessionId'. Either include them or remove the dependency array. You can also replace multiple useState variables with useReducer if 'setMessages' needs the current value of 'sessionId'  react-hooks/exhaustive-deps
+  Line 1210:13:  'uploadId' is assigned a value but never used                                                                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+  Line 1424:9:   'handleRefresh' is assigned a value but never used                                                                                                                                                                                                                                                       @typescript-eslint/no-unused-vars
+
+src/pages/WhinsapDashboard.tsx
+  Line 9:10:    'useSyncProgress' is defined but never used                                                                                            @typescript-eslint/no-unused-vars
+  Line 13:3:    'AppBar' is defined but never used                                                                                                     @typescript-eslint/no-unused-vars
+  Line 14:3:    'Toolbar' is defined but never used                                                                                                    @typescript-eslint/no-unused-vars
+  Line 17:3:    'Drawer' is defined but never used                                                                                                     @typescript-eslint/no-unused-vars
+  Line 24:3:    'Chip' is defined but never used                                                                                                       @typescript-eslint/no-unused-vars
+  Line 32:3:    'Grow' is defined but never used                                                                                                       @typescript-eslint/no-unused-vars
+  Line 33:3:    'Slide' is defined but never used                                                                                                      @typescript-eslint/no-unused-vars
+  Line 43:3:    'Telegram' is defined but never used                                                                                                   @typescript-eslint/no-unused-vars
+  Line 55:11:   'MenuIcon' is defined but never used                                                                                                   @typescript-eslint/no-unused-vars
+  Line 57:12:   'PhoneIcon' is defined but never used                                                                                                  @typescript-eslint/no-unused-vars
+  Line 59:16:   'PeopleIcon' is defined but never used                                                                                                 @typescript-eslint/no-unused-vars
+  Line 60:17:   'TrendingIcon' is defined but never used                                                                                               @typescript-eslint/no-unused-vars
+  Line 61:15:   'BusinessIcon' is defined but never used                                                                                               @typescript-eslint/no-unused-vars
+  Line 63:19:   'ChevronRightIcon' is defined but never used                                                                                           @typescript-eslint/no-unused-vars
+  Line 64:12:   'ErrorIcon' is defined but never used                                                                                                  @typescript-eslint/no-unused-vars
+  Line 68:15:   'SecurityIcon' is defined but never used                                                                                               @typescript-eslint/no-unused-vars
+  Line 69:3:    'Brightness4' is defined but never used                                                                                                @typescript-eslint/no-unused-vars
+  Line 70:3:    'Brightness7' is defined but never used                                                                                                @typescript-eslint/no-unused-vars
+  Line 71:3:    'Schedule' is defined but never used                                                                                                   @typescript-eslint/no-unused-vars
+  Line 72:3:    'CheckCircle' is defined but never used                                                                                                @typescript-eslint/no-unused-vars
+  Line 91:7:    'DashboardOverview' is assigned a value but never used                                                                                 @typescript-eslint/no-unused-vars
+  Line 92:7:    'UsersModule' is assigned a value but never used                                                                                       @typescript-eslint/no-unused-vars
+  Line 95:7:    'AgentPermissionsManager' is assigned a value but never used                                                                           @typescript-eslint/no-unused-vars
+  Line 178:11:  'toggleTheme' is assigned a value but never used                                                                                       @typescript-eslint/no-unused-vars
+  Line 178:24:  'isDarkMode' is assigned a value but never used                                                                                        @typescript-eslint/no-unused-vars
+  Line 180:10:  'drawerOpen' is assigned a value but never used                                                                                        @typescript-eslint/no-unused-vars
+  Line 184:9:   'notifications' is assigned a value but never used                                                                                     @typescript-eslint/no-unused-vars
+  Line 187:10:  'whatsappStatus' is assigned a value but never used                                                                                    @typescript-eslint/no-unused-vars
+  Line 188:10:  'lastConnectionCheck' is assigned a value but never used                                                                               @typescript-eslint/no-unused-vars
+  Line 212:9:   'isSupervisor' is assigned a value but never used                                                                                      @typescript-eslint/no-unused-vars
+  Line 213:9:   'isAdmin' is assigned a value but never used                                                                                           @typescript-eslint/no-unused-vars
+  Line 416:6:   React Hook useMemo has missing dependencies: 'allNavigationItems' and 'moduleMap'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  Line 427:9:   'isInChatPage' is assigned a value but never used                                                                                      @typescript-eslint/no-unused-vars
+  Line 603:6:   React Hook useCallback has a missing dependency: 'sessionValid'. Either include it or remove the dependency array                      react-hooks/exhaustive-deps
+  Line 780:6:   React Hook useEffect has missing dependencies: 'location.pathname' and 'navigate'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/admin/ClientsManager.tsx
+  Line 25:20:  'Block' is defined but never used  @typescript-eslint/no-unused-vars
+
+src/pages/admin/ModernAdminChatMonitor.tsx
+  Line 112:20:  'isConnected' is assigned a value but never used                                                                        @typescript-eslint/no-unused-vars
+  Line 218:6:   React Hook useEffect has a missing dependency: 'loadInitialData'. Either include it or remove the dependency array      react-hooks/exhaustive-deps
+  Line 283:6:   React Hook useEffect has a missing dependency: 'refreshUnreadCounts'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+src/pages/admin/PlanRequestsManager.tsx
+  Line 14:5:   'IconButton' is defined but never used    @typescript-eslint/no-unused-vars
+  Line 24:31:  'ShoppingCart' is defined but never used  @typescript-eslint/no-unused-vars
+
+src/pages/admin/PlansManager.tsx
+  Line 19:29:  'Check' is defined but never used  @typescript-eslint/no-unused-vars
+  Line 19:36:  'Close' is defined but never used  @typescript-eslint/no-unused-vars
+
+src/utils/silenceLogs.ts
+  Line 2:7:  'originalLog' is assigned a value but never used   @typescript-eslint/no-unused-vars
+  Line 3:7:  'originalWarn' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+Search for the keywords to learn more about each warning.
+To ignore, add // eslint-disable-next-line to the line before.
+
+File sizes after gzip:
+
+  405.97 kB  build/static/js/main.fea9fbb4.js
+  127.65 kB  build/static/js/795.752f9b67.chunk.js
+  120.15 kB  build/static/js/744.f92786ef.chunk.js
+  92.56 kB   build/static/js/271.27923a15.chunk.js
+  79.65 kB   build/static/js/941.70c39450.chunk.js
+  46.31 kB   build/static/js/52.c0f4b802.chunk.js
+  43.59 kB   build/static/js/239.1134fad2.chunk.js
+  40.95 kB   build/static/js/284.18542d40.chunk.js
+  32.14 kB   build/static/js/556.59a34f5b.chunk.js
+  22.22 kB   build/static/js/307.29751611.chunk.js
+  22.01 kB   build/static/js/419.4e0d0cea.chunk.js
+  20.01 kB   build/static/js/30.4b7ca3d3.chunk.js
+  16.67 kB   build/static/js/543.2200162f.chunk.js
+  9.76 kB    build/static/js/620.21044605.chunk.js
+  9.54 kB    build/static/js/472.bef05767.chunk.js
+  9.44 kB    build/static/js/627.fe23add3.chunk.js
+  9.12 kB    build/static/js/503.3d24ec4c.chunk.js
+  8.97 kB    build/static/js/163.0841416c.chunk.js
+  8.66 kB    build/static/js/82.3423078c.chunk.js
+  7.76 kB    build/static/js/934.5bdf2b39.chunk.js
+  7.07 kB    build/static/js/211.635d4a39.chunk.js
+  6.9 kB     build/static/js/223.2c9452d0.chunk.js
+  6.72 kB    build/static/js/397.f8799589.chunk.js
+  5.95 kB    build/static/js/431.e2e013e7.chunk.js
+  5.7 kB     build/static/js/417.abd2b5b7.chunk.js
+  4.77 kB    build/static/js/545.8cf2182d.chunk.js
+  4.32 kB    build/static/js/108.44f36ab2.chunk.js
+  4.12 kB    build/static/js/852.d68ef588.chunk.js
+  2.98 kB    build/static/css/503.a5bd4307.chunk.css
+  2.81 kB    build/static/js/433.046a63cf.chunk.js
+  2.25 kB    build/static/css/main.5a69c97a.css
+  1.73 kB    build/static/js/206.9c06098a.chunk.js
+
+The project was built assuming it is hosted at /.
+You can control this with the homepage field in your package.json.
+
+The build folder is ready to be deployed.
+You may serve it with a static server:
+
+  serve -s build
+
+Find out more about deployment here:
+
+  https://cra.link/deployment
 

@@ -20,10 +20,6 @@ app.use(cors({
   origin: [
     'http://localhost:3000',
     'http://127.0.0.1:3000', 
-    'http://localhost:3001',
-    'http://127.0.0.1:3001',
-    'http://localhost:3002',
-    'http://127.0.0.1:3002',
     // Permitir conexiones durante desarrollo
     ...(process.env.NODE_ENV === 'production' ? [] : ['*'])
   ],
@@ -44,10 +40,6 @@ const io = new Server(server, {
     origin: [
       'http://localhost:3000',
       'http://127.0.0.1:3000', 
-      'http://localhost:3001',
-      'http://127.0.0.1:3001',
-      'http://localhost:3002',
-      'http://127.0.0.1:3002',
       // Permitir conexiones durante desarrollo
       ...(process.env.NODE_ENV === 'production' ? [] : ['*'])
     ],
@@ -136,7 +128,7 @@ app.get('/api/qr-status/:sessionId', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3002;
+const PORT = process.env.PORT || 3000;
 
 // Iniciar servidor en todas las interfaces
 server.listen(PORT, '0.0.0.0', async () => {

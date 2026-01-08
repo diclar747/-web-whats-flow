@@ -52,10 +52,10 @@ async function checkAndStartCampaigns(providedPool = null) {
                     );
 
                     // Llamar al endpoint para iniciar la campaña
-                    // Usar el puerto del env o fallback a 3002 (o el que esté corriendo nginx/app)
-                    // Asumimos localhost:3002 por el código original, pero 'index.js' corre en PORT?
+                    // Usar el puerto del env o fallback a 3000 (o el que esté corriendo nginx/app)
+                    // Asumimos localhost:3000 por el código original, pero 'index.js' corre en PORT?
                     // Deberíamos usar una URL relativa o loopback segura.
-                    const port = process.env.PORT || 3002;
+                    const port = process.env.PORT || 3000;
                     const checkUrl = `http://localhost:${port}/api/campaigns/${campaign.id}/start`;
 
                     const response = await axios.post(

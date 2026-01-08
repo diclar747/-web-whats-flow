@@ -94,7 +94,7 @@ module.exports = function (app, pool) {
                         const sessionId = adminSession[0].session_id;
                         const axios = require('axios');
 
-                        await axios.post(`http://localhost:3002/api/send-message`, {
+                        await axios.post(`http://localhost:3000/api/send-message`, {
                             sessionId: sessionId,
                             to: phone,
                             message: whatsappMessage
@@ -359,7 +359,7 @@ module.exports = function (app, pool) {
                         const sessionId = adminSession[0].session_id;
                         const axios = require('axios');
 
-                        await axios.post(`http://localhost:3002/api/send-message`, {
+                        await axios.post(`http://localhost:3000/api/send-message`, {
                             sessionId: sessionId,
                             to: request.phone_number,
                             message: whatsappMessage

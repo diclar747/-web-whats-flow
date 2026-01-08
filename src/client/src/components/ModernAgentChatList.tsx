@@ -14,6 +14,7 @@ import {
   Divider,
   InputAdornment,
   CircularProgress,
+  LinearProgress,
   Paper,
   useTheme,
   useMediaQuery,
@@ -154,6 +155,8 @@ interface Chat {
   status?: 'active' | 'closed' | 'transferred' | 'pending';
   isOnline?: boolean;
   assignedAt?: string;
+  syncProgress?: number;
+  isSyncing?: boolean;
 }
 
 interface ModernAgentChatListProps {
@@ -394,6 +397,21 @@ const ModernAgentChatList: React.FC<ModernAgentChatListProps> = ({
                         />
                       )}
                     </Box>
+                    {(chat.isSyncing || (typeof chat.syncProgress === 'number' && chat.syncProgress < 100)) && (
+                      <LinearProgress
+                        variant={typeof chat.syncProgress === 'number' ? 'determinate' : 'indeterminate'}
+                        value={typeof chat.syncProgress === 'number' ? chat.syncProgress : 0}
+                        sx={{
+                          mt: 0.5,
+                          height: 4,
+                          borderRadius: 999,
+                          backgroundColor: 'rgba(0, 168, 132, 0.12)',
+                          '& .MuiLinearProgress-bar': {
+                            backgroundColor: 'rgba(0, 168, 132, 0.9)',
+                          },
+                        }}
+                      />
+                    )}
                   </Box>
                 }
               />

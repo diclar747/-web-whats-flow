@@ -109,6 +109,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'error'>('checking');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<'all' | 'unread' | 'groups' | 'contacts'>('all');
+  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all'>('all');
   const [isTyping, setIsTyping] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [showReactionMenu, setShowReactionMenu] = useState<{ messageId: string; x: number; y: number } | null>(null);
@@ -598,8 +599,8 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
       case 'unread': return chat.unreadCount && chat.unreadCount > 0;
       case 'groups': return chat.isGroup;
       case 'contacts': return !chat.isGroup;
-      case 'all': return !chat.isGroup; // Solo contactos individuales, sin grupos
-      default: return !chat.isGroup;
+      case 'all': return true; // Mostrar TODOS los chats (contactos y grupos)
+      default: return true;
     }
   });
 

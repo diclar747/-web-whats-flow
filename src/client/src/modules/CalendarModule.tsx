@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Calendar, momentLocalizer, View } from 'react-big-calendar';
 import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 import moment from 'moment';
@@ -94,7 +94,29 @@ const CalendarModule: React.FC<CalendarModuleProps> = ({ sessionId }) => {
 
 const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propSessionId }) => {
   const { session } = useWhatsApp();
-  const sessionId = propSessionId || session?.sessionId;
+
+  // Resolver sessionId con múltiples fuentes para evitar valores nulos
+  const sessionId = (() => {
+    const fromContext = propSessionId || session?.sessionId;
+    if (fromContext) {
+      console.log('[CALENDAR] 🔑 SessionId desde contexto:', fromContext);
+      return fromContext;
+    }
+    try {
+      const fromStorage = (
+        localStorage.getItem('sessionId') ||
+        localStorage.getItem('whatsapp_session_id') ||
+        localStorage.getItem('owner_phone_number') ||
+        localStorage.getItem('phoneNumber') ||
+        undefined
+      );
+      console.log('[CALENDAR] 🔑 SessionId desde localStorage:', fromStorage);
+      return fromStorage;
+    } catch (e) {
+      console.error('[CALENDAR] ❌ Error obteniendo sessionId:', e);
+      return undefined;
+    }
+  })();
   const {
     notification,
     alert,
@@ -161,6 +183,7 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
   // Estados para búsqueda de contactos por nombre
   const [contactOptions, setContactOptions] = useState<Array<{ name: string, phone: string, jid: string }>>([]);
   const [loadingContacts, setLoadingContacts] = useState(false);
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const getStatusColor = (status: string) => {
     const colors = {
@@ -335,7 +358,20 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
 
   // Buscar contactos por nombre
   const searchContactsByName = async (searchTerm: string) => {
-    if (!sessionId || !searchTerm || searchTerm.length < 2) {
+    console.log('[CALENDAR-SEARCH] 🔍 searchContactsByName llamado');
+    console.log('[CALENDAR-SEARCH] sessionId:', sessionId);
+    console.log('[CALENDAR-SEARCH] searchTerm:', searchTerm);
+    console.log('[CALENDAR-SEARCH] searchTerm.length:', searchTerm?.length);
+    
+    if (!sessionId) {
+      console.error('[CALENDAR-SEARCH] ❌ sessionId no disponible');
+      showError('Error: No se pudo obtener el ID de sesión. Recarga la página.', '❌ Error de sesión');
+      setContactOptions([]);
+      return;
+    }
+    
+    if (!searchTerm || searchTerm.length < 2) {
+      console.log('[CALENDAR-SEARCH] ⚠️ Búsqueda requiere al menos 2 caracteres');
       setContactOptions([]);
       return;
     }
@@ -343,30 +379,65 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     try {
       setLoadingContacts(true);
       const token = sessionStorage.getItem('whinsap_token') || localStorage.getItem('whinsap_token') || localStorage.getItem('token') || sessionStorage.getItem('token') || localStorage.getItem('agentToken') || sessionStorage.getItem('agentToken');
-      console.log(`[CALENDAR] Searching contacts by name "${searchTerm}" with token:`, token ? 'Present' : 'Missing');
-      const response = await fetch(`/api/contacts/search-by-name/${sessionId}/${encodeURIComponent(searchTerm)}`, {
+      console.log(`[CALENDAR-SEARCH] 🚀 Buscando contactos: "${searchTerm}" con sessionId: "${sessionId}"`);
+      console.log('[CALENDAR-SEARCH] Token:', token ? 'Present' : 'Missing');
+      
+      const url = `/api/contacts/search-by-name/${sessionId}/${encodeURIComponent(searchTerm)}`;
+      console.log('[CALENDAR-SEARCH] URL:', url);
+      
+      const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
+      
+      console.log('[CALENDAR-SEARCH] Response status:', response.status);
       const data = await response.json();
+      console.log('[CALENDAR-SEARCH] Response data:', data);
 
       if (data.success && data.contacts) {
+        console.log(`[CALENDAR-SEARCH] ✅ ${data.contacts.length} contactos encontrados`);
         setContactOptions(data.contacts.map((c: any) => ({
           name: c.name,
           phone: c.phone,
           jid: c.jid
         })));
       } else {
+        console.log('[CALENDAR-SEARCH] ⚠️ No se encontraron contactos o error en respuesta');
         setContactOptions([]);
       }
     } catch (error) {
-      console.error('Error buscando contactos por nombre:', error);
+      console.error('[CALENDAR-SEARCH] ❌ Error buscando contactos por nombre:', error);
       setContactOptions([]);
     } finally {
       setLoadingContacts(false);
     }
   };
+
+  // 🔁 Búsqueda automática al escribir (fallback por si onInputChange no se dispara)
+  useEffect(() => {
+    const term = formData.patient_name || '';
+
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = null;
+    }
+
+    if (!term || term.length < 2) {
+      setContactOptions([]);
+      return;
+    }
+
+    searchDebounceRef.current = setTimeout(() => {
+      searchContactsByName(term);
+    }, 350);
+
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, [formData.patient_name, sessionId]);
 
   // Manejar cambio de teléfono
   const handlePhoneChange = (phone: string) => {
@@ -985,6 +1056,12 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
         </DialogTitle>
 
         <DialogContent>
+          {!sessionId && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              ⚠️ Sesión no detectada. La búsqueda de contactos puede no funcionar. 
+              SessionId: {sessionId || 'undefined'}
+            </Alert>
+          )}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
             <Autocomplete
               freeSolo
@@ -992,6 +1069,7 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
               getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
               loading={loadingContacts}
               value={formData.patient_name || ''}
+              inputValue={formData.patient_name || ''}
               onChange={(event, newValue) => {
                 if (typeof newValue === 'object' && newValue !== null) {
                   // Seleccionó un contacto de la lista
@@ -1001,19 +1079,14 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
                     patient_phone: newValue.phone
                   });
                   showSuccess(`Contacto seleccionado: ${newValue.name}`, '✅ Contacto');
-                } else {
+                } else if (typeof newValue === 'string') {
                   // Escribió texto libre
-                  setFormData({ ...formData, patient_name: newValue || '' });
+                  setFormData({ ...formData, patient_name: newValue });
                 }
               }}
               onInputChange={(event, newInputValue) => {
                 setFormData({ ...formData, patient_name: newInputValue });
-                // Buscar contactos después de 300ms
-                if (newInputValue.length >= 2) {
-                  setTimeout(() => searchContactsByName(newInputValue), 300);
-                } else {
-                  setContactOptions([]);
-                }
+                // El useEffect manejará la búsqueda con debounce
               }}
               renderOption={(props, option) => (
                 <li {...props} key={option.jid}>
