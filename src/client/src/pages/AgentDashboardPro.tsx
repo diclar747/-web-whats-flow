@@ -391,40 +391,7 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
         }
       }
 
-      // Inicializar sonido de manera robusta
-      const setupAudio = () => {
-        if (!window.notificationSound) {
-          console.log('🔊 [AGENT-PRO] Creando objeto de audio global...');
-          const audio = new Audio('/notification.mp3');
-          audio.volume = 0.5;
-          audio.preload = 'auto';
-          window.notificationSound = audio;
-        }
 
-        // Cargar audio
-        window.notificationSound?.load();
-
-        // Intentar desbloquear
-        const unlockAudio = () => {
-          const audio = window.notificationSound;
-          if (audio) {
-            audio.play().then(() => {
-              audio.pause();
-              audio.currentTime = 0;
-              console.log('🔊 [AGENT-PRO] Audio desbloqueado');
-              window.removeEventListener('click', unlockAudio);
-              window.removeEventListener('touchstart', unlockAudio);
-            }).catch(err => {
-              console.log('🔊 [AGENT-PRO] Esperando interacción para audio:', err.message);
-            });
-          }
-        };
-
-        window.addEventListener('click', unlockAudio);
-        window.addEventListener('touchstart', unlockAudio);
-      };
-
-      setupAudio();
 
       // Obtener sessionId del ADMIN desde la base de datos
       try {
@@ -466,46 +433,11 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
   };
 
   const playNotificationSound = () => {
-    if (!soundEnabled) return;
-
-    console.log('🔊 [AGENT-PRO] Intentando reproducir sonido...');
-
-    const audio = window.notificationSound || audioRef.current;
-
-    if (audio) {
-      audio.currentTime = 0;
-      audio.play().catch(e => {
-        console.warn('⚠️ [AGENT-PRO] Error al reproducir audio:', e.message);
-        playBeepFallback();
-      });
-    } else {
-      playBeepFallback();
-    }
+    // Sonido desactivado a petición del usuario
   };
 
   const playBeepFallback = () => {
-    try {
-      const bCtx = (audioRef as any).beepContext;
-      if (!bCtx || !bCtx.audioContext) return;
-
-      const { audioContext } = bCtx;
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-
-      oscillator.type = 'sine';
-      oscillator.frequency.value = 800;
-      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.2, audioContext.currentTime + 0.05);
-      gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.15);
-
-      oscillator.start();
-      oscillator.stop(audioContext.currentTime + 0.2);
-    } catch (e) {
-      console.error('❌ [AGENT-PRO] Error en beep fallback:', e);
-    }
+    // Sonido desactivado a petición del usuario
   };
 
   const showDesktopNotification = (title: string, body: string) => {

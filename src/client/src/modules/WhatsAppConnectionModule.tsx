@@ -321,23 +321,32 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
   };
 
   const startQrFlow = async (targetSessionId?: string) => {
-    const sessionToUse = targetSessionId || resolvedSessionId;
+    // 🆕 Detectar sesión principal para validar plan
+    const primarySession = waSessions.length > 0 ? waSessions[0] : null;
+    const primaryOwnerId = primarySession ? (primarySession.sessionId || primarySession.phoneNumber) : resolvedSessionId;
+
+    // Si NO hay targetSessionId (es una nueva conexión), generar ID único
+    const isNewConnection = !targetSessionId;
+    const sessionToUse = targetSessionId || `session-${Date.now()}`;
+
+    // Si es reconexión, usar el ID existente. Si es nueva, usar el generado.
+    console.log(`[QR-FLOW] Iniciando flow. Mode: ${isNewConnection ? 'NEW' : 'RECONNECT'}, Session: ${sessionToUse}, Owner: ${primaryOwnerId}`);
 
     if (!sessionToUse) {
-      setWaError('No hay sessionId disponible. Vuelve a iniciar sesión.');
+      setWaError('No hay sessionId disponible.');
       return;
     }
 
     setWaError('');
 
-    // Validar plan activo
+    // Validar plan activo (usar 'active' como string literal si es necesario, pero subscriptionStatus viene del state)
     if (subscriptionStatus !== 'active') {
       setWaError('Es necesario activar un plan para generar el código QR.');
       return;
     }
 
-    // Validar límite de canales
-    if (Number.isFinite(normalizedMaxChannels) && waSessions.length >= normalizedMaxChannels) {
+    // Validar límite de canales (solo para nuevas conexiones)
+    if (isNewConnection && Number.isFinite(normalizedMaxChannels) && waSessions.length >= normalizedMaxChannels) {
       setWaError(`Has alcanzado el límite de líneas de tu plan (${waSessions.length}/${normalizedMaxChannels}).`);
       return;
     }
@@ -349,7 +358,10 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       const response = await sessionFetch(`/api/whatsapp/qr-code`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: sessionToUse })
+        body: JSON.stringify({
+          sessionId: sessionToUse,
+          ownerId: primaryOwnerId // 🆕 Enviar ownerId explícito para validación de plan
+        })
       });
 
       if (!response.ok) {

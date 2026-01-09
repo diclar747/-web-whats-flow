@@ -10,7 +10,8 @@ const authenticateToken = (req, res, next) => {
         if (!token) {
             return res.status(401).json({
                 success: false,
-                error: 'Acceso denegado. Token no proporcionado.'
+                error: 'Acceso denegado. Token no proporcionado.',
+                requiresReauth: true
             });
         }
 
@@ -137,12 +138,14 @@ const authenticateToken = (req, res, next) => {
             if (err.name === 'TokenExpiredError') {
                 return res.status(403).json({
                     success: false,
-                    error: 'Token expirado. Por favor, inicia sesión nuevamente.'
+                    error: 'Token expirado. Por favor, inicia sesión nuevamente.',
+                    requiresReauth: true
                 });
             }
             return res.status(403).json({
                 success: false,
-                error: `Token inválido: ${err.message}. Fallback rejected.`
+                error: `Token inválido: ${err.message}. Fallback rejected.`,
+                requiresReauth: true
             });
         }
     } catch (error) {

@@ -474,10 +474,9 @@ router.get('/my-subscription', async (req, res) => {
 
     let effectiveIdentifier = phone || resolvedId;
 
-    // 💡 Fallback: Si el identificador parece ser un ID numérico (de usuario autenticado vía JWT)
-    // O si no se encontró nada, usar el email del JWT si está disponible.
-    if ((!effectiveIdentifier || /^\d+$/.test(effectiveIdentifier)) && userEmailFromJWT) {
-      console.log(`[SUBSCRIPTIONS] ℹ️ Usando fallback de email desde JWT: ${userEmailFromJWT}`);
+    // 💡 Fallback: Solo si no se proporcionó ningún identificador, usar el email del JWT
+    if (!effectiveIdentifier && userEmailFromJWT) {
+      console.log(`[SUBSCRIPTIONS] ℹ️ Sin identificador, usando email desde JWT: ${userEmailFromJWT}`);
       effectiveIdentifier = userEmailFromJWT;
     }
 

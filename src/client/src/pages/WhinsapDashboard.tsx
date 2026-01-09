@@ -37,7 +37,9 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  DialogContentText
+  DialogContentText,
+  Tabs,
+  Tab
 } from '@mui/material';
 import {
   Telegram,
@@ -202,7 +204,16 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
   const [userPhoneNumber, setUserPhoneNumber] = useState<string | null>(null);
   const [sessionValid, setSessionValid] = useState<boolean | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false); // Nuevo estado para evitar race conditions
-  const [primarySessionId, setPrimarySessionId] = useState<string | null>(null); // 🆕 Primary Session (oldest)
+
+  // 🆕 Multi-Session State
+  const [allSessions, setAllSessions] = useState<any[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string>(sessionId);
+  const [activeTab, setActiveTab] = useState(0);
+
+  // Sync activeSessionId with prop change if needed (optional)
+  useEffect(() => {
+    if (sessionId && !activeSessionId) setActiveSessionId(sessionId);
+  }, [sessionId]);
 
   // Detectar rol del usuario (priorizar el del hook de permisos)
   const userRole = permUserRole || sessionStorage.getItem('userRole') || localStorage.getItem('userRole') || 'admin';
@@ -212,47 +223,61 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
   const isSupervisor = userRole === 'supervisor';
   const isAdmin = userRole === 'admin';
 
-  // 🆕 Determinar Primary Session (Oldest Active Session)
-  useEffect(() => {
-    const fetchPrimarySession = async () => {
-      try {
-        const response = await fetch(`${window.location.origin}/api/sessions/active`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+  // 🆕 Fetch All Active Sessions - Memoized to use in socket listeners
+  const fetchSessions = useCallback(async () => {
+    try {
+      const response = await fetch(`${window.location.origin}/api/sessions/active`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const data = await response.json();
+
+      if (data.success && data.sessions) {
+        // Sort: Primary (oldest) first
+        const sortedSessions = [...data.sessions].sort((a, b) => {
+          const timeA = new Date(a.created_at || 0).getTime();
+          const timeB = new Date(b.created_at || 0).getTime();
+          return timeA - timeB; // Ascending -> Oldest first
         });
-        const data = await response.json();
 
-        if (data.success && data.sessions && data.sessions.length > 0) {
-          // Filtrar primero por sesiones que parecen validas
-          // Prioridad: 1. Strict Oldest (Principal) - Connection status does NOT change selection
-          const sortedSessions = [...data.sessions].sort((a, b) => {
-            // Usar fecha de creación (más antiguo primero)
-            const timeA = new Date(a.created_at || 0).getTime();
-            const timeB = new Date(b.created_at || 0).getTime();
-            return timeA - timeB;
-          });
+        setAllSessions(sortedSessions);
+        console.log('[DASHBOARD] 📱 Tab Sessions Updated:', sortedSessions.map(s => s.phoneNumber));
 
-          if (sortedSessions.length > 0) {
-            const primary = sortedSessions[0];
-            console.log('[DASHBOARD] 🏆 Primary Session Determinado:', {
-              sessionId: primary.sessionId,
-              created_at: primary.created_at,
-              isConnected: primary.isConnected,
-              phone: primary.phoneNumber
-            });
-            setPrimarySessionId(primary.sessionId);
+        // Update active tab index based on current activeSessionId
+        if (sortedSessions.length > 0) {
+          const index = sortedSessions.findIndex(s => s.sessionId === activeSessionId);
+          if (index !== -1) {
+            setActiveTab(index);
+          } else if (!activeSessionId) {
+            // Default only if no active session is set
+            setActiveSessionId(sortedSessions[0].sessionId);
+            setActiveTab(0);
           }
         }
-      } catch (err) {
-        console.error('[DASHBOARD] Error fetching primary session:', err);
       }
-    };
-
-    if (sessionId || localStorage.getItem('token')) {
-      fetchPrimarySession();
+    } catch (err) {
+      console.error('[DASHBOARD] Error fetching sessions:', err);
     }
-  }, [sessionId]);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (localStorage.getItem('token')) {
+      fetchSessions();
+    }
+  }, [fetchSessions]);
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setActiveTab(newValue);
+    if (allSessions[newValue]) {
+      const newSessionId = allSessions[newValue].sessionId;
+      console.log('🔄 Switching active session to:', newSessionId);
+      setActiveSessionId(newSessionId);
+
+      // Update storage for persistence
+      localStorage.setItem('whinsap_active_session', newSessionId);
+    }
+  };
 
   // Dashboard statistics state
   const [dashboardStats, setDashboardStats] = useState({
@@ -805,9 +830,9 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
     socket.on(`dashboard-stats-${sessionId}`, handleStatsUpdate);
     socket.on(`connection-${sessionId}`, handleConnectionUpdate);
     socket.on('connection-update', handleConnectionUpdate);
-    // COMENTADO: Ya NO escuchamos eventos de logout de WhatsApp - No afectan la sesión web
-    // socket.on('session-logged-out', handleSessionLoggedOut);
-    // socket.on(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
+    socket.on('whatsapp-connected', fetchSessions);
+    socket.on('whatsapp-disconnected', fetchSessions);
+    socket.on('session-updated', fetchSessions);
     socket.on('auth_token', handleAuthToken);
     socket.on('agent-force-logout', handleAgentForceLogout);
 
@@ -1108,7 +1133,7 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
             </Typography>
           </Box>
 
-          {/* Middle Stats Bar - PESTAÑAS SOLICITADAS */}
+          {/* Middle Stats Bar - PESTAÑAS Y ESTADO */}
           <Box sx={{
             display: { xs: 'none', md: 'flex' },
             alignItems: 'center',
@@ -1118,8 +1143,11 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
             py: 0.8,
             borderRadius: 3,
             border: '1px solid rgba(255,255,255,0.05)',
-            mx: 2
+            mx: 2,
+            overflowX: 'auto'
           }}>
+            {/* 🆕 SESSION TABS */}
+            {/* 🆕 SESSION TABS MOVED TO CHAT MODULE */}
             {/* 1. Estado Conexión */}
             <Tooltip title="Estado de WhatsApp">
               <Box
@@ -1398,20 +1426,32 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
                     } />
                     <Route path="/chat/*" element={
                       <ProtectedRoute module="chat" action="view">
-                        <RequiresWhatsApp sessionId={sessionId} moduleName="Chat">
+                        <RequiresWhatsApp sessionId={activeSessionId} moduleName="Chat">
                           <Suspense fallback={<ModuleLoadingFallback />}>
                             {isAgent ? (
                               <Box sx={{ p: 3 }}>
                                 <AgentChatView
                                   userId={userId || ''}
-                                  sessionId={primarySessionId || sessionId}
+                                  sessionId={activeSessionId}
                                   onChatSelect={(chatJid) => {
                                     navigate(`/dashboard/chat/${chatJid}`);
                                   }}
                                 />
                               </Box>
                             ) : (
-                              <WhatsAppWebChat sessionId={primarySessionId || sessionId} />
+                              <WhatsAppWebChat
+                                sessionId={activeSessionId}
+                                allSessions={allSessions}
+                                onSessionSelect={(sid) => {
+                                  console.log('🔄 Switching active session from Chat Module:', sid);
+                                  setActiveSessionId(sid);
+                                  // Update storage
+                                  localStorage.setItem('whinsap_active_session', sid);
+                                  // Update Tab index for other usages if needed
+                                  const idx = allSessions.findIndex(s => s.sessionId === sid);
+                                  if (idx !== -1) setActiveTab(idx);
+                                }}
+                              />
                             )}
                           </Suspense>
                         </RequiresWhatsApp>
@@ -1419,8 +1459,8 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
                     } />
                     <Route path="/history/*" element={
                       <ProtectedRoute module="chat" action="view">
-                        <RequiresWhatsApp sessionId={sessionId} moduleName="Historial">
-                          <HistoryModule sessionId={sessionId} />
+                        <RequiresWhatsApp sessionId={activeSessionId} moduleName="Historial">
+                          <HistoryModule sessionId={activeSessionId} />
                         </RequiresWhatsApp>
                       </ProtectedRoute>
                     } />
@@ -1437,21 +1477,21 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
                     } />
                     <Route path="/crm/*" element={
                       <ProtectedRoute module="contacts" action="view">
-                        <RequiresWhatsApp sessionId={sessionId} moduleName="Contactos">
-                          <ContactsManagerModule sessionId={sessionId} />
+                        <RequiresWhatsApp sessionId={activeSessionId} moduleName="Contactos">
+                          <ContactsManagerModule sessionId={activeSessionId} />
                         </RequiresWhatsApp>
                       </ProtectedRoute>
                     } />
                     <Route path="/campaigns/*" element={
                       <ProtectedRoute module="campaign" action="view">
-                        <RequiresWhatsApp sessionId={sessionId} moduleName="Campañas">
-                          <RealCampaignsModule sessionId={sessionId} />
+                        <RequiresWhatsApp sessionId={activeSessionId} moduleName="Campañas">
+                          <RealCampaignsModule sessionId={activeSessionId} />
                         </RequiresWhatsApp>
                       </ProtectedRoute>
                     } />
                     <Route path="/chatbot/*" element={
                       <ProtectedRoute module="chat" action="view">
-                        <ChatbotModule sessionId={sessionId} />
+                        <ChatbotModule sessionId={activeSessionId} />
                       </ProtectedRoute>
                     } />
                     <Route path="/calendar/*" element={
@@ -1469,7 +1509,7 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
                     } />
                     <Route path="/agents/*" element={
                       <ProtectedRoute module="users" action="view">
-                        <AgentsManagementModule sessionId={sessionId} />
+                        <AgentsManagementModule sessionId={activeSessionId} />
                       </ProtectedRoute>
                     } />
                     <Route path="/kanban/*" element={

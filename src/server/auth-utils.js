@@ -70,7 +70,8 @@ function authenticateJWT(req, res, next) {
     if (!decoded) {
         return res.status(401).json({
             success: false,
-            error: 'Token inválido o expirado'
+            error: 'Token inválido o expirado',
+            requiresReauth: true
         });
     }
 

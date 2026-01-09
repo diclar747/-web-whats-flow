@@ -43,37 +43,56 @@ import { ChatListItem } from '../components/ChatListItem';
 import {
   Search,
   MoreVert,
-  Message,
-  People,
-  WhatsApp,
-  InsertEmoticon,
   AttachFile,
-  Mic,
   Send,
   Close,
-  Done,
+  InsertEmoticon,
+  Check,
   DoneAll,
-  AccessTime,
-  ChevronLeft,
-  ChevronRight,
-  Print,
-  Error,
+  Image as ImageIcon,
+  Mic,
+  Stop,
+  PlayArrow,
+  Pause,
+  Delete,
   Reply,
   Forward,
-  Delete,
-  Star,
-  ViewKanban,
+  ContentCopy,
   Info,
-  VolumeOff,
+  Warning,
+  Error as ErrorIcon,
+  ChevronLeft,
+  ChevronRight,
+  WhatsApp,
+  Phone,
+  VideoCall,
+  CallEnd,
+  Add,
+  GroupAdd,
+  PersonAdd,
+  Block,
+  Report,
+  Star,
   Archive,
-  DeleteOutline,
-  PlayArrow,
-  Download,
-  Description,
-  Image as ImageIcon,
-  PictureAsPdf,
   FilterList,
-  CalendarToday as CalendarIcon
+  CalendarToday as CalendarIcon,
+  Chat,
+  Group,
+  CallReceived,
+  CallMade,
+  MarkEmailUnread,
+  DonutLarge,
+  Message,
+  Description,
+  Download,
+  Error,
+  AccessTime,
+  Done,
+  ViewKanban,
+  People,
+  Print,
+  DeleteOutline,
+  PictureAsPdf
 } from '@mui/icons-material';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import KanbanSelectorModal from '../components/KanbanSelectorModal';
@@ -82,9 +101,11 @@ import StatusList from '../components/StatusList';
 
 interface WhatsAppWebChatProps {
   sessionId: string;
+  allSessions?: any[];
+  onSessionSelect?: (sessionId: string) => void;
 }
 
-const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
+const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSessions = [], onSessionSelect }) => {
   // Log solo en primera montura
   const mountedRef = useRef(false);
   if (!mountedRef.current) {
@@ -443,6 +464,20 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
   const socketRef = useRef<any>(null);
+  const loadedSessionRef = useRef<string | null>(null);
+
+  // 🔍 DEBUG: Log session changes
+  // 🔍 DEBUG: Log session changes y cargar chats optimizados (24h)
+  useEffect(() => {
+    console.log(`[WhatsAppWebChat] 🔄 Session ID changed to: ${sessionId}`);
+
+    // Si la sesión cambió, forzar recarga con filtro de 24 horas para velocidad inmediata
+    if (loadChats && sessionId) {
+      console.log(`[WhatsAppWebChat] 🚀 Loading INITIAL chats (24h limit) for ${sessionId}...`);
+      // Pasar 'limit_24h' como filtro inicial
+      loadChats(sessionId, 'limit_24h').catch(err => console.error('[WhatsAppWebChat] Error loading initial chats:', err));
+    }
+  }, [sessionId, loadChats]);
 
   const commonReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '👏', '✅', '❌'];
 
@@ -680,40 +715,27 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
   // Cargar chats
   useEffect(() => {
-    console.log('[WhatsAppWebChat] 📋 useEffect loadChats ejecutado:', {
-      whatsappConnected,
-      sessionId,
-      loadChatsExists: !!loadChats,
-      chatsLength: chats?.length || 0,
-      connectionChecking
-    });
+    /*
+      El sistema original dependía de 'loadChats' automático, pero optimizamos para evitar llamadas innecesarias.
+      Sin embargo, al cambiar de pestaña (sessionId cambia), debemos forzar la recarga incluso si hay chats en memoria
+      (porque pueden pertenecer a la sesión anterior).
+    */
 
-    // Si todavía estamos verificando la conexión, esperar
-    if (connectionChecking) {
-      console.log('[WhatsAppWebChat] ⏳ Todavía verificando conexión, esperando...');
-      return;
-    }
+    let isMounted = true;
+    const isNewSession = loadedSessionRef.current !== sessionId;
 
-    // ⚡ OPTIMIZACIÓN: Solo cargar si no hay chats previos para evitar "parpadeo" o doble carga
-    // WhatsAppContext ya se encarga de la carga inicial al conectar.
     if (whatsappConnected && loadChats) {
-      if (chats.length === 0) {
-        console.log('[WhatsAppWebChat] 🔄 Llamando a loadChats (lista vacía) para sessionId:', sessionId);
-        loadChats(sessionId, 'all', 0, false);
-      } else {
-        console.log('[WhatsAppWebChat] ℹ️ Chats ya cargados en Contexto, omitiendo recarga automática.');
-      }
-    } else {
-      console.warn('[WhatsAppWebChat] ⚠️ No se puede cargar chats:', {
-        whatsappConnected,
-        loadChatsExists: !!loadChats,
-        sessionId,
-        reason: !whatsappConnected ? 'WhatsApp desconectado' : 'loadChats no disponible'
-      });
+      // Logic: Si es una NUEVA sesión O no hay chats, cargar.
+      if (isNewSession || chats.length === 0) {
+        console.log(`[WhatsAppWebChat] 🔄 Triggering loadChats for ${sessionId} (NewSession: ${isNewSession}, Chats: ${chats.length})`);
 
-      // Mostrar mensaje al usuario
-      if (!whatsappConnected && !connectionChecking) {
-        console.error('[WhatsAppWebChat] ❌ WhatsApp NO está conectado. Por favor, escanea el código QR.');
+        // Update ref immediately to prevent loops
+        loadedSessionRef.current = sessionId;
+
+        loadChats(sessionId, 'all', 0, false).catch(err => {
+          console.error('[WhatsAppWebChat] Error loading chats:', err);
+        });
+      } else {
       }
     }
   }, [whatsappConnected, sessionId, loadChats, connectionChecking]);
@@ -917,6 +939,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
       // ✅ WhatsAppContext recibirá el mensaje vía Socket.IO y lo agregará automáticamente
 
       // ✅ Enfocar el cuadro de texto después de enviar
+
+      // Efecto para scroll cuando se reciben mensajes nuevos enviar
       setTimeout(() => {
         messageInputRef.current?.focus();
       }, 100);
@@ -1243,33 +1267,45 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
         return false;
       }
 
-      // Filtrar status broadcasts
-      if (chatName === 'status' || chat.id.includes('status@broadcast')) {
+      // 🟢 MANEJO DE ESTADOS (STATUS)
+      const isStatus = chat.id === 'status@broadcast' || chat.id.includes('status@broadcast') || chat.name === 'status';
+
+      // Si estamos en la pestaña Estados (5), SOLO mostrar estados
+      if (filterTab === 5) {
+        return isStatus;
+      }
+
+      // Si NO estamos en la pestaña Estados, ocultar siempre los estados
+      if (isStatus) {
         return false;
       }
 
-      // ✅ Permitir grupos en el filtro
-
+      // 🟢 BÚSQUEDA
       const matchesSearch = chatName.toLowerCase().includes(searchTerm.toLowerCase());
       if (!matchesSearch) return false;
 
-      // Filtrado por pestañas
+      // 🟢 FILTRADO POR PESTAÑAS
       if (filterTab === 0) {
-        // Todo: solo chats individuales (NO grupos)
-        return !chat.isGroup;
+        // Todas: Solo chats individuales (NO grupos, NO estados)
+        return !chat.isGroup && !isStatus;
       }
       if (filterTab === 1) {
-        // Grupos: solo mostrar grupos
-        return chat.isGroup === true;
+        // Recibidos: Chats individuales (NO grupos) donde el último msj no fui yo
+        return !chat.isGroup && !isStatus && chat.lastMessageFromMe === false;
       }
       if (filterTab === 2) {
-        // Recibidos: chats donde el último mensaje NO es de nosotros (solo contactos)
-        return chat.lastMessageFromMe === false && !chat.isGroup;
+        // Enviados: Chats individuales (NO grupos) donde el último msj fui yo
+        return !chat.isGroup && !isStatus && chat.lastMessageFromMe === true;
       }
       if (filterTab === 3) {
-        // Pendientes: chats con mensajes sin leer
-        return chat.unreadCount && chat.unreadCount > 0;
+        // Sin Leer: Chats con mensajes pendientes (Mixto: Grupos o Chats, pero NO estados)
+        return !isStatus && chat.unreadCount && chat.unreadCount > 0;
       }
+      if (filterTab === 4) {
+        // Grupos: SOLO grupos (NO estados)
+        return chat.isGroup === true && !isStatus;
+      }
+
       return true;
     });
 
@@ -1289,10 +1325,18 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
 
   // 🚀 Estadísticas de chats (con grupos)
   const chatStats = useMemo(() => {
+    const isStatus = (c: any) => c.id === 'status@broadcast' || c.id.includes('status@broadcast') || c.name === 'status';
+
     return {
-      total: chats.length,
-      groups: chats.filter(c => c.isGroup).length,
-      received: chats.filter(c => c.lastMessageFromMe === false && !c.isGroup).length,
+      // Total: Sólo chats individuales (Ni grupos Ni estados)
+      total: chats.filter(c => !c.isGroup && !isStatus(c)).length,
+      // Grupos: Sólo grupos (No estados)
+      groups: chats.filter(c => c.isGroup && !isStatus(c)).length,
+      // Recibidos: Chats individuales (No grupos) donde el último no es mío
+      received: chats.filter(c => !c.isGroup && !isStatus(c) && c.lastMessageFromMe === false).length,
+      // Enviados: Chats individuales (No grupos) donde el último SÍ es mío
+      sent: chats.filter(c => !c.isGroup && !isStatus(c) && c.lastMessageFromMe === true).length,
+      // Pendientes: Cualquier chat con contador > 0
       pending: chats.filter(c => c.unreadCount && c.unreadCount > 0).length
     };
   }, [chats]);
@@ -1385,9 +1429,89 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
           justifyContent: chatListCollapsed ? 'center' : 'space-between'
         }}>
           {!chatListCollapsed && (
-            <Typography variant="h6" sx={{ flex: 1, fontWeight: 600, color: colors.text }}>
-              Chats
-            </Typography>
+            <Box sx={{ flex: 1, mr: 1, overflow: 'hidden' }}>
+              {allSessions && allSessions.length > 0 ? (
+                <Tabs
+                  value={allSessions.findIndex(s => s.sessionId === sessionId)}
+                  onChange={(e, idx) => {
+                    const selected = allSessions[idx];
+                    if (selected && onSessionSelect) {
+                      onSessionSelect(selected.sessionId);
+                    }
+                  }}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  sx={{
+                    minHeight: 36,
+                    '& .MuiTab-root': {
+                      minHeight: 36,
+                      p: '6px 12px',
+                      textTransform: 'none',
+                      fontSize: '0.85rem',
+                      color: colors.textSecondary,
+                      maxWidth: 120, // Limit width
+                      minWidth: 'auto'
+                    },
+                    '& .Mui-selected': {
+                      color: colors.primary,
+                      fontWeight: 600
+                    },
+                    '& .MuiTabs-indicator': {
+                      bgcolor: colors.primary,
+                      height: 3,
+                      borderRadius: '3px 3px 0 0'
+                    }
+                  }}
+                >
+                  {allSessions.map((session: any) => (
+                    <Tab
+                      key={session.sessionId}
+                      label={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 0.5 }}>
+                          <Box sx={{ position: 'relative' }}>
+                            <Avatar
+                              src={session.avatar || session.profilePicUrl || ''}
+                              sx={{ width: 32, height: 32, border: `2px solid ${session.sessionId === sessionId ? colors.primary : 'transparent'}` }}
+                            >
+                              {(session.name || session.phoneNumber || '?').charAt(0).toUpperCase()}
+                            </Avatar>
+                            <Box
+                              sx={{
+                                position: 'absolute',
+                                bottom: 0,
+                                right: 0,
+                                width: 10,
+                                height: 10,
+                                borderRadius: '50%',
+                                bgcolor: session.isConnected || session.status === 'connected' ? '#22c55e' : '#ef4444',
+                                border: `2px solid ${colors.sidebar}`
+                              }}
+                            />
+                          </Box>
+                          <Box sx={{ textAlign: 'left' }}>
+                            <Typography variant="body2" sx={{ fontWeight: 600, color: session.sessionId === sessionId ? colors.text : colors.textSecondary, fontSize: '0.85rem' }}>
+                              {session.name || `Sesión ${session.phoneNumber?.slice(-4) || ''}`}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: colors.textTertiary, fontSize: '0.7rem' }}>
+                              {session.phoneNumber ? `+${session.phoneNumber}` : session.sessionId?.split(':')[0] || 'Desconocido'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      }
+                      sx={{
+                        opacity: session.sessionId === sessionId ? 1 : 0.7,
+                        transition: 'opacity 0.2s',
+                        '&:hover': { opacity: 1 }
+                      }}
+                    />
+                  ))}
+                </Tabs>
+              ) : (
+                <Typography variant="h6" sx={{ fontWeight: 600, color: colors.text }}>
+                  Chats
+                </Typography>
+              )}
+            </Box>
           )}
 
           {/* Botón minimizar/maximizar */}
@@ -1452,7 +1576,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
           </Box>
         )}
 
-        {/* PESTAÑAS: Todos / No leídos / Grupos - Ocultar si está colapsado */}
+        {/* PESTAÑAS: Todas / Recibidos / Enviados / Sin leer / Grupos / Estados */}
         {!chatListCollapsed && (
           <Tabs
             value={filterTab}
@@ -1462,31 +1586,48 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId }) => {
             sx={{
               minHeight: 40,
               bgcolor: colors.sidebar,
+              '& .MuiTabs-flexContainer': {
+                gap: 1,
+                px: 2,
+                pb: 1
+              },
               '& .MuiTab-root': {
-                minHeight: 40,
+                minHeight: 36,
                 textTransform: 'none',
                 color: colors.textSecondary,
-                fontSize: '0.9rem',
-                minWidth: 100
+                fontSize: '0.85rem',
+                minWidth: 'auto',
+                px: 2,
+                borderRadius: '18px', // Pill shape
+                border: `1px solid ${colors.divider}`,
+                transition: 'all 0.2s',
+                '&:hover': {
+                  bgcolor: `${colors.primary}15`,
+                  borderColor: colors.primary
+                }
               },
               '& .Mui-selected': {
-                color: colors.primary
+                color: '#0b141a !important', // WhatsApp dark text for contrast on green
+                bgcolor: '#00a884 !important', // WhatsApp Green
+                borderColor: '#00a884 !important',
+                fontWeight: 600
               },
               '& .MuiTabs-indicator': {
-                bgcolor: colors.primary
+                display: 'none' // Hide underline
               }
             }}
           >
-            <Tab label={`Todo (${chatStats.total})`} />
-            <Tab label={`Grupos (${chatStats.groups})`} />
-            <Tab label={`Recibidos (${chatStats.received})`} />
-            <Tab label={`Sin leer (${chatStats.pending})`} />
-            <Tab label={`Estados`} />
+            <Tab label={`Todas (${chatStats.total})`} icon={<Chat style={{ width: 18, height: 18 }} />} iconPosition="start" />
+            <Tab label={`Recibidos (${chatStats.received})`} icon={<CallReceived style={{ width: 18, height: 18 }} />} iconPosition="start" />
+            <Tab label={`Enviados (${chatStats.sent})`} icon={<CallMade style={{ width: 18, height: 18 }} />} iconPosition="start" />
+            <Tab label={`Sin leer (${chatStats.pending})`} icon={<MarkEmailUnread style={{ width: 18, height: 18 }} />} iconPosition="start" />
+            <Tab label={`Grupos (${chatStats.groups})`} icon={<Group style={{ width: 18, height: 18 }} />} iconPosition="start" />
+            <Tab label="Estados" icon={<DonutLarge style={{ width: 18, height: 18 }} />} iconPosition="start" />
           </Tabs>
         )}
 
         {/* Lista de chats - Mostrar solo avatares si está colapsado */}
-        {filterTab === 4 ? (
+        {filterTab === 5 ? (
           <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
             <StatusList sessionId={sessionId} />
           </Box>

@@ -152,14 +152,14 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
 
   // Audio notification
   const notificationSound = useRef<HTMLAudioElement | null>(null);
-  
+
   // 🔴 BANDERA: Solo cargar chats UNA VEZ
   const hasLoadedChats = useRef(false);
 
   useEffect(() => {
-    // Crear elemento de audio para notificaciones
-    notificationSound.current = new Audio('/notification.mp3');
-    notificationSound.current.volume = 0.5;
+    // Sonido eliminado para evitar errores de AudioContext y por petición del usuario
+    // notificationSound.current = new Audio('/notification.mp3');
+    // notificationSound.current.volume = 0.5;
   }, []);
 
   useEffect(() => {
@@ -168,7 +168,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
       loadChatData();
       hasLoadedChats.current = true; // Marcar como cargado
     }
-    
+
     if (sessionId) {
       setupRealtimeUpdates();
     }
@@ -187,13 +187,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
   };
 
   const playNotificationSound = () => {
-    try {
-      notificationSound.current?.play().catch(e => {
-        console.log('No se pudo reproducir el sonido:', e);
-      });
-    } catch (error) {
-      console.log('Error al reproducir sonido:', error);
-    }
+    // Sonido desactivado a petición del usuario
   };
 
   const setupRealtimeUpdates = () => {
@@ -212,19 +206,19 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     const handleChatUpdate = (data: any) => {
       console.log('🎯 [MONITOR] 🔴 EVENTO chat-update RECIBIDO:', JSON.stringify(data, null, 2));
       console.log(`🎯 [MONITOR] Chat siendo agregado/actualizado: ${data.id || data.chatJid}`);
-      
+
       // 🔴 FILTRO: RECHAZAR tu propio número
       const chatPhone = (data.id || data.chatJid)?.split('@')[0];
       console.log(`🎯 [MONITOR] sessionId=${sessionId}, chatPhone=${chatPhone}`);
-      
+
       // sessionId es solo el número (ej: 595985768793)
       if (chatPhone === sessionId) {
         console.log(`🚫 [MONITOR] RECHAZADO: ${chatPhone} es TU propio número (${sessionId}). NO agregando chat.`);
         return;
       }
-      
+
       console.log(`✅ [MONITOR] Validación OK: ${chatPhone} ≠ ${sessionId}`);
-      
+
       // Agregar el chat a la lista si no existe
       setContacts(prev => {
         const chatExists = prev.some(c => c.id === (data.id || data.chatJid));
@@ -259,10 +253,10 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
     const handleNewMessage = (data: any) => {
       console.log('📨 [ChatModule] Nuevo mensaje recibido:', data);
       console.log(`📨 [MONITOR] De: ${data.from || data.sender_jid}, Para: ${data.chatJid || data.chat_jid}`);
-      
+
       const chatJid = data.chatJid || data.chat_jid || data.to || data.from;
       const normalizedChatJid = chatJid?.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`;
-      
+
       // Solo agregar si el mensaje es del contacto activo
       if (activeContact && (normalizedChatJid === activeContact.id || chatJid === activeContact.id)) {
         const newMsg: Message = {
@@ -430,7 +424,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
       if (chatsData.success) {
         console.log(`✅ [ChatModule] ${chatsData.chats.length} chats cargados`);
         console.log(`🔍 [ChatModule] TODOS LOS CHATS RAW (primeros 15):`, JSON.stringify(chatsData.chats.slice(0, 15).map((c: any) => ({ id: c.id, name: c.name })), null, 2));
-        
+
         // 🔍 DEBUG: Mostrar los primeros 3 chats recibidos
         if (chatsData.chats.length > 0) {
           console.log(`🔍 [ChatModule] PRIMEROS 3 CHATS RECIBIDOS DEL SERVIDOR:`);
@@ -447,7 +441,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
           const chatId = chat.id;
           // Solo agregar si no existe o si tiene un timestamp más reciente
           if (!chatMap.has(chatId) ||
-              new Date(chat.timestamp || 0) > new Date(chatMap.get(chatId).timestamp || 0)) {
+            new Date(chat.timestamp || 0) > new Date(chatMap.get(chatId).timestamp || 0)) {
             chatMap.set(chatId, {
               id: chatId,
               name: chat.name || chat.id.split('@')[0],
@@ -483,18 +477,18 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
         const contactsData = allContactsData.filter(c => {
           // Rechazar grupos
           if (c.isGroup) return false;
-          
+
           // 🔴 RECHAZAR TU PROPIO NÚMERO
           const chatPhone = c.phone || c.id?.split('@')[0];
           if (chatPhone === sessionId) {
             console.log(`🚫 [ChatModule] FILTRADO en loadChatData: ${chatPhone} es tu propio número`);
             return false;
           }
-          
+
           return true;
         });
         console.log(`📋 [ChatModule] Chats filtrados (sin grupos ni propio número): ${contactsData.length}`);
-        
+
         // 🔍 DEBUG: Mostrar los primeros chats después de filtrar
         if (contactsData.length > 0) {
           console.log(`🔍 [ChatModule] PRIMER CHAT DESPUÉS DE FILTRAR: ${contactsData[0].id} (phone: ${contactsData[0].phone})`);
@@ -646,11 +640,11 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
         setContacts(prev => prev.map(c =>
           c.id === activeContact.id
             ? {
-                ...c,
-                lastMessage: messageContent,
-                lastMessageIsFromMe: true, // Mensaje enviado por mí
-                timestamp: new Date().toISOString()
-              }
+              ...c,
+              lastMessage: messageContent,
+              lastMessageIsFromMe: true, // Mensaje enviado por mí
+              timestamp: new Date().toISOString()
+            }
             : c
         ));
       } else {
@@ -761,7 +755,7 @@ const ChatModule: React.FC<ChatModuleProps> = ({ sessionId }) => {
   const filteredContacts = contacts.filter(contact => {
     // Filtro por búsqueda
     const matchesSearch = contact.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         contact.phone.includes(searchTerm);
+      contact.phone.includes(searchTerm);
 
     // Filtro por pestaña
     let matchesTab = true;

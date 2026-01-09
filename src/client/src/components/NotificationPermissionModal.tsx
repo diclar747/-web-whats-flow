@@ -66,10 +66,6 @@ const NotificationPermissionModal: React.FC<NotificationPermissionModalProps> = 
             setPermissionState(permission);
 
             if (permission === 'granted') {
-                // Play a nice success sound or just close
-                const audio = new Audio('/notification.mp3');
-                audio.play().catch(() => { }); // Ignore interaction errors
-
                 handleClose();
             }
         } catch (error) {

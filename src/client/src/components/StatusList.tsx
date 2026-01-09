@@ -82,7 +82,7 @@ export default function StatusList({ sessionId }: { sessionId: string }) {
 
         const typeGuess: 'text' | 'image' | 'video' =
           s.media_type === 'image' || s.type === 'image' ? 'image' :
-          s.media_type === 'video' || s.type === 'video' ? 'video' : 'text';
+            s.media_type === 'video' || s.type === 'video' ? 'video' : 'text';
 
         const item: StatusItem = {
           id: (s.id || s.message_id || Math.random().toString()).toString(),
@@ -297,7 +297,22 @@ export default function StatusList({ sessionId }: { sessionId: string }) {
                         border: contact.unreadCount > 0 ? '3px solid #00a884' : '3px solid #2a3942'
                       }}
                     >
-                      {!contact.avatar && (contact.name?.[0]?.toUpperCase() || contact.phone?.[0])}
+                      {!contact.avatar && (
+                        <Box
+                          sx={{
+                            width: '100%',
+                            height: '100%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            bgcolor: '#cfd8dc' // Default gray
+                          }}
+                        >
+                          <svg viewBox="0 0 24 24" width="32" height="32" fill="#ffffff">
+                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                          </svg>
+                        </Box>
+                      )}
                     </Avatar>
                     {contact.unreadCount > 0 && (
                       <Box
@@ -466,7 +481,22 @@ export default function StatusList({ sessionId }: { sessionId: string }) {
                 src={contactViewer.contact.avatar ? `${getAPIBaseURL()}${contactViewer.contact.avatar}` : undefined}
                 sx={{ bgcolor: '#00a884', width: 40, height: 40 }}
               >
-                {!contactViewer.contact.avatar && (contactViewer.contact.name?.[0]?.toUpperCase() || contactViewer.contact.phone?.[0])}
+                {!contactViewer.contact.avatar && (
+                  <Box
+                    sx={{
+                      width: '100%',
+                      height: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      bgcolor: '#cfd8dc'
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="#ffffff">
+                      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                    </svg>
+                  </Box>
+                )}
               </Avatar>
               <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle1" sx={{ color: 'white', fontWeight: 600 }}>

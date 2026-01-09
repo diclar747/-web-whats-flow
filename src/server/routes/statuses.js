@@ -413,11 +413,11 @@ module.exports = (app, io) => {
             if (!session) {
                 try {
                     const [rows] = await getPool().query(
-                        'SELECT phone_number FROM user_sessions WHERE phone_number = ? OR session_id = ? LIMIT 1',
+                        'SELECT phone FROM user_sessions WHERE phone = ? OR session_id = ? LIMIT 1',
                         [sessionId, sessionId]
                     );
-                    if (rows.length > 0 && rows[0].phone_number) {
-                        const phoneNumber = rows[0].phone_number;
+                    if (rows.length > 0 && rows[0].phone) {
+                        const phoneNumber = rows[0].phone;
                         console.log(`ℹ️ [PUBLISH-ENDPOINT] Fallback por phoneNumber: ${phoneNumber}`);
                         if (sessions.has(phoneNumber)) {
                             sessionKey = phoneNumber;

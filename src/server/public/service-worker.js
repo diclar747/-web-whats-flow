@@ -3,7 +3,7 @@
  * Maneja cache, sincronización en background y notificaciones push
  */
 
-const CACHE_NAME = 'whinsap-v1.0.0';
+const CACHE_NAME = 'whinsap-v1.0.6';
 const API_URL = self.location.origin;
 
 // Archivos estáticos a cachear

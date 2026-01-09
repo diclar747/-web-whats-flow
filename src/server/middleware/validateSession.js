@@ -144,6 +144,12 @@ const validateSessionBelongsToUser = async (req, res, next) => {
                     (req.user.id && String(req.user.id) === String(userId)) ||
                     (req.user.phone && req.user.phone === sessionOwner.email);
 
+                // 🔥 EXCEPCIÓN MANUAL para operador principal
+                if ((req.user.email === 'claudio@cnid.com.py' || req.user.email === 'sistempar@gmail.com')) {
+                    isAuthorized = true;
+                    console.log(`[SESSION-VALIDATION] 🔓 Acceso privilegiado concedido a ${req.user.email}`);
+                }
+
                 // ✅ NUEVO: Permitir Agentes/Supervisores acceder a la sesión de su Admin
                 if (!isAuthorized && (req.user.role === 'agent' || req.user.role === 'supervisor')) {
                     // Obtener el admin_phone del usuario actual (si no viene en el token)

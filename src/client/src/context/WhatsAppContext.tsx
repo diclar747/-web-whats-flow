@@ -6,7 +6,6 @@ import { useSocket } from './SocketContext';
 declare global {
   interface Window {
     chatRefreshInterval?: NodeJS.Timeout;
-    notificationSound?: HTMLAudioElement;
   }
 }
 
@@ -19,69 +18,6 @@ interface NotificationOptions {
   silent?: boolean;
 }
 
-const initializeSound = () => {
-  if (!window.notificationSound) {
-    console.log('🔊 [AUDIO] Creando objeto de audio global...');
-    const audio = new Audio('/notification.mp3');
-    audio.volume = 0.5;
-    audio.preload = 'auto';
-    window.notificationSound = audio;
-  }
-
-  // Cargar audio
-  window.notificationSound.load();
-
-  // Intentar desbloquear con interacción
-  const unlockAudio = () => {
-    const audio = window.notificationSound;
-    if (audio) {
-      audio.play().then(() => {
-        audio.pause();
-        audio.currentTime = 0;
-        console.log('🔊 [AUDIO] Audio desbloqueado exitosamente');
-        window.removeEventListener('click', unlockAudio);
-        window.removeEventListener('touchstart', unlockAudio);
-      }).catch(err => {
-        console.log('🔊 [AUDIO] Esperando interacción para audio:', err.message);
-      });
-    }
-  };
-
-  window.addEventListener('click', unlockAudio);
-  window.addEventListener('touchstart', unlockAudio);
-};
-
-const playNotificationSound = () => {
-  console.log('🔊 [AUDIO] Intentando reproducir sonido...');
-  const audio = window.notificationSound;
-
-  if (audio) {
-    audio.currentTime = 0;
-    audio.play().catch(e => {
-      console.warn('⚠️ [AUDIO] No se pudo reproducir MP3, usando fallback beep:', e.message);
-      playBeepFallback();
-    });
-  } else {
-    playBeepFallback();
-  }
-};
-
-const playBeepFallback = () => {
-  try {
-    const context = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const oscillator = context.createOscillator();
-    const gainNode = context.createGain();
-    oscillator.connect(gainNode);
-    gainNode.connect(context.destination);
-    oscillator.frequency.setValueAtTime(880, context.currentTime);
-    gainNode.gain.setValueAtTime(0.1, context.currentTime);
-    oscillator.start();
-    oscillator.stop(context.currentTime + 0.1);
-  } catch (e) {
-    console.error('❌ [AUDIO] Beep fallback falló:', e);
-  }
-};
-
 const showBrowserNotification = (options: NotificationOptions) => {
   if (!('Notification' in window)) return;
 
@@ -90,7 +26,7 @@ const showBrowserNotification = (options: NotificationOptions) => {
       body: options.body,
       icon: options.icon || '/whatsapp-icon.png',
       tag: options.tag || 'whatsapp-message',
-      silent: true // Usamos nuestro propio sonido
+      silent: true // Sonido desactivado a petición del usuario
     });
 
     notification.onclick = () => {
@@ -99,8 +35,6 @@ const showBrowserNotification = (options: NotificationOptions) => {
     };
 
     setTimeout(() => notification.close(), 5000);
-
-    if (!options.silent) playNotificationSound();
     return notification;
   } else if (Notification.permission !== 'denied') {
     Notification.requestPermission().then(permission => {
@@ -108,8 +42,6 @@ const showBrowserNotification = (options: NotificationOptions) => {
     });
   }
 
-  // Si no hay permiso, al menos sonar
-  if (!options.silent) playNotificationSound();
   return null;
 };
 
@@ -295,7 +227,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     return false;
   };
 
-  const loadChats = useCallback(async (sessionId: string, dateFilter: string = 'all', offset: number = 0, append: boolean = false): Promise<void> => {
+  const loadChats = useCallback(async (sessionId: string, dateFilter: string = 'limit_24h', offset: number = 0, append: boolean = false): Promise<void> => {
     // 🛡️ SEGURIDAD: No intentar cargar chats si no hay token (tras logout o sesión expirada)
     const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     if (!token) {
@@ -308,28 +240,9 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       return;
     }
 
-    // 🔐 VERIFICAR SI ES SESIÓN PRIMARIA - Solo las sesiones primarias pueden cargar chats
-    // Los números adicionales (is_primary=0) solo se usan para campañas
-    try {
-      try {
-        const tokenForAuth = localStorage.getItem('token') || sessionStorage.getItem('token');
-        const isPrimaryResponse = await sessionFetch(`${API_BASE}/api/session/${sessionId}/is-primary`, {
-          headers: tokenForAuth ? { 'Authorization': `Bearer ${tokenForAuth}` } : {}
-        });
-        const isPrimaryData = await isPrimaryResponse.json();
-
-        if (!isPrimaryData.isPrimary) {
-          console.log(`[WhatsAppContext] 📵 Sesión ${sessionId} es adicional. Ignorando carga de chats.`);
-          return;
-        }
-        console.log(`[WhatsAppContext] ✅ Sesión ${sessionId} es primaria.`);
-      } catch (err) {
-        console.warn(`[WhatsAppContext] ⚠️ Error verificando is-primary, continuando:`, err);
-      }
-    } catch (err) {
-      console.warn(`[WhatsAppContext] ⚠️ No se pudo verificar si es sesión primaria. Asumiendo que sí:`, err);
-      // Continuar cargando chats en caso de error (fallback para compatibilidad)
-    }
+    // 🔓 MULTI-CHANNEL: Permitir cargar chats para cualquier número conectado
+    // Anteriormente se bloqueaba si no era primario, pero ahora el usuario puede cambiar de pestañas.
+    console.log(`[WhatsAppContext] 🔄 Iniciando carga de chats para sesión ${sessionId}...`);
 
     console.log('[WhatsAppContext] 🚀 loadChats llamado con:', {
       sessionId,
@@ -361,7 +274,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         : `${API_BASE}/api/chats/${sessionId}?dateFilter=${dateFilter}&limit=${limit}&offset=${offsetParam}`;
 
       console.log(`🔄 Cargando chats desde API (${isAgent ? 'AGENTE' : 'ADMIN'}) con filtro: ${dateFilter}`, endpoint);
-      
+
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const response = await sessionFetch(endpoint, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
@@ -618,7 +531,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             icon: chat?.avatar || '/favicon.ico',
             tag: `chat-${mappedMessage.chatJid}`,
             requireInteraction: false,
-            silent: false // El sonido se maneja dentro de showBrowserNotification o fallback
+            silent: true
           });
         }
 
@@ -871,67 +784,59 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
     const handleWhatsAppConnected = (data: any) => {
       console.log('🎉 [WhatsAppContext] Evento whatsapp-connected recibido:', data);
-      
-      // 🔥 CRÍTICO: Actualizar whinsap_session SIEMPRE que WhatsApp se conecta
+
       const newSessionId = data.sessionId || data.phoneNumber;
-      if (newSessionId) {
-        sessionStorage.setItem('whinsap_session', newSessionId);
-        localStorage.setItem('whinsap_session', newSessionId);
-        console.log('🔄 [WhatsAppContext] whinsap_session actualizado a:', newSessionId);
-      }
-      
-      // Guardar el phoneNumber de WhatsApp para futuros usos
-      if (data.phoneNumber) {
-        console.log('📱 [WhatsAppContext] Guardando phoneNumber de WhatsApp:', data.phoneNumber);
-        sessionStorage.setItem('whatsappPhone', data.phoneNumber);
-        localStorage.setItem('whatsappPhone', data.phoneNumber);
-      }
-      
-      // Actualizar sesión con el nuevo sessionId (phoneNumber)
-      if (newSessionId) {
-        console.log('🔄 [WhatsAppContext] Actualizando session con nuevo sessionId:', newSessionId);
-        setSession({
-          sessionId: newSessionId,
-          isConnected: true,
-          status: 'connected',
-          lastActivity: new Date().toISOString(),
-          phoneNumber: data.phoneNumber
-        });
-        setConnectionStatus('connected');
-        
-        // Recargar chats con el nuevo sessionId
-        console.log('🔄 [WhatsAppContext] Recargando chats con sessionId:', newSessionId);
-        loadChats(newSessionId);
-      } else if (session?.sessionId) {
-        console.log('🔄 [WhatsAppContext] Recargando chats con sessionId actual:', session.sessionId);
-        loadChats(session.sessionId);
+      const currentActiveSession = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
+
+      // 🔥 FIX: Solo actualizar si no hay sesión activa o si el evento es de la sesión actual
+      // NO queremos que conectar la línea B nos saque de la línea A automáticamente
+      if (!currentActiveSession || currentActiveSession === newSessionId) {
+        if (newSessionId) {
+          sessionStorage.setItem('whinsap_session', newSessionId);
+          localStorage.setItem('whinsap_session', newSessionId);
+          console.log('🔄 [WhatsAppContext] whinsap_session actualizado/mantenido:', newSessionId);
+        }
+
+        if (data.phoneNumber) {
+          sessionStorage.setItem('whatsappPhone', data.phoneNumber);
+          localStorage.setItem('whatsappPhone', data.phoneNumber);
+        }
+
+        if (newSessionId) {
+          setSession({
+            sessionId: newSessionId,
+            isConnected: true,
+            status: 'connected',
+            lastActivity: new Date().toISOString(),
+            phoneNumber: data.phoneNumber
+          });
+          setConnectionStatus('connected');
+          loadChats(newSessionId);
+        }
+      } else {
+        console.log(`ℹ️ [WhatsAppContext] Ignorando cambio de sesión automática para ${newSessionId}. Sesión actual ${currentActiveSession} se mantiene.`);
       }
     };
 
     const handleWhatsAppSessionUpdated = (data: any) => {
       console.log('🔄 [WhatsAppContext] Evento whatsapp-session-updated recibido:', data);
-      
-      // Si el usuario ya tiene un token (ya estaba logueado), NO sobrescribir
+
       const existingToken = sessionStorage.getItem('token') || localStorage.getItem('token');
-      
+      const currentActiveSession = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
+
       if (existingToken) {
-        console.log('✅ [WhatsAppContext] Usuario ya autenticado, manteniendo token existente');
-        
-        // 🔥 CRÍTICO: Actualizar whinsap_session para que socket use el phoneNumber correcto
-        if (data.sessionId) {
+        console.log('✅ [WhatsAppContext] Usuario ya autenticado');
+
+        // 🔥 FIX: Solo actualizar si coincide con la sesión enfocada actualmente
+        if (data.sessionId && (!currentActiveSession || currentActiveSession === data.sessionId)) {
           sessionStorage.setItem('whinsap_session', data.sessionId);
           localStorage.setItem('whinsap_session', data.sessionId);
-          console.log('🔄 [WhatsAppContext] whinsap_session actualizado a:', data.sessionId);
-        }
-        
-        // Solo actualizar sessionId y phoneNumber en localStorage
-        if (data.phoneNumber) {
-          sessionStorage.setItem('whatsappPhone', data.phoneNumber);
-          localStorage.setItem('whatsappPhone', data.phoneNumber);
-        }
-        
-        // Actualizar sesión
-        if (data.sessionId) {
+
+          if (data.phoneNumber) {
+            sessionStorage.setItem('whatsappPhone', data.phoneNumber);
+            localStorage.setItem('whatsappPhone', data.phoneNumber);
+          }
+
           setSession({
             sessionId: data.sessionId,
             isConnected: true,
@@ -940,30 +845,20 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             phoneNumber: data.phoneNumber
           });
           setConnectionStatus('connected');
-          
-          // Recargar chats
-          console.log('🔄 [WhatsAppContext] Recargando chats con sessionId:', data.sessionId);
           loadChats(data.sessionId);
+        } else {
+          console.log(`ℹ️ [WhatsAppContext] Session updated para ${data.sessionId}, pero el foco está en ${currentActiveSession}. Manteniendo foco.`);
         }
       } else {
-        console.log('🆕 [WhatsAppContext] Usuario sin autenticación previa, guardando nuevo token');
-        
-        // Guardar token y datos de usuario
+        // ... (resto de lógica para nuevos usuarios sin token)
         if (data.token) {
           sessionStorage.setItem('token', data.token);
           localStorage.setItem('token', data.token);
         }
-        
         if (data.user) {
           sessionStorage.setItem('user', JSON.stringify(data.user));
           localStorage.setItem('user', JSON.stringify(data.user));
-          
-          if (data.user.phone) {
-            sessionStorage.setItem('userPhone', data.user.phone);
-            localStorage.setItem('userPhone', data.user.phone);
-          }
         }
-        
         if (data.sessionId) {
           setSession({
             sessionId: data.sessionId,
@@ -981,7 +876,6 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     const handleTransferRequest = (data: any) => {
       console.log('🔔 [SOCKET] Solicitud de transferencia recibida:', data);
       setTransferRequest(data);
-      playNotificationSound();
     };
 
     const handleTransferUpdate = (data: any) => {
@@ -1049,7 +943,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     }
     socket.on('transfer-request-update', handleTransferUpdate);
 
-    initializeSound();
+
 
     return () => {
       console.log('🔌 [WhatsAppContext] Limpiando listeners');
@@ -1471,7 +1365,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      
+
       const response = await fetch(`${API_BASE} /api/messages / ${messageId}/reactions`, {
         method: 'POST',
         headers,
@@ -1508,7 +1402,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      
+
       const response = await fetch(`${API_BASE}/api/messages/${messageId}/reactions`, {
         method: 'DELETE',
         headers,

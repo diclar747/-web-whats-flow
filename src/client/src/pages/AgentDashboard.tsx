@@ -302,9 +302,9 @@ const AgentDashboard: React.FC = () => {
     const handleNewChat = (data: any) => {
       console.log('📨 Nuevo chat asignado:', data);
 
-      // Reproducir sonido de notificación
-      const audio = new Audio('/notification.mp3');
-      audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
+      // Reproducir sonido de notificación - DESACTIVADO A PETICIÓN DEL USUARIO
+      // const audio = new Audio('/notification.mp3');
+      // audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
 
       // Mostrar notificación del navegador
       if ('Notification' in window && Notification.permission === 'granted') {
@@ -337,8 +337,8 @@ const AgentDashboard: React.FC = () => {
 
       console.log('🔄 Chat transferido a este agente:', data);
 
-      const audio = new Audio('/notification.mp3');
-      audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
+      // const audio = new Audio('/notification.mp3');
+      // audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
 
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('Chat transferido', {
@@ -427,9 +427,9 @@ const AgentDashboard: React.FC = () => {
     on('chat-assigned', (data: any) => {
       console.log('📨 [AGENT-DASHBOARD] Chat asignado recibido:', data);
 
-      // Reproducir sonido de notificación
-      const audio = new Audio('/notification.mp3');
-      audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
+      // Reproducir sonido de notificación - DESACTIVADO A PETICIÓN DEL USUARIO
+      // const audio = new Audio('/notification.mp3');
+      // audio.play().catch(e => console.log('No se pudo reproducir sonido:', e));
 
       // Mostrar notificación del navegador
       if ('Notification' in window && Notification.permission === 'granted') {
