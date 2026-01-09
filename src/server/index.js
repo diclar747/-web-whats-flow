@@ -4717,60 +4717,35 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
 
     const connection = await pool.getConnection();
     try {
-        console.log(`[DB-CHATLIST] Loading chat list for session: ${effectiveSessionId} (owner users.id: ${ownerSessionId})`);
+        console.log(`[DB-CHATLIST] Loading chat list for session: ${effectiveSessionId} (limit: ${limit}, filter: ${dateFilter})`);
 
-        // Query usa effectiveSessionId (que ahora es "1")
-        // Incluye tanto contacts como contact_groups para obtener nombres y avatares correctos
-        // Filtrar grupos si includeGroups es false
+        // Query usa effectiveSessionId
         const groupFilterSubquery = includeGroups ? '' : " AND chat_jid NOT LIKE '%@g.us'";
-        const groupFilterMain = includeGroups ? '' : " AND m.chat_jid NOT LIKE '%@g.us'";
 
-        // 📅 Filtro de fecha - Por defecto solo hoy
-        let dateFilterSQL = '';
-        if (dateFilter === 'today') {
-            dateFilterSQL = " AND DATE(timestamp) = CURDATE()";
-            console.log(`[CHATLIST] 📅 Filtrando solo conversaciones de HOY`);
+        // 📅 Filtro de fecha - Optimizado para usar índice
+        let dateWhereClause = "";
+
+        if (dateFilter === 'limit_24h' || dateFilter === 'today') {
+            // "del día" == últimas 24hs para ser práctico, o CURDATE() si fuera muy estricto.
+            // Usamos 24h por consistencia con la solicitud "ultimos 24 horas".
+            dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
+            console.log(`[CHATLIST] 📅 Filtro ACTIVO: Últimas 24 horas (Índice optimizado)`);
         } else if (dateFilter === 'week') {
-            dateFilterSQL = " AND timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
-            console.log(`[CHATLIST] 📅 Filtrando últimos 7 días`);
+            dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
         } else if (dateFilter === 'month') {
-            dateFilterSQL = " AND MONTH(timestamp) = MONTH(CURDATE()) AND YEAR(timestamp) = YEAR(CURDATE())";
-            console.log(`[CHATLIST] 📅 Filtrando mes actual`);
-        } else if (dateFilter === 'all') {
-            dateFilterSQL = '';
-            console.log(`[CHATLIST] 📅 Cargando TODAS las conversaciones`);
-        } else if (dateFilter === 'limit_24h') {
-            // Nuevo filtro solicitado explícitamente por usuario
-            // CORRECTED: Use DATE_SUB for DATETIME columns instead of UNIX_TIMESTAMP math
-            dateFilterSQL = " AND timestamp > DATE_SUB(NOW(), INTERVAL 24 HOUR)";
-            console.log(`[CHATLIST] 📅 Filtrando últimas 24hs (SQL DATETIME compatible)`);
+            dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
         }
-
-        // 🔧 CONSULTA CORREGIDA - Buscar por sessionId ("1")
-        console.log(`[CHATLIST] 🔍 sessionId recibido: "${sessionId}"`);
-        console.log(`[CHATLIST] 🔍 phoneNumber obtenido (para filtros): "${phoneNumber}"`);
 
         const query = `
             SELECT
                 c.jid AS chat_jid,
-                COALESCE(
-                    cg.name,
-                    con.notify_name,
-                    con.name,
-                    c.name,
-                    SUBSTRING_INDEX(c.jid, '@', 1)
-                ) AS contact_name,
+                COALESCE(cg.name, con.notify_name, con.name, c.name, SUBSTRING_INDEX(c.jid, '@', 1)) AS contact_name,
                 c.last_message_content AS last_message_text,
                 c.last_message_time AS last_message_timestamp,
-                -- We don't have from_me in chats table usually, 
-                -- but we can assume false or just leave it out if not critical for list view
                 0 AS last_message_from_me, 
                 'delivered' AS last_message_status,
                 c.is_group,
-                COALESCE(
-                    cg.avatar_url,
-                    con.avatar_url
-                ) AS avatar_url,
+                COALESCE(cg.avatar_url, con.avatar_url) AS avatar_url,
                 c.unread_count,
                 SUBSTRING_INDEX(c.jid, '@', 1) AS phone
             FROM chats c
@@ -4780,14 +4755,11 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
               AND c.jid NOT LIKE '%status@broadcast%'
               AND c.jid NOT LIKE CONCAT(?, '@%')
               ${includeGroups ? '' : 'AND c.is_group = 0'}
-              ${dateFilter === 'limit_24h' || dateFilter === 'today' ? "AND c.last_message_time > DATE_SUB(NOW(), INTERVAL 24 HOUR)" : ""}
-              ${dateFilter === 'week' ? "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)" : ""}
-              ${dateFilter === 'month' ? "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)" : ""}
+              ${dateWhereClause}
             ORDER BY c.last_message_time DESC
             LIMIT ? OFFSET ?;
         `;
 
-        console.log(`[DB-CHATLIST] 🔎 BUSCANDO EN BD (chats table): session_id = ${effectiveSessionId}, filter = ${dateFilter}`);
         const [rowsFromDB] = await connection.execute(query, [
             effectiveSessionId,
             phoneNumber || '0',
@@ -4795,7 +4767,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             offset
         ]);
 
-        console.log(`[DB-CHATLIST] ⚡ SQL ejecutado (chats), total: ${rowsFromDB.length}`);
+        console.log(`[DB-CHATLIST] ⚡ SQL ejecutado, resultados: ${rowsFromDB.length}`);
 
         let chatList = rowsFromDB.map((row, index) => {
             const normalizedJid = normalizeJid(row.chat_jid);

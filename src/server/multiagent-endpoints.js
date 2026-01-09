@@ -594,19 +594,14 @@ module.exports = function (app, pool) {
                     const io = app.get('io');
                     if (io) {
                         // Obtener nombre del contacto para la notificación
-                        const [contactInfo] = await connection.execute(`
-                                SELECT COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as contact_name
-                                FROM (SELECT 1) as dummy
-                                LEFT JOIN contacts c ON c.jid = ? AND c.session_id = ?
-                                LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
-                                LIMIT 1
-                            `, [chat_jid, chat_jid, session_id, chat_jid, session_id]);
-
-                        const chatName = contactInfo[0]?.contact_name || chat_jid.replace('@s.whatsapp.net', '');
+                        // Obtener nombre del agente destino
+                        const [destAgent] = await connection.execute('SELECT name FROM users WHERE id = ?', [to_user_id]);
+                        const destAgentName = destAgent[0]?.name || 'Agente';
 
                         const eventData = {
                             chatJid: chat_jid,
                             chatName: chatName,
+                            chatAvatar: contactInfo[0]?.avatar_url || null, // Incluir avatar
                             sessionId: session_id,
                             agentId: to_user_id,
                             assignedBy: req.user.name,
@@ -614,6 +609,28 @@ module.exports = function (app, pool) {
                             timestamp: new Date().toISOString(),
                             note: transferReason
                         };
+
+                        // Insertar mensaje de sistema para registro de la transferencia
+                        const systemMessageId = 'SYS-TRANS-' + Date.now();
+                        const systemContent = `🔄 Chat transferido a ${destAgentName} por ${req.user.name}. Nota: ${transferReason}`;
+
+                        await connection.execute(`
+                            INSERT INTO messages 
+                            (id, session_id, chat_jid, sender, content, timestamp, from_me, status, type)
+                            VALUES (?, ?, ?, ?, ?, ?, 1, 'sent', 'system')
+                        `, [systemMessageId, session_id, chat_jid, 'system', systemContent, new Date()]);
+
+                        // Emitir mensaje de sistema a la sala
+                        io.to(`session-${session_id}`).emit('message', {
+                            id: systemMessageId,
+                            session_id: session_id,
+                            chatJid: chat_jid,
+                            message: systemContent,
+                            from: 'system',
+                            type: 'system',
+                            timestamp: new Date(),
+                            isFromMe: true
+                        });
 
                         // Emitir múltiples eventos para asegurar que el frontend los capture
                         io.emit('chat_transferred', eventData); // Evento general
