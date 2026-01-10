@@ -4,6 +4,7 @@ import { useWhatsApp } from '../context/WhatsAppContext';
 import { useSocket } from '../context/SocketContext';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import { io } from 'socket.io-client';
+import ModernMessageMedia from '../components/ModernMessageMedia';
 import {
   Box,
   TextField,
@@ -460,7 +461,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const audioRefs = useRef<{ [key: string]: HTMLAudioElement }>({});
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<null | HTMLDivElement>(null);
+  const monitorMessagesEndRef = useRef<null | HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
   const socketRef = useRef<any>(null);
@@ -471,13 +473,16 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
   useEffect(() => {
     console.log(`[WhatsAppWebChat] 🔄 Session ID changed to: ${sessionId}`);
 
+    // 🧹 LIMPIAR chat activo y estado cuando cambia la sesión
+    setActiveChat?.(null);
+
     // Si la sesión cambió, forzar recarga con filtro de 24 horas para velocidad inmediata
     if (loadChats && sessionId) {
       console.log(`[WhatsAppWebChat] 🚀 Loading INITIAL chats (24h limit) for ${sessionId}...`);
       // Pasar 'limit_24h' como filtro inicial
       loadChats(sessionId, 'limit_24h').catch(err => console.error('[WhatsAppWebChat] Error loading initial chats:', err));
     }
-  }, [sessionId, loadChats]);
+  }, [sessionId, loadChats, setActiveChat]);
 
   const commonReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '👏', '✅', '❌'];
 
@@ -528,6 +533,40 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
     return filtered;
   }, [messages, dateFilter, quickFilter]);
 
+  // 🔄 MONITOR AUTO-SCROLL
+  useEffect(() => {
+    if (monitorMessagesEndRef.current && agentDetailsDialog.open && agentDetailsDialog.selectedChat) {
+      monitorMessagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [agentDetailsDialog.messages, agentDetailsDialog.open, agentDetailsDialog.selectedChat]);
+
+  // 🔄 MONITOR REAL-TIME LISTENER
+  useEffect(() => {
+    if (!socket || !agentDetailsDialog.open || !agentDetailsDialog.selectedChat) return;
+
+    const handleMonitorMessage = (newMessage: any) => {
+      // Check if message belongs to the currently viewed chat in monitor
+      const currentChatId = agentDetailsDialog.selectedChat?.chat_jid || agentDetailsDialog.selectedChat?.id;
+
+      if (newMessage.chatJid === currentChatId) {
+        setAgentDetailsDialog(prev => ({
+          ...prev,
+          messages: [...prev.messages, newMessage]
+        }));
+      }
+    };
+
+    socket.on('message', handleMonitorMessage);
+    socket.on('message-sent', handleMonitorMessage);
+    socket.on('system-message', handleMonitorMessage);
+
+    return () => {
+      socket.off('message', handleMonitorMessage);
+      socket.off('message-sent', handleMonitorMessage);
+      socket.off('system-message', handleMonitorMessage);
+    };
+  }, [socket, agentDetailsDialog.open, agentDetailsDialog.selectedChat]);
+
   // ⚡ OPTIMIZACIÓN: Memoizar funciones estables para evitar re-crear en cada render
   // Helper para formatear nombre en respuestas citadas
   const getQuotedSenderName = useCallback((quotedSender: string): string => {
@@ -562,21 +601,28 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
   // 👤 Helper para obtener el nombre del remitente de forma inteligente
   const getSenderName = useCallback((msg: any): string => {
     // Si el mensaje NO es de nosotros (from_me = false), mostrar nombre del contacto
-    if (!msg.isFromMe && !msg.fromMe) {
+    const isFromMe = msg.isFromMe || msg.fromMe || msg.from_me;
+
+    if (!isFromMe) {
       return activeChat?.name || msg.from?.split('@')[0] || 'Contacto';
     }
 
     // Si el mensaje ES de nosotros (from_me = true)
     // Verificar si fue enviado por un agente (soportar ambos formatos: snake_case y camelCase)
-    const agentId = msg.agent_id || msg.agentId;
-    const agentName = msg.agent_name || msg.agentName;
+    // 🆕 Priorizar msg.sender_name que a veces trae el nombre del agente/usuario
+    const agentName = msg.agent_name || msg.agentName || msg.sender_name;
 
-    if (agentId && agentId !== 0) {
-      // Tiene agent_id válido, mostrar nombre del agente
-      return agentName || `Agente ${agentId}`;
+    if (agentName) {
+      return agentName;
     }
 
-    // Si no tiene agent_id o es 0, es el Admin
+    // Si tiene agent_id pero no nombre, intentar mostrar ID (fallback)
+    const agentId = msg.agent_id || msg.agentId;
+    if (agentId && agentId !== 0) {
+      return `Agente ${agentId}`;
+    }
+
+    // Si no tiene nada, es el Admin
     return 'Admin';
   }, [activeChat]);
 
@@ -616,6 +662,30 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
     if (!jid) return '';
     return `${getAPIBaseURL()}/api/avatar/${sessionId}/${jid}`;
   }, [sessionId]);
+
+  const getMessageStatusIcon = (message: any) => {
+    if (!message.from_me) return null; // Note: using from_me as per other code in this file
+
+    switch (message.status) {
+      case 'pending':
+        return <AccessTime sx={{ fontSize: '14px', color: '#667781' }} />;
+      case 'sending':
+        return <CircularProgress sx={{ fontSize: '14px', color: '#667781' }} size={14} />;
+      case 'sent':
+        return <Done sx={{ fontSize: '14px', color: '#667781' }} />;
+      case 'delivered':
+        return <DoneAll sx={{ fontSize: '14px', color: '#667781' }} />;
+      case 'read':
+      case 'seen':
+        return <DoneAll sx={{ fontSize: '14px', color: '#25D366' }} />; // WhatsApp green
+      case 'failed':
+      case 'error':
+        return <ErrorIcon sx={{ fontSize: '14px', color: '#f44336' }} />;
+      default:
+        // Default to sent if uncertain
+        return <Done sx={{ fontSize: '14px', color: '#667781' }} />;
+    }
+  };
 
   // ⚡ VERIFICAR CONEXIÓN: Verificar cada 10s + Escuchar evento de conexión en tiempo real
   useEffect(() => {
@@ -1286,7 +1356,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
       // 🟢 FILTRADO POR PESTAÑAS
       if (filterTab === 0) {
-        // Todas: Solo chats individuales (NO grupos, NO estados)
+        // Todas: SOLO chats individuales (enviados + recibidos), NO grupos
         return !chat.isGroup && !isStatus;
       }
       if (filterTab === 1) {
@@ -1643,8 +1713,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
               ) {
                 console.log('📜 [SCROLL] Llegó al fondo, cargando más chats...');
                 if (loadChats) {
-                  // Usar chats.length como offset
-                  loadChats(sessionId, 'all', chats.length, true);
+                  // Usar chats.length como offset, mantener filtro de 24h
+                  loadChats(sessionId, 'limit_24h', chats.length, true);
                 }
               }
             }}
@@ -1673,6 +1743,18 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                 typingStatus={typingStatus}
               />
             ))}
+
+            {/* Mensaje informativo sobre filtro de 24h */}
+            {!isLoadingMoreChats && filteredChats.length > 0 && (
+              <Box sx={{ p: 2, textAlign: 'center', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <Typography variant="caption" sx={{ color: colors.textTertiary, display: 'block', mb: 0.5 }}>
+                  📅 Mostrando chats de las últimas 24 horas
+                </Typography>
+                <Typography variant="caption" sx={{ color: colors.textSecondary, fontSize: '0.7rem' }}>
+                  Usa los filtros arriba para ver chats más antiguos
+                </Typography>
+              </Box>
+            )}
 
             {/* Spinner de "Cargando más" al final de la lista */}
             {isLoadingMoreChats && (
@@ -3190,6 +3272,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         onAgentClick={handleAgentClick}
       />
 
+
+
       {/* 🟢 Dialogo de Detalles del Agente - Mockup de Teléfono */}
       <Dialog
         open={agentDetailsDialog.open}
@@ -3205,20 +3289,20 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
             width: '420px',
             maxWidth: '95vw',
             height: '800px',
-            margin: 0
+            margin: 0,
+            backgroundImage: 'none'
           }
         }}
       >
-        {/* Header Premium estilo Whinsap */}
+        {/* Header Premium estilo Winsap - Dark Mode Consistent */}
         <Box sx={{
-          background: `linear-gradient(135deg, ${colors.primaryDark} 0%, ${colors.primary} 100%)`,
-          color: 'white',
-          p: 3,
-          pt: 4,
+          bgcolor: '#202c33', // WhatsApp Web header dark color
+          color: '#e9edef',
+          p: 2,
           display: 'flex',
           alignItems: 'center',
           gap: 2,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+          borderBottom: '1px solid rgba(134, 150, 160, 0.15)',
           zIndex: 10
         }}>
           {agentDetailsDialog.selectedChat && (
@@ -3256,11 +3340,19 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         {/* Contenido Moderno */}
         <DialogContent sx={{
           p: 0,
-          bgcolor: colors.background,
-          height: 'calc(800px - 100px)',
-          overflow: 'auto',
+          bgcolor: '#0b141a', // WhatsApp Web dark background
+          height: 'calc(800px - 80px)',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")',
+          backgroundRepeat: 'repeat',
+          backgroundSize: '400px',
+          backgroundBlendMode: 'overlay',
           '&::-webkit-scrollbar': { width: '6px' },
-          '&::-webkit-scrollbar-thumb': { bgcolor: colors.divider, borderRadius: '3px' }
+          '&::-webkit-scrollbar-thumb': { bgcolor: '#374045', borderRadius: '3px' },
+          '&::-webkit-scrollbar-track': { bgcolor: 'transparent' }
         }}>
           {agentDetailsDialog.selectedChat ? (
             // Vista de Mensajes Premium
@@ -3277,43 +3369,92 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                     <Typography sx={{ color: colors.textSecondary }}>No hay historial disponible</Typography>
                   </Box>
                 ) : (
-                  agentDetailsDialog.messages.map((msg: any) => (
-                    <Box
-                      key={msg.id}
-                      sx={{
-                        display: 'flex',
-                        justifyContent: msg.from_me ? 'flex-end' : 'flex-start',
-                        mb: 0.5
-                      }}
-                    >
+                  <>
+                    {agentDetailsDialog.messages.map((msg: any) => (
                       <Box
+                        key={msg.id}
                         sx={{
-                          maxWidth: '85%',
-                          bgcolor: msg.from_me ? colors.myMessage : colors.sidebar,
-                          color: 'white',
-                          borderRadius: msg.from_me ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                          p: 1.5,
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                          position: 'relative',
-                          border: `1px solid ${msg.from_me ? 'rgba(255,255,255,0.1)' : colors.divider}`
+                          display: 'flex',
+                          justifyContent: msg.from_me ? 'flex-end' : 'flex-start',
+                          mb: 1,
+                          px: 2
                         }}
                       >
-                        <Typography variant="body2" sx={{ wordBreak: 'break-word', fontSize: '0.9rem' }}>
-                          {msg.text_content || msg.caption || '📎 Archivo multimedia'}
-                        </Typography>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end', mt: 0.5 }}>
-                          <Typography variant="caption" sx={{ fontSize: '10px', opacity: 0.7 }}>
-                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </Typography>
-                          {msg.from_me && (
-                            <Box sx={{ display: 'flex' }}>
-                              <DoneAll sx={{ fontSize: 12, color: msg.status === 'read' ? '#4caf50' : 'rgba(255,255,255,0.5)' }} />
-                            </Box>
+                        <Box
+                          sx={{
+                            maxWidth: '75%',
+                            bgcolor: msg.type === 'system'
+                              ? 'rgba(32, 44, 51, 0.95)'
+                              : (msg.from_me ? '#005c4b' : '#202c33'),
+                            color: '#e9edef',
+                            borderRadius: '8px',
+                            p: '2px', // Minimal padding here, component handles it
+                            boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)',
+                            position: 'relative',
+                            borderTopLeftRadius: msg.from_me ? '8px' : '0px',
+                            borderTopRightRadius: msg.from_me ? '0px' : '8px',
+                            alignSelf: msg.type === 'system' ? 'center' : 'auto',
+                            width: msg.type === 'system' ? 'auto' : 'fit-content',
+                            mx: msg.type === 'system' ? 'auto' : 0,
+                            mt: msg.type === 'system' ? 1 : 0,
+                            mb: msg.type === 'system' ? 1 : 0
+                          }}
+                        >
+                          {msg.type === 'system' ? (
+                            <Typography variant="caption" sx={{ display: 'block', p: 1, color: '#8696a0', textAlign: 'center' }}>
+                              {msg.text_content || msg.message}
+                            </Typography>
+                          ) : (
+                            <>
+                              {/* 🏷️ ETIQUETA DE AGENTE: Mostrar nombre de quien responde */}
+                              {msg.from_me && (
+                                <Typography variant="caption" sx={{
+                                  color: '#25d366', // Was '#65d6bd', changed to WhatsApp green-ish or custom
+                                  fontWeight: 'bold',
+                                  fontSize: '10.5px', // Slightly smaller
+                                  display: 'block',
+                                  mb: 0.2, // Small gap before message
+                                  lineHeight: 1.1,
+                                  textTransform: 'capitalize'
+                                }}>
+                                  {msg.agent_name || msg.sender_name || 'Admin'}
+                                </Typography>
+                              )}
+                              <ModernMessageMedia
+                                // Determine type more robustly
+                                type={
+                                  msg.type === 'audio' || msg.message_type === 'audio' ? 'audioMessage' :
+                                    msg.type === 'image' || msg.message_type === 'image' ? 'imageMessage' :
+                                      msg.type === 'video' || msg.message_type === 'video' ? 'videoMessage' :
+                                        msg.type === 'sticky' || msg.type === 'sticker' || msg.message_type === 'sticker' ? 'stickerMessage' :
+                                          msg.type === 'document' || msg.message_type === 'document' ? 'documentMessage' :
+                                            'chat'
+                                }
+                                mediaUrl={getMediaUrl(msg.media_url || msg.mediaUrl)}
+                                mediaMimeType={msg.media_mime_type}
+                                message={msg.text_content || msg.message || msg.caption || ''}
+                                isFromMe={!!msg.from_me}
+                                isDarkMode={true}
+                              />
+                            </>
                           )}
+                          <Box sx={{
+                            display: 'flex',
+                            justifyContent: 'flex-end',
+                            px: 1,
+                            pb: 0.5,
+                            mt: -0.5 // overlap slightly with content if possible or close gap
+                          }}>
+                            <Typography variant="caption" sx={{ fontSize: '10px', color: '#8696a0', mr: 0.5 }}>
+                              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </Typography>
+                            {msg.from_me && getMessageStatusIcon(msg)}
+                          </Box>
                         </Box>
                       </Box>
-                    </Box>
-                  ))
+                    ))}
+                    <div ref={monitorMessagesEndRef} />
+                  </>
                 )}
               </Box>
             )
@@ -3631,7 +3772,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </Box >
   );
 };
 

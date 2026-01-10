@@ -236,7 +236,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 <WhatsApp sx={{ color: 'white', fontSize: 24 }} />
               </Box>
               <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em', color: 'white' }}>
-                Whinsap
+                Winsap
               </Typography>
             </Box>
 

@@ -258,7 +258,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       // Si es agente, usar endpoint de chats asignados
       const isAgent = userRole && userRole !== 'admin';
-      const limit = 25; // ⚡ OPTIMIZADO: Cargar solo los últimos 25 chats más recientes
+      const limit = 500; // Sin límite práctico - cargar TODOS los chats del día
       const offsetParam = offset || 0; // Si no se pasa, es 0
 
       if (append) {
@@ -377,8 +377,15 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           });
           console.log(`[WhatsAppContext] ➕ Chats añadidos: ${filteredChats.length}`);
         } else {
-          setChats(filteredChats);
-          console.log('[WhatsAppContext] ✅ Chats reemplazados (inicio):', filteredChats.length);
+          // 🔥 CRÍTICO: LIMPIAR COMPLETAMENTE los chats viejos antes de cargar nuevos
+          console.log('[WhatsAppContext] 🧹 LIMPIANDO chats antiguos del estado...');
+          setChats([]); // Limpiar primero
+
+          // Usar setTimeout para asegurar que React procese la limpieza
+          setTimeout(() => {
+            setChats(filteredChats);
+            console.log('[WhatsAppContext] ✅ Chats reemplazados (inicio):', filteredChats.length);
+          }, 0);
         }
 
         const pagination = (data as any).pagination;

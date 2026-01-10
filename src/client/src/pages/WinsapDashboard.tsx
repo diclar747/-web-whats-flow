@@ -79,7 +79,8 @@ import IncomingCall from '../components/IncomingCall';
 import AgentChatView from '../components/AgentChatView';
 import ModernAlert from '../components/ModernAlert';
 import RequiresWhatsApp from '../components/RequiresWhatsApp';
-import WhinsapLogo from '../components/WhinsapLogo';
+import WinsapLogo from '../components/WinsapLogo';
+import FloatingWhatsAppButton from '../components/FloatingWhatsAppButton';
 
 // Lazy loading de módulos para mejor rendimiento
 const WhatsAppWebChat = lazy(() => import('../modules/WhatsAppWebChat'));
@@ -142,7 +143,7 @@ const ModuleLoadingFallback = () => (
   </Box>
 );
 
-interface WhinsapDashboardProps {
+interface WinsapDashboardProps {
   sessionId: string;
   onLogout: () => void;
 }
@@ -156,7 +157,7 @@ interface NavigationItem {
   color?: string;
 }
 
-const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout }) => {
+const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -226,7 +227,8 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
   // 🆕 Fetch All Active Sessions - Memoized to use in socket listeners
   const fetchSessions = useCallback(async () => {
     try {
-      const response = await fetch(`${window.location.origin}/api/sessions/active`, {
+      const sid = activeSessionId || sessionId;
+      const response = await fetch(`${window.location.origin}/api/sessions/active${sid ? `?sessionId=${encodeURIComponent(sid)}` : ''}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -630,9 +632,9 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
   // Actualizar título de página con mensajes no leídos
   useEffect(() => {
     if (totalUnreadMessages > 0) {
-      document.title = `(${totalUnreadMessages}) Whinsap - Mensajes nuevos`;
+      document.title = `(${totalUnreadMessages}) Winsap - Mensajes nuevos`;
     } else {
-      document.title = 'Whinsap - Plataforma Empresarial';
+      document.title = 'Winsap - Plataforma Empresarial';
     }
   }, [totalUnreadMessages]);
 
@@ -742,33 +744,58 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
 
   const handleAuthToken = useCallback((data: any) => {
     console.log('[SOCKET] 🔐 Token recibido:', data);
-    if (data.token) {
-      // Guardar token en localStorage y sessionStorage
+    if (!data.token) return;
+
+    // ✅ SEGURIDAD: No sobrescribir token de usuario (email) con token de WhatsApp (phone)
+    const existingToken = localStorage.getItem('token') || sessionStorage.getItem('token');
+    const storedUserStr = localStorage.getItem('user');
+    let storedEmail = null;
+    try {
+      if (storedUserStr) storedEmail = JSON.parse(storedUserStr)?.email;
+    } catch (e) {
+      console.warn('[DASHBOARD] Error parsing stored user:', e);
+    }
+
+    const incomingEmail = data.user?.email;
+
+    // Solo reemplazar si:
+    // 1. No hay token previo
+    // 2. El nuevo token tiene email (es un login completo)
+    // 3. El nuevo token es del mismo usuario que el actual (mismo email)
+    const shouldReplace = !existingToken || incomingEmail || (incomingEmail && (!storedEmail || incomingEmail === storedEmail));
+
+    if (shouldReplace) {
       localStorage.setItem('token', data.token);
       sessionStorage.setItem('token', data.token);
+      console.log('[SOCKET] ✅ Token principal actualizado/mantenido');
 
-      // Guardar rol del usuario
-      if (data.user && data.user.role) {
-        localStorage.setItem('userRole', data.user.role);
-        sessionStorage.setItem('userRole', data.user.role);
-        console.log('[SOCKET] 👤 Rol guardado:', data.user.role);
-      } else {
-        // Si no hay role en data.user, asumir que es admin (login por QR)
-        localStorage.setItem('userRole', 'admin');
-        sessionStorage.setItem('userRole', 'admin');
-        console.log('[SOCKET] 👤 Asumiendo rol admin (login por QR)');
+      // Actualizar datos del usuario si vienen en el payload
+      if (data.user) {
+        if (data.user.role) {
+          localStorage.setItem('userRole', data.user.role);
+          sessionStorage.setItem('userRole', data.user.role);
+        }
+        if (data.user.id || data.user.userId) {
+          localStorage.setItem('userId', data.user.id || data.user.userId);
+          sessionStorage.setItem('userId', data.user.id || data.user.userId);
+        }
       }
-
-      // ✅ FIX RACE CONDITION: Ahora que tenemos el token, marcamos la sesión como válida
-      console.log('[SOCKET] ✅ Token guardado, activando sesión');
-      setSessionValid(true);
-      setWhatsappStatus('connected');
-      setIsAuthenticating(false);
-
-      // Recargar estadísticas ahora que tenemos autenticación válida
-      fetchDashboardStats();
+    } else {
+      // Si es un token de WhatsApp pero ya tenemos uno de usuario, guardarlo como alterno
+      localStorage.setItem('wh_session_token', data.token);
+      console.log('[SOCKET] 🧪 Token de sesión WhatsApp guardado como alterno (no reemplaza al usuario)');
     }
-  }, [fetchDashboardStats]);
+
+    // ✅ FIX RACE CONDITION: Marcamos la sesión como válida
+    setSessionValid(true);
+    setWhatsappStatus('connected');
+    setIsAuthenticating(false);
+
+    // Recargar estadísticas
+    fetchDashboardStats();
+    // Recargar sesiones para asegurar que vemos todas las líneas vinculadas
+    fetchSessions();
+  }, [fetchDashboardStats, fetchSessions]);
 
   const handleAgentForceLogout = useCallback((data: any) => {
     console.log('[SOCKET] 🚫 Logout forzado de agente:', data);
@@ -946,10 +973,10 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
                 boxShadow: '0 8px 16px rgba(0, 0, 0, 0.2)'
               }}>
                 {/* El logo ya tiene gradiente interno, usamos fondo neutro o transparente */}
-                <WhinsapLogo sx={{ fontSize: 32 }} />
+                <WinsapLogo sx={{ fontSize: 32 }} />
               </Box>
               <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em', color: 'white' }}>
-                Whinsap
+                Winsap
               </Typography>
             </Box>
           ) : (
@@ -963,7 +990,7 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
               justifyContent: 'center',
               cursor: 'pointer'
             }} onClick={() => setDrawerMinimized(false)}>
-              <WhinsapLogo sx={{ fontSize: 32 }} />
+              <WinsapLogo sx={{ fontSize: 32 }} />
             </Box>
           )}
 
@@ -1100,6 +1127,18 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
             )}
           </ListItemButton>
         </Box>
+
+        {/* Copyright Footer */}
+        {!drawerMinimized && (
+          <Box sx={{ p: 2, textAlign: 'center', mt: 'auto' }}>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.65rem', display: 'block', lineHeight: 1.2 }}>
+              © Winsap.com.py
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.2)', fontSize: '0.55rem', display: 'block', mt: 0.5 }}>
+              Todos los Derechos Reservados por CNID Centro-Nacional-Información-Digital NRO REG:17789
+            </Typography>
+          </Box>
+        )}
       </Box>
 
       {/* Main Content Area con Header Oscuro */}
@@ -1613,4 +1652,4 @@ const WhinsapDashboard: React.FC<WhinsapDashboardProps> = ({ sessionId, onLogout
   );
 };
 
-export default WhinsapDashboard;
+export default WinsapDashboard;

@@ -132,7 +132,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
                   color: '#2d3748',
                   lineHeight: 1
                 }}>
-                  Whinsap
+                  Winsap
                 </Typography>
                 <Typography variant="h6" sx={{ 
                   color: '#667eea',
@@ -315,7 +315,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLogin }) => {
           {/* Footer */}
           <Box sx={{ textAlign: 'center', mt: 4 }}>
             <Typography variant="body2" sx={{ color: '#64748b' }}>
-              Whinsap © 2025 - Plataforma Empresarial de Mensajería
+              Winsap © 2025 - Plataforma Empresarial de Mensajería
             </Typography>
             <Typography variant="caption" sx={{ color: '#94a3b8' }}>
               Versión 1.0.0 | Seguridad de nivel empresarial

@@ -1217,7 +1217,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       // Encabezado
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
-      doc.text('Historial de Mensajes - Whinsap', pageWidth / 2, 15, { align: 'center' });
+      doc.text('Historial de Mensajes - Winsap', pageWidth / 2, 15, { align: 'center' });
 
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
@@ -1417,7 +1417,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Historial Whinsap - ${new Date().toLocaleDateString('es-ES')}</title>
+        <title>Historial Winsap - ${new Date().toLocaleDateString('es-ES')}</title>
         <style>
           @media print {
             @page { margin: 2cm; }
@@ -1471,7 +1471,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         </style>
       </head>
       <body>
-        <h1>📱 Historial de Mensajes - Whinsap</h1>
+        <h1>📱 Historial de Mensajes - Winsap</h1>
         <div class="info">
           <p><strong>Fecha de impresión:</strong> ${new Date().toLocaleString('es-ES')}</p>
           <p><strong>Total de registros:</strong> ${data.length}</p>
@@ -1479,7 +1479,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         </div>
         ${tableHTML}
         <div class="footer">
-          <p>Generado por Whinsap - Sistema de Gestión de WhatsApp</p>
+          <p>Generado por Winsap - Sistema de Gestión de WhatsApp</p>
           <p>${new Date().toLocaleDateString('es-ES')}</p>
         </div>
         <script>

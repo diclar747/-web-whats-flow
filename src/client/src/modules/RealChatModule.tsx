@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useWhatsApp } from '../context/WhatsAppContext';
+import { useSocket } from '../context/SocketContext';
 import { getAPIBaseURL } from '../utils/socketConfig';
 import { SubscriptionGuard } from '../components/SubscriptionGuard';
 import ModernMessageMedia from '../components/ModernMessageMedia';
@@ -74,6 +75,7 @@ const RealChatModule: React.FC<RealChatModuleProps> = ({ sessionId }) => {
 
 const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => {
   const { isDarkMode } = useTheme();
+  const { socket } = useSocket();
 
   const colors = {
     primary: '#00a884',
@@ -259,12 +261,39 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
     }
   };
 
-  // Scroll to bottom when a new message arrives
   useEffect(() => {
     if (messages.length > 0) {
       scrollToBottom();
     }
   }, [messages]);
+
+  // 🔒 LISTENER PARA REVOCACIÓN DE CHAT
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleAssignmentChanged = (data: any) => {
+      console.log('🔔 [RealChatModule] Assignment changed:', data);
+
+      // Si el chat activo fue revocado/transferido, cerrar la ventana inmediatamente
+      if (activeChat && (data.chatJid === activeChat.id)) {
+        console.warn('⛔ Chat activo ha sido revocado o transferido. Cerrando...');
+        setActiveChat(null);
+        // Opcional: Mostrar alerta
+        // alert('Este chat ha sido revocado o transferido.'); 
+      }
+
+      // Recargar lista de chats
+      loadChats(sessionId);
+    };
+
+    socket.on('chat-assignment-changed', handleAssignmentChanged);
+    socket.on('chat-revoked', handleAssignmentChanged); // Por si acaso usamos otro evento específico
+
+    return () => {
+      socket.off('chat-assignment-changed', handleAssignmentChanged);
+      socket.off('chat-revoked', handleAssignmentChanged);
+    };
+  }, [socket, activeChat, sessionId, loadChats, setActiveChat]);
 
   const loadOnlineAgents = async () => {
     try {
@@ -1254,7 +1283,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                                     fontSize: '0.7rem'
                                   }}
                                 >
-                                  {msg.agent_name && ['Super Admin', 'Admin', 'Carlos', 'Whinsap'].includes(msg.agent_name) ? 'ADMIN' : (msg.agent_name || 'Gestión')}
+                                  {msg.agent_name && ['Super Admin', 'Admin', 'Carlos', 'Winsap'].includes(msg.agent_name) ? 'ADMIN' : (msg.agent_name || 'Gestión')}
                                 </Typography>
                               )}
 
@@ -1575,7 +1604,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                 <div style={{ textAlign: 'center' }}>
                   <WhatsApp sx={{ fontSize: 80, color: isDarkMode ? '#2a3942' : '#f0f2f5' }} />
                   <Typography variant="h5" component="h2" sx={{ mt: 2 }}>
-                    Whinsap Web
+                    Winsap Web
                   </Typography>
                   <Typography sx={{ mt: 1, maxWidth: 400 }}>
                     Envía y recibe mensajes sin tener que mantener tu teléfono conectado. <br />

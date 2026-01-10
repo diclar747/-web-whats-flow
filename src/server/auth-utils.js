@@ -47,6 +47,7 @@ function verifyToken(token) {
     try {
         return jwt.verify(token, JWT_SECRET);
     } catch (error) {
+        console.error('[AUTH-UTILS] ❌ Token verification failed:', error.message);
         return null;
     }
 }
@@ -58,6 +59,7 @@ function authenticateJWT(req, res, next) {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        console.warn('[AUTH-UTILS] ⚠️ Missing or invalid Authorization header:', authHeader);
         return res.status(401).json({
             success: false,
             error: 'Token no proporcionado'
@@ -68,6 +70,7 @@ function authenticateJWT(req, res, next) {
     const decoded = verifyToken(token);
 
     if (!decoded) {
+        console.warn('[AUTH-UTILS] ⚠️ Token invalid or expired');
         return res.status(401).json({
             success: false,
             error: 'Token inválido o expirado',

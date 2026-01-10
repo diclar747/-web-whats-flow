@@ -132,7 +132,7 @@ const AgentLogin: React.FC<AgentLoginProps> = ({ onLoginSuccess }) => {
                 <PersonIcon sx={{ fontSize: 50 }} />
               </Avatar>
               <Typography variant="h4" fontWeight="bold" gutterBottom>
-                Whinsap
+                Winsap
               </Typography>
               <Typography variant="body1" color="text.secondary">
                 Acceso para Agentes

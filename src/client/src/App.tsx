@@ -8,7 +8,7 @@ import { ThemeProvider as CustomThemeProvider } from './contexts/ThemeContext';
 import { WhatsAppProvider } from './context/WhatsAppContext';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import WhinsapDashboard from './pages/WhinsapDashboard';
+import WinsapDashboard from './pages/WinsapDashboard';
 import Login from './pages/Login'; // 🆕 Email/password login
 import Register from './pages/Register'; // 🆕 Registration page
 import LandingPage from './components/LandingPageComplete'; // 🆕 Complete landing with services/pricing
@@ -155,13 +155,13 @@ const AppContent: React.FC<{
                 ) : sessionId ? (
                   // Dashboard completo para admin (requiere sessionId del QR)
                   (() => {
-                    console.log('✅ [DASHBOARD-ROUTE] Cargando WhinsapDashboard (admin) con sessionId:', sessionId);
+                    console.log('✅ [DASHBOARD-ROUTE] Cargando WinsapDashboard (admin) con sessionId:', sessionId);
                     return (
                       <WhatsAppProvider
                         userId={user?.id ? (typeof user.id === 'string' ? parseInt(user.id) : user.id) : undefined}
                         userRole={user?.role || 'admin'}
                       >
-                        <WhinsapDashboard
+                        <WinsapDashboard
                           sessionId={sessionId}
                           onLogout={handleLogout}
                         />
@@ -177,7 +177,7 @@ const AppContent: React.FC<{
                         userId={undefined}
                         userRole="admin"
                       >
-                        <WhinsapDashboard
+                        <WinsapDashboard
                           sessionId="" // Sin sessionId, permitirá generar QR
                           onLogout={handleLogout}
                         />

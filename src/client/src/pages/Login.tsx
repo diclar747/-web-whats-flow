@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Box } from '@mui/material';
-import WhinsapLogo from '../components/WhinsapLogo';
+import WinsapLogo from '../components/WinsapLogo';
+import FloatingWhatsAppButton from '../components/FloatingWhatsAppButton';
 import './AuthPages.css';
 
 interface LoginProps {
@@ -40,8 +41,8 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 sessionStorage.setItem('deviceId', deviceId);
                 localStorage.setItem('device_id', deviceId);
                 sessionStorage.setItem('device_id', deviceId);
-                localStorage.setItem('whinsap_device_id', deviceId);
-                sessionStorage.setItem('whinsap_device_id', deviceId);
+                localStorage.setItem('winsap_device_id', deviceId);
+                sessionStorage.setItem('winsap_device_id', deviceId);
             }
 
             const response = await fetch('/api/auth/login', {
@@ -66,11 +67,11 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                     { key: 'userName', value: data.user.name || data.user.full_name || '' },
                     { key: 'userEmail', value: data.user.email || '' },
                     { key: 'userRole', value: data.user.role || 'admin' },
-                    { key: 'whinsap_user_type', value: data.user.role === 'super_admin' ? 'admin' : 'agent' },
-                    { key: 'whinsap_session', value: sessionIdFromLogin },
+                    { key: 'winsap_user_type', value: data.user.role === 'super_admin' ? 'admin' : 'agent' },
+                    { key: 'winsap_session', value: sessionIdFromLogin },
                     { key: 'sessionToken', value: sessionToken },
-                    { key: 'whinsap_session_token', value: sessionToken },
-                    { key: 'whinsap_session_device_id', value: deviceId }
+                    { key: 'winsap_session_token', value: sessionToken },
+                    { key: 'winsap_session_device_id', value: deviceId }
                 ];
 
                 storageData.forEach(({ key, value }) => {
@@ -105,9 +106,9 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             <div className="auth-card">
                 <div className="auth-header">
                     <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-                        <WhinsapLogo sx={{ fontSize: 60 }} />
+                        <WinsapLogo sx={{ fontSize: 60 }} />
                     </Box>
-                    <h1>Whinsap</h1>
+                    <h1>Winsap</h1>
                     <h2>Iniciar sesión</h2>
                 </div>
 

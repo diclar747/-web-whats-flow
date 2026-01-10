@@ -324,7 +324,7 @@ const AgentDashboardNew: React.FC = () => {
             {userName.charAt(0).toUpperCase()}
           </Avatar>
           <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 600 }}>
-            Whinsap - Panel de Agente ({userName})
+            Winsap - Panel de Agente ({userName})
           </Typography>
           <Badge badgeContent={chats.length} color="error" sx={{ mr: 2 }}>
             <Typography variant="body2">Chats Asignados</Typography>
@@ -606,7 +606,7 @@ const AgentDashboardNew: React.FC = () => {
               <img src="/whatsapp-icon.png" alt="WhatsApp" style={{ width: '80%' }} />
             </Avatar>
             <Typography variant="h5" gutterBottom>
-              Whinsap - Panel de Agente
+              Winsap - Panel de Agente
             </Typography>
             <Typography>
               Selecciona un chat para comenzar a conversar

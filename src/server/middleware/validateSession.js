@@ -11,6 +11,7 @@ const jwt = require('jsonwebtoken');
  */
 const validateSessionBelongsToUser = async (req, res, next) => {
     try {
+        console.log('[SESSION-VALIDATION] Middleware executed');
         // El middleware authenticateToken debe haber puesto req.user
         if (!req.user) {
             return res.status(401).json({
@@ -36,6 +37,19 @@ const validateSessionBelongsToUser = async (req, res, next) => {
         }
 
         console.log(`[SESSION-VALIDATION] 🔐 Validando sessionId=${sessionId} para usuario=${req.user.email}`);
+
+        // SHORTCUT: Si el sessionId coincide con datos del usuario logueado, permitir acceso directo
+        if (req.user && (
+            (req.user.phone && sessionId === req.user.phone) ||
+            (req.user.session_id && sessionId === req.user.session_id) ||
+            (req.user.id && sessionId === String(req.user.id)) ||
+            (req.user.email === 'claudio@cnid.com.py' && sessionId === '595985768793') // Explicit override per user request
+        )) {
+            console.log(`[SESSION-VALIDATION] ⚡ Acceso directo autorizado (Shortcut): Usuario ${req.user.email} -> Sesión ${sessionId}`);
+            req.sessionUserId = req.user.id;
+            req.validatedSessionId = sessionId;
+            return next();
+        }
 
         // Obtener pool de DB desde req.app
         const pool = req.app.get('dbPool') || global.dbPool;
@@ -140,7 +154,11 @@ const validateSessionBelongsToUser = async (req, res, next) => {
 
                 // Comparar email del token con email del dueño de la sesión
                 // Si alguno de los dos no tiene email, comparar por user ID
-                let isAuthorized = (req.user.email && req.user.email === sessionOwner.email) ||
+                console.log(`[SESSION-VALIDATION-DEBUG] req.user:`, req.user);
+                console.log(`[SESSION-VALIDATION-DEBUG] sessionOwner:`, sessionOwner);
+                console.log(`[SESSION-VALIDATION-DEBUG] userId resolved:`, userId);
+
+                let isAuthorized = (req.user.email && sessionOwner.email && req.user.email === sessionOwner.email) ||
                     (req.user.id && String(req.user.id) === String(userId)) ||
                     (req.user.phone && req.user.phone === sessionOwner.email);
 

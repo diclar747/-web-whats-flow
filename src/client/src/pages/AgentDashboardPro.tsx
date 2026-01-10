@@ -154,7 +154,7 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [userName, setUserName] = useState<string>('');
   const [agentAvatar, setAgentAvatar] = useState<string>(''); // Avatar del agente
-  const [agentStatus, setAgentStatus] = useState<'online' | 'offline' | 'paused' | 'busy'>('online');
+  const [agentStatus, setAgentStatus] = useState<'online' | 'offline' | 'paused' | 'busy'>('offline');
   const [statusMenuAnchor, setStatusMenuAnchor] = useState<null | HTMLElement>(null);
 
   // Estados UI avanzados
@@ -755,6 +755,12 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
 
           if (existingIndex >= 0) {
             const updated = [...prev];
+            // 🛡️ PRESERVAR agente si el nuevo mensaje no lo trae (evitar reset a NULL/Admin)
+            const matchedMsg = updated[existingIndex];
+            if (!newMsg.agent_name && matchedMsg.agent_name) {
+              newMsg.agent_name = matchedMsg.agent_name;
+              newMsg.agent_id = matchedMsg.agent_id;
+            }
             updated[existingIndex] = newMsg;
             return updated;
           }
@@ -1181,8 +1187,7 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
             setMessageText('');
           }
 
-          // Recargar mensajes
-          setTimeout(() => loadMessages(), 1000);
+          // El mensaje llegará por socket en tiempo real
         } else {
           throw new Error(data.error || 'Error desconocido');
         }
@@ -1946,7 +1951,7 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
             </Box>
             <Box>
               <Typography variant="h6" sx={{ fontWeight: 700, color: currentTheme.text.onHeader, lineHeight: 1.2, letterSpacing: '0.5px' }}>
-                Whinsap
+                Winsap
               </Typography>
               <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.75rem' }}>
                 Panel de Agente
@@ -2841,7 +2846,7 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
               <Box sx={{ textAlign: 'center' }}>
                 <ChatIcon sx={{ fontSize: 120, color: darkMode ? '#2a3942' : '#d1d7db', mb: 3 }} />
                 <Typography variant="h4" sx={{ color: currentTheme.text.primary }} gutterBottom fontWeight={600}>
-                  Whinsap Panel de Agente
+                  Winsap Panel de Agente
                 </Typography>
                 <Typography variant="h6" sx={{ color: currentTheme.text.secondary }} gutterBottom>
                   Selecciona un chat para comenzar a responder
@@ -3231,7 +3236,7 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
               mb: 0.5
             }}
           >
-            🟢 Nueva Transferencia - Whinsap
+            🟢 Nueva Transferencia - Winsap
           </Typography>
           <Typography
             variant="body2"

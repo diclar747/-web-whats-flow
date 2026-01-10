@@ -213,7 +213,7 @@ export const MobileStatusPublisher: React.FC = () => {
                         <Box sx={{ textAlign: 'center', mb: 3 }}>
                             <PhoneAndroid sx={{ fontSize: 60, color: '#25d366', mb: 2 }} />
                             <Typography variant="h5" gutterBottom>
-                                Whinsap Mobile
+                                Winsap Mobile
                             </Typography>
                             <Typography variant="body2" color="text.secondary">
                                 Configura este dispositivo para publicar estados
@@ -262,7 +262,7 @@ export const MobileStatusPublisher: React.FC = () => {
             {/* Header */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                 <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                    📱 Whinsap Publisher
+                    📱 Winsap Publisher
                 </Typography>
                 <IconButton onClick={loadPendingStatuses} disabled={syncing}>
                     <CloudSync className={syncing ? 'spin' : ''} />

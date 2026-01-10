@@ -1129,7 +1129,7 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
             <div style={{ textAlign: 'center' }}>
               <WhatsApp sx={{ fontSize: 80, color: isDarkMode ? '#2a3942' : '#f0f2f5' }} />
               <Typography variant="h5" component="h2" sx={{ mt: 2 }}>
-                Whinsap Web
+                Winsap Web
               </Typography>
               <Typography sx={{ mt: 1, maxWidth: 400 }}>
                 Envía y recibe mensajes sin tener que mantener tu teléfono conectado. <br />

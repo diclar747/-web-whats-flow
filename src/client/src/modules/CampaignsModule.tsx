@@ -527,7 +527,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
                 failed: 0
               },
               message: {
-                text: '¡Hola {{nombre}}! 👋 Bienvenido a Whinsap. Estamos aquí para ayudarte.',
+                text: '¡Hola {{nombre}}! 👋 Bienvenido a Winsap. Estamos aquí para ayudarte.',
                 hasVariables: true
               },
               segments: ['todos-contactos'],
@@ -562,7 +562,7 @@ const CampaignsModule: React.FC<CampaignsModuleProps> = ({ sessionId }) => {
               failed: 0
             },
             message: {
-              text: 'Mensaje de prueba desde Whinsap',
+              text: 'Mensaje de prueba desde Winsap',
               hasVariables: false
             },
             segments: ['todos-contactos'],

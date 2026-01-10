@@ -670,7 +670,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
         body: JSON.stringify({
           boardId: newContactCategory,
           contactJid: contactJid,
-          notes: `Nombre: ${contactName}`
+          notes: contactName
         })
       });
 
@@ -745,7 +745,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
               body: JSON.stringify({
                 boardId: newContactCategory,
                 contactJid: contactJid,
-                notes: `Nombre: ${contact.name}`
+                notes: contact.name
               })
             });
 
@@ -933,7 +933,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
       const mockDeals: Deal[] = [
         {
           id: 'deal_1',
-          title: 'Enterprise Whinsap - Empresa ABC',
+          title: 'Enterprise Winsap - Empresa ABC',
           contactId: '1',
           value: 50000,
           probability: 50,
@@ -941,7 +941,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
           expectedCloseDate: '2024-02-15T00:00:00Z',
           assignedAgent: 'María González',
           source: 'website',
-          description: 'Implementación completa de Whinsap para 500 agentes',
+          description: 'Implementación completa de Winsap para 500 agentes',
           activities: [
             {
               id: 'act_1',

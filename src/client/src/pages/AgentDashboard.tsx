@@ -698,7 +698,7 @@ const AgentDashboard: React.FC = () => {
         <Toolbar>
           <ChatIcon sx={{ mr: 2 }} />
           <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Whinsap - Panel de Agente
+            Winsap - Panel de Agente
           </Typography>
           {/* 🆕 Avatar y nombre del agente */}
           {avatarUrl && (
@@ -1088,7 +1088,7 @@ const AgentDashboard: React.FC = () => {
           >
             <ChatIcon sx={{ fontSize: 120, color: '#d1d7db', mb: 2 }} />
             <Typography variant="h5" color="text.secondary" gutterBottom>
-              Whinsap Panel de Agente
+              Winsap Panel de Agente
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Selecciona un chat para comenzar a responder

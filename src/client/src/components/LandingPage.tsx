@@ -505,7 +505,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
                   <WhatsApp sx={{ color: 'white', fontSize: 24 }} />
                 </Box>
                 <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
-                  Whinsap
+                  Winsap
                 </Typography>
               </Box>
             </Container>
@@ -724,7 +724,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
                 Confianza y resultados
               </Typography>
               <Typography variant="h6" sx={{ color: '#94a3b8' }}>
-                Equipos comerciales y de soporte ya optimizan su WhatsApp con Whinsap
+                Equipos comerciales y de soporte ya optimizan su WhatsApp con Winsap
               </Typography>
             </Box>
             <Grid container spacing={3}>
@@ -989,7 +989,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           </Container>
         </Box>
 
-        {/* Beneficios - Por qué Whinsap */}
+        {/* Beneficios - Por qué Winsap */}
         <Box
           sx={{
             bgcolor: '#0f172a',
@@ -1003,7 +1003,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
                 variant="h3"
                 sx={{ fontWeight: 700, color: 'white', mb: 2 }}
               >
-                ¿Por qué Whinsap?
+                ¿Por qué Winsap?
               </Typography>
               <Typography variant="h6" sx={{ color: '#94a3b8', fontWeight: 400 }}>
                 Este sistema no puede faltar en su empresa: conecte, automatice y venda más.
@@ -1196,7 +1196,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
           <Container maxWidth="lg">
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
-                © 2025 Whinsap - Plataforma Empresarial de WhatsApp
+                © 2025 Winsap - Plataforma Empresarial de WhatsApp
               </Typography>
               <Typography variant="caption" sx={{ color: '#64748b' }}>
                 Todos los Derechos Reservados por <strong>CNID</strong> Centro-Nacional-Información-Digital NRO REG: 17789
@@ -1237,7 +1237,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onQRSuccess }) => {
             },
           }}
           onClick={() => {
-            window.open('https://wa.me/595994854167?text=Hola%2C%20me%20interesa%20Whinsap', '_blank');
+            window.open('https://wa.me/595994854167?text=Hola%2C%20me%20interesa%20Winsap', '_blank');
           }}
           aria-label="Contactar por WhatsApp"
         >

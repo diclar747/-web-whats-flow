@@ -671,7 +671,7 @@ const DashboardOverview: React.FC<DashboardOverviewProps> = ({ sessionId }) => {
       }}>
         <Box>
           <Typography variant="h3" sx={{ fontWeight: 700, mb: 1 }}>
-            Dashboard Whinsap Enterprise
+            Dashboard Winsap Enterprise
           </Typography>
           <Typography variant="h6" sx={{ opacity: 0.9, fontWeight: 300 }}>
             Centro de comando y control • Sesión: {sessionId?.slice(-8)}

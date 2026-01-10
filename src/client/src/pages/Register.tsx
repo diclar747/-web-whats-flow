@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import WinsapLogo from '../components/WinsapLogo';
+import FloatingWhatsAppButton from '../components/FloatingWhatsAppButton';
+import { Box } from '@mui/material';
 import './AuthPages.css';
 
 const Register = () => {
@@ -57,7 +60,10 @@ const Register = () => {
         <div className="auth-container">
             <div className="auth-card">
                 <div className="auth-header">
-                    <h1>Whinsap</h1>
+                    <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                        <WinsapLogo sx={{ fontSize: 60 }} />
+                    </Box>
+                    <h1>Winsap</h1>
                     <h2>Crear cuenta</h2>
                 </div>
 

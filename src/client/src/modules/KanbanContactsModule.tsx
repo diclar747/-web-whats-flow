@@ -495,7 +495,7 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
             body: JSON.stringify({
               boardId: importBoardId,
               contactJid: contactJid,
-              notes: `Nombre: ${contact.name}`
+              notes: contact.name
             })
           });
 
@@ -728,8 +728,9 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
   };
 
   const renderContactCard = (contact: Contact, boardId: string) => {
-    // Manejar valores nulos o vacíos
-    const displayName = contact.name || contact.phone || 'Sin nombre';
+    // Manejar valores nulos o vacíos, y limpiar "Nombre: " del inicio si existe
+    const rawName = contact.name || contact.phone || 'Sin nombre';
+    const displayName = rawName.replace(/^Nombre:\s*/i, '');
     const avatarLetter = displayName.charAt(0).toUpperCase();
 
     return (

@@ -1019,7 +1019,7 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
           >
             <ImageIcon sx={{ fontSize: 80, color: colors.textSecondary, opacity: 0.5 }} />
             <Typography variant="h5" sx={{ color: colors.text }}>
-              Whinsap para Agentes
+              Winsap para Agentes
             </Typography>
             <Typography variant="body2" sx={{ color: colors.textSecondary, textAlign: 'center', maxWidth: 400 }}>
               Selecciona una conversación de la lista para comenzar a chatear con tus clientes asignados

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Limpiar Caché - Winsap</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 500px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            background: #25D366;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: #128C7E;
+            transform: scale(1.05);
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🧹 Limpiar Caché de Winsap</h1>
+        <p>Haz clic en el botón para limpiar el caché y ver los cambios:</p>
+
+        <button class="btn" onclick="clearCache()">
+            🚀 Limpiar Caché y Recargar
+        </button>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <script>
+        function clearCache() {
+            localStorage.clear();
+            sessionStorage.clear();
+            document.getElementById('status').className = 'status success';
+            document.getElementById('status').innerHTML = '✅ Caché limpiado. Redirigiendo...';
+            setTimeout(() => window.location.href = 'https://web.whats-flow.com', 1000);
+        }
+    </script>
+</body>
+
+</html>

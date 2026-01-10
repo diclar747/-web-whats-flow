@@ -573,8 +573,14 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
       const contactsResponse = await fetch(`${getAPIBaseURL()}/api/contacts/by-category/${sessionId}`);
       const contactsData = await contactsResponse.json();
-      if (contactsData.success && contactsData.data?.contacts) {
-        setKanbanContacts(contactsData.data.contacts);
+      console.log('DEBUG: Received kanban contacts raw data:', contactsData);
+
+      if (contactsData.success) {
+        // Handle both simple array or nested object structure depending on specific API response format
+        // The API returns an object where keys are board names and values are arrays of contacts
+        const contactsMap = contactsData.data?.contacts || contactsData.contacts || contactsData;
+        console.log('DEBUG: Processed contacts map:', contactsMap);
+        setKanbanContacts(contactsMap);
       }
     } catch (error) {
       console.error('Error cargando tableros Kanban:', error);

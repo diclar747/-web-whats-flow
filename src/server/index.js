@@ -2446,8 +2446,27 @@ async function saveMessageToDB(sessionId, msg) {
     // ✅ CAMBIO: Obtener session_id del propietario (user.id) en lugar de phoneNumber
     const ownerSessionId = await getOwnerSessionId(sessionId);
 
-    // También obtener phoneNumber para emisión de eventos
-    const phoneNumber = await getUserPhoneNumber(sessionId);
+    // También obtener phoneNumber para emisión de eventos se intenta resolver
+    let phoneNumber = await getUserPhoneNumber(sessionId);
+
+    // 🛡️ FALLBACK: Si phoneNumber no parece un número (es internal ID) y tenemos ownerSessionId
+    if ((!phoneNumber || phoneNumber.length > 20 || !/^\d+$/.test(phoneNumber)) && ownerSessionId) {
+        if (pool) {
+            const connection = await pool.getConnection();
+            try {
+                // Buscar el teléfono real asociado al user ID
+                const [rows] = await connection.execute('SELECT phone FROM users WHERE id = ? LIMIT 1', [ownerSessionId]);
+                if (rows.length > 0 && rows[0].phone) {
+                    console.log(`[DB-MSG] 🔄 Corrigiendo phoneNumber para emisión: ${phoneNumber} -> ${rows[0].phone}`);
+                    phoneNumber = rows[0].phone;
+                }
+            } catch (err) {
+                console.error('[DB-MSG] Error resolviendo phone fallback:', err);
+            } finally {
+                connection.release();
+            }
+        }
+    }
 
     if (!ownerSessionId) {
         console.error(`[DB-MSG] No se pudo obtener ownerSessionId para sessionId ${sessionId}. No se puede guardar mensaje ${msg.id}.`);
@@ -2473,6 +2492,10 @@ async function saveMessageToDB(sessionId, msg) {
 
     const connection = await pool.getConnection();
     try {
+        // Normalizar JIDs para eliminar sufijos de dispositivo/hilo
+        let chat_jid = normalizeJid(msg.chat_jid || msg.sender_jid);
+        let sender_jid = normalizeJid(msg.sender_jid || msg.chat_jid);
+
         // 🆕 DETERMINAR AGENTE AUTOMÁTICAMENTE si el mensaje es saliente
         let detectedAgentId = msg.agent_id || null;
         let detectedAgentName = msg.agent_name || null;
@@ -2481,22 +2504,24 @@ async function saveMessageToDB(sessionId, msg) {
         if (msg.from_me && !detectedAgentId) {
             try {
                 // Buscar si hay un agente asignado a este chat
+                // 🆕 MEJORA: Usar chat_jid normalizado y ownerSessionId para precisión
                 const [assignment] = await connection.execute(`
                     SELECT u.id, u.name
                     FROM chat_assignments ca
                     JOIN users u ON ca.user_id = u.id
                     WHERE ca.chat_jid = ? 
+                      AND (ca.session_id = ? OR ca.session_id = ?)
                       AND ca.status = 'active'
                     ORDER BY ca.assigned_at DESC
                     LIMIT 1
-                `, [msg.chat_jid || msg.sender_jid]);
+                `, [chat_jid, ownerSessionId, phoneNumber]);
 
                 if (assignment.length > 0) {
                     detectedAgentId = assignment[0].id;
                     detectedAgentName = assignment[0].name;
-                    console.log(`[DB-MSG] ✅ Agente detectado: ${detectedAgentName} (ID: ${detectedAgentId})`);
+                    console.log(`[DB-MSG] ✅ Agente detectado para ${chat_jid}: ${detectedAgentName} (ID: ${detectedAgentId})`);
                 } else {
-                    console.log(`[DB-MSG] ℹ️ No hay agente asignado, guardando como Admin`);
+                    console.log(`[DB-MSG] ℹ️ No hay agente asignado para ${chat_jid}, guardando como Admin`);
                 }
             } catch (agentError) {
                 console.error('[DB-MSG] Error detectando agente:', agentError.message);
@@ -2524,10 +2549,6 @@ async function saveMessageToDB(sessionId, msg) {
         // Usar agentes detectados
         const agent_id = detectedAgentId;
         const agent_name = detectedAgentName;
-
-        // Normalizar JIDs para eliminar sufijos de dispositivo/hilo
-        let chat_jid = normalizeJid(rawChatJid);
-        let sender_jid = normalizeJid(rawSenderJid);
 
         // 🚫 RECHAZAR MENSAJES LID - Pero primero intentar convertir usando contactos existentes
         if (chat_jid.includes('@lid')) {
@@ -2741,7 +2762,7 @@ async function saveMessageToDB(sessionId, msg) {
 
         console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for session_id: ${ownerSessionId}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[7]}, status: ${params[15]}, sender_name: ${senderName}, is_read: ${is_read}`);
         const [result] = await connection.execute(
-            'INSERT INTO messages (id, session_id, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, caption, file_name, file_size, timestamp, status, sender_name, sender_avatar, is_read) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = VALUES(agent_id), agent_name = VALUES(agent_name), sender_name = VALUES(sender_name), sender_avatar = VALUES(sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), caption = COALESCE(VALUES(caption), caption), file_name = COALESCE(VALUES(file_name), file_name), file_size = COALESCE(VALUES(file_size), file_size), text_content = COALESCE(VALUES(text_content), text_content), is_read = VALUES(is_read), updated_at = CURRENT_TIMESTAMP',
+            'INSERT INTO messages (id, session_id, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, caption, file_name, file_size, timestamp, status, sender_name, sender_avatar, is_read) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = COALESCE(VALUES(agent_id), agent_id), agent_name = COALESCE(VALUES(agent_name), agent_name), sender_name = COALESCE(VALUES(sender_name), sender_name), sender_avatar = COALESCE(VALUES(sender_avatar), sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), caption = COALESCE(VALUES(caption), caption), file_name = COALESCE(VALUES(file_name), file_name), file_size = COALESCE(VALUES(file_size), file_size), text_content = COALESCE(VALUES(text_content), text_content), is_read = VALUES(is_read), updated_at = CURRENT_TIMESTAMP',
             params
         );
         console.log(`[DB-MSG] ✅ Message saved/updated: ${messageId}`);
@@ -2766,7 +2787,7 @@ async function saveMessageToDB(sessionId, msg) {
                 `,
                 [
                     chat_jid,
-                    ownerSessionId, // ✅ Usar session_id del propietario
+                    sessionId, // 🔥 CRÍTICO: Usar sessionId del canal, NO ownerSessionId (user.id)
                     chatName,
                     unreadIncrement,
                     mysqlTimestamp, // last_message_time (ya es string en formato MySQL)
@@ -2874,7 +2895,15 @@ async function saveMessageToDB(sessionId, msg) {
                 type: message_type?.replace('Message', '').toLowerCase() || 'text',
                 isFromMe: Boolean(from_me),
                 isGroup: chat_jid.includes('@g.us'),
-                status: status
+                status: status,
+                agent_id: agent_id,
+                agent_name: agent_name,
+                agentId: agent_id,
+                agentName: agent_name,
+                sender_name: senderName,
+                sender_avatar: senderAvatar,
+                contactName: senderName,
+                avatar: senderAvatar
             };
 
             const roomById = `session-${sessionId}`;
@@ -3310,9 +3339,14 @@ async function getOwnerSessionId(sessionId) {
                 }
 
                 // 2. Buscar en user_sessions por session_id (puede ser hex antiguo o numérico)
+                // UPDATE: Improved join to include email and check phone directly
                 const [sessionRows] = await connection.execute(
-                    'SELECT us.session_id, us.phone, u.id as user_id FROM user_sessions us LEFT JOIN users u ON u.phone = us.phone WHERE us.session_id = ? OR us.owner_phone_number = ? LIMIT 1',
-                    [sessionId, sessionId]
+                    `SELECT us.session_id, us.phone, u.id as user_id 
+                     FROM user_sessions us 
+                     LEFT JOIN users u ON (u.phone = us.phone OR u.email = us.email) 
+                     WHERE us.session_id = ? OR us.owner_phone_number = ? OR us.phone = ? 
+                     LIMIT 1`,
+                    [sessionId, sessionId, sessionId]
                 );
                 if (sessionRows.length > 0 && sessionRows[0].user_id) {
                     console.log(`[getOwnerSessionId] ✅ Found users.id from session: ${sessionRows[0].user_id}`);
@@ -3483,9 +3517,10 @@ async function getOrCreateUserSession(sessionId, phoneNumber, userName = null, u
             + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
         );
 
-        // Si no se pasaron datos de usuario como parámetros, intentar obtenerlos desde tabla users
+        // Si no se pasaron datos de usuario como parámetros, intentar obtenerlos desde tablas
         if (!userName || !userAvatarUrl) {
             try {
+                // 1. Intentar desde tabla users
                 const [userData] = await connection.execute(
                     'SELECT name, avatar_url FROM users WHERE phone = ? LIMIT 1',
                     [phoneNumber]
@@ -3493,13 +3528,26 @@ async function getOrCreateUserSession(sessionId, phoneNumber, userName = null, u
                 if (userData.length > 0) {
                     userName = userName || userData[0].name;
                     userAvatarUrl = userAvatarUrl || userData[0].avatar_url;
-                    console.log(`[DB-USER] ✅ Datos de usuario desde tabla users: ${userName}`);
+                    console.log(`[DB-USER] ✅ Datos encontrados en users: ${userName}`);
+                }
+
+                // 2. Si sigue sin nombre, intentar desde user_sessions (datos históricos de WhatsApp)
+                if (!userName || userName === phoneNumber) {
+                    const [sessionData] = await connection.execute(
+                        'SELECT name, avatar_url FROM user_sessions WHERE phone = ? AND name IS NOT NULL AND name != phone LIMIT 1',
+                        [phoneNumber]
+                    );
+                    if (sessionData.length > 0) {
+                        userName = sessionData[0].name;
+                        userAvatarUrl = userAvatarUrl || sessionData[0].avatar_url;
+                        console.log(`[DB-USER] ✅ Datos encontrados en user_sessions: ${userName}`);
+                    }
                 }
             } catch (err) {
-                console.log(`[DB-USER] ⚠️ No se pudieron obtener datos desde tabla users:`, err.message);
+                console.log(`[DB-USER] ⚠️ Error recuperando datos previos:`, err.message);
             }
         } else {
-            console.log(`[DB-USER] ✅ Usando datos de WhatsApp: ${userName}`);
+            console.log(`[DB-USER] ✅ Usando datos directos: ${userName}`);
         }
 
         // Buscar sesión existente por número de teléfono
@@ -4664,7 +4712,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
 
 // Helper function to load chat list from DB
 // Helper function to load chat list from DB
-async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter = 'all', limit = 500, offset = 0) {
+async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter = 'limit_24h', limit = 50, offset = 0) {
     console.log(`\n\n⭐⭐⭐ [CHATLIST] FUNCIÓN LLAMADA ⭐⭐⭐`);
     console.log(`[CHATLIST] sessionId recibido: "${sessionId}"`);
 
@@ -4722,18 +4770,25 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         // Query usa effectiveSessionId
         const groupFilterSubquery = includeGroups ? '' : " AND chat_jid NOT LIKE '%@g.us'";
 
-        // 📅 Filtro de fecha - Optimizado para usar índice
+        // 📅 Filtro de fecha - OPTIMIZADO: Por defecto 24h para chats individuales
         let dateWhereClause = "";
 
-        if (dateFilter === 'limit_24h' || dateFilter === 'today') {
-            // "del día" == últimas 24hs para ser práctico, o CURDATE() si fuera muy estricto.
-            // Usamos 24h por consistencia con la solicitud "ultimos 24 horas".
+        // 🚀 OPTIMIZACIÓN CRÍTICA: Si no hay filtro explícito Y no incluye grupos, forzar 24h
+        const effectiveDateFilter = (dateFilter === 'all' && !includeGroups) ? 'limit_24h' : dateFilter;
+
+        if (effectiveDateFilter === 'limit_24h' || effectiveDateFilter === 'today') {
+            // Últimas 24 horas - Usa índice idx_chats_session_lastmsg
             dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
             console.log(`[CHATLIST] 📅 Filtro ACTIVO: Últimas 24 horas (Índice optimizado)`);
-        } else if (dateFilter === 'week') {
+        } else if (effectiveDateFilter === 'week') {
             dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
-        } else if (dateFilter === 'month') {
+            console.log(`[CHATLIST] 📅 Filtro ACTIVO: Última semana`);
+        } else if (effectiveDateFilter === 'month') {
             dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+            console.log(`[CHATLIST] 📅 Filtro ACTIVO: Último mes`);
+        } else if (effectiveDateFilter === 'all') {
+            // Solo para grupos o cuando se solicita explícitamente
+            console.log(`[CHATLIST] 📅 Filtro: TODOS los chats (puede ser lento)`);
         }
 
         const query = `
@@ -7222,360 +7277,200 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         await saveMessageToDB(sessionId, dbMessage);
 
                         // Cambio: Removido filtro !fromMe para que también emita mensajes propios
-                        if (true) { // Emitir TODOS los mensajes en tiempo real
-                            // Obtener nombre y avatar del contacto desde la base de datos
-                            let contactName = pushName || senderJid?.split('@')[0] || 'Desconocido';
-                            let avatarUrl = null;
+                        // Las emisiones se manejan centralizadamente en saveMessageToDB
+                        // para evitar duplicados y asegurar que siempre se incluya la info del agente.
 
-                            if (pool && phoneNumber && senderJid) {
-                                try {
-                                    const connection = await pool.getConnection();
-                                    try {
-                                        const [contactData] = await connection.execute(
-                                            'SELECT name, avatar_url FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1',
-                                            [senderJid, phoneNumber]
-                                        );
 
-                                        if (contactData[0]) {
-                                            contactName = contactData[0].name || contactName;
-                                            avatarUrl = contactData[0].avatar_url;
+                        // CHATBOT: Procesar mensaje entrante y responder automáticamente
+                        if (textContent && senderJid && !msg.key.fromMe) {
+                            try {
+                                // Usar phoneNumber si está disponible, sino sessionId
+                                const chatbotKey = phoneNumber || sessionId;
+                                console.log(`[CHATBOT] 📨 Procesando mensaje: "${textContent}" de ${senderJid} con clave ${chatbotKey}`);
+
+                                const botResponse = await axios.post(`http://localhost:${process.env.PORT || 3000}/api/chatbot/process-message/${chatbotKey}`, {
+                                    message: textContent,
+                                    from: senderJid
+                                });
+
+                                console.log(`[CHATBOT] 📩 Respuesta del bot:`, botResponse.data);
+
+                                if (botResponse.data.success && botResponse.data.botResponse) {
+                                    console.log(`[CHATBOT] 🤖 Respuesta automática activada para ${senderJid}`);
+
+                                    // Enviar cada respuesta del flujo
+                                    for (const response of botResponse.data.botResponse) {
+                                        // Esperar el delay configurado
+                                        if (response.delay) {
+                                            await new Promise(resolve => setTimeout(resolve, response.delay));
                                         }
-                                    } finally {
-                                        connection.release();
-                                    }
-                                } catch (err) {
-                                    console.error(`[${sessionId}] Error obteniendo datos del contacto:`, err);
-                                }
-                            }
 
-                            // Obtener información del agente si el mensaje es enviado por nosotros
-                            let agentId = null;
-                            let agentName = null;
-                            if (dbMessage.from_me && pool && phoneNumber) {
-                                try {
-                                    const connection = await pool.getConnection();
-                                    try {
-                                        const [agentData] = await connection.execute(
-                                            `SELECT m.agent_id, m.agent_name 
-                                             FROM messages m 
-                                             WHERE m.id = ? AND m.session_id = ? 
-                                             LIMIT 1`,
-                                            [dbMessage.id, phoneNumber]
-                                        );
-                                        if (agentData[0]) {
-                                            agentId = agentData[0].agent_id;
-                                            agentName = agentData[0].agent_name;
-                                        }
-                                    } finally {
-                                        connection.release();
-                                    }
-                                } catch (err) {
-                                    console.error(`[${sessionId}] Error obteniendo datos del agente:`, err);
-                                }
-                            }
+                                        // Enviar mensaje según el tipo
+                                        if (response.type === 'text') {
+                                            const sentMsg = await sock.sendMessage(senderJid, { text: response.content });
+                                            console.log(`[CHATBOT] ✅ Respuesta enviada: ${response.content.substring(0, 50)}...`);
 
-                            const clientMessage = {
-                                id: dbMessage.id,
-                                from: dbMessage.sender_jid,
-                                message: dbMessage.text_content,
-                                text: dbMessage.text_content,
-                                text_content: dbMessage.text_content,
-                                timestamp: dbMessage.timestamp.toISOString(),
-                                type: dbMessage.message_type ? dbMessage.message_type.replace('Message', '').toLowerCase() : 'text', // Normalizar tipo
-                                message_type: dbMessage.message_type, // Tipo original
-                                media_type: dbMessage.message_type ? dbMessage.message_type.replace('Message', '').toLowerCase() : undefined,
-                                isFromMe: Boolean(dbMessage.from_me),
-                                from_me: Boolean(dbMessage.from_me),
-                                mediaUrl: dbMessage.media_url,
-                                media_url: dbMessage.media_url,
-                                mediaMimeType: dbMessage.media_mime_type,
-                                media_mime_type: dbMessage.media_mime_type,
-                                caption: dbMessage.caption,
-                                file_name: dbMessage.file_name,
-                                status: dbMessage.status,
-                                chatJid: dbMessage.chat_jid,
-                                chat_jid: dbMessage.chat_jid,
-                                senderJid: dbMessage.sender_jid,
-                                sender_jid: dbMessage.sender_jid,
-                                sessionId: sessionId, // Agregar sessionId para validación
-                                // Información del agente
-                                agent_id: agentId,
-                                agent_name: agentName,
-                                agentId: agentId,
-                                agentName: agentName,
-                                // NUEVOS CAMPOS para nombre y avatar
-                                contactName: contactName,
-                                contact_name: contactName,
-                                avatar: avatarUrl,
-                                avatar_url: avatarUrl,
-                                pushName: pushName
-                            };
-                            // SOLO emitir a la sesión específica, NO globalmente
-                            console.log(`[${sessionId}] 🚀 PREPARANDO EMISIÓN mensaje a session-${sessionId} y session-${phoneNumber}`);
-                            console.log(`[${sessionId}] 📊 Datos del mensaje:`, {
-                                id: clientMessage.id,
-                                from: clientMessage.from,
-                                chatJid: clientMessage.chatJid,
-                                message: clientMessage.message?.substring(0, 50),
-                                contactName: contactName
-                            });
-                            // Emitir a ambas salas: sessionId y phoneNumber (garantizar que llega)
-                            console.log(`\n${'='.repeat(80)}`);
-                            console.log(`[${sessionId}] 🔥🔥🔥 EMITIENDO MENSAJE EN TIEMPO REAL 🔥🔥🔥`);
-                            console.log(`[${sessionId}] Sala 1: session-${sessionId}`);
-                            if (phoneNumber) {
-                                console.log(`[${sessionId}] Sala 2: session-${phoneNumber}`);
-                            }
-                            console.log(`[${sessionId}] De: ${dbMessage.sender_jid}`);
-                            console.log(`[${sessionId}] Texto: ${dbMessage.text_content?.substring(0, 50)}`);
-                            console.log(`${'='.repeat(80)}\n`);
+                                            // ✅ Guardar respuesta del bot en BD
+                                            const botMessage = {
+                                                id: sentMsg.key.id,
+                                                chat_jid: senderJid,
+                                                sender_jid: sock.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net',
+                                                from_me: true,
+                                                message_type: 'conversation',
+                                                text_content: response.content,
+                                                timestamp: new Date(Number(sentMsg.messageTimestamp) * 1000 || Date.now()),
+                                                status: 'sent',
+                                                agent_id: null, // Es bot, no agente
+                                                agent_name: 'Bot'
+                                            };
+                                            await saveMessageToDB(sessionId, botMessage);
 
-                            // SIEMPRE emitir a ambas salas
-                            console.log(`[${sessionId}] 📡 Emitiendo mensaje a sala: session-${sessionId}`);
-                            io.to(`session-${sessionId}`).emit('message', clientMessage);
-                            if (phoneNumber) {
-                                console.log(`[${sessionId}] 📡 Emitiendo mensaje a sala: session-${phoneNumber}`);
-                                io.to(`session-${phoneNumber}`).emit('message', clientMessage);
-                            }
-
-                            // 🔥 EMITIR TAMBIÉN A AGENTES ASIGNADOS
-                            if (pool && phoneNumber && dbMessage.chat_jid) {
-                                try {
-                                    const connection = await pool.getConnection();
-                                    try {
-                                        // Obtener todos los sessionIds posibles para este usuario
-                                        const allSessionIds = await getAllSessionIds(phoneNumber);
-
-                                        // Buscar si este chat está asignado a algún agente
-                                        const [assignments] = await connection.execute(
-                                            `SELECT user_id as agent_id FROM chat_assignments
-                                             WHERE chat_jid = ? AND session_id IN (${allSessionIds.map(() => '?').join(',')})
-                                             AND status IN ('active', 'pending', 'new_assignment')`,
-                                            [dbMessage.chat_jid, ...allSessionIds]
-                                        );
-
-                                        if (assignments.length > 0) {
-                                            for (const assignment of assignments) {
-                                                const agentId = assignment.agent_id; // user_id renombrado como agent_id
-
-                                                // 🔍 DEBUG: Verificar si hay sockets en la sala
-                                                const room = io.sockets.adapter.rooms.get(`agent-${agentId}`);
-                                                const socketsInRoom = room ? room.size : 0;
-
-                                                console.log(`[${sessionId}] 🎯 Emitiendo a agent-${agentId} (${socketsInRoom} sockets conectados)`);
-
-                                                // Emitir a la sala del agente
-                                                io.to(`agent-${agentId}`).emit('message', clientMessage);
-                                                io.to(`agent-${agentId}`).emit('message:received', clientMessage);
-
-                                                if (socketsInRoom === 0) {
-                                                    console.warn(`[${sessionId}] ⚠️ Sala agent-${agentId} VACÍA - Mensaje no se entregará`);
-                                                } else {
-                                                    console.log(`[${sessionId}] ✅ Mensaje emitido a agent-${agentId}`);
-                                                }
-                                            }
-                                        } else {
-                                            console.log(`[${sessionId}] ℹ️ No hay agentes asignados a este chat`);
-                                        }
-                                    } finally {
-                                        connection.release();
-                                    }
-                                } catch (err) {
-                                    console.error(`[${sessionId}] ❌ Error emitiendo a agentes:`, err.message);
-                                }
-                            }
-
-                            // CHATBOT: Procesar mensaje entrante y responder automáticamente
-                            if (textContent && senderJid && !msg.key.fromMe) {
-                                try {
-                                    // Usar phoneNumber si está disponible, sino sessionId
-                                    const chatbotKey = phoneNumber || sessionId;
-                                    console.log(`[CHATBOT] 📨 Procesando mensaje: "${textContent}" de ${senderJid} con clave ${chatbotKey}`);
-
-                                    const botResponse = await axios.post(`http://localhost:${process.env.PORT || 3000}/api/chatbot/process-message/${chatbotKey}`, {
-                                        message: textContent,
-                                        from: senderJid
-                                    });
-
-                                    console.log(`[CHATBOT] 📩 Respuesta del bot:`, botResponse.data);
-
-                                    if (botResponse.data.success && botResponse.data.botResponse) {
-                                        console.log(`[CHATBOT] 🤖 Respuesta automática activada para ${senderJid}`);
-
-                                        // Enviar cada respuesta del flujo
-                                        for (const response of botResponse.data.botResponse) {
-                                            // Esperar el delay configurado
-                                            if (response.delay) {
-                                                await new Promise(resolve => setTimeout(resolve, response.delay));
-                                            }
-
-                                            // Enviar mensaje según el tipo
-                                            if (response.type === 'text') {
-                                                const sentMsg = await sock.sendMessage(senderJid, { text: response.content });
-                                                console.log(`[CHATBOT] ✅ Respuesta enviada: ${response.content.substring(0, 50)}...`);
-
-                                                // ✅ Guardar respuesta del bot en BD
-                                                const botMessage = {
-                                                    id: sentMsg.key.id,
-                                                    chat_jid: senderJid,
-                                                    sender_jid: sock.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net',
+                                            // ✅ Emitir respuesta del bot vía Socket.IO
+                                            const phoneNumber = await getUserPhoneNumber(sessionId);
+                                            if (phoneNumber) {
+                                                io.to(`session-${sessionId}`).emit('message', {
+                                                    id: botMessage.id,
+                                                    chatJid: senderJid,
+                                                    from: botMessage.sender_jid,
+                                                    message: response.content,
+                                                    timestamp: botMessage.timestamp.toISOString(),
+                                                    isFromMe: true,
                                                     from_me: true,
                                                     message_type: 'conversation',
-                                                    text_content: response.content,
-                                                    timestamp: new Date(Number(sentMsg.messageTimestamp) * 1000 || Date.now()),
-                                                    status: 'sent',
-                                                    agent_id: null, // Es bot, no agente
                                                     agent_name: 'Bot'
-                                                };
-                                                await saveMessageToDB(sessionId, botMessage);
-
-                                                // ✅ Emitir respuesta del bot vía Socket.IO
-                                                const phoneNumber = await getUserPhoneNumber(sessionId);
-                                                if (phoneNumber) {
-                                                    io.to(`session-${sessionId}`).emit('message', {
-                                                        id: botMessage.id,
-                                                        chatJid: senderJid,
-                                                        from: botMessage.sender_jid,
-                                                        message: response.content,
-                                                        timestamp: botMessage.timestamp.toISOString(),
-                                                        isFromMe: true,
-                                                        from_me: true,
-                                                        message_type: 'conversation',
-                                                        agent_name: 'Bot'
-                                                    });
-                                                    console.log(`[CHATBOT] 📤 Respuesta del bot emitida vía socket a session-${phoneNumber}`);
-                                                }
-                                            } else if (response.type === 'menu' && response.options) {
-                                                // Construir mensaje de menú
-                                                let menuText = response.content + '\n\n';
-                                                response.options.forEach((opt, idx) => {
-                                                    menuText += `${idx + 1}. ${opt.text}\n`;
-
-                                                    // Emitir eventos específicos para asegurar compatibilidad con clientes que separan recibidos/enviados
-                                                    try {
-                                                        const specificPayload = {
-                                                            id: messageId,
-                                                            sessionId: phoneNumber,
-                                                            chatJid: chat_jid,
-                                                            message: text_content || 'Media',
-                                                            type: message_type?.replace('Message', '').toLowerCase() || 'text',
-                                                            isFromMe: Boolean(from_me),
-                                                            timestamp: mysqlTimestamp,
-                                                            status: status,
-                                                            mediaUrl: media_url || null,
-                                                            mediaMimeType: media_mime_type || null,
-                                                            caption: caption || null,
-                                                            fileName: file_name || null,
-                                                            fileSize: file_size || null,
-                                                            senderJid: finalSenderJid,
-                                                            senderName: senderName || null,
-                                                            senderAvatar: senderAvatar || null
-                                                        };
-
-                                                        if (from_me) {
-                                                            io.to(`session-${sessionId}`).emit('message:sent', specificPayload);
-                                                        } else {
-                                                            io.to(`session-${sessionId}`).emit('message:received', specificPayload);
-                                                        }
-                                                    } catch (emitErr) {
-                                                        console.warn(`[DB-MSG] ⚠️ Error emitiendo eventos específicos de mensaje:`, emitErr.message);
-                                                    }
                                                 });
-                                                const sentMsg = await sock.sendMessage(senderJid, { text: menuText });
-                                                console.log(`[CHATBOT] ✅ Menú enviado con ${response.options.length} opciones`);
+                                                console.log(`[CHATBOT] 📤 Respuesta del bot emitida vía socket a session-${phoneNumber}`);
+                                            }
+                                        } else if (response.type === 'menu' && response.options) {
+                                            // Construir mensaje de menú
+                                            let menuText = response.content + '\n\n';
+                                            response.options.forEach((opt, idx) => {
+                                                menuText += `${idx + 1}. ${opt.text}\n`;
 
-                                                // ✅ Guardar menú del bot en BD
-                                                const botMessage = {
-                                                    id: sentMsg.key.id,
-                                                    chat_jid: senderJid,
-                                                    sender_jid: sock.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net',
+                                                // Emitir eventos específicos para asegurar compatibilidad con clientes que separan recibidos/enviados
+                                                try {
+                                                    const specificPayload = {
+                                                        id: messageId,
+                                                        sessionId: phoneNumber,
+                                                        chatJid: chat_jid,
+                                                        message: text_content || 'Media',
+                                                        type: message_type?.replace('Message', '').toLowerCase() || 'text',
+                                                        isFromMe: Boolean(from_me),
+                                                        timestamp: mysqlTimestamp,
+                                                        status: status,
+                                                        mediaUrl: media_url || null,
+                                                        mediaMimeType: media_mime_type || null,
+                                                        caption: caption || null,
+                                                        fileName: file_name || null,
+                                                        fileSize: file_size || null,
+                                                        senderJid: finalSenderJid,
+                                                        senderName: senderName || null,
+                                                        senderAvatar: senderAvatar || null
+                                                    };
+
+                                                    if (from_me) {
+                                                        io.to(`session-${sessionId}`).emit('message:sent', specificPayload);
+                                                    } else {
+                                                        io.to(`session-${sessionId}`).emit('message:received', specificPayload);
+                                                    }
+                                                } catch (emitErr) {
+                                                    console.warn(`[DB-MSG] ⚠️ Error emitiendo eventos específicos de mensaje:`, emitErr.message);
+                                                }
+                                            });
+                                            const sentMsg = await sock.sendMessage(senderJid, { text: menuText });
+                                            console.log(`[CHATBOT] ✅ Menú enviado con ${response.options.length} opciones`);
+
+                                            // ✅ Guardar menú del bot en BD
+                                            const botMessage = {
+                                                id: sentMsg.key.id,
+                                                chat_jid: senderJid,
+                                                sender_jid: sock.user?.id?.replace(/:.*$/, '') + '@s.whatsapp.net',
+                                                from_me: true,
+                                                message_type: 'conversation',
+                                                text_content: menuText,
+                                                timestamp: new Date(Number(sentMsg.messageTimestamp) * 1000 || Date.now()),
+                                                status: 'sent',
+                                                agent_id: null,
+                                                agent_name: 'Bot'
+                                            };
+                                            await saveMessageToDB(sessionId, botMessage);
+
+                                            // ✅ Emitir menú vía Socket.IO
+                                            const phoneNumber = await getUserPhoneNumber(sessionId);
+                                            if (phoneNumber) {
+                                                io.to(`session-${sessionId}`).emit('message', {
+                                                    id: botMessage.id,
+                                                    chatJid: senderJid,
+                                                    from: botMessage.sender_jid,
+                                                    message: menuText,
+                                                    timestamp: botMessage.timestamp.toISOString(),
+                                                    isFromMe: true,
                                                     from_me: true,
                                                     message_type: 'conversation',
-                                                    text_content: menuText,
-                                                    timestamp: new Date(Number(sentMsg.messageTimestamp) * 1000 || Date.now()),
-                                                    status: 'sent',
-                                                    agent_id: null,
                                                     agent_name: 'Bot'
-                                                };
-                                                await saveMessageToDB(sessionId, botMessage);
-
-                                                // ✅ Emitir menú vía Socket.IO
-                                                const phoneNumber = await getUserPhoneNumber(sessionId);
-                                                if (phoneNumber) {
-                                                    io.to(`session-${sessionId}`).emit('message', {
-                                                        id: botMessage.id,
-                                                        chatJid: senderJid,
-                                                        from: botMessage.sender_jid,
-                                                        message: menuText,
-                                                        timestamp: botMessage.timestamp.toISOString(),
-                                                        isFromMe: true,
-                                                        from_me: true,
-                                                        message_type: 'conversation',
-                                                        agent_name: 'Bot'
-                                                    });
-                                                }
-                                            } else if (response.type === 'image' && response.mediaUrl) {
-                                                // Enviar imagen (caption opcional)
-                                                const imagePath = path.join(__dirname, '../..', response.mediaUrl);
-                                                if (fs.existsSync(imagePath)) {
-                                                    const messageData = { image: fs.readFileSync(imagePath) };
-                                                    // Solo agregar caption si existe y no está vacío
-                                                    if (response.content && response.content.trim()) {
-                                                        messageData.caption = response.content;
-                                                    }
-                                                    await sock.sendMessage(senderJid, messageData);
-                                                    console.log(`[CHATBOT] 📸 Imagen enviada: ${response.fileName || response.mediaUrl}`);
-                                                } else {
-                                                    console.error(`[CHATBOT] ❌ Imagen no encontrada: ${imagePath}`);
-                                                }
-                                            } else if (response.type === 'video' && response.mediaUrl) {
-                                                // Enviar video (caption opcional)
-                                                const videoPath = path.join(__dirname, '../..', response.mediaUrl);
-                                                if (fs.existsSync(videoPath)) {
-                                                    const messageData = { video: fs.readFileSync(videoPath) };
-                                                    // Solo agregar caption si existe y no está vacío
-                                                    if (response.content && response.content.trim()) {
-                                                        messageData.caption = response.content;
-                                                    }
-                                                    await sock.sendMessage(senderJid, messageData);
-                                                    console.log(`[CHATBOT] 🎥 Video enviado: ${response.fileName || response.mediaUrl}`);
-                                                } else {
-                                                    console.error(`[CHATBOT] ❌ Video no encontrado: ${videoPath}`);
-                                                }
-                                            } else if (response.type === 'document' && response.mediaUrl) {
-                                                // Enviar documento/PDF (sin caption, solo filename)
-                                                const docPath = path.join(__dirname, '../..', response.mediaUrl);
-                                                if (fs.existsSync(docPath)) {
-                                                    await sock.sendMessage(senderJid, {
-                                                        document: fs.readFileSync(docPath),
-                                                        fileName: response.fileName || 'documento.pdf',
-                                                        mimetype: response.fileName?.endsWith('.pdf') ? 'application/pdf' :
-                                                            response.fileName?.endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
-                                                                response.fileName?.endsWith('.doc') ? 'application/msword' : 'application/pdf'
-                                                    });
-                                                    console.log(`[CHATBOT] 📄 Documento enviado: ${response.fileName || response.mediaUrl}`);
-                                                } else {
-                                                    console.error(`[CHATBOT] ❌ Documento no encontrado: ${docPath}`);
-                                                }
-                                            } else if (response.type === 'url') {
-                                                // Enviar URL
-                                                await sock.sendMessage(senderJid, { text: response.content });
-                                                console.log(`[CHATBOT] 🔗 URL enviada: ${response.content}`);
+                                                });
                                             }
+                                        } else if (response.type === 'image' && response.mediaUrl) {
+                                            // Enviar imagen (caption opcional)
+                                            const imagePath = path.join(__dirname, '../..', response.mediaUrl);
+                                            if (fs.existsSync(imagePath)) {
+                                                const messageData = { image: fs.readFileSync(imagePath) };
+                                                // Solo agregar caption si existe y no está vacío
+                                                if (response.content && response.content.trim()) {
+                                                    messageData.caption = response.content;
+                                                }
+                                                await sock.sendMessage(senderJid, messageData);
+                                                console.log(`[CHATBOT] 📸 Imagen enviada: ${response.fileName || response.mediaUrl}`);
+                                            } else {
+                                                console.error(`[CHATBOT] ❌ Imagen no encontrada: ${imagePath}`);
+                                            }
+                                        } else if (response.type === 'video' && response.mediaUrl) {
+                                            // Enviar video (caption opcional)
+                                            const videoPath = path.join(__dirname, '../..', response.mediaUrl);
+                                            if (fs.existsSync(videoPath)) {
+                                                const messageData = { video: fs.readFileSync(videoPath) };
+                                                // Solo agregar caption si existe y no está vacío
+                                                if (response.content && response.content.trim()) {
+                                                    messageData.caption = response.content;
+                                                }
+                                                await sock.sendMessage(senderJid, messageData);
+                                                console.log(`[CHATBOT] 🎥 Video enviado: ${response.fileName || response.mediaUrl}`);
+                                            } else {
+                                                console.error(`[CHATBOT] ❌ Video no encontrado: ${videoPath}`);
+                                            }
+                                        } else if (response.type === 'document' && response.mediaUrl) {
+                                            // Enviar documento/PDF (sin caption, solo filename)
+                                            const docPath = path.join(__dirname, '../..', response.mediaUrl);
+                                            if (fs.existsSync(docPath)) {
+                                                await sock.sendMessage(senderJid, {
+                                                    document: fs.readFileSync(docPath),
+                                                    fileName: response.fileName || 'documento.pdf',
+                                                    mimetype: response.fileName?.endsWith('.pdf') ? 'application/pdf' :
+                                                        response.fileName?.endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
+                                                            response.fileName?.endsWith('.doc') ? 'application/msword' : 'application/pdf'
+                                                });
+                                                console.log(`[CHATBOT] 📄 Documento enviado: ${response.fileName || response.mediaUrl}`);
+                                            } else {
+                                                console.error(`[CHATBOT] ❌ Documento no encontrado: ${docPath}`);
+                                            }
+                                        } else if (response.type === 'url') {
+                                            // Enviar URL
+                                            await sock.sendMessage(senderJid, { text: response.content });
+                                            console.log(`[CHATBOT] 🔗 URL enviada: ${response.content}`);
                                         }
-                                    } else {
-                                        console.log(`[CHATBOT] ⏸️ Bot no responde - Razón: ${botResponse.data.reason || 'Sin razón'}`);
                                     }
-                                } catch (botError) {
-                                    console.error(`[CHATBOT] ❌ Error procesando mensaje:`, botError.message);
-                                    if (botError.response) {
-                                        console.error(`[CHATBOT] ❌ Respuesta de error:`, botError.response.data);
-                                    }
+                                } else {
+                                    console.log(`[CHATBOT] ⏸️ Bot no responde - Razón: ${botResponse.data.reason || 'Sin razón'}`);
+                                }
+                            } catch (botError) {
+                                console.error(`[CHATBOT] ❌ Error procesando mensaje:`, botError.message);
+                                if (botError.response) {
+                                    console.error(`[CHATBOT] ❌ Respuesta de error:`, botError.response.data);
                                 }
                             }
+                        } else {
+                            console.log(`[${sessionId}] Ignoring message without content or ID:`, msg.key);
                         }
-                    } else {
-                        console.log(`[${sessionId}] Ignoring message without content or ID:`, msg.key);
                     }
                 }
 
@@ -8466,7 +8361,35 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         });
 
         sock.ev.on('creds.update', async () => {
-            console.log(`[${sessionId}] 💾 Guardando credenciales en: ${AUTH_DIR}`);
+            // ✅ MEJORA: Detectar y guardar cambios en el nombre de perfil (pushname)
+            if (sock.user && sock.user.pushname) {
+                const currentName = sessionInfo.user?.name || sessionInfo.user?.pushname;
+                if (!currentName || currentName === (sessionInfo.phoneNumber || '')) {
+                    console.log(`[${sessionId}] 👤 Nuevo pushname detectado: ${sock.user.pushname}`);
+
+                    // Actualizar memoria
+                    if (!sessionInfo.user) sessionInfo.user = {};
+                    sessionInfo.user.name = sock.user.pushname;
+                    sessionInfo.user.pushname = sock.user.pushname;
+                    sessionInfo.user.id = sock.user.id || sessionInfo.user.id;
+
+                    // Actualizar BD
+                    if (pool) {
+                        try {
+                            const phoneNumber = sessionInfo.phoneNumber || sock.user.id?.split(':')[0]?.split('@')[0];
+                            if (phoneNumber) {
+                                await pool.query(
+                                    'UPDATE user_sessions SET name = ? WHERE phone = ? AND (name IS NULL OR name = phone)',
+                                    [sock.user.pushname, phoneNumber]
+                                );
+                            }
+                        } catch (err) {
+                            console.warn(`[${sessionId}] Error actualizando pushname en BD:`, err.message);
+                        }
+                    }
+                }
+            }
+
             await saveCreds();
         });
         console.log(`[${sessionId}] ✅ SESIÓN COMPLETAMENTE CONFIGURADA - Socket creado, listeners registrados, listo para recibir mensajes`);
@@ -9304,6 +9227,18 @@ app.get('/api/sessions/active', async (req, res) => {
                             }
                         }
 
+                        // 🔥 MEJORA: Si el teléfono identificado es secundario, encontrar su raíz (owner)
+                        if (userPrimaryPhone) {
+                            const [ownerRows] = await connection.execute(
+                                'SELECT owner_phone_number FROM user_sessions WHERE phone = ? AND owner_phone_number IS NOT NULL LIMIT 1',
+                                [userPrimaryPhone]
+                            );
+                            if (ownerRows.length > 0 && ownerRows[0].owner_phone_number) {
+                                console.log(`[SESSIONS-ACTIVE] 🌳 Redirigiendo de secundario ${userPrimaryPhone} a raíz ${ownerRows[0].owner_phone_number}`);
+                                userPrimaryPhone = ownerRows[0].owner_phone_number;
+                            }
+                        }
+
                         // Buscar TODAS las sesiones del usuario (principal + adicionales)
                         // Buscar por: phone principal O owner_phone_number = phone principal
                         [dbUserSessions] = await connection.execute(
@@ -9358,7 +9293,29 @@ app.get('/api/sessions/active', async (req, res) => {
 
                 if (belongsToUser) {
                     const avatar = sessionData.user?.imgUrl || null;
-                    const name = sessionData.user?.name || sessionData.user?.pushname || null;
+                    let name = sessionData.user?.name || sessionData.user?.pushname || null;
+
+                    // 🔥 MEJORA: Si el nombre en memoria es nulo o es el mismo teléfono, intentar buscar en BD
+                    if ((!name || name === phoneNumber) && pool) {
+                        try {
+                            const connection = await pool.getConnection();
+                            const [dbSessions] = await connection.execute(
+                                'SELECT name FROM user_sessions WHERE phone = ? AND name IS NOT NULL AND name != phone LIMIT 1',
+                                [phoneNumber]
+                            );
+                            connection.release();
+                            if (dbSessions.length > 0 && dbSessions[0].name) {
+                                name = dbSessions[0].name;
+                                // Actualizar también en memoria para la próxima vez
+                                if (sessionData.user) {
+                                    sessionData.user.name = name;
+                                    sessionData.user.pushname = name;
+                                }
+                            }
+                        } catch (err) {
+                            console.warn(`[SESSIONS-ACTIVE] Error recuperando nombre de BD para ${phoneNumber}:`, err.message);
+                        }
+                    }
 
                     // 🔥 Buscar is_primary desde la base de datos
                     let isPrimaryValue = false;
@@ -12391,7 +12348,7 @@ app.post('/api/force-sync/:sessionId', authenticateToken, validateSessionBelongs
 // Obtener chats/contactos
 app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     const { sessionId } = req.params;
-    const { dateFilter = 'all', limit = 500, offset = 0 } = req.query; // ⚡ OPTIMIZADO: Aumentado de 20 a 500
+    const { dateFilter = 'limit_24h', limit = 500, offset = 0 } = req.query; // Sin límite - cargar TODOS del día
     const parsedLimit = parseInt(limit);
     const parsedOffset = parseInt(offset);
     // ✅ GRUPOS HABILITADOS - Permitir incluir grupos en la lista de chats
@@ -15542,17 +15499,65 @@ app.post('/api/kanban/boards', async (req, res) => {
     }
 });
 
+// DEBUG ENDPOINT - PUBLIC ONLY FOR DIAGNOSTICS
+app.get('/api/debug-kanban/:sessionId', async (req, res) => {
+    const { sessionId } = req.params;
+    try {
+        const ownerUserId = await getOwnerSessionId(sessionId);
+        if (!pool) return res.json({ error: 'No pool' });
+
+        const connection = await pool.getConnection();
+        const query = `SELECT
+            kb.name as board_name,
+            COUNT(kc.id) as count
+        FROM kanban_contacts kc
+        JOIN kanban_boards kb ON kc.board_id = kb.id
+        WHERE kb.session_id = ?
+        GROUP BY kb.name`;
+
+        const [rows] = await connection.execute(query, [ownerUserId]);
+        connection.release();
+
+        res.json({
+            success: true,
+            resolvedOwnerId: ownerUserId,
+            originalSessionId: sessionId,
+            counts: rows
+        });
+    } catch (e) {
+        res.json({ error: e.message });
+    }
+});
+
 // Obtener contactos por categoría/tablero
 app.get('/api/contacts/by-category/:sessionId', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     const { sessionId } = req.params;
     const { boardId } = req.query;
 
     try {
-        const phoneNumber = await getUserPhoneNumber(sessionId);
-        if (!phoneNumber) {
+        console.log(`[DEBUG-CONTACTS] Request sessionId: ${sessionId}`);
+
+        // OPTIMIZATION: Use the userId already resolved and validated by the middleware
+        let ownerUserId = req.sessionUserId;
+
+        if (!ownerUserId) {
+            console.log(`[DEBUG-CONTACTS] req.sessionUserId missing, falling back to getOwnerSessionId`);
+            ownerUserId = await getOwnerSessionId(sessionId);
+        }
+
+        console.log(`[DEBUG-CONTACTS] Final ownerUserId to use: ${ownerUserId}`);
+
+        // FALLBACK: If resolution failed but we have an authenticated user, use their ID
+        // This handles cases where sessionId is just a phone number that hasn't synced fully to user_sessions
+        if (!ownerUserId && req.user && req.user.id) {
+            console.log(`[DEBUG-CONTACTS] Using req.user.id as fallback: ${req.user.id}`);
+            ownerUserId = req.user.id;
+        }
+
+        if (!ownerUserId) {
             return res.status(400).json({
                 success: false,
-                error: 'No se pudo obtener el número de teléfono para esta sesión'
+                error: 'No se pudo obtener el ID de usuario para esta sesión'
             });
         }
 
@@ -15583,10 +15588,11 @@ app.get('/api/contacts/by-category/:sessionId', authenticateToken, validateSessi
                     GROUP BY jid
                 ) latest ON kc.contact_jid = latest.jid
                 JOIN contacts c ON c.id = latest.max_id
-                WHERE kc.board_id = ?
+                JOIN kanban_boards kb ON kc.board_id = kb.id
+                WHERE kc.board_id = ? AND kb.session_id = ?
                 GROUP BY c.jid
                 ORDER BY kc.created_at DESC`;
-                params = [boardId];
+                params = [boardId, ownerUserId];
             } else {
                 // Obtener todos los contactos de todos los tableros de la sesión
                 // 🔥 FIX: evitar duplicados cuando hay múltiples registros en contacts con mismo jid
@@ -15612,7 +15618,7 @@ app.get('/api/contacts/by-category/:sessionId', authenticateToken, validateSessi
                 WHERE kb.session_id = ?
                 GROUP BY c.jid, kc.board_id
                 ORDER BY kc.created_at DESC`;
-                params = [phoneNumber];
+                params = [ownerUserId];
             }
 
             const [contactsRaw] = await connection.execute(query, params);

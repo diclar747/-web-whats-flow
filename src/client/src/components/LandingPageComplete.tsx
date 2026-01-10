@@ -48,7 +48,7 @@ import {
     BarChart
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
-import WhinsapLogo from './WhinsapLogo';
+import WinsapLogo from './WinsapLogo';
 
 interface Plan {
     id: number;
@@ -98,84 +98,84 @@ const LandingPageComplete: React.FC = () => {
     const coreFeatures = [
         {
             icon: <Campaign sx={{ fontSize: 32 }} />,
-            title: 'Whinsap Campañas Masivas',
+            title: 'Winsap Campañas Masivas',
             description: 'Envíos masivos automatizados a toda su base de contactos en segundos.',
             color: '#10b981',
             image: '/images/campaigns_module.png'
         },
         {
             icon: <Schedule sx={{ fontSize: 32 }} />,
-            title: 'Whinsap Envíos Programados',
+            title: 'Winsap Envíos Programados',
             description: 'Defina día y hora para sus comunicaciones. Automatización total.',
             color: '#3b82f6',
             image: '/images/agenda_module.png'
         },
         {
             icon: <AutoGraph sx={{ fontSize: 32 }} />,
-            title: 'Whinsap Personalización',
+            title: 'Winsap Personalización',
             description: 'Use variables y campos dinámicos para mensajes únicos por cliente.',
             color: '#8b5cf6',
             image: '/images/chatbot_module.png'
         },
         {
             icon: <DashboardIcon sx={{ fontSize: 32 }} />,
-            title: 'Whinsap Tableros Kanban',
+            title: 'Winsap Tableros Kanban',
             description: 'Gestione su embudo de ventas visualmente. Leads organizados.',
             color: '#f59e0b',
             image: '/images/kanban_module.png'
         },
         {
             icon: <NotificationsActive sx={{ fontSize: 32 }} />,
-            title: 'Whinsap Agenda Inteligente',
+            title: 'Winsap Agenda Inteligente',
             description: 'Recordatorios automáticos por WhatsApp para citas y eventos.',
             color: '#ef4444',
             image: '/images/agenda_module.png'
         },
         {
             icon: <Dns sx={{ fontSize: 32 }} />,
-            title: 'Whinsap API REST Professional',
-            description: 'Potente API para integrar Whinsap con su ERP o sistemas propios.',
+            title: 'Winsap API REST Professional',
+            description: 'Potente API para integrar Winsap con su ERP o sistemas propios.',
             color: '#06b6d4',
             image: '/images/api_module.png'
         },
         {
             icon: <Groups sx={{ fontSize: 32 }} />,
-            title: 'Whinsap Gestión de Agentes',
+            title: 'Winsap Gestión de Agentes',
             description: 'Control total de roles, permisos y desempeño de su equipo.',
             color: '#ec4899',
             image: '/images/multiagent_module.png'
         },
         {
             icon: <Message sx={{ fontSize: 32 }} />,
-            title: 'Whinsap Chat Multi-Agente',
+            title: 'Winsap Chat Multi-Agente',
             description: 'Varios miembros del equipo atendiendo la misma línea oficial.',
             color: '#10b981',
             image: '/images/multiagent_module.png'
         },
         {
             icon: <TrackChanges sx={{ fontSize: 32 }} />,
-            title: 'Whinsap Monitoreo en Vivo',
+            title: 'Winsap Monitoreo en Vivo',
             description: 'Supervise conversaciones en tiempo real para asegurar calidad.',
             color: '#6366f1',
             image: '/images/hero_dashboard.png'
         },
         {
             icon: <History sx={{ fontSize: 32 }} />,
-            title: 'Whinsap Historial Auditable',
+            title: 'Winsap Historial Auditable',
             description: 'Registro completo de cada mensaje, envío y respuesta del sistema.',
             color: '#94a3b8',
             image: '/images/api_module.png'
         },
         {
             icon: <BarChart sx={{ fontSize: 32 }} />,
-            title: 'Whinsap Métricas Reales',
+            title: 'Winsap Métricas Reales',
             description: 'Dashboard analítico con estados de campañas y tasas de lectura.',
             color: '#f97316',
             image: '/images/campaigns_module.png'
         },
         {
             icon: <Speed sx={{ fontSize: 32 }} />,
-            title: 'Whinsap Estados de Envío',
+            title: 'Winsap Estados de Envío',
             description: 'Tracking en tiempo real: Enviado, Entregado y Leído (Doble Check).',
             color: '#22c55e',
             image: '/images/hero_dashboard.png'
@@ -220,7 +220,7 @@ const LandingPageComplete: React.FC = () => {
         },
         {
             title: 'API REST para Desarrolladores',
-            description: 'Poderosa infraestructura escalable. Integre Whinsap con cualquier sistema externo mediante nuestra API robusta y de baja latencia.',
+            description: 'Poderosa infraestructura escalable. Integre Winsap con cualquier sistema externo mediante nuestra API robusta y de baja latencia.',
             image: '/images/api_module.png',
             icon: <Dns />,
             color: '#06b6d4'
@@ -265,7 +265,7 @@ const LandingPageComplete: React.FC = () => {
                                 justifyContent: 'center',
                                 boxShadow: '0 0 20px rgba(16, 185, 129, 0.1)'
                             }}>
-                                <WhinsapLogo sx={{ fontSize: 32 }} />
+                                <WinsapLogo sx={{ fontSize: 32 }} />
                             </Box>
                             <Typography variant="h5" sx={{
                                 fontWeight: 800,
@@ -274,7 +274,7 @@ const LandingPageComplete: React.FC = () => {
                                 WebkitBackgroundClip: 'text',
                                 WebkitTextFillColor: 'transparent'
                             }}>
-                                Whinsap
+                                Winsap
                             </Typography>
                         </Box>
 
@@ -356,7 +356,7 @@ const LandingPageComplete: React.FC = () => {
                                     mb: 3,
                                     letterSpacing: '-0.04em'
                                 }}>
-                                    Potencie su Empresa con <Box component="span" sx={{ color: '#10b981' }}>Whinsap</Box> Profesional
+                                    Potencie su Empresa con <Box component="span" sx={{ color: '#10b981' }}>Winsap</Box> Profesional
                                 </Typography>
                                 <Typography variant="h5" sx={{ color: '#94a3b8', mb: 5, lineHeight: 1.6, fontWeight: 400, maxWidth: 600 }}>
                                     La plataforma líder en automatización de WhatsApp. Gestión multi-agente, IA avanzada y CRM integrado para equipos de alto rendimiento.
@@ -423,7 +423,7 @@ const LandingPageComplete: React.FC = () => {
                                     <Box
                                         component="img"
                                         src={`${process.env.PUBLIC_URL}/images/hero_dashboard.png`}
-                                        alt="Whinsap Dashboard"
+                                        alt="Winsap Dashboard"
                                         sx={{
                                             width: '100%',
                                             height: 'auto',
@@ -479,7 +479,7 @@ const LandingPageComplete: React.FC = () => {
                                 textTransform: 'uppercase'
                             }}
                         >
-                            Whinsap Suite
+                            Winsap Suite
                         </Typography >
                         <MotionTypography
                             initial={{ opacity: 0, y: 20 }}
@@ -488,7 +488,7 @@ const LandingPageComplete: React.FC = () => {
                             variant="h2"
                             sx={{ fontWeight: 800, mb: 2, position: 'relative', zIndex: 1 }}
                         >
-                            Ecosistema < Box component="span" sx={{ color: '#10b981' }}>Whinsap</Box> Profesional
+                            Ecosistema < Box component="span" sx={{ color: '#10b981' }}>Winsap</Box> Profesional
                         </MotionTypography >
                         <MotionTypography
                             initial={{ opacity: 0, y: 20 }}
@@ -748,7 +748,7 @@ const LandingPageComplete: React.FC = () => {
                     >
                         <Typography variant="h2" sx={{ fontWeight: 800, mb: 3 }}>¿Listo para el siguiente nivel?</Typography>
                         < Typography variant="h6" sx={{ color: '#94a3b8', mb: 5 }}>
-                            Únase a cientos de empresas que ya automatizan y escalan sus conversaciones con Whinsap.
+                            Únase a cientos de empresas que ya automatizan y escalan sus conversaciones con Winsap.
                         </Typography >
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center">
                             < Button
@@ -795,7 +795,7 @@ const LandingPageComplete: React.FC = () => {
                 <Container maxWidth="xl">
                     < Grid container spacing={8} >
                         <Grid item xs={12} md={4}>
-                            <Typography variant="h5" sx={{ fontWeight: 900, mb: 3 }}>Whinsap</Typography>
+                            <Typography variant="h5" sx={{ fontWeight: 900, mb: 3 }}>Winsap</Typography>
                             <Typography sx={{ color: '#64748b', mb: 4, maxWidth: 300 }}>
                                 Potenciando la comunicación empresarial en la era digital con inteligencia artificial y automatización de clase mundial.
                             </Typography>
@@ -825,14 +825,19 @@ const LandingPageComplete: React.FC = () => {
                                 ¿Necesita ayuda? Nuestro equipo técnico está disponible 24/7 para asistirle.
                             </Typography>
                             <Button variant="text" sx={{ color: '#10b981', fontWeight: 700, p: 0 }}>
-                                centrodeayuda@whinsap.com
-                            </Button >
+                                soporte@winsap.com.py
+                            </Button>
                         </Grid >
                     </Grid >
                     <Divider sx={{ my: 8, borderColor: 'rgba(255,255,255,0.05)' }} />
-                    <Typography variant="body2" sx={{ color: '#475569', textAlign: 'center' }}>
-                        © 2026 Whinsap Enterprise Solutions.Todos los derechos reservados.
-                    </Typography >
+                    <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="body2" sx={{ color: '#475569', mb: 1 }}>
+                            © 2026 Winsap Enterprise Solutions - winsap.com.py
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)', display: 'block' }}>
+                            Todos los Derechos Reservados por CNID Centro-Nacional-Información-Digital NRO REG:17789
+                        </Typography>
+                    </Box>
                 </Container >
             </Box >
 
