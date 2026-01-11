@@ -118,9 +118,22 @@ const validateSessionBelongsToUser = async (req, res, next) => {
 
                 if (!userId) {
                     console.warn(`[SESSION-VALIDATION] ⚠️ No se pudo resolver sessionId a users.id: ${sessionId}`);
+                    console.warn(`[SESSION-VALIDATION] 🔍 DEBUG - req.user:`, JSON.stringify(req.user));
+                    console.warn(`[SESSION-VALIDATION] 🔍 DEBUG - sessionId recibido:`, sessionId);
+
+                    // Log adicional: mostrar qué sesiones existen en BD
+                    try {
+                        const [availableSessions] = await connection.execute(
+                            'SELECT session_id, phone FROM user_sessions WHERE is_active = 1 LIMIT 5'
+                        );
+                        console.warn(`[SESSION-VALIDATION] 📋 Sesiones disponibles:`, JSON.stringify(availableSessions));
+                    } catch (e) {
+                        console.error('[SESSION-VALIDATION] Error listando sesiones:', e.message);
+                    }
+
                     return res.status(403).json({
                         success: false,
-                        error: 'Sesión inválida o no encontrada'
+                        error: 'Sesión inválida o no encontrada. Intenta cerrar sesión y volver a entrar.'
                     });
                 }
 

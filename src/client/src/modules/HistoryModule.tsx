@@ -222,7 +222,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [selectedDirection, setSelectedDirection] = useState<string>('all');
   const [page, setPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(15); // ⚡ Reducido a 15 líneas por página
+  const [rowsPerPage, setRowsPerPage] = useState(50); // ⚡ Aumentado a 50 líneas por página para historial completo
   const [selectedMessages, setSelectedMessages] = useState<string[]>([]);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [selectedTab, setSelectedTab] = useState(0);
@@ -235,6 +235,8 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   const [dateTo, setDateTo] = useState<Dayjs | null>(null); // ⚡ Sin filtro de fecha - Mostrar TODO el historial
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncStats, setSyncStats] = useState<any>(null);
+  const [totalMessages, setTotalMessages] = useState(0);
+  const [totalConversations, setTotalConversations] = useState(0);
   const [debugInfo, setDebugInfo] = useState<any>(null);
 
   const [showMessageDialog, setShowMessageDialog] = useState(false);
@@ -360,10 +362,21 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
 
       const cacheKey = `history_data_${activeSessionId}`;
 
-      // 1. Cargar mensajes y analíticas
+      // 1. Cargar mensajes y analíticas con filtros de backend
       const offset = (page - 1) * rowsPerPage;
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const response = await sessionFetch(`${getAPIBaseURL()}/api/history/messages?sessionId=${activeSessionId}&limit=${rowsPerPage}&offset=${offset}`, {
+
+      // Construir URL con filtros
+      let url = `${getAPIBaseURL()}/api/history/messages?sessionId=${activeSessionId}&limit=${rowsPerPage}&offset=${offset}`;
+
+      if (searchTerm) url += `&search=${encodeURIComponent(searchTerm)}`;
+      if (selectedType !== 'all') url += `&type=${selectedType}`;
+      if (selectedStatus !== 'all') url += `&status=${selectedStatus}`;
+      if (selectedDirection !== 'all') url += `&direction=${selectedDirection}`;
+      if (dateFrom) url += `&startDate=${dateFrom.toISOString()}`;
+      if (dateTo) url += `&endDate=${dateTo.toISOString()}`;
+
+      const response = await sessionFetch(url, {
         signal,
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
@@ -542,6 +555,8 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
         setMessages(apiMessages);
         setConversations(apiConversations);
         setAnalytics(apiAnalytics);
+        setTotalMessages(data.pagination?.total || apiMessages.length);
+        setTotalConversations(apiConversations.length); // Esto sigue siendo client-side por ahora
 
         try {
           const cacheData = {
@@ -588,7 +603,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     }
 
     return () => controller.abort();
-  }, [loadHistoryData, sessionId, page, rowsPerPage, diagnoseSession]);
+  }, [loadHistoryData, sessionId, page, rowsPerPage, diagnoseSession, searchTerm, selectedType, selectedStatus, selectedDirection, dateFrom, dateTo]);
 
   const loadGroups = async (activeSessionId?: string) => {
     try {
@@ -1105,25 +1120,13 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     return counts;
   };
 
+  const filteredMessages = messages; // Ya vienen filtrados del backend !
+  /*
   const filteredMessages = messages.filter(message => {
-    const content = message.content || '';
-    const contactName = message.contactName || '';
-    const contactPhone = message.contactPhone || '';
-
-    const matchesSearch = content.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contactName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contactPhone.includes(searchTerm);
-    const matchesType = selectedType === 'all' || message.messageType === selectedType;
-    const matchesStatus = selectedStatus === 'all' || message.status === selectedStatus;
-    const matchesAgent = selectedAgent === 'all' || message.agentName === selectedAgent;
-    const matchesDirection = selectedDirection === 'all' ||
-      (selectedDirection === 'sent' && message.isFromMe) ||
-      (selectedDirection === 'received' && !message.isFromMe);
-    const withinDateRange = (!dateFrom || dayjs(message.timestamp).isAfter(dateFrom)) &&
-      (!dateTo || dayjs(message.timestamp).isBefore(dateTo.add(1, 'day')));
-
-    return matchesSearch && matchesType && matchesStatus && matchesAgent && matchesDirection && withinDateRange;
+    // ... logic removed as backend handles it now
+    return true;
   });
+  */
 
   const filteredConversations = conversations.filter(conversation => {
     const contactName = conversation.contactName || '';
@@ -1984,7 +1987,6 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                       </TableHead>
                       <TableBody>
                         {getCurrentTabMessages()
-                          .slice((page - 1) * rowsPerPage, page * rowsPerPage)
                           .map((message) => (
                             <TableRow key={message.id} hover>
                               <TableCell padding="checkbox">
@@ -2305,7 +2307,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
                       Mostrando {(page - 1) * rowsPerPage + 1} - {Math.min(page * rowsPerPage, getCurrentTabMessages().length)} de {getCurrentTabMessages().length} mensajes
                     </Typography>
                     <Pagination
-                      count={Math.ceil(getCurrentTabMessages().length / rowsPerPage)}
+                      count={Math.ceil(totalMessages / rowsPerPage)}
                       page={page}
                       onChange={(_, newPage) => setPage(newPage)}
                       color="primary"

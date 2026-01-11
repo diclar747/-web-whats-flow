@@ -327,7 +327,7 @@ const CRMModule: React.FC<CRMModuleProps> = ({ sessionId }) => {
 
   // Pagination states
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(12);
+  const [rowsPerPage, setRowsPerPage] = useState(48); // ⚡ Aumentado para mostrar más contactos (m múltiplo de 3 para cards)
 
   // WhatsApp synced data
   const [syncedContacts, setSyncedContacts] = useState<any[]>([]);

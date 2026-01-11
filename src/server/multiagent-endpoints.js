@@ -26,17 +26,13 @@ module.exports = function (app, pool) {
                         return String(numericId);
                     }
 
-                    // 2. Buscar en user_sessions y obtener el owner ID (users.id) vinculado
+                    // 2. Buscar en user_sessions y obtener su session_id real (que puede ser el ID numérico o el UUID)
                     const [sessionRows] = await connection.execute(
-                        `SELECT us.session_id, us.phone, us.owner_phone_number, u.id as user_id 
-                         FROM user_sessions us 
-                         LEFT JOIN users u ON u.phone = us.phone 
-                         WHERE us.session_id = ? OR us.phone = ? OR us.owner_phone_number = ? LIMIT 1`,
-                        [sessionId, sessionId, sessionId]
+                        'SELECT us.session_id, us.phone, u.id as user_id FROM user_sessions us LEFT JOIN users u ON u.phone = us.phone WHERE us.session_id = ? OR us.phone = ? LIMIT 1',
+                        [sessionId, sessionId]
                     );
                     if (sessionRows.length > 0) {
-                        // Priorizar el ID numérico del usuario vinculado a esta sesión
-                        return String(sessionRows[0].user_id || sessionRows[0].session_id);
+                        return String(sessionRows[0].session_id);
                     }
 
                     // 3. Buscar en users por phone
@@ -548,37 +544,21 @@ module.exports = function (app, pool) {
             try {
                 await connection.beginTransaction();
 
-                // 1. Revisar si ya existe una asignación para este usuario y chat (aunque esté cerrada o transferida)
-                const [existing] = await connection.execute(
-                    'SELECT id, status FROM chat_assignments WHERE chat_jid = ? AND session_id = ? AND user_id = ? FOR UPDATE',
-                    [chat_jid, session_id, to_user_id]
-                );
-
-                // 2. Desactivar asignación activa actual de CUALQUIER otro agente (si existe)
+                // Cerrar asignación actual si existe
                 await connection.execute(`
-                    UPDATE chat_assignments 
-                    SET status = 'transferred'
-                    WHERE chat_jid = ? AND session_id = ? AND status = 'active' AND user_id != ?
-                `, [chat_jid, session_id, to_user_id]);
-
-                // 3. Crear o Actualizar la asignación del destino
-                if (existing.length > 0) {
-                    // Reactivar asignación existente
-                    await connection.execute(`
                         UPDATE chat_assignments 
-                        SET status = 'active', assigned_at = NOW(), assigned_by = ?
-                        WHERE id = ?
-                    `, [req.user.dbId, existing[0].id]);
-                } else {
-                    // Crear nueva asignación
-                    await connection.execute(`
+                        SET status = 'transferred'
+                        WHERE chat_jid = ? AND session_id = ? AND status = 'active'
+                    `, [chat_jid, session_id]);
+
+                // Crear nueva asignación con status 'pending' para indicar nueva transferencia
+                await connection.execute(`
                         INSERT INTO chat_assignments 
                         (chat_jid, session_id, user_id, assigned_by, status)
-                        VALUES (?, ?, ?, ?, 'active')
+                        VALUES (?, ?, ?, ?, 'pending')
                     `, [chat_jid, session_id, to_user_id, req.user.dbId]);
-                }
 
-                // 4. Registrar transferencia en historial
+                // Registrar transferencia
                 await connection.execute(`
                         INSERT INTO chat_transfers 
                         (chat_jid, session_id, from_user_id, to_user_id, transferred_by, reason)
@@ -587,50 +567,34 @@ module.exports = function (app, pool) {
 
                 await connection.commit();
 
-                console.log(`✅ Chat ${chat_jid} transferido (forzado) a usuario ${to_user_id} por ${req.user.name}`);
+                console.log(`✅ Chat ${chat_jid} transferido a usuario ${to_user_id} por ${req.user.name}`);
 
                 // Emitir eventos Socket.IO para notificar al agente
                 try {
                     const io = app.get('io');
                     if (io) {
                         // Obtener nombre del contacto para la notificación
-                        // Obtener nombre del agente destino
-                        const [destAgent] = await connection.execute('SELECT name FROM users WHERE id = ?', [to_user_id]);
-                        const destAgentName = destAgent[0]?.name || 'Agente';
+                        const [contactInfo] = await connection.execute(`
+                                SELECT COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as contact_name
+                                FROM (SELECT 1) as dummy
+                                LEFT JOIN contacts c ON c.jid = ? AND c.session_id = ?
+                                LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
+                                LIMIT 1
+                            `, [chat_jid, chat_jid, session_id, chat_jid, session_id]);
+
+                        const chatName = contactInfo[0]?.contact_name || chat_jid.replace('@s.whatsapp.net', '');
 
                         const eventData = {
                             chatJid: chat_jid,
                             chatName: chatName,
-                            chatAvatar: contactInfo[0]?.avatar_url || null, // Incluir avatar
                             sessionId: session_id,
                             agentId: to_user_id,
                             assignedBy: req.user.name,
                             assignedById: req.user.id,
                             timestamp: new Date().toISOString(),
-                            note: transferReason
+                            note: transferReason // Include note for frontend display
                         };
 
-                        // Insertar mensaje de sistema para registro de la transferencia
-                        const systemMessageId = 'SYS-TRANS-' + Date.now();
-                        const systemContent = `🔄 Chat transferido a ${destAgentName} por ${req.user.name}. Nota: ${transferReason}`;
-
-                        await connection.execute(`
-                            INSERT INTO messages 
-                            (id, session_id, chat_jid, sender, content, timestamp, from_me, status, type)
-                            VALUES (?, ?, ?, ?, ?, ?, 1, 'sent', 'system')
-                        `, [systemMessageId, session_id, chat_jid, 'system', systemContent, new Date()]);
-
-                        // Emitir mensaje de sistema a la sala
-                        io.to(`session-${session_id}`).emit('message', {
-                            id: systemMessageId,
-                            session_id: session_id,
-                            chatJid: chat_jid,
-                            message: systemContent,
-                            from: 'system',
-                            type: 'system',
-                            timestamp: new Date(),
-                            isFromMe: true
-                        });
 
                         // Emitir múltiples eventos para asegurar que el frontend los capture
                         io.emit('chat_transferred', eventData); // Evento general
@@ -1041,74 +1005,40 @@ module.exports = function (app, pool) {
     // Modificar endpoint de transferencia para soportar solicitudes
     app.post('/api/chats/transfer-with-request', authenticateToken, async (req, res) => {
         try {
-            let { chat_jid, session_id, from_user_id, to_user_id, reason, request_acceptance } = req.body;
+            const { chat_jid, session_id, from_user_id, to_user_id, reason, request_acceptance } = req.body;
 
             if (!chat_jid || !session_id || !to_user_id) {
                 return res.status(400).json({
                     success: false,
-                    error: 'Faltan datos requeridos (chat_jid, session_id, to_user_id)'
+                    error: 'Faltan datos requeridos'
                 });
             }
 
             const connection = await pool.getConnection();
             try {
-                // 🔐 RESOLVER ID NUMÉRICO DEL USUARIO (Especialmente para admins/supervisores)
-                let resolvedFromUserId = from_user_id;
-
-                if (!resolvedFromUserId) {
-                    // Si no viene from_user_id, usar el del token
-                    // Si el token es string ("admin_..."), buscar el ID numérico real
-                    if (typeof req.user.id === 'string' && req.user.id.startsWith('admin_')) {
-                        const [uRow] = await connection.execute(
-                            'SELECT id FROM users WHERE phone = ? OR email = ? LIMIT 1',
-                            [req.user.phone, req.user.email]
-                        );
-                        if (uRow.length > 0) {
-                            resolvedFromUserId = uRow[0].id;
-                        }
-                    } else {
-                        resolvedFromUserId = req.user.id;
-                    }
-                }
-                // Verificar que el chat esté asignado al usuario origen O que el usuario sea Admin de la sesión
+                // Verificar que el chat esté asignado al usuario origen
                 const [assignments] = await connection.execute(
                     'SELECT * FROM chat_assignments WHERE chat_jid = ? AND session_id = ? AND user_id = ? AND status = ?',
-                    [chat_jid, session_id, resolvedFromUserId, 'active']
+                    [chat_jid, session_id, from_user_id || req.user.id, 'active']
                 );
 
                 if (assignments.length === 0) {
-                    // Fallback para ADMINS: Si no hay asignación pero es el dueño de la sesión, permitir
-                    if (req.user.role === 'admin' || req.user.role === 'supervisor') {
-                        // Verificar que la sesión le pertenezca
-                        const [sessions] = await connection.execute(
-                            'SELECT id FROM user_sessions WHERE session_id = ? AND (owner_phone_number = ? OR email = ?)',
-                            [session_id, req.user.phone, req.user.email]
-                        );
-
-                        if (sessions.length === 0) {
-                            return res.status(403).json({
-                                success: false,
-                                error: 'No tienes permisos sobre esta sesión para transferir sus chats'
-                            });
-                        }
-                        console.log(`[TRANSFER] Admin ${resolvedFromUserId} transfiriendo chat sin asignación explícita (propietario de sesión)`);
-                    } else {
-                        return res.status(400).json({
-                            success: false,
-                            error: 'El chat no está asignado a tu usuario y no eres administrador de la línea.'
-                        });
-                    }
+                    return res.status(400).json({
+                        success: false,
+                        error: 'El chat no está asignado al usuario origen'
+                    });
                 }
 
                 if (request_acceptance) {
                     // Crear solicitud de transferencia
                     const [result] = await connection.execute(`
+                        INSERT INTO transfer_requests 
                         (chat_jid, session_id, from_user_id, to_user_id, reason, status)
                         VALUES (?, ?, ?, ?, ?, 'pending')
                     `, [
                         chat_jid,
                         session_id,
-                        resolvedFromUserId,
+                        from_user_id || req.user.id,
                         to_user_id,
                         reason || 'Transferencia solicitada'
                     ]);
@@ -1121,12 +1051,12 @@ module.exports = function (app, pool) {
 
                     // Notificar al agente destino
                     const io = app.get('io');
-                    const [fromUser] = await connection.execute('SELECT name FROM users WHERE id = ?', [resolvedFromUserId]);
+                    const [fromUser] = await connection.execute('SELECT name FROM users WHERE id = ?', [from_user_id || req.user.id]);
                     const requestData = {
                         id: result.insertId,
                         chatJid: chat_jid,
                         sessionId: session_id,
-                        fromUserName: fromUser[0]?.name || req.user.name || 'Admin',
+                        fromUserName: fromUser[0]?.name || 'Admin',
                         reason: reason || 'Transferencia solicitada',
                         timestamp: new Date()
                     };
@@ -1138,33 +1068,17 @@ module.exports = function (app, pool) {
                     // Transferencia directa (admin/supervisor)
                     await connection.beginTransaction();
 
-                    // 1. Revisar si ya existe una asignación para este usuario y chat
-                    const [existing] = await connection.execute(
-                        'SELECT id, status FROM chat_assignments WHERE chat_jid = ? AND session_id = ? AND user_id = ? FOR UPDATE',
-                        [chat_jid, session_id, to_user_id]
-                    );
-
-                    // 2. Desactivar asignación activa actual de CUALQUIER otro agente
                     await connection.execute(`
                         UPDATE chat_assignments 
                         SET status = 'transferred', completed_at = NOW()
-                        WHERE chat_jid = ? AND session_id = ? AND status = 'active' AND user_id != ?
-                    `, [chat_jid, session_id, to_user_id]);
+                        WHERE chat_jid = ? AND session_id = ? AND status = 'active'
+                    `, [chat_jid, session_id]);
 
-                    // 3. Crear o Actualizar la asignación del destino
-                    if (existing.length > 0) {
-                        await connection.execute(`
-                            UPDATE chat_assignments 
-                            SET status = 'active', assigned_at = NOW(), assigned_by = ?
-                            WHERE id = ?
-                        `, [req.user.dbId, existing[0].id]);
-                    } else {
-                        await connection.execute(`
-                            INSERT INTO chat_assignments 
-                            (chat_jid, session_id, user_id, assigned_by, status)
-                            VALUES (?, ?, ?, ?, 'active')
-                        `, [chat_jid, session_id, to_user_id, req.user.dbId]);
-                    }
+                    await connection.execute(`
+                        INSERT INTO chat_assignments 
+                        (chat_jid, session_id, user_id, assigned_by, notes)
+                        VALUES (?, ?, ?, ?, 'Transferencia directa')
+                    `, [chat_jid, session_id, to_user_id, req.user.id]);
 
                     const transferReason = reason || 'Transferencia directa';
 
@@ -1181,19 +1095,12 @@ module.exports = function (app, pool) {
                     const systemMessageContent = `🔄 Chat transferido por administración.\nNota: ${transferReason}`;
 
                     // Intentar insertar mensaje visible en el chat localmente
-                    // ✅ MEJORA: Insertar como mensaje "recibido" (from_me=0) para que dispare el contador de no leídos
-                    // y el agente vea el chat en verde/nuevo.
                     await connection.execute(`
-                         INSERT INTO messages 
-                         (id, session_id, chat_jid, sender_jid, text_content, message_type, timestamp, from_me, status, is_read)
-                         VALUES (?, ?, ?, ?, ?, 'chat', NOW(), 0, 'received', 0)
-                     `, [systemMessageId, session_id, chat_jid, 'system', systemMessageContent]);
+                    INSERT INTO messages 
+                    (id, session_id, chat_jid, sender, content, timestamp, from_me, status, type)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, 'sent', 'chat')
+                `, [systemMessageId, session_id, chat_jid, 'system', systemMessageContent, new Date(), 'chat']);
 
-                    // 4. Actualizar estado del agente a 'available' si estaba 'offline'
-                    await connection.execute(
-                        "UPDATE users SET status = 'available' WHERE id = ? AND (status = 'offline' OR status IS NULL)",
-                        [to_user_id]
-                    );
 
                     await connection.commit();
 
@@ -1228,29 +1135,13 @@ module.exports = function (app, pool) {
                     // Emitir nuevo mensaje al socket para que aparezca en tiempo real
                     io.emit('message', {
                         id: systemMessageId,
-                        sessionId: session_id,
-                        chatJid: chat_jid,
-                        sender_jid: 'system',
-                        text: systemMessageContent,
+                        session_id: session_id,
+                        chat_jid: chat_jid,
+                        sender: 'system',
+                        content: systemMessageContent,
                         timestamp: new Date().toISOString(),
-                        isFromMe: true,
+                        from_me: true,
                         type: 'chat'
-                    });
-
-                    // 7. Notificar actualización de estado del agente para la lista de administración
-                    const [activeChats] = await connection.execute(
-                        "SELECT COUNT(*) as count FROM chat_assignments WHERE user_id = ? AND status = 'active'",
-                        [to_user_id]
-                    );
-                    const [agentData] = await connection.execute(
-                        'SELECT status FROM users WHERE id = ?',
-                        [to_user_id]
-                    );
-
-                    io.emit('agent-status-update', {
-                        userId: to_user_id,
-                        status: agentData[0]?.status || 'available',
-                        active_chats_count: activeChats[0]?.count || 0
                     });
 
                     res.json({ success: true, message: 'Chat transferido correctamente' });
@@ -1450,13 +1341,11 @@ module.exports = function (app, pool) {
             const connection = await pool.getConnection();
             try {
                 const [agents] = await connection.execute(`
-                    SELECT 
-                        u.id, u.name, u.email, u.role, u.department, u.status,
-                        (SELECT COUNT(*) FROM chat_assignments ca WHERE ca.user_id = u.id AND ca.status = 'active') as active_chats_count
-                    FROM users u
-                    WHERE u.role IN ('agent', 'supervisor', 'admin') 
-                    AND u.status = 'active'
-                    ORDER BY active_chats_count ASC, u.name ASC
+                    SELECT id, name, email, role, department, status
+                    FROM users 
+                    WHERE role IN ('agent', 'supervisor', 'admin') 
+                    AND status = 'active'
+                    ORDER BY name ASC
                 `);
 
                 console.log(`✅ Agentes disponibles solicitados: ${agents.length}`);
@@ -1565,7 +1454,7 @@ module.exports = function (app, pool) {
                         u.name as sender_name
                     FROM messages m
                     LEFT JOIN contacts c ON m.sender_jid = c.jid AND c.session_id = ?
-                    LEFT JOIN users u ON m.agent_id = u.id
+                    LEFT JOIN users u ON m.user_id = u.id
                     WHERE m.session_id = ? AND m.chat_jid = ?
                 `;
 
@@ -1646,7 +1535,51 @@ module.exports = function (app, pool) {
 
                 sessionIds = [...new Set(sessionIds)];
 
+                // CRÍTICO: Obtener TODOS los session_ids asociados con esta sesión
+                // Esto incluye user_id, IDs hexadecimales, números de teléfono, etc.
+                // La tabla messages puede tener cualquiera de estos valores en su columna session_id
+                let allMessageSessionIds = new Set();
+
+                // 1. Agregar los sessionIds ya encontrados (números de teléfono, UUIDs)
+                sessionIds.forEach(sid => allMessageSessionIds.add(sid));
+
+                // 2. Buscar el user_id del propietario de la sesión
+                if (sessionIds.length > 0) {
+                    const [sessionOwner] = await connection.execute(
+                        `SELECT user_id FROM user_sessions WHERE session_id = ? OR phone = ? LIMIT 1`,
+                        [sessionIds[0], sessionIds[0]]
+                    );
+                    if (sessionOwner.length > 0 && sessionOwner[0].user_id) {
+                        allMessageSessionIds.add(String(sessionOwner[0].user_id));
+                        console.log('[AGENT-CHATS-BY-ID] 🔑 Session Owner ID:', sessionOwner[0].user_id);
+                    }
+                }
+
+                // 3. Buscar session_ids hexadecimales desde la tabla messages
+                // (algunos sistemas legacy guardan IDs hex en messages.session_id)
+                if (sessionIds.length > 0) {
+                    // Buscar por chat_jid o sender_jid que contengan el número de teléfono
+                    const basePhone = sessionIds.find(sid => /^\d{10,}$/.test(sid));
+                    if (basePhone) {
+                        const [hexIds] = await connection.execute(
+                            `SELECT DISTINCT session_id FROM messages WHERE sender_jid LIKE ? OR chat_jid LIKE ? LIMIT 20`,
+                            [`${basePhone}%`, `${basePhone}%`]
+                        );
+                        hexIds.forEach(row => {
+                            if (row.session_id) {
+                                allMessageSessionIds.add(String(row.session_id));
+                            }
+                        });
+                        console.log('[AGENT-CHATS-BY-ID] 🔍 Found hex session_ids from messages:', hexIds.length);
+                    }
+                }
+
+                const messageSessionIdsArray = Array.from(allMessageSessionIds);
+                console.log('[AGENT-CHATS-BY-ID] 📦 All message session IDs:', messageSessionIdsArray);
+
                 // Obtener chats asignados con información completa
+                // NOTA: Las subconsultas de mensajes buscan en TODOS los session_ids relacionados
+                const messagePlaceholders = messageSessionIdsArray.map(() => '?').join(',');
                 let query = `
                     SELECT
                         ca.chat_jid as id,
@@ -1660,14 +1593,14 @@ module.exports = function (app, pool) {
                         COALESCE(c.is_group, cg.jid IS NOT NULL, 0) as isGroup,
                         (SELECT MAX(m.timestamp) FROM messages m
                          WHERE m.chat_jid = ca.chat_jid
-                         AND m.session_id = ca.session_id) as lastMessageTimestamp,
+                         AND m.session_id IN (${messagePlaceholders})) as lastMessageTimestamp,
                         (SELECT m.text_content FROM messages m
                          WHERE m.chat_jid = ca.chat_jid
-                         AND m.session_id = ca.session_id
+                         AND m.session_id IN (${messagePlaceholders})
                          ORDER BY m.timestamp DESC LIMIT 1) as lastMessage,
                         (SELECT COUNT(*) FROM messages m
                          WHERE m.chat_jid = ca.chat_jid
-                         AND m.session_id = ca.session_id
+                         AND m.session_id IN (${messagePlaceholders})
                          AND m.from_me = 0
                          AND (m.is_read = 0 OR m.is_read IS NULL)) as unreadCount
                     FROM chat_assignments ca
@@ -1676,7 +1609,8 @@ module.exports = function (app, pool) {
                     WHERE ca.user_id = ? AND ca.status IN ('active', 'pending', 'closed')
                 `;
 
-                const params = [agentId];
+                // Preparar los parámetros: 3 copias de messageSessionIdsArray (una por cada subconsulta) + agentId
+                let params = [...messageSessionIdsArray, ...messageSessionIdsArray, ...messageSessionIdsArray, agentId];
 
                 if (sessionIds.length > 0) {
                     query += ` AND ca.session_id IN (${sessionIds.map(() => '?').join(',')})`;

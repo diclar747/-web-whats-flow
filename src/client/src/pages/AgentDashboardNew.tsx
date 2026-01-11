@@ -155,7 +155,7 @@ const AgentDashboardNew: React.FC = () => {
 
     try {
       const token = sessionStorage.getItem('token');
-      const response = await fetch(`/api/messages/${sessionId}/${selectedChat.id}`, {
+      const response = await fetch(`/api/messages/${sessionId}/${selectedChat.id}?dateFilter=today&limit=50`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       

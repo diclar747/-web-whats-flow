@@ -1,0 +1,90 @@
+nohup: ignoring input
+✅ Servidor en modo estable (optimizaciones Redis temporalmente desactivadas)
+!!! DEBUG MARKER - LOADER STARTING !!!
+Stack[0]: query (Regexp: /^\/?(?=\/|$)/i)
+Stack[1]: expressInit (Regexp: /^\/?(?=\/|$)/i)
+Stack[2]: corsMiddleware (Regexp: /^\/?(?=\/|$)/i)
+Stack[3]: compression (Regexp: /^\/?(?=\/|$)/i)
+Stack[4]: jsonParser (Regexp: /^\/?(?=\/|$)/i)
+Stack[5]: urlencodedParser (Regexp: /^\/?(?=\/|$)/i)
+Stack[6]: * (Regexp: /^(.*)\/?$/i)
+Stack[7]: <anonymous> (Regexp: /^\/?(?=\/|$)/i)
+📢 [MULTIAGENT] Cargando endpoints de multi-agente...
+✅ Sistema multi-agente endpoints cargados correctamente
+Stack[0]: query (Regexp: /^\/?(?=\/|$)/i)
+Stack[1]: expressInit (Regexp: /^\/?(?=\/|$)/i)
+Stack[2]: corsMiddleware (Regexp: /^\/?(?=\/|$)/i)
+Stack[3]: compression (Regexp: /^\/?(?=\/|$)/i)
+Stack[4]: jsonParser (Regexp: /^\/?(?=\/|$)/i)
+Stack[5]: urlencodedParser (Regexp: /^\/?(?=\/|$)/i)
+Stack[6]: * (Regexp: /^(.*)\/?$/i)
+Stack[7]: <anonymous> (Regexp: /^\/?(?=\/|$)/i)
+Stack[8]: /api/health-multiagent (Regexp: /^\/api\/health-multiagent\/?$/i)
+Stack[9]: /api/permissions (Regexp: /^\/api\/permissions\/?$/i)
+Stack[10]: /api/user/permissions (Regexp: /^\/api\/user\/permissions\/?$/i)
+Stack[11]: /api/user/check-permission (Regexp: /^\/api\/user\/check-permission\/?$/i)
+Stack[12]: /api/roles/:role/permissions (Regexp: /^\/api\/roles(?:\/([^/]+?))\/permissions\/?$/i)
+Stack[13]: /api/agent/chats (Regexp: /^\/api\/agent\/chats\/?$/i)
+Stack[14]: /api/chats/unassigned (Regexp: /^\/api\/chats\/unassigned\/?$/i)
+Stack[15]: /api/chats/assign (Regexp: /^\/api\/chats\/assign\/?$/i)
+Stack[16]: /api/chats/transfer (Regexp: /^\/api\/chats\/transfer\/?$/i)
+Stack[17]: /api/chats/close (Regexp: /^\/api\/chats\/close\/?$/i)
+Stack[18]: /api/admin/dashboard (Regexp: /^\/api\/admin\/dashboard\/?$/i)
+Stack[19]: /api/admin/agent/:userId/history (Regexp: /^\/api\/admin\/agent(?:\/([^/]+?))\/history\/?$/i)
+Stack[20]: /api/transfer-requests/:userId (Regexp: /^\/api\/transfer-requests(?:\/([^/]+?))\/?$/i)
+Stack[21]: /api/transfer-requests/:requestId/respond (Regexp: /^\/api\/transfer-requests(?:\/([^/]+?))\/respond\/?$/i)
+Stack[22]: /api/chats/transfer-with-request (Regexp: /^\/api\/chats\/transfer-with-request\/?$/i)
+Stack[23]: /api/chats/:chatJid/close (Regexp: /^\/api\/chats(?:\/([^/]+?))\/close\/?$/i)
+Stack[24]: /api/agents/:id/active-chats (Regexp: /^\/api\/agents(?:\/([^/]+?))\/active-chats\/?$/i)
+Stack[25]: /api/chats/assignment/revoke (Regexp: /^\/api\/chats\/assignment\/revoke\/?$/i)
+Stack[26]: /api/users/agents (Regexp: /^\/api\/users\/agents\/?$/i)
+Stack[27]: /api/agent/messages/send (Regexp: /^\/api\/agent\/messages\/send\/?$/i)
+Stack[28]: /api/messages/:sessionId/:chatJid (Regexp: /^\/api\/messages(?:\/([^/]+?))(?:\/([^/]+?))\/?$/i)
+Stack[29]: /api/agents/:agentId/chats (Regexp: /^\/api\/agents(?:\/([^/]+?))\/chats\/?$/i)
+Stack[30]: /api/chats/mark-active (Regexp: /^\/api\/chats\/mark-active\/?$/i)
+✅ Sistema Multi-Agente cargado (EXPLICIT CHECK)
+✅ Endpoints de gestión de agentes con privilegios cargados
+✅ Sistema Permisos Agentes cargado
+✅ Rutas de Planes cargadas
+✅ Rutas de Solicitudes de Planes cargadas
+✅ Rutas de Clientes cargadas
+[ANALYTICS] Initializing analytics endpoints...
+[ANALYTICS] ✅ Analytics endpoints initialized successfully
+✅ Analytics endpoints cargados
+✅ Endpoints de Campañas Personalizadas cargados
+✅ Endpoints de Campañas Personalizadas cargados
+✅ Endpoints de Métricas del Sistema cargados
+[SECURITY] ⚠️ Middleware de sesión única DESACTIVADO temporalmente para evitar bloqueos
+[AUTH] Directorio de autenticación: /var/www/web.whats-flow.com/auth_info_multi
+[REMINDERS] Sistema de recordatorios automáticos iniciado (verificación cada 60 segundos)
+🚀 [SCHEDULER-INIT] Iniciando scheduler de campañas programadas...
+✅ [SCHEDULER] Scheduler de campañas programadas iniciado (verifica cada 60 segundos)
+✅ Sistema de Chatbot cargado correctamente
+🔥 [INDEX.JS] Cargando módulo api-rest-endpoints...
+🔥 [INDEX.JS] Módulo cargado, tipo de registerAPIRestEndpoints: function
+🔥 [INDEX.JS] Llamando a registerAPIRestEndpoints...
+🔌 [API-REST-MODULE] ===== REGISTRANDO ENDPOINTS DE API REST =====
+🔌 [API-REST-MODULE] Parámetros recibidos: { hasApp: true, hasPool: false, hasSessions: true }
+[API-REST] ✅ Endpoints registrados
+🔥 [INDEX.JS] registerAPIRestEndpoints ejecutado
+🔐 [INDEX.JS] Registrando endpoints de autenticación...
+[AUTH] ✅ Endpoints de autenticación registrados
+🔐 [INDEX.JS] Endpoints de autenticación registrados
+✅ Router de Estados de WhatsApp cargado
+[ADMIN PANEL ENDPOINTS] ✅ Endpoints del panel de administración registrados
+✅ Health check endpoints disponibles en /api/health, /api/ready, /api/metrics
+[STARTUP] ✅ Scheduler optimizado y consolidado.
+Error no capturado: Error: listen EADDRINUSE: address already in use 0.0.0.0:3003
+    at Server.setupListenHandle [as _listen2] (node:net:1940:16)
+    at listenInCluster (node:net:1997:12)
+    at node:net:2206:7
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21) {
+  code: 'EADDRINUSE',
+  errno: -98,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 3003
+}
+
+Cerrando servidor...
+Servidor cerrado

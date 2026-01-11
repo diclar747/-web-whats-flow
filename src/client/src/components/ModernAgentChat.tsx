@@ -147,7 +147,7 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
   const loadMessages = useCallback(async (chatJid: string) => {
     setLoadingMessages(true);
     try {
-      const response = await fetch(`${apiUrl}/api/messages/${sessionId}/${chatJid}`, {
+      const response = await fetch(`${apiUrl}/api/messages/${sessionId}/${chatJid}?dateFilter=today&limit=50`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

@@ -164,7 +164,7 @@ const ModernAdminChatMonitor: React.FC = () => {
         const allMessages: Message[] = [];
         const chatPromises = chatsData.chats.slice(0, 50).map(async (chat: any) => {
           try {
-            const msgRes = await fetch(`${getAPIBaseURL()}/api/messages/${sessionId}/${chat.id}?limit=20`);
+            const msgRes = await fetch(`${getAPIBaseURL()}/api/messages/${sessionId}/${chat.id}?dateFilter=today&limit=50`);
             const msgData = await msgRes.json();
 
             if (msgData?.success && Array.isArray(msgData.messages)) {

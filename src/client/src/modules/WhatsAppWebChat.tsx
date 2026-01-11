@@ -242,7 +242,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       });
 
       // Recargar chats para actualizar estado "closed"
-      if (loadChats && sessionId) loadChats(sessionId, 'all', 0, false);
+      if (loadChats && sessionId) loadChats(sessionId, 'limit_24h', 0, false);
     };
 
     socket.on('chat-closed-by-agent', handleChatClosed);
@@ -269,7 +269,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       if (data.success) {
         setSnackbar({ open: true, message: 'Transferencia aceptada ✅', severity: 'success' });
         setTransferRequest(null);
-        if (loadChats) loadChats(sessionId, 'all', 0, false); // Refresh chats
+        if (loadChats) loadChats(sessionId, 'limit_24h', 0, false); // Refresh chats
         // Opcional: Cambiar al chat recién aceptado
         // setActiveChat({ id: transferRequest.chatJid, ... }); 
       } else {
@@ -802,7 +802,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         // Update ref immediately to prevent loops
         loadedSessionRef.current = sessionId;
 
-        loadChats(sessionId, 'all', 0, false).catch(err => {
+        loadChats(sessionId, 'limit_24h', 0, false).catch(err => {
           console.error('[WhatsAppWebChat] Error loading chats:', err);
         });
       } else {
@@ -1731,7 +1731,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                   setActiveChat?.(c);
                   // Cargar el historial del chat seleccionado
                   if (loadMessages) {
-                    await loadMessages(c.id);
+                    await loadMessages(c.id, 'limit_24h');
                   }
                   // Marcar como leído si corresponde
                   if (c.unreadCount && c.unreadCount > 0 && markChatAsRead) {

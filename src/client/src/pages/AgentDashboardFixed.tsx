@@ -172,7 +172,7 @@ const AgentDashboardFixed: React.FC = () => {
     setLoading(true);
     try {
       const token = sessionStorage.getItem('token');
-      const response = await fetch(`/api/messages/${adminSessionId}/${selectedChat.chat_jid}`, {
+      const response = await fetch(`/api/messages/${adminSessionId}/${selectedChat.chat_jid}?dateFilter=today&limit=50`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       

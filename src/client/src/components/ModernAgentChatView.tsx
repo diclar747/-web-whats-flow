@@ -194,7 +194,7 @@ const ModernAgentChatView: React.FC<ModernAgentChatViewProps> = ({
       if (!token) return;
 
       const response = await fetch(
-        `/api/messages/${sessionStorage.getItem('adminSessionId') || 'session'}/${selectedChat.id}`,
+        `/api/messages/${sessionStorage.getItem('adminSessionId') || 'session'}/${selectedChat.id}?dateFilter=today&limit=50`,
         {
           headers: { 'Authorization': `Bearer ${token}` },
         }

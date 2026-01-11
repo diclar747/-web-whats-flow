@@ -131,7 +131,7 @@ interface WhatsAppContextType {
   loadChats: (sessionId: string, dateFilter?: string, offset?: number, append?: boolean) => Promise<void>;
   hasMoreChats: boolean;
   isLoadingMoreChats: boolean;
-  loadMessages: (chatId: string) => Promise<void>;
+  loadMessages: (chatId: string, dateFilter?: string, limit?: number, offset?: number, append?: boolean) => Promise<void>;
   sendMessage: (chatId: string, message: string, contextInfo?: any) => Promise<boolean>;
   sendFile: (chatId: string, file: File, caption?: string) => Promise<boolean>;
   setActiveChat: (chat: WhatsAppChat | null) => void;
@@ -1060,7 +1060,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
 
   // ⚡ OPTIMIZADO: Soporte para paginación y "Load More"
-  const loadMessages = async (chatId: string, dateFilter: string = 'all', limit: number = 25, offset: number = 0, append: boolean = false): Promise<void> => {
+  const loadMessages = async (chatId: string, dateFilter: string = 'today', limit: number = 50, offset: number = 0, append: boolean = false): Promise<void> => {
     if (!session?.sessionId) return;
 
     try {

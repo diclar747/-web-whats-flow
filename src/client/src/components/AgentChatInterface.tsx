@@ -81,7 +81,7 @@ const AgentChatInterface: React.FC<AgentChatInterfaceProps> = ({
   const loadMessages = useCallback(async () => {
     try {
       const token = sessionStorage.getItem('token');
-      const response = await fetch(`/api/messages/${sessionId}/${chatId}`, {
+      const response = await fetch(`/api/messages/${sessionId}/${chatId}?dateFilter=today&limit=50`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
