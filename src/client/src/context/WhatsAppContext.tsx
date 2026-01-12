@@ -531,9 +531,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
         // 1. Mostrar notificación visual (si estamos en segundo plano o no es el chat activo)
         const isCurrentChatActive = activeChatRef.current?.id === mappedMessage.chatJid;
+        const channelInfo = (mappedMessage as any).channelPhone ? `[Línea: ${(mappedMessage as any).channelPhone}] ` : '';
+
         if (document.hidden || !isCurrentChatActive) {
           showBrowserNotification({
-            title: `💬 ${senderName}`,
+            title: `💬 ${channelInfo}${senderName}`,
             body: messagePreview.length > 50 ? messagePreview.substring(0, 50) + '...' : messagePreview,
             icon: chat?.avatar || '/favicon.ico',
             tag: `chat-${mappedMessage.chatJid}`,

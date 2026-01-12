@@ -181,7 +181,9 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
 
         // Si no hay sesión activa, seleccionar la primera (preferiblemente la primaria)
         if (!activeSessionId || !mappedSessions.find(s => s.sessionId === activeSessionId)) {
+          // Si el activeSessionId actual NO está en la lista (ej: es '1' o undefined), forzar el primero
           const primarySession = mappedSessions.find(s => s.isPrimary) || mappedSessions[0];
+          console.log('[MULTI-CANAL] ⚠️ SessionId actual no válido/encontrado, cambiando a:', primarySession.sessionId);
           setActiveSessionId(primarySession.sessionId);
         }
 
@@ -219,18 +221,25 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
     loadActiveSessions();
   }, []);
 
-  // Recargar chats cuando cambia la sesión activa
+  // Recargar chats cuando cambia la sesión activa o el filtro de fecha
   useEffect(() => {
     if (activeSessionId) {
-      console.log('[MULTI-CANAL] 🔄 Cambiando a sesión:', activeSessionId);
-      loadChats(activeSessionId);
+      console.log('[MULTI-CANAL] 🔄 Cambiando a sesión:', activeSessionId, 'Filtro:', dateFilter);
+      loadChats(activeSessionId, dateFilter);
     }
-  }, [activeSessionId, loadChats]);
+  }, [activeSessionId, dateFilter, loadChats]);
 
   useEffect(() => {
-    console.log('RealChatModule: Cargando chats para sessionId:', sessionId);
-    loadChats(sessionId);
-  }, [sessionId, loadChats]);
+    // Este efecto carga si cambia sessionId prop (raro si usamos activeSessionId, pero mantenemos compatibilidad)
+    if (sessionId && sessionId !== activeSessionId) {
+      if (sessionId.length < 5 && !isNaN(Number(sessionId))) {
+        console.warn(`[RealChatModule] 🚫 Skipping loadChats for User ID '${sessionId}' to prevent channel mixing.`);
+        return;
+      }
+      console.log('RealChatModule: Cargando chats para sessionId prop:', sessionId);
+      loadChats(sessionId, dateFilter);
+    }
+  }, [sessionId, dateFilter, loadChats, activeSessionId]); // Added activeSessionId dep
 
   // Ordenar chats por último mensaje
   const sortChatsByLastMessage = (chatsToSort: any[]) => {

@@ -1499,7 +1499,7 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                     <Route path="/history/*" element={
                       <ProtectedRoute module="chat" action="view">
                         <RequiresWhatsApp sessionId={activeSessionId} moduleName="Historial">
-                          <HistoryModule sessionId={activeSessionId} />
+                          <HistoryModule sessionId={userId || sessionId} />
                         </RequiresWhatsApp>
                       </ProtectedRoute>
                     } />

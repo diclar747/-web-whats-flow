@@ -478,6 +478,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
     // Si la sesión cambió, forzar recarga con filtro de 24 horas para velocidad inmediata
     if (loadChats && sessionId) {
+      // 🔒 SECURITY: Prevent loading chats for User ID (e.g. '1') to avoid mixing channels
+      // We only want to load chats for specific Phone Numbers (Session IDs)
+      if (sessionId.length < 5 && !isNaN(Number(sessionId))) {
+        console.warn(`[WhatsAppWebChat] 🚫 Skipping loadChats for User ID '${sessionId}' to prevent channel mixing. Waiting for Phone Number...`);
+        return;
+      }
+
       console.log(`[WhatsAppWebChat] 🚀 Loading INITIAL chats (24h limit) for ${sessionId}...`);
       // Pasar 'limit_24h' como filtro inicial
       loadChats(sessionId, 'limit_24h').catch(err => console.error('[WhatsAppWebChat] Error loading initial chats:', err));
@@ -1356,8 +1363,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
       // 🟢 FILTRADO POR PESTAÑAS
       if (filterTab === 0) {
-        // Todas: SOLO chats individuales (enviados + recibidos), NO grupos
-        return !chat.isGroup && !isStatus;
+        // Todas: Chats individuales + grupos, NO estados
+        return !isStatus;
       }
       if (filterTab === 1) {
         // Recibidos: Chats individuales (NO grupos) donde el último msj no fui yo
@@ -1398,8 +1405,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
     const isStatus = (c: any) => c.id === 'status@broadcast' || c.id.includes('status@broadcast') || c.name === 'status';
 
     return {
-      // Total: Sólo chats individuales (Ni grupos Ni estados)
-      total: chats.filter(c => !c.isGroup && !isStatus(c)).length,
+      // Total: Todos los chats (excepto estados)
+      total: chats.filter(c => !isStatus(c)).length,
       // Grupos: Sólo grupos (No estados)
       groups: chats.filter(c => c.isGroup && !isStatus(c)).length,
       // Recibidos: Chats individuales (No grupos) donde el último no es mío
@@ -1498,93 +1505,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
           borderBottom: `1px solid ${colors.divider}`,
           justifyContent: chatListCollapsed ? 'center' : 'space-between'
         }}>
-          {!chatListCollapsed && (
-            <Box sx={{ flex: 1, mr: 1, overflow: 'hidden' }}>
-              {allSessions && allSessions.length > 0 ? (
-                <Tabs
-                  value={allSessions.findIndex(s => s.sessionId === sessionId)}
-                  onChange={(e, idx) => {
-                    const selected = allSessions[idx];
-                    if (selected && onSessionSelect) {
-                      onSessionSelect(selected.sessionId);
-                    }
-                  }}
-                  variant="scrollable"
-                  scrollButtons="auto"
-                  sx={{
-                    minHeight: 36,
-                    '& .MuiTab-root': {
-                      minHeight: 36,
-                      p: '6px 12px',
-                      textTransform: 'none',
-                      fontSize: '0.85rem',
-                      color: colors.textSecondary,
-                      maxWidth: 120, // Limit width
-                      minWidth: 'auto'
-                    },
-                    '& .Mui-selected': {
-                      color: colors.primary,
-                      fontWeight: 600
-                    },
-                    '& .MuiTabs-indicator': {
-                      bgcolor: colors.primary,
-                      height: 3,
-                      borderRadius: '3px 3px 0 0'
-                    }
-                  }}
-                >
-                  {allSessions.map((session: any) => (
-                    <Tab
-                      key={session.sessionId}
-                      label={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 0.5 }}>
-                          <Box sx={{ position: 'relative' }}>
-                            <Avatar
-                              src={session.avatar || session.profilePicUrl || ''}
-                              sx={{ width: 32, height: 32, border: `2px solid ${session.sessionId === sessionId ? colors.primary : 'transparent'}` }}
-                            >
-                              {(session.name || session.phoneNumber || '?').charAt(0).toUpperCase()}
-                            </Avatar>
-                            <Box
-                              sx={{
-                                position: 'absolute',
-                                bottom: 0,
-                                right: 0,
-                                width: 10,
-                                height: 10,
-                                borderRadius: '50%',
-                                bgcolor: session.isConnected || session.status === 'connected' ? '#22c55e' : '#ef4444',
-                                border: `2px solid ${colors.sidebar}`
-                              }}
-                            />
-                          </Box>
-                          <Box sx={{ textAlign: 'left' }}>
-                            <Typography variant="body2" sx={{ fontWeight: 600, color: session.sessionId === sessionId ? colors.text : colors.textSecondary, fontSize: '0.85rem' }}>
-                              {session.name || `Sesión ${session.phoneNumber?.slice(-4) || ''}`}
-                            </Typography>
-                            <Typography variant="caption" sx={{ color: colors.textTertiary, fontSize: '0.7rem' }}>
-                              {session.phoneNumber ? `+${session.phoneNumber}` : session.sessionId?.split(':')[0] || 'Desconocido'}
-                            </Typography>
-                          </Box>
-                        </Box>
-                      }
-                      sx={{
-                        opacity: session.sessionId === sessionId ? 1 : 0.7,
-                        transition: 'opacity 0.2s',
-                        '&:hover': { opacity: 1 }
-                      }}
-                    />
-                  ))}
-                </Tabs>
-              ) : (
-                <Typography variant="h6" sx={{ fontWeight: 600, color: colors.text }}>
-                  Chats
-                </Typography>
-              )}
-            </Box>
-          )}
-
-          {/* Botón minimizar/maximizar */}
+          {/* Botón minimizar/maximizar solo */}
           <Tooltip title={chatListCollapsed ? "Expandir lista" : "Minimizar lista"}>
             <IconButton
               onClick={() => setChatListCollapsed(!chatListCollapsed)}
@@ -1597,7 +1518,100 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
               {chatListCollapsed ? <ChevronRight /> : <ChevronLeft />}
             </IconButton>
           </Tooltip>
+          {!chatListCollapsed && (
+            <Typography variant="h6" sx={{ fontWeight: 600, color: colors.text, ml: 1 }}>
+              Chats
+            </Typography>
+          )}
         </Box>
+
+        {/* 📱 PESTAÑAS DE CANALES (SESIONES) - Debajo del header */}
+        {!chatListCollapsed && allSessions && allSessions.length > 0 && (
+          <Box sx={{ borderBottom: `1px solid ${colors.divider}`, bgcolor: colors.sidebar }}>
+            <Tabs
+              value={allSessions.findIndex(s => s.sessionId === sessionId)}
+              onChange={(e, idx) => {
+                const selected = allSessions[idx];
+                if (selected && onSessionSelect) {
+                  onSessionSelect(selected.sessionId);
+                }
+              }}
+              variant="scrollable"
+              scrollButtons="auto"
+              sx={{
+                minHeight: 52,
+                '& .MuiTabs-flexContainer': {
+                  gap: 1,
+                  px: 2,
+                  py: 1
+                },
+                '& .MuiTab-root': {
+                  minHeight: 40,
+                  p: '6px 16px',
+                  textTransform: 'none',
+                  fontSize: '0.85rem',
+                  color: colors.textSecondary,
+                  minWidth: 'auto',
+                  borderRadius: '12px', // More pill-like
+                  border: `1px solid ${colors.divider}`,
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': {
+                    bgcolor: colors.hover,
+                    borderColor: colors.primary,
+                    transform: 'translateY(-1px)'
+                  }
+                },
+                '& .Mui-selected': {
+                  color: `${colors.primary} !important`,
+                  fontWeight: 700,
+                  bgcolor: `${colors.primary}15`,
+                  borderColor: colors.primary,
+                  boxShadow: `0 2px 8px ${colors.primary}20`
+                },
+                '& .MuiTabs-indicator': {
+                  display: 'none' // Hide line indicator for a modern card-like feel
+                }
+              }}
+            >
+              {allSessions.map((session: any) => (
+                <Tab
+                  key={session.sessionId}
+                  label={
+                    <Tooltip title={`${session.name || 'WhatsApp'} (+${session.phoneNumber || ''})`}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box sx={{ position: 'relative' }}>
+                          <Avatar
+                            src={session.avatar || session.profilePicUrl || ''}
+                            sx={{ width: 28, height: 28, border: `1.5px solid ${session.sessionId === sessionId ? colors.primary : 'transparent'}` }}
+                          >
+                            {(session.name || session.phoneNumber || '?').charAt(0).toUpperCase()}
+                          </Avatar>
+                          <Box
+                            sx={{
+                              position: 'absolute',
+                              bottom: -2,
+                              right: -2,
+                              width: 8,
+                              height: 8,
+                              borderRadius: '50%',
+                              bgcolor: session.isConnected || session.status === 'connected' ? '#22c55e' : '#ef4444',
+                              border: `1px solid ${colors.sidebar}`
+                            }}
+                          />
+                        </Box>
+                        <Box sx={{ textAlign: 'left', maxWidth: 100 }}>
+                          <Typography variant="body2" noWrap sx={{ fontWeight: 600, fontSize: '0.8rem' }}>
+                            {session.name || `Sesión ${session.phoneNumber?.slice(-4) || ''}`}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Tooltip>
+                  }
+                />
+              ))}
+            </Tabs>
+          </Box>
+        )}
 
         {/* Buscador - Ocultar si está colapsado */}
         {!chatListCollapsed && (

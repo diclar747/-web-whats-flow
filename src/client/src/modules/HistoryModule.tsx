@@ -222,7 +222,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [selectedDirection, setSelectedDirection] = useState<string>('all');
   const [page, setPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(50); // ⚡ Aumentado a 50 líneas por página para historial completo
+  const [rowsPerPage, setRowsPerPage] = useState(15); // ⚡ 15 líneas por página (Requerimiento usuario)
   const [selectedMessages, setSelectedMessages] = useState<string[]>([]);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [selectedTab, setSelectedTab] = useState(0);

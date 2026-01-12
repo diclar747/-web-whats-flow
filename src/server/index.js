@@ -2760,10 +2760,10 @@ async function saveMessageToDB(sessionId, msg) {
             console.log(`[DB-MSG] ⚠️ No se pudo crear contacto ${chat_jid}: ${contactErr.message}`);
         }
 
-        console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for session_id: ${ownerSessionId}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[7]}, status: ${params[15]}, sender_name: ${senderName}, is_read: ${is_read}`);
+        console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for session_id: ${ownerSessionId}, phone: ${phoneNumber}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[7]}, status: ${params[15]}, sender_name: ${senderName}, is_read: ${is_read}`);
         const [result] = await connection.execute(
-            'INSERT INTO messages (id, session_id, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, caption, file_name, file_size, timestamp, status, sender_name, sender_avatar, is_read) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = COALESCE(VALUES(agent_id), agent_id), agent_name = COALESCE(VALUES(agent_name), agent_name), sender_name = COALESCE(VALUES(sender_name), sender_name), sender_avatar = COALESCE(VALUES(sender_avatar), sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), caption = COALESCE(VALUES(caption), caption), file_name = COALESCE(VALUES(file_name), file_name), file_size = COALESCE(VALUES(file_size), file_size), text_content = COALESCE(VALUES(text_content), text_content), is_read = VALUES(is_read), updated_at = CURRENT_TIMESTAMP',
-            params
+            'INSERT INTO messages (id, session_id, phone, chat_jid, sender_jid, from_me, agent_id, agent_name, message_type, text_content, media_url, media_mime_type, caption, file_name, file_size, timestamp, status, sender_name, sender_avatar, is_read) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE status = VALUES(status), agent_id = COALESCE(VALUES(agent_id), agent_id), agent_name = COALESCE(VALUES(agent_name), agent_name), sender_name = COALESCE(VALUES(sender_name), sender_name), sender_avatar = COALESCE(VALUES(sender_avatar), sender_avatar), media_url = COALESCE(VALUES(media_url), media_url), media_mime_type = COALESCE(VALUES(media_mime_type), media_mime_type), caption = COALESCE(VALUES(caption), caption), file_name = COALESCE(VALUES(file_name), file_name), file_size = COALESCE(VALUES(file_size), file_size), text_content = COALESCE(VALUES(text_content), text_content), is_read = VALUES(is_read), phone = VALUES(phone), updated_at = CURRENT_TIMESTAMP',
+            [params[0], params[1], phoneNumber, ...params.slice(2)]
         );
         console.log(`[DB-MSG] ✅ Message saved/updated: ${messageId}`);
 
@@ -2776,22 +2776,26 @@ async function saveMessageToDB(sessionId, msg) {
             const unreadIncrement = shouldIncrementUnread;
 
             await connection.execute(
-                `INSERT INTO chats (jid, session_id, name, unread_count, last_message_time, last_message_content, is_group, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+                `INSERT INTO chats (jid, session_id, phone, name, unread_count, last_message_time, last_message_content, last_message_from_me, is_group, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
                  ON DUPLICATE KEY UPDATE
                     last_message_content = IF(VALUES(last_message_time) >= COALESCE(last_message_time, '1970-01-01'), VALUES(last_message_content), last_message_content),
                     last_message_time = IF(VALUES(last_message_time) >= COALESCE(last_message_time, '1970-01-01'), VALUES(last_message_time), last_message_time),
+                    last_message_from_me = IF(VALUES(last_message_time) >= COALESCE(last_message_time, '1970-01-01'), VALUES(last_message_from_me), last_message_from_me),
                     unread_count = unread_count + VALUES(unread_count),
                     updated_at = NOW(),
+                    phone = VALUES(phone),
                     name = IF(name = '' OR name IS NULL OR name = SUBSTRING_INDEX(jid, '@', 1), VALUES(name), name)
                 `,
                 [
                     chat_jid,
-                    sessionId, // 🔥 CRÍTICO: Usar sessionId del canal, NO ownerSessionId (user.id)
+                    ownerSessionId, // 🔥 User ID (1, 2, etc.)
+                    phoneNumber, // 🔥 Número del canal (595985768793, etc.)
                     chatName,
                     unreadIncrement,
                     mysqlTimestamp, // last_message_time (ya es string en formato MySQL)
                     (text_content || caption || message_type || 'Media').substring(0, 255), // last_message_content
+                    from_me ? 1 : 0, // last_message_from_me
                     chat_jid.includes('@g.us') ? 1 : 0 // is_group
                 ]
             );
@@ -2903,7 +2907,8 @@ async function saveMessageToDB(sessionId, msg) {
                 sender_name: senderName,
                 sender_avatar: senderAvatar,
                 contactName: senderName,
-                avatar: senderAvatar
+                avatar: senderAvatar,
+                channelPhone: phoneNumber // 🆕 Indicar qué canal recibió el mensaje
             };
 
             const roomById = `session-${sessionId}`;
@@ -3173,16 +3178,16 @@ async function getUserPhoneNumber(sessionId) {
 // Función para obtener todos los session_ids válidos para un usuario (incluyendo phone y session_id hash)
 async function getAllSessionIds(sessionId) {
     const sessionIds = []; // NO incluir el sessionId original si es un user_id pequeño
-    
+
     console.log(`[getAllSessionIds] 🔍 INPUT: ${sessionId} (tipo: ${typeof sessionId})`);
 
     // ⚡ DETECCIÓN DE USER_ID: Si es un número pequeño (1-999), tratarlo como user_id
     const numericId = parseInt(sessionId);
     const isUserId = !isNaN(numericId) && numericId > 0 && numericId < 1000 && String(sessionId) === String(numericId);
-    
+
     if (isUserId && pool) {
         console.log(`[getAllSessionIds] 🎯 DETECTADO USER_ID: ${sessionId} - Buscando todos sus canales`);
-        
+
         try {
             const connection = await pool.getConnection();
             try {
@@ -3191,26 +3196,26 @@ async function getAllSessionIds(sessionId) {
                     'SELECT id, phone, admin_phone, session_id FROM users WHERE id = ?',
                     [numericId]
                 );
-                
+
                 if (userRows.length > 0) {
                     const user = userRows[0];
                     console.log(`[getAllSessionIds] 👤 Usuario encontrado:`, user);
-                    
+
                     if (user.phone) sessionIds.push(user.phone);
                     if (user.admin_phone && user.admin_phone !== user.phone) sessionIds.push(user.admin_phone);
                     if (user.session_id) sessionIds.push(String(user.session_id));
                 }
-                
-                // Buscar TODAS las sesiones en user_sessions donde este user_id es dueño
+
+                // Buscar TODAS las sesiones en user_sessions donde este user_id es dueño (via email)
                 const [sessionsRows] = await connection.execute(
-                    `SELECT DISTINCT phone, session_id, owner_phone_number
-                     FROM user_sessions
+                    `SELECT DISTINCT phone, session_id, owner_phone_number 
+                     FROM user_sessions 
                      WHERE id = ? OR email IN (SELECT email FROM users WHERE id = ?)`,
                     [numericId, numericId]
                 );
-                
+
                 console.log(`[getAllSessionIds] 📱 Sesiones encontradas: ${sessionsRows.length}`);
-                
+
                 for (const row of sessionsRows) {
                     if (row.phone && !sessionIds.includes(row.phone)) {
                         sessionIds.push(row.phone);
@@ -3225,22 +3230,22 @@ async function getAllSessionIds(sessionId) {
                         console.log(`[getAllSessionIds] ➕ Agregado owner_phone: ${row.owner_phone_number}`);
                     }
                 }
-                
+
                 console.log(`[getAllSessionIds] ✅ TOTAL SESSION_IDS PARA USER_ID ${sessionId}:`, sessionIds);
-                
+
             } finally {
                 connection.release();
             }
         } catch (err) {
             console.error(`[getAllSessionIds] ❌ Error buscando canales del user_id ${sessionId}:`, err);
         }
-        
+
         // Si encontramos canales, retornar ahora (no seguir con lógica legacy)
         if (sessionIds.length > 0) {
             return sessionIds;
         }
     }
-    
+
     // Si NO es user_id o no se encontraron canales, incluir el sessionId original
     if (!sessionIds.includes(sessionId)) {
         sessionIds.push(sessionId);
@@ -4922,42 +4927,37 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         // Query usa effectiveSessionId
         const groupFilterSubquery = includeGroups ? '' : " AND chat_jid NOT LIKE '%@g.us'";
 
-        // 📅 Filtro de fecha - DIFERENCIAL: 24h para chats individuales, SIN filtro para grupos
+        // 📅 Filtro de fecha - OPTIMIZADO: Por defecto 24h para chats individuales
         let dateWhereClause = "";
 
-        // 🎯 REGLA CRÍTICA DEL CLIENTE:
-        // - Chats INDIVIDUALES (enviados/recibidos): Solo últimas 24 horas
-        // - GRUPOS: Mostrar TODOS sin filtro de tiempo
+        // 🚀 OPTIMIZACIÓN CRÍTICA: Por defecto, SIEMPRE usar 24h a menos que se pida otra cosa
+        // Esto cumple con el requerimiento de "solo lo que fue del dia nomas"
+        // 🚀 AJUSTE: Filtro por defecto 'months_3' (90 días) para que el usuario vea su historial reciente
+        // ⚡ DEFAULT OPTIMIZADO: El usuario quiere ver SOLAMENTE los chats de las últimas 24h por defecto
+        // ⚡ DEFAULT: Por defecto cargamos las últimas 24h para mantener ligereza,
+        // pero SI el usuario pide 'all', le mostramos TODO.
         const effectiveDateFilter = dateFilter || 'limit_24h';
 
-        // Solo aplicar filtro de tiempo si NO son grupos
-        if (!includeGroups) {
-            // Para chats individuales, SIEMPRE filtrar por 24h
-            if (effectiveDateFilter === 'limit_24h') {
-                dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
-                console.log(`[CHATLIST] 📅 Filtro ESTRICTO para chats individuales: Últimas 24 horas`);
-            } else if (effectiveDateFilter === 'week') {
-                dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
-            } else if (effectiveDateFilter === 'month') {
-                dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
-            } else if (effectiveDateFilter === 'months_3') {
-                dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 90 DAY)";
-            } else if (effectiveDateFilter === 'all') {
-                dateWhereClause = ""; // Sin filtro si se solicita explícitamente
-            }
-        } else {
-            // Para GRUPOS, NUNCA aplicar filtro de tiempo - mostrar todo el historial
-            dateWhereClause = "";
-            console.log(`[CHATLIST] 📅 GRUPOS: Sin filtro de tiempo - mostrando todo el historial`);
+        if (effectiveDateFilter === 'limit_24h') {
+            dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
+            console.log(`[CHATLIST] 📅 Filtro ESTRICTO: Últimas 24 horas`);
+        } else if (effectiveDateFilter === 'week') {
+            dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+        } else if (effectiveDateFilter === 'month') {
+            dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+        } else if (effectiveDateFilter === 'months_3') {
+            dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 90 DAY)";
+            console.log(`[CHATLIST] 📅 Filtro AUTO: Últimos 3 meses (Balance ideal)`);
+        } else if (effectiveDateFilter === 'all') {
+            dateWhereClause = ""; // SIN FILTRO DE FECHA - COMPLETAMENTE TODO EL HISTORIAL
+            console.log(`[CHATLIST] 📅 Filtro COMPLETO: Mostrando todo el historial de chats`);
+        } else if (effectiveDateFilter === 'month') {
+            dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+            console.log(`[CHATLIST] 📅 Filtro ACTIVO: Último mes`);
+        } else if (effectiveDateFilter === 'all') {
+            // Solo para grupos o cuando se solicita explícitamente
+            console.log(`[CHATLIST] 📅 Filtro: TODOS los chats (puede ser lento)`);
         }
-
-        // 🔥 CRÍTICO: Usar getAllSessionIds para obtener TODOS los IDs relacionados con ESTE canal específico
-        // Esto incluye IDs numéricos, hexadecimales, y números de teléfono - SOLO de este canal
-        const allRelatedSessionIds = await getAllSessionIds(sessionId);
-        console.log(`[CHATLIST] 🔍 getAllSessionIds para canal ${sessionId}:`, allRelatedSessionIds);
-
-        // Usar TODOS los session_ids relacionados con este canal específico
-        const sessionIdPlaceholders = allRelatedSessionIds.map(() => '?').join(',');
 
         const query = `
             SELECT
@@ -4965,16 +4965,17 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                 COALESCE(cg.name, con.notify_name, con.name, c.name, SUBSTRING_INDEX(c.jid, '@', 1)) AS contact_name,
                 c.last_message_content AS last_message_text,
                 c.last_message_time AS last_message_timestamp,
-                0 AS last_message_from_me,
+                c.last_message_from_me,
                 'delivered' AS last_message_status,
                 c.is_group,
                 COALESCE(cg.avatar_url, con.avatar_url) AS avatar_url,
                 c.unread_count,
                 SUBSTRING_INDEX(c.jid, '@', 1) AS phone
             FROM chats c
-            LEFT JOIN contacts con ON c.jid = con.jid AND (con.session_id = c.session_id OR con.session_id = ?)
-            LEFT JOIN contact_groups cg ON c.jid = cg.jid AND (cg.session_id = c.session_id OR cg.session_id = ?)
-            WHERE c.session_id IN (${sessionIdPlaceholders})
+            LEFT JOIN contacts con ON c.jid = con.jid AND con.session_id = ?
+            LEFT JOIN contact_groups cg ON c.jid = cg.jid AND cg.session_id = ?
+            WHERE c.session_id = ?
+              AND c.phone = ?
               AND c.jid NOT LIKE '%status@broadcast%'
               AND c.jid NOT LIKE CONCAT(?, '@%')
               ${includeGroups ? '' : 'AND c.is_group = 0'}
@@ -4983,11 +4984,14 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             LIMIT ? OFFSET ?;
         `;
 
+        console.log(`[CHATLIST] 🔍 Filtros: session_id=${ownerSessionId}, phone=${phoneNumber}, includeGroups=${includeGroups}`);
+
         const [rowsFromDB] = await connection.execute(query, [
-            ownerSessionId, // Para contacts
-            ownerSessionId, // Para groups
-            ...allRelatedSessionIds, // TODOS los session_ids de ESTE canal
-            phoneNumber || '0',
+            ownerSessionId, // Para contacts JOIN
+            ownerSessionId, // Para groups JOIN
+            ownerSessionId, // Para WHERE c.session_id = ?
+            phoneNumber, // Para WHERE c.phone = ? (filtro por canal)
+            phoneNumber || '0', // Para excluir número propio
             limit,
             offset
         ]);
@@ -12517,32 +12521,12 @@ app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser
         let chats = [];
         let source = 'database';
 
-        // 🎯 ESTRATEGIA DUAL: Cargar chats individuales (24h) y grupos (todo) por separado
-        console.log(`[API][${sessionId}] 🚀 Cargando chats desde BD con filtro dual...`);
+        // ⚡ PRIORIDAD 1: SIEMPRE cargar desde DB primero (es mucho más rápido)
+        console.log(`[API][${sessionId}] 🚀 Cargando chats desde BD(paginado: limit ${parsedLimit}, offset ${parsedOffset})...`);
         const startTime = Date.now();
-
-        // 1️⃣ Cargar CHATS INDIVIDUALES con filtro de 24h
-        console.log(`[API][${sessionId}] 💬 Cargando chats individuales (últimas 24h)...`);
-        const individualChats = await loadChatListFromDB(sessionId, false, 'limit_24h', parsedLimit, parsedOffset);
-        console.log(`[API][${sessionId}] ✅ ${individualChats.length} chats individuales cargados`);
-
-        // 2️⃣ Cargar GRUPOS sin filtro de tiempo (todo el historial)
-        console.log(`[API][${sessionId}] 👥 Cargando grupos (sin filtro de tiempo)...`);
-        const groupChats = await loadChatListFromDB(sessionId, true, 'all', parsedLimit, parsedOffset);
-        console.log(`[API][${sessionId}] ✅ ${groupChats.length} grupos cargados`);
-
-        // 3️⃣ Combinar ambos resultados
-        chats = [...individualChats, ...groupChats];
-
-        // 4️⃣ Ordenar por timestamp (más reciente primero)
-        chats.sort((a, b) => {
-            const timeA = new Date(a.timestamp || 0).getTime();
-            const timeB = new Date(b.timestamp || 0).getTime();
-            return timeB - timeA;
-        });
-
+        chats = await loadChatListFromDB(sessionId, includeGroups, dateFilter, parsedLimit, parsedOffset);
         const dbLoadTime = Date.now() - startTime;
-        console.log(`[API][${sessionId}] ✅ TOTAL: ${chats.length} chats (${individualChats.length} individuales + ${groupChats.length} grupos) en ${dbLoadTime} ms`);
+        console.log(`[API][${sessionId}] ✅ ${chats.length} chats cargados desde BD en ${dbLoadTime} ms`);
 
         // 🚫 FILTRO ADICIONAL - Excluir el número propio del resultado
         const beforeFilter = chats.length;
@@ -12872,96 +12856,54 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
 
     const connection = await pool.getConnection();
     try {
-        // 🔥 OBTENER TODOS LOS SESSION_IDS RELACIONADOS (Incluyendo huérfanos)
-        const relatedSessionIds = await getAllSessionIds(sessionId);
-        console.log(`[API - HISTORY] Related sessionIds for ${sessionId}:`, relatedSessionIds);
+        // 🔥 NUEVO DISEÑO: Obtener todos los sessionIds asociados al usuario
+        // El historial debe mostrar mensajes de TODOS los canales del usuario
+        let allUserSessionIds = [];
+        try {
+            // Usar req.sessionUserId (middleware), ownerSessionId (getOwnerSessionId) o sessionId (input)
+            const userIdToResolve = req.sessionUserId || ownerSessionId || sessionId;
+            console.log(`[API - HISTORY] 📊 Resolviendo sesiones para userId/sessionId: ${userIdToResolve}`);
 
-        let activeSessionId = relatedSessionIds[0]; // Para compatibilidad con joins simples o logs
+            // getAllSessionIds devuelve una lista de strings (phones, session_ids, etc)
+            allUserSessionIds = await getAllSessionIds(userIdToResolve);
 
-        // Mantener ownerSessionId solo para checks de propiedad si fuera necesario, 
-        // pero activeSessionId debe ser el valor que está en la columna messages.session_id
+            // Asegurar que ownerSessionId (si es string válido) también esté incluido
+            if (ownerSessionId && typeof ownerSessionId === 'string' && !allUserSessionIds.includes(ownerSessionId)) {
+                allUserSessionIds.push(ownerSessionId);
+            }
+        } catch (err) {
+            console.error('[API - HISTORY] Error resolviendo sessionIds:', err);
+            // Fallback a solo el sessionId actual si falla la resolución global
+            allUserSessionIds = [sessionId];
+        }
 
-        // 🔥 VALIDACIÓN DE PERMISOS: Usuario solo puede ver su propio historial
+        console.log(`[API - HISTORY] 📊 Canales del usuario: ${allUserSessionIds.length}`, allUserSessionIds);
+
+        // 🔥 VALIDACIÓN DE PERMISOS SIMPLE Y ROBUSTA
         if (!isAdminView) {
-            // Verificar que el sessionId pertenece al usuario autenticado
-            // Verificar que el sessionId pertenece al usuario autenticado
-            // NOTA: Usamos 'sessionId' (input original, ejemplo '595985768793') para buscar el propietario,
-            // ya que si activeSessionId es Hex, la query WHERE session_id = ? funciona, pero si buscamos por phone=?
-            // activeSessionId ya NO es el phone.
-            // La query busca por session_id OR phone OR id OR owner_phone_number
-
-            // Mejor estrategia: Usar activeSessionId (Hex) para buscar por session_id
-            // Y usar sessionId (Input) para buscar por phone/id
-            // Verificar existencia de sesión usando una estrategia de cascada robusta
-            let sessionCheck = [];
-
-            // 1. Intentar buscar exactamente por el activeSessionId (Hex)
-            const [checkHex] = await connection.execute(
-                'SELECT email, phone FROM user_sessions WHERE session_id = ? LIMIT 1',
-                [activeSessionId]
-            );
-            if (checkHex.length > 0) {
-                sessionCheck = checkHex;
-                console.log(`[API - HISTORY] ✅ Session encontrada por Hex ID: ${activeSessionId}`);
-            } else {
-                // 2. Si falló, intentar buscar por el sessionId original (input) como teléfono o ID
-                console.log(`[API - HISTORY] ⚠️ Session no encontrada por Hex ${activeSessionId}. Intentando fallback con input: ${sessionId}`);
-                const [checkInput] = await connection.execute(
-                    'SELECT email, phone FROM user_sessions WHERE phone = ? OR id = ? OR owner_phone_number = ? LIMIT 1',
-                    [sessionId, sessionId, sessionId]
-                );
-                if (checkInput.length > 0) {
-                    sessionCheck = checkInput;
-                    console.log(`[API - HISTORY] ✅ Session encontrada por Input (Phone/ID): ${sessionId}`);
-                }
-            }
-
-            if (sessionCheck.length === 0) {
-                console.warn(`[API - HISTORY] ⚠️ SessionId no encontrado: ${activeSessionId} (original: ${sessionId})`);
-                return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
-            }
-
-            const sessionOwnerEmail = sessionCheck[0].email;
-            const sessionOwnerPhone = sessionCheck[0].phone;
-
-            // Permitir roles privilegiados
-            const isPrivilegedRole = ['super_admin', 'superadmin', 'admin', 'supervisor'].includes(userRole);
-            if (isPrivilegedRole) {
-                console.log(`[API - HISTORY] 👑 Acceso por rol ${userRole} a sessionId ${sessionId}`);
-            } else {
-                // Permitir acceso si el usuario tiene asignaciones activas en esta sesión
-                const [assignRows] = await connection.execute(
-                    'SELECT COUNT(*) AS cnt FROM chat_assignments WHERE session_id = ? AND user_id = ? AND status = "active"',
-                    [activeSessionId, req.user.id]
-                );
-
-                const hasActiveAssignment = assignRows[0] && assignRows[0].cnt > 0;
-
-                // Verificar que el email o phone del token coincide con el dueño de la sesión
-                // O si tiene asignaciones activas en la sesión
-                const isOwner = (userEmail && userEmail === sessionOwnerEmail) ||
-                    (userPhone && userPhone === sessionOwnerPhone);
-
-                if (!isOwner && !hasActiveAssignment) {
-                    console.warn(`[API - HISTORY] ⚠️ INTENTO DE ACCESO NO AUTORIZADO: Usuario ${userEmail || userPhone} intentó acceder al historial de ${sessionOwnerEmail || sessionOwnerPhone}`);
-                    return res.status(403).json({ success: false, error: 'No tienes permiso para ver este historial' });
-                }
-
-                console.log(`[API - HISTORY] ✅ Acceso autorizado: ${userEmail || userPhone} a sessionId ${sessionId}`);
+            // En este punto, validateSessionBelongsToUser ya debió validar el acceso básico.
+            // Si allUserSessionIds está vacío, algo anda mal con la vinculación.
+            if (allUserSessionIds.length === 0) {
+                console.warn(`[API - HISTORY] ⚠️ No se encontraron canales asociados para ${sessionId}`);
+                return res.json({
+                    success: true,
+                    messages: [],
+                    pagination: { total: 0, limit: parseInt(limit, 10), offset: parseInt(offset, 10), page: 1, totalPages: 0 }
+                });
             }
         } else {
             console.log(`[API - HISTORY] 👑 Modo Admin: SuperAdmin ${userEmail || userPhone} viendo todo el historial`);
         }
-
         // ✅ VERIFICAR SI HAY MENSAJES EN CUALQUIERA DE LAS SESIONES
-        const placeholders = relatedSessionIds.map(() => '?').join(',');
+        const placeholders = allUserSessionIds.map(() => '?').join(',');
+
         let [checkMessages] = await connection.execute(
             `SELECT COUNT(*) as count FROM messages WHERE session_id IN (${placeholders})`,
-            relatedSessionIds
+            allUserSessionIds
         );
 
         if (checkMessages[0].count === 0) {
-            console.log(`[API - HISTORY] No messages found for sessionIds: ${relatedSessionIds.join(',')}`);
+            console.log(`[API - HISTORY] No messages found for sessionIds: ${allUserSessionIds.join(',')}`);
             return res.json({
                 success: true,
                 messages: [],
@@ -12980,13 +12922,13 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
     m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status
                      FROM messages m
                      LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id IN (${placeholders})
-                     LEFT JOIN (SELECT jid, MAX(name) as name, MAX(avatar_url) as avatar_url FROM contact_groups GROUP BY jid) cg ON (cg.jid = m.chat_jid OR cg.jid = CONCAT(m.chat_jid, '@g.us'))
+                     LEFT JOIN contact_groups cg ON (cg.jid = m.chat_jid OR cg.jid = CONCAT(m.chat_jid, '@g.us'))
                      LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id IN (${placeholders})
                      WHERE m.session_id IN (${placeholders})`;
 
         // Ensure params are strings and doubled for the new JOIN IN clauses
-        const joinPlaceholders = [...relatedSessionIds, ...relatedSessionIds];
-        const wherePlaceholders = [...relatedSessionIds];
+        const joinPlaceholders = [...allUserSessionIds, ...allUserSessionIds];
+        const wherePlaceholders = [...allUserSessionIds];
         const queryParams = [...joinPlaceholders, ...wherePlaceholders];
 
         if (chatJid) {
@@ -13007,12 +12949,6 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
             query += ' AND m.message_type = ?';
             queryParams.push(type);
         }
-
-        // 🚫 EXCLUIR GRUPOS - Solo mostrar chats individuales (@s.whatsapp.net)
-        // Excluir: grupos (@g.us), estados (status@broadcast), y llamadas
-        query += ` AND m.chat_jid NOT LIKE '%@g.us'
-                   AND m.chat_jid NOT LIKE '%status@broadcast'
-                   AND m.chat_jid NOT LIKE '%call%'`;
 
         // 📅 VALIDACIÓN DE FECHAS ROBUSTA
         if (startDate && startDate !== 'null' && startDate !== 'undefined') {
@@ -13078,7 +13014,7 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
             agentName: msg.agent_name || null
         }));
 
-        console.log(`[API - HISTORY] Usando activeSessionId: ${activeSessionId}`);
+        console.log(`[API - HISTORY] Usando sessionIds: ${allUserSessionIds.join(',')}`);
         const ticMsg = historyMessages.find(m => m.chatJid.includes('120363420507868002'));
         if (ticMsg) {
             console.log('[API - HISTORY] DEBUG TIC MSG:', JSON.stringify(ticMsg, null, 2));
@@ -13916,7 +13852,7 @@ app.get('/api/groups/:groupJid/members', async (req, res) => {
     try {
         const { groupJid } = req.params;
         const sessionId = req.query.sessionId;
-        
+
         if (!sessionId) {
             return res.status(400).json({ error: 'sessionId requerido' });
         }
@@ -13929,10 +13865,10 @@ app.get('/api/groups/:groupJid/members', async (req, res) => {
             );
             const memberCount = memberRows[0]?.count || 0;
 
-            res.json({ 
-                success: true, 
+            res.json({
+                success: true,
                 count: memberCount,
-                groupJid 
+                groupJid
             });
         } finally {
             connection.release();
@@ -13943,17 +13879,19 @@ app.get('/api/groups/:groupJid/members', async (req, res) => {
     }
 });
 
-// Endpoint de grupos
-app.get('/api/groups', async (req, res) => {
+// Endpoint de grupos (Soporta query param o path param)
+app.get(['/api/groups', '/api/groups/:sessionId'], async (req, res) => {
     try {
-        const sessionId = req.query.sessionId;
+        const sessionId = req.params.sessionId || req.query.sessionId;
         if (!sessionId) {
             return res.status(400).json({ error: 'sessionId requerido' });
         }
 
         const sessionIds = await getAllSessionIds(sessionId);
+        const ownerSessionId = await getOwnerSessionId(sessionId);
+        const dbSessionId = ownerSessionId || sessionId;
         const connection = await pool.getConnection();
-        
+
         try {
             const placeholders = sessionIds.map(() => '?').join(',');
             const [groups] = await connection.execute(
@@ -13961,35 +13899,57 @@ app.get('/api/groups', async (req, res) => {
                 sessionIds
             );
 
-            const groupsFormatted = await Promise.all(groups.map(async (group) => {
-                let memberCount = 0;
-                try {
-                    const [memberRows] = await connection.execute(
-                        'SELECT COUNT(*) as count FROM group_members WHERE group_jid = ? AND session_id = ?',
-                        [group.jid, group.session_id]
-                    );
-                    memberCount = memberRows[0]?.count || 0;
-                } catch (err) {
-                    console.error(`[API - GROUPS] Error obteniendo miembros de grupo ${group.jid}: `, err.message);
-                }
+            // Optimización: Obtener conteos de miembros en una sola consulta
+            // Extraer todos los JIDs de grupo para filtrar
+            if (groups.length > 0) {
+                const groupJids = groups.map(g => g.jid);
+                const placeholders = groupJids.map(() => '?').join(',');
 
-                return {
-                    id: group.jid,
-                    jid: group.jid,
-                    name: group.name || group.jid.split('@')[0],
-                    subject: group.name || group.jid.split('@')[0],
-                    notifyName: group.name,
-                    isGroup: true,
-                    avatar: group.avatar_url,
-                    avatar_url: group.avatar_url,
-                    session_id: group.session_id,
-                    description: group.description,
-                    createdAt: group.created_at,
-                    updatedAt: group.updated_at,
-                    memberCount: memberCount,
-                    member_count: memberCount,
-                };
-            }));
+                try {
+                    const [memberCounts] = await connection.execute(
+                        `SELECT group_jid, COUNT(*) as count 
+                         FROM group_members 
+                         WHERE session_id = ? AND group_jid IN (${placeholders})
+                         GROUP BY group_jid`,
+                        [dbSessionId, ...groupJids]
+                    );
+
+                    // Crear mapa de conteos para acceso rápido
+                    const countsMap = {};
+                    memberCounts.forEach(row => {
+                        countsMap[row.group_jid] = row.count;
+                    });
+
+                    // Asignar conteos a los grupos sin hacer queries adicionales
+                    groupsFormatted = groups.map(group => ({
+                        id: group.jid,
+                        jid: group.jid,
+                        name: group.name || group.jid.split('@')[0],
+                        subject: group.name || group.jid.split('@')[0],
+                        notifyName: group.name,
+                        isGroup: true,
+                        avatar: group.avatar_url,
+                        avatar_url: group.avatar_url,
+                        session_id: group.session_id,
+                        description: group.description,
+                        createdAt: group.created_at,
+                        updatedAt: group.updated_at,
+                        memberCount: countsMap[group.jid] || 0,
+                        member_count: countsMap[group.jid] || 0,
+                    }));
+                } catch (err) {
+                    console.error('[API - GROUPS] Error en conteo optimizado:', err);
+                    // Fallback a 0 si falla la optimización, pero no romper la respuesta
+                    groupsFormatted = groups.map(group => ({
+                        ...group,
+                        id: group.jid,
+                        subject: group.name || group.jid.split('@')[0],
+                        memberCount: 0
+                    }));
+                }
+            } else {
+                groupsFormatted = [];
+            }
 
             res.json({
                 success: true,

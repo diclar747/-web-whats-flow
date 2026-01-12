@@ -121,20 +121,34 @@ const validateSessionBelongsToUser = async (req, res, next) => {
                     console.warn(`[SESSION-VALIDATION] 🔍 DEBUG - req.user:`, JSON.stringify(req.user));
                     console.warn(`[SESSION-VALIDATION] 🔍 DEBUG - sessionId recibido:`, sessionId);
 
-                    // Log adicional: mostrar qué sesiones existen en BD
-                    try {
-                        const [availableSessions] = await connection.execute(
-                            'SELECT session_id, phone FROM user_sessions WHERE is_active = 1 LIMIT 5'
-                        );
-                        console.warn(`[SESSION-VALIDATION] 📋 Sesiones disponibles:`, JSON.stringify(availableSessions));
-                    } catch (e) {
-                        console.error('[SESSION-VALIDATION] Error listando sesiones:', e.message);
-                    }
+                    // 🔥 FALLBACK: Si el usuario ya está autenticado, usar su user_id
+                    // Esto pasa cuando el frontend envía un sessionId hexadecimal obsoleto
+                    if (req.user && req.user.id) {
+                        console.warn(`[SESSION-VALIDATION] 🔄 FALLBACK: Usando user_id del token: ${req.user.id}`);
+                        userId = req.user.id;
 
-                    return res.status(403).json({
-                        success: false,
-                        error: 'Sesión inválida o no encontrada. Intenta cerrar sesión y volver a entrar.'
-                    });
+                        // Actualizar sessionId para que coincida con el phone del usuario
+                        if (req.user.phone) {
+                            console.warn(`[SESSION-VALIDATION] 🔄 Actualizando sessionId a phone: ${req.user.phone}`);
+                            req.params.sessionId = req.user.phone;
+                            req.validatedSessionId = req.user.phone;
+                        }
+                    } else {
+                        // Log adicional: mostrar qué sesiones existen en BD
+                        try {
+                            const [availableSessions] = await connection.execute(
+                                'SELECT session_id, phone FROM user_sessions WHERE is_active = 1 LIMIT 5'
+                            );
+                            console.warn(`[SESSION-VALIDATION] 📋 Sesiones disponibles:`, JSON.stringify(availableSessions));
+                        } catch (e) {
+                            console.error('[SESSION-VALIDATION] Error listando sesiones:', e.message);
+                        }
+
+                        return res.status(403).json({
+                            success: false,
+                            error: 'Sesión inválida o no encontrada. Intenta cerrar sesión y volver a entrar.'
+                        });
+                    }
                 }
 
                 // 3. Verificar que el usuario del token es el dueño de la sesión

@@ -153,10 +153,17 @@ export const ChatListItem: React.FC<ChatListItemProps> = ({
                                     color: typingStatus?.[chat.id] ? '#25d366' : colors.textSecondary,
                                     fontWeight: (chat.unreadCount || typingStatus?.[chat.id]) ? 500 : 400,
                                     fontStyle: typingStatus?.[chat.id] ? 'italic' : 'normal',
-                                    fontSize: '0.85rem'
+                                    fontSize: '0.85rem',
+                                    display: 'flex',
+                                    alignItems: 'center'
                                 }}
                             >
-                                {typingStatus?.[chat.id] || chat.lastMessage || 'Toca para chatear'}
+                                {typingStatus?.[chat.id] || (
+                                    <>
+                                        {chat.lastMessageFromMe && <span style={{ color: colors.primary, fontWeight: 600, marginRight: '4px' }}>Tú:</span>}
+                                        {chat.lastMessage || 'Toca para chatear'}
+                                    </>
+                                )}
                             </Typography>
                         </Box>
                     }
