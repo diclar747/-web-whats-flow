@@ -3203,10 +3203,10 @@ async function getAllSessionIds(sessionId) {
                 
                 // Buscar TODAS las sesiones en user_sessions donde este user_id es dueño
                 const [sessionsRows] = await connection.execute(
-                    `SELECT DISTINCT phone, session_id, owner_phone_number 
-                     FROM user_sessions 
-                     WHERE id = ? OR owner_user_id = ? OR email IN (SELECT email FROM users WHERE id = ?)`,
-                    [numericId, numericId, numericId]
+                    `SELECT DISTINCT phone, session_id, owner_phone_number
+                     FROM user_sessions
+                     WHERE id = ? OR email IN (SELECT email FROM users WHERE id = ?)`,
+                    [numericId, numericId]
                 );
                 
                 console.log(`[getAllSessionIds] 📱 Sesiones encontradas: ${sessionsRows.length}`);
@@ -4951,22 +4951,30 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             console.log(`[CHATLIST] 📅 GRUPOS: Sin filtro de tiempo - mostrando todo el historial`);
         }
 
+        // 🔥 CRÍTICO: Usar getAllSessionIds para obtener TODOS los IDs relacionados con ESTE canal específico
+        // Esto incluye IDs numéricos, hexadecimales, y números de teléfono - SOLO de este canal
+        const allRelatedSessionIds = await getAllSessionIds(sessionId);
+        console.log(`[CHATLIST] 🔍 getAllSessionIds para canal ${sessionId}:`, allRelatedSessionIds);
+
+        // Usar TODOS los session_ids relacionados con este canal específico
+        const sessionIdPlaceholders = allRelatedSessionIds.map(() => '?').join(',');
+
         const query = `
             SELECT
                 c.jid AS chat_jid,
                 COALESCE(cg.name, con.notify_name, con.name, c.name, SUBSTRING_INDEX(c.jid, '@', 1)) AS contact_name,
                 c.last_message_content AS last_message_text,
                 c.last_message_time AS last_message_timestamp,
-                0 AS last_message_from_me, 
+                0 AS last_message_from_me,
                 'delivered' AS last_message_status,
                 c.is_group,
                 COALESCE(cg.avatar_url, con.avatar_url) AS avatar_url,
                 c.unread_count,
                 SUBSTRING_INDEX(c.jid, '@', 1) AS phone
             FROM chats c
-            LEFT JOIN contacts con ON c.jid = con.jid AND (con.session_id = c.session_id OR con.session_id = ?) 
+            LEFT JOIN contacts con ON c.jid = con.jid AND (con.session_id = c.session_id OR con.session_id = ?)
             LEFT JOIN contact_groups cg ON c.jid = cg.jid AND (cg.session_id = c.session_id OR cg.session_id = ?)
-            WHERE c.session_id = ?
+            WHERE c.session_id IN (${sessionIdPlaceholders})
               AND c.jid NOT LIKE '%status@broadcast%'
               AND c.jid NOT LIKE CONCAT(?, '@%')
               ${includeGroups ? '' : 'AND c.is_group = 0'}
@@ -4978,7 +4986,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         const [rowsFromDB] = await connection.execute(query, [
             ownerSessionId, // Para contacts
             ownerSessionId, // Para groups
-            effectiveSessionId, // Para chats (HEX)
+            ...allRelatedSessionIds, // TODOS los session_ids de ESTE canal
             phoneNumber || '0',
             limit,
             offset
