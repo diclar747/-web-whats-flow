@@ -614,7 +614,11 @@ router.get('/my-subscription', async (req, res) => {
         return res.json({
           success: true,
           subscription: {
-            ...user,
+            phone: user.phone,
+            subscription_plan: user.subscription_plan,
+            subscription_status: user.subscription_status,
+            subscription_start_date: user.subscription_start_date,
+            subscription_end_date: user.subscription_end_date,
             days_remaining: user.days_remaining > 0 ? user.days_remaining : 0,
             plan_details: plan ? {
               ...plan,
@@ -630,6 +634,7 @@ router.get('/my-subscription', async (req, res) => {
             } : null
           }
         });
+
       }
 
       // 4. No encontrado

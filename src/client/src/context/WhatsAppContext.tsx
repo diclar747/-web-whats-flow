@@ -267,6 +267,22 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         setIsLoading(true);
         // Si es carga nueva (no append), resetear hasMoreChats temporalmente
         setHasMoreChats(true);
+
+        // 🔥 CRÍTICO: Si el sessionId cambió, limpiar datos anteriores inmediatamente
+        // para evitar "flicker" o datos mezclados entre canales
+        if (session?.sessionId !== sessionId) {
+          console.log(`[WhatsAppContext] 🔀 Detectado cambio de sesión: ${session?.sessionId || 'ninguna'} -> ${sessionId}`);
+          setChats([]);
+          setMessages([]);
+          // También refrescar el objeto session para que los sockets filtren correctamente
+          setSession(prev => ({
+            sessionId: sessionId,
+            isConnected: true, // Asumimos conectado si estamos intentando cargar chats
+            status: 'connected',
+            phoneNumber: sessionId.length >= 10 ? sessionId : (prev?.phoneNumber || ''), // Intentar inferir phone si es largo
+            lastActivity: new Date().toISOString()
+          }));
+        }
       }
 
       const endpoint = isAgent && userId
@@ -398,6 +414,19 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         }
 
         setConnectionStatus('connected');
+
+        // Actualizar sesión con el phoneNumber real que viene de la API si es posible
+        if (data.sessionId || sessionId) {
+          const actualSessionId = data.sessionId || sessionId;
+          setSession(prev => ({
+            ...prev,
+            sessionId: actualSessionId,
+            isConnected: true,
+            status: 'connected',
+            phoneNumber: data.phoneNumber || prev?.phoneNumber || (actualSessionId.length >= 10 ? actualSessionId : ''),
+            lastActivity: new Date().toISOString()
+          }));
+        }
       } else if (data.source === 'database_fallback') {
         const fallbackChats: WhatsAppChat[] = [
           {
@@ -501,6 +530,14 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
     const handleMessage = (newMessage: WhatsAppMessage) => {
       console.log('📨 [REAL-TIME] handleMessage recibido:', newMessage);
+
+      // 🛡️ SECURITY: Filter events for the current session only
+      // @ts-ignore
+      const msgChannel = newMessage.channelPhone;
+      if (msgChannel && session?.phoneNumber && msgChannel !== session.phoneNumber) {
+        console.log(`[SOCKET] 🛡️ Ignorando MENSAJE de otro canal (${msgChannel}) en sesión actual (${session.phoneNumber})`);
+        return;
+      }
 
       // ⚡ OPTIMIZACIÓN: Normalizar chatJid de forma más eficiente
       const rawChatJid = newMessage.chatJid || (newMessage as any).chat_jid || newMessage.to || newMessage.from;
@@ -699,6 +736,18 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     const handleMessageStatusUpdate = ({ id, status, chatJid }: { id: string; status: string; chatJid?: string }) => {
       console.log('📊 [WhatsAppContext] Estado mensaje actualizado:', id, status, chatJid);
 
+      // 🛡️ SECURITY: Filter events for the current session only
+      // @ts-ignore
+      const msgChannel = (id as any).channelPhone || (status as any).channelPhone; // Backend might send it in different places or not at all for status updates?
+      // Actually status update payload is usually small.
+      // If we don't have channel info here, we might skip filtering or rely on room separation.
+      // Backend emit: emit('message-status-update', { id, status, chatJid: msg.remote_jid })
+      // It does NOT seem to include channelPhone in status update yet.
+      // However, since we implemented room isolation, this might be less critical.
+      // But let's add it if we can, or rely on room isolation.
+      // For now, room isolation is the main defense here.
+
+
       const statusOrder: Record<string, number> = { 'read': 4, 'visto': 4, 'delivered': 3, 'entregado': 3, 'sent': 2, 'enviado': 2, 'pending': 1, 'received': 0 };
       const newOrder = statusOrder[status] || 0;
 
@@ -894,6 +943,13 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
     const handleChatUpdate = (data: any) => {
       console.log('🔄 [SOCKET] Actualización de chat recibida:', data);
+
+      // 🛡️ SECURITY: Filter events for the current session only
+      const msgChannel = data.channelPhone;
+      if (msgChannel && session?.phoneNumber && msgChannel !== session.phoneNumber) {
+        console.log(`[SOCKET] 🛡️ Ignorando CHAT-UPDATE de otro canal (${msgChannel}) en sesión actual (${session.phoneNumber})`);
+        return;
+      }
 
       setChats(prev => {
         const chatIndex = prev.findIndex(c => c.id === data.id);

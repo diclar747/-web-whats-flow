@@ -478,10 +478,14 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
     // Si la sesión cambió, forzar recarga con filtro de 24 horas para velocidad inmediata
     if (loadChats && sessionId) {
-      // 🔒 SECURITY: Prevent loading chats for User ID (e.g. '1') to avoid mixing channels
-      // We only want to load chats for specific Phone Numbers (Session IDs)
-      if (sessionId.length < 5 && !isNaN(Number(sessionId))) {
-        console.warn(`[WhatsAppWebChat] 🚫 Skipping loadChats for User ID '${sessionId}' to prevent channel mixing. Waiting for Phone Number...`);
+      // 🔒 SECURITY: Only skip loading if sessionId is a pure numeric User ID AND not in allSessions
+      // This allows loading chats for valid session IDs (even short ones) that are in allSessions
+      const isValidSession = allSessions && allSessions.length > 0
+        ? allSessions.some(s => s.sessionId === sessionId)
+        : sessionId.length >= 5 || isNaN(Number(sessionId));
+
+      if (!isValidSession) {
+        console.warn(`[WhatsAppWebChat] 🚫 Skipping loadChats for invalid sessionId '${sessionId}'. Not in allSessions.`);
         return;
       }
 
@@ -489,7 +493,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       // Pasar 'limit_24h' como filtro inicial
       loadChats(sessionId, 'limit_24h').catch(err => console.error('[WhatsAppWebChat] Error loading initial chats:', err));
     }
-  }, [sessionId, loadChats, setActiveChat]);
+  }, [sessionId, loadChats, setActiveChat, allSessions]);
 
   const commonReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '👏', '✅', '❌'];
 
@@ -1363,8 +1367,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
       // 🟢 FILTRADO POR PESTAÑAS
       if (filterTab === 0) {
-        // Todas: Chats individuales + grupos, NO estados
-        return !isStatus;
+        // Todas: SOLO chats individuales (1 a 1), NO grupos ni estados
+        return !chat.isGroup && !isStatus;
       }
       if (filterTab === 1) {
         // Recibidos: Chats individuales (NO grupos) donde el último msj no fui yo
@@ -1405,8 +1409,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
     const isStatus = (c: any) => c.id === 'status@broadcast' || c.id.includes('status@broadcast') || c.name === 'status';
 
     return {
-      // Total: Todos los chats (excepto estados)
-      total: chats.filter(c => !isStatus(c)).length,
+      // Total: Solo chats individuales (1 a 1), NO grupos ni estados
+      total: chats.filter(c => !c.isGroup && !isStatus(c)).length,
       // Grupos: Sólo grupos (No estados)
       groups: chats.filter(c => c.isGroup && !isStatus(c)).length,
       // Recibidos: Chats individuales (No grupos) donde el último no es mío

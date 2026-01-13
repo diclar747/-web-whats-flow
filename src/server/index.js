@@ -2953,7 +2953,8 @@ async function saveMessageToDB(sessionId, msg) {
                     timestamp: new Date(timestamp).toISOString(),
                     unreadCount: !from_me ? 1 : 0,
                     name: senderName || chat_jid.split('@')[0],
-                    profilePicUrl: senderAvatar
+                    profilePicUrl: senderAvatar,
+                    channelPhone: phoneNumber // 🔥 FIX: Para filtrar en frontend
                 };
                 io.to(roomById).emit('chat-update', updatePayload);
                 if (roomByPhone && roomByPhone !== roomById) io.to(roomByPhone).emit('chat-update', updatePayload);
@@ -12914,22 +12915,56 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
         console.log(`[API - HISTORY] ✅ Simple Count (checkMessages): ${checkMessages[0].count}`);
         console.log(`[API - HISTORY] 🔍 Query Params: limit=${limit}, offset=${offset}, startDate=${startDate}, endDate=${endDate}, type=${type}, search=${search}`);
 
-        let query = `SELECT m.id, m.session_id, m.chat_jid,
-    COALESCE(cg.name, c.name, c.notify_name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as chat_name,
-    COALESCE(cg.avatar_url, c.avatar_url) as chat_avatar,
-    m.sender_jid,
-    COALESCE(s.name, s.notify_name, SUBSTRING_INDEX(m.sender_jid, '@', 1)) as sender_name,
-    m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status
-                     FROM messages m
-                     LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id IN (${placeholders})
-                     LEFT JOIN contact_groups cg ON (cg.jid = m.chat_jid OR cg.jid = CONCAT(m.chat_jid, '@g.us'))
-                     LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id IN (${placeholders})
-                     WHERE m.session_id IN (${placeholders})`;
+        let query = `SELECT 
+    m.id,
+    m.session_id,
+    m.chat_jid,
 
-        // Ensure params are strings and doubled for the new JOIN IN clauses
-        const joinPlaceholders = [...allUserSessionIds, ...allUserSessionIds];
-        const wherePlaceholders = [...allUserSessionIds];
-        const queryParams = [...joinPlaceholders, ...wherePlaceholders];
+    COALESCE(
+        cg.name,
+        c.name,
+        c.notify_name,
+        SUBSTRING_INDEX(m.chat_jid, '@', 1)
+    ) AS chat_name,
+
+    COALESCE(cg.avatar_url, c.avatar_url) AS chat_avatar,
+
+    m.sender_jid,
+
+    COALESCE(
+        s.name,
+        s.notify_name,
+        SUBSTRING_INDEX(m.sender_jid, '@', 1)
+    ) AS sender_name,
+
+    m.from_me,
+    m.agent_id,
+    m.agent_name,
+    m.message_type,
+    m.text_content,
+    m.media_url,
+    m.media_mime_type,
+    m.timestamp,
+    m.status
+
+FROM messages m
+
+LEFT JOIN contacts c
+    ON c.jid = m.chat_jid
+   AND c.session_id = m.session_id
+
+LEFT JOIN contact_groups cg
+    ON cg.jid = m.chat_jid
+
+LEFT JOIN contacts s
+    ON s.jid = m.sender_jid
+   AND s.session_id = m.session_id
+
+WHERE m.session_id IN (${placeholders})`;
+
+        // Ensure params are strings
+        // ⚡ OPTIMIZED: No need for join placeholders anymore, just the WHERE clause
+        const queryParams = [...allUserSessionIds];
 
         if (chatJid) {
             const fullChatJid = chatJid.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`;
@@ -13070,11 +13105,23 @@ app.get('/api/history/full/:sessionId', authenticateToken, validateSessionBelong
             // Consultar todos los mensajes para este número de teléfono
             const [messages] = await connection.execute(
                 `SELECT
-m.id,
+    m.id,
     m.chat_jid,
-    c.name as chat_name,
+
+    COALESCE(
+        c.name,
+        c.notify_name,
+        SUBSTRING_INDEX(m.chat_jid, '@', 1)
+    ) AS chat_name,
+
     m.sender_jid,
-    s.name as sender_name,
+
+    COALESCE(
+        s.name,
+        s.notify_name,
+        SUBSTRING_INDEX(m.sender_jid, '@', 1)
+    ) AS sender_name,
+
     m.from_me,
     m.message_type,
     m.text_content,
@@ -13082,12 +13129,21 @@ m.id,
     m.media_mime_type,
     m.timestamp,
     m.status
-                FROM messages m
-                LEFT JOIN contacts c ON m.chat_jid = c.jid
-                LEFT JOIN contacts s ON m.sender_jid = s.jid
-                WHERE m.session_id = ?
-    ORDER BY m.timestamp DESC
-LIMIT ? OFFSET ? `,
+
+FROM messages m
+
+LEFT JOIN contacts c
+    ON c.jid = m.chat_jid
+   AND c.session_id = m.session_id
+
+LEFT JOIN contacts s
+    ON s.jid = m.sender_jid
+   AND s.session_id = m.session_id
+
+WHERE m.session_id = ?
+
+ORDER BY m.timestamp DESC
+LIMIT ? OFFSET ?`,
                 [phoneNumber, parseInt(limit, 10), parseInt(offset, 10)]
             );
 
@@ -13961,7 +14017,7 @@ app.get(['/api/groups', '/api/groups/:sessionId'], async (req, res) => {
             if (connection) connection.release();
         }
     } catch (error) {
-        console.error(`[API - GROUPS] Error obteniendo grupos para sesión ${sessionId}: `, error);
+        console.error(`[API - GROUPS] Error obteniendo grupos: `, error);
         res.status(500).json({
             success: false,
             error: 'Error interno del servidor al obtener grupos'
@@ -15615,6 +15671,15 @@ io.on('connection', async (socket) => {
                 sessionConnectionsMap.set(sid, new Set());
             }
             sessionConnectionsMap.get(sid).add(socket.id);
+
+            // 🧹 CLEANUP: Salir de sesiones anteriores para evitar cruce de canales
+            const currentRooms = Array.from(socket.rooms);
+            currentRooms.forEach(room => {
+                if (room.startsWith('session-') && room !== `session-${sid}`) {
+                    socket.leave(room);
+                    console.log(`🧹 [Socket.IO] Cliente ${socket.id} salió de ${room} (Cambiando a session-${sid})`);
+                }
+            });
 
             socket.join(`session-${sid}`);
             console.log(`🔌 [Socket.IO] Cliente ${socket.id} unido explícitamente a session-${sid}`);
@@ -25336,12 +25401,16 @@ app.post('/api/update-contact-names/:sessionId', async (req, res) => {
 
 // Endpoints de gestión de API Keys (generar, listar, eliminar)
 const apiRestKeysRouter = require('./routes/api-rest');
+const managementRouter = require('./routes/management');
+
 // Pasar sessions al router
 app.use((req, res, next) => {
     req.sessions = sessions;
     next();
 });
 app.use('/api/rest', apiRestKeysRouter);
+app.use('/api/management', managementRouter);
+
 
 // ============= ENDPOINTS DE API REST =============
 console.log('🔥 [INDEX.JS] Cargando módulo api-rest-endpoints...');

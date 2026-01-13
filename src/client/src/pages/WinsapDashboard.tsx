@@ -51,7 +51,6 @@ import {
   Campaign as CampaignIcon,
   SmartToy as BotIcon,
   Schedule as CalendarIcon,
-  Analytics as AnalyticsIcon,
   Settings as SettingsIcon,
   ExitToApp as LogoutIcon,
   Menu as MenuIcon,
@@ -71,7 +70,8 @@ import {
   Brightness4,
   Brightness7,
   Schedule,
-  CheckCircle
+  CheckCircle,
+  AccountBalance as ManagementIcon
 } from '@mui/icons-material';
 
 // Componente de llamada entrante (cargado inmediatamente por ser crítico)
@@ -98,6 +98,7 @@ const KanbanContactsModule = lazy(() => import('../modules/KanbanContactsModule'
 const AgentPermissionsManager = lazy(() => import('../components/AgentPermissionsManager'));
 const WhatsAppStatusModule = lazy(() => import('../modules/WhatsAppStatusModule'));
 const WhatsAppConnectionModule = lazy(() => import('../modules/WhatsAppConnectionModule'));
+const ManagementModule = lazy(() => import('../modules/ManagementModule'));
 
 // Componente de loading para Suspense con animación mejorada
 const ModuleLoadingFallback = () => (
@@ -331,10 +332,10 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
     'campaigns': 'campaign',
     'chatbot': 'chat',
     'calendar': 'calendar',
-    'analytics': 'analytics',
     'agents': 'users',
     'kanban': 'kanban',
-    'permissions': 'users'
+    'permissions': 'users',
+    'management': 'management'
   };
 
   // Elementos de navegación principal
@@ -389,14 +390,6 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
       path: '/dashboard/calendar',
       color: '#2196f3'
     },
-    // Estados de WhatsApp removido - funcionalidad no soportada por WhatsApp Web/Baileys
-    {
-      id: 'analytics',
-      label: 'Analytics',
-      icon: <AnalyticsIcon />,
-      path: '/dashboard/analytics',
-      color: '#ff5722'
-    },
     {
       id: 'agents',
       label: 'Agentes',
@@ -410,6 +403,13 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
       icon: <KanbanIcon />,
       path: '/dashboard/kanban',
       color: '#673ab7'
+    },
+    {
+      id: 'management',
+      label: 'Gestión',
+      icon: <ManagementIcon />,
+      path: '/dashboard/management',
+      color: '#3f51b5'
     },
     {
       id: 'connection',
@@ -1463,6 +1463,11 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                         <AnalyticsModule sessionId={sessionId} />
                       </ProtectedRoute>
                     } />
+                    <Route path="/analytics/*" element={
+                      <ProtectedRoute module="analytics" action="view">
+                        <AnalyticsModule sessionId={sessionId} />
+                      </ProtectedRoute>
+                    } />
                     <Route path="/chat/*" element={
                       <ProtectedRoute module="chat" action="view">
                         <RequiresWhatsApp sessionId={activeSessionId} moduleName="Chat">
@@ -1541,11 +1546,6 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                     <Route path="/whatsapp-status/*" element={
                       <WhatsAppStatusModule sessionId={sessionId} />
                     } />
-                    <Route path="/analytics/*" element={
-                      <ProtectedRoute module="analytics" action="view">
-                        <AnalyticsModule sessionId={sessionId} />
-                      </ProtectedRoute>
-                    } />
                     <Route path="/agents/*" element={
                       <ProtectedRoute module="users" action="view">
                         <AgentsManagementModule sessionId={activeSessionId} />
@@ -1555,6 +1555,11 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                       <ProtectedRoute module="kanban" action="view">
                         <KanbanContactsModule sessionId={sessionId} />
                       </ProtectedRoute>
+                    } />
+                    <Route path="/management/*" element={
+                      <Suspense fallback={<ModuleLoadingFallback />}>
+                        <ManagementModule sessionId={activeSessionId} />
+                      </Suspense>
                     } />
                     <Route path="/connection/*" element={
                       <Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>}>
