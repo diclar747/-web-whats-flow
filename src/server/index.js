@@ -14065,8 +14065,12 @@ app.get(['/api/groups', '/api/groups/:sessionId'], async (req, res) => {
 
         try {
             const placeholders = sessionIds.map(() => '?').join(',');
+            // ✅ FIXED: Usar contact_groups en lugar de groups (que no existe)
             const [groups] = await connection.execute(
-                `SELECT DISTINCT jid, name, session_id FROM groups WHERE session_id IN (${placeholders})`,
+                `SELECT DISTINCT jid, name, session_id, avatar_url, description, participants_count, created_at, updated_at
+                 FROM contact_groups
+                 WHERE session_id IN (${placeholders})
+                 ORDER BY updated_at DESC`,
                 sessionIds
             );
 
@@ -14078,8 +14082,8 @@ app.get(['/api/groups', '/api/groups/:sessionId'], async (req, res) => {
 
                 try {
                     const [memberCounts] = await connection.execute(
-                        `SELECT group_jid, COUNT(*) as count 
-                         FROM group_members 
+                        `SELECT group_jid, COUNT(*) as count
+                         FROM contact_group_members
                          WHERE session_id = ? AND group_jid IN (${placeholders})
                          GROUP BY group_jid`,
                         [dbSessionId, ...groupJids]
@@ -14105,17 +14109,25 @@ app.get(['/api/groups', '/api/groups/:sessionId'], async (req, res) => {
                         description: group.description,
                         createdAt: group.created_at,
                         updatedAt: group.updated_at,
-                        memberCount: countsMap[group.jid] || 0,
-                        member_count: countsMap[group.jid] || 0,
+                        memberCount: countsMap[group.jid] || group.participants_count || 0,
+                        member_count: countsMap[group.jid] || group.participants_count || 0,
                     }));
                 } catch (err) {
                     console.error('[API - GROUPS] Error en conteo optimizado:', err);
-                    // Fallback a 0 si falla la optimización, pero no romper la respuesta
+                    // Fallback usando participants_count de la tabla
                     groupsFormatted = groups.map(group => ({
-                        ...group,
                         id: group.jid,
+                        jid: group.jid,
+                        name: group.name || group.jid.split('@')[0],
                         subject: group.name || group.jid.split('@')[0],
-                        memberCount: 0
+                        notifyName: group.name,
+                        isGroup: true,
+                        avatar: group.avatar_url,
+                        avatar_url: group.avatar_url,
+                        session_id: group.session_id,
+                        description: group.description,
+                        memberCount: group.participants_count || 0,
+                        member_count: group.participants_count || 0,
                     }));
                 }
             } else {
@@ -23922,20 +23934,22 @@ app.get('/api/whatsapp/statuses/:sessionId', async (req, res) => {
             try {
                 // Obtener estados de contactos desde la base de datos
                 // Solo obtener estados que no hayan expirado (últimas 24 horas)
+                // ✅ JOIN con contacts para obtener avatares
                 const [statuses] = await connection.execute(
                     `SELECT
-                                                contact_jid,
-                                                contact_name,
-                                                avatar_url,
-                                                message_id,
-                                                text_content,
-                                                media_type,
-                                                media_url,
-                                                UNIX_TIMESTAMP(published_at) * 1000 as timestamp
-                                         FROM contact_statuses
-                                         WHERE session_id = ?
-                                             AND (expires_at IS NULL OR expires_at > NOW())
-                                         ORDER BY contact_jid, published_at DESC`,
+                        cs.contact_jid,
+                        cs.contact_name,
+                        COALESCE(cs.avatar_url, c.avatar_url) as avatar_url,
+                        cs.message_id,
+                        cs.text_content,
+                        cs.media_type,
+                        cs.media_url,
+                        UNIX_TIMESTAMP(cs.published_at) * 1000 as timestamp
+                     FROM contact_statuses cs
+                     LEFT JOIN contacts c ON c.jid = cs.contact_jid AND c.session_id = cs.session_id
+                     WHERE cs.session_id = ?
+                         AND (cs.expires_at IS NULL OR cs.expires_at > NOW())
+                     ORDER BY cs.contact_jid, cs.published_at DESC`,
                     [phoneNumber || sessionId]
                 );
 
