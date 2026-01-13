@@ -591,7 +591,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, page, rowsPerPage]);
+  }, [sessionId, page, rowsPerPage, searchTerm, selectedType, selectedStatus, selectedDirection, dateFrom, dateTo]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1120,7 +1120,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
     return counts;
   };
 
-  const filteredMessages = messages; // Ya vienen filtrados del backend !
+  const filteredMessages = messages;
   /*
   const filteredMessages = messages.filter(message => {
     // ... logic removed as backend handles it now
@@ -1147,51 +1147,8 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
   };
 
   const getCurrentTabMessages = () => {
-    console.log(`🔍 selectedTab: ${selectedTab}, Total messages: ${messages.length}, Filtered messages: ${filteredMessages.length}`);
-
-    let result: MessageHistory[] = [];
-
-    switch (selectedTab) {
-      case 0: // 💬 Chat - Mensajes enviados y recibidos
-        result = getChatOnlyMessages();
-        console.log(`📊 Tab 0 (Chat): ${result.length} mensajes`);
-        break;
-
-      case 1: // 📊 Estados WhatsApp - Estados de mensajes (✓✓ leído, ✓ entregado, etc.)
-        // Retorna todos los mensajes para ver sus estados
-        result = getChatOnlyMessages();
-        console.log(`📊 Tab 1 (Estados WhatsApp): ${result.length} mensajes con estado`);
-        break;
-
-      case 2: // 📎 Multimedia - Archivos por tipo
-        if (mediaSubTab === 0) result = getMediaMessages('image');
-        else if (mediaSubTab === 1) result = getMediaMessages('video');
-        else if (mediaSubTab === 2) result = getMediaMessages('audio');
-        else result = getMediaMessages('document');
-        console.log(`📊 Tab 2 (Multimedia): ${result.length} archivos`);
-        break;
-
-      case 3: // 👥 Grupos - Mensajes de grupos
-        result = getGroupMessages();
-        console.log(`📊 Tab 3 (Grupos): ${result.length} mensajes de grupos`);
-        break;
-
-      case 4: // 📢 Campañas - Historial de campañas (se maneja diferente, retorna vacío)
-        result = [];
-        console.log(`📊 Tab 4 (Campañas): Se muestra historial de campañas`);
-        break;
-
-      case 5: // 📊 Analytics - Análisis de estados de envío
-        result = getChatOnlyMessages(); // Todos los mensajes para analizar
-        console.log(`📊 Tab 5 (Analytics): ${result.length} mensajes para análisis`);
-        break;
-
-      default:
-        result = filteredMessages;
-        console.log(`📊 Tab default: ${result.length} mensajes`);
-    }
-
-    return result;
+    // El backend ya devuelve los mensajes filtrados (solo individuales)
+    return messages;
   };
 
   const getCurrentTabConversations = () => {
@@ -2447,174 +2404,7 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
           </Box>
         )}
 
-        {selectedTab === 3 && (
-          <Box>
-            {/* Vista específica de grupos mejorada */}
-            {groups.length === 0 ? (
-              <Grid container spacing={3}>
-                <Grid item xs={12}>
-                  <Card sx={{ p: 4, textAlign: 'center' }}>
-                    <Group sx={{ fontSize: 80, color: '#9c27b0', mb: 2 }} />
-                    <Typography variant="h5" sx={{ mb: 2, fontWeight: 600 }}>
-                      No hay grupos disponibles
-                    </Typography>
-                    <Typography variant="body1" sx={{ mb: 3, color: '#666' }}>
-                      Los grupos se cargan automáticamente desde tu WhatsApp.
-                      Si no ves grupos aquí, es posible que no hayas participado en ningún grupo aún.
-                    </Typography>
-                    <Button
-                      variant="contained"
-                      startIcon={<Refresh />}
-                      onClick={() => loadGroups()}
-                      sx={{
-                        bgcolor: '#9c27b0',
-                        '&:hover': { bgcolor: '#7b1fa2' }
-                      }}
-                    >
-                      Recargar Grupos
-                    </Button>
-                  </Card>
-                </Grid>
-              </Grid>
-            ) : (
-              <Grid container spacing={3}>
-                {groups
-                  .slice((page - 1) * rowsPerPage, page * rowsPerPage)
-                  .map((group) => (
-                    <Grid item xs={12} md={6} lg={4} key={group.id || group.jid}>
-                      <Card elevation={3} sx={{
-                        borderRadius: 3,
-                        transition: 'all 0.3s ease',
-                        border: '1px solid #e0e0e0',
-                        '&:hover': {
-                          transform: 'translateY(-4px)',
-                          boxShadow: '0 12px 32px rgba(156,39,176,0.15)',
-                          borderColor: '#9c27b0'
-                        }
-                      }}>
-                        <CardContent sx={{ p: 3 }}>
-                          {/* Header del grupo con avatar e info principal */}
-                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-                            <Badge
-                              overlap="circular"
-                              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                              badgeContent={
-                                <Group sx={{
-                                  fontSize: 16,
-                                  color: 'white',
-                                  bgcolor: '#9c27b0',
-                                  borderRadius: '50%',
-                                  p: 0.5
-                                }} />
-                              }
-                            >
-                              <Avatar
-                                src={group.avatar || undefined}
-                                sx={{
-                                  bgcolor: '#9c27b0',
-                                  width: 64,
-                                  height: 64,
-                                  fontSize: '1.5rem',
-                                  fontWeight: 600
-                                }}
-                              >
-                                {(group.name || group.subject || 'G').charAt(0).toUpperCase()}
-                              </Avatar>
-                            </Badge>
-                            <Box sx={{ ml: 2, flex: 1 }}>
-                              <Typography variant="h6" sx={{
-                                fontWeight: 600,
-                                mb: 0.5,
-                                color: '#1a1a1a'
-                              }}>
-                                {group.name || group.subject || 'Grupo sin nombre'}
-                              </Typography>
-                              <Typography variant="body2" sx={{
-                                color: '#666',
-                                fontWeight: 500
-                              }}>
-                                {group.jid ? group.jid.split('@')[0] : group.id || 'ID no disponible'}
-                              </Typography>
-                            </Box>
-                          </Box>
 
-                          {/* Información del grupo */}
-                          <Box sx={{ mb: 3 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                              <PeopleIcon sx={{ fontSize: 20, color: '#9c27b0', mr: 1 }} />
-                              <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                {group.member_count || group.memberCount || 0} miembros
-                              </Typography>
-                            </Box>
-
-                            {(group.created_at || group.createdAt) && (
-                              <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                                <CalendarToday sx={{ fontSize: 18, color: '#666', mr: 1 }} />
-                                <Typography variant="caption" sx={{ color: '#666' }}>
-                                  Creado: {new Date(group.created_at || group.createdAt).toLocaleDateString()}
-                                </Typography>
-                              </Box>
-                            )}
-                          </Box>
-
-                          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'space-between' }}>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              startIcon={<Group />}
-                              sx={{
-                                borderColor: '#9c27b0',
-                                color: '#9c27b0',
-                                '&:hover': {
-                                  bgcolor: 'rgba(156,39,176,0.1)',
-                                  borderColor: '#9c27b0'
-                                }
-                              }}
-                              onClick={() => handleShowMembers(group)}
-                            >
-                              Miembros
-                            </Button>
-
-                            <Button
-                              size="small"
-                              variant="contained"
-                              startIcon={<Message />}
-                              sx={{
-                                bgcolor: '#9c27b0',
-                                '&:hover': {
-                                  bgcolor: '#7b1fa2'
-                                }
-                              }}
-                              onClick={() => {
-                                console.log('Ver mensajes del grupo:', group.id || group.jid);
-                              }}
-                            >
-                              Mensajes
-                            </Button>
-                          </Box>
-                        </CardContent>
-                      </Card>
-                    </Grid>
-                  ))}
-
-                {/* Paginación para grupos */}
-                {groups.length > rowsPerPage && (
-                  <Grid item xs={12}>
-                    <Box sx={{ mt: 3, display: 'flex', justifyContent: 'center' }}>
-                      <Pagination
-                        count={Math.ceil(groups.length / rowsPerPage)}
-                        page={page}
-                        onChange={(_, newPage) => setPage(newPage)}
-                        color="primary"
-                        size="large"
-                      />
-                    </Box>
-                  </Grid>
-                )}
-              </Grid>
-            )}
-          </Box>
-        )}
 
         {selectedTab === 1 && (
           <Box>

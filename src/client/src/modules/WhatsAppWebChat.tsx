@@ -1325,7 +1325,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
     });
 
     // Caché simple para evitar cálculos repetidos con mismos datos
-    const cacheKey = `${chats.length}-${filterTab}-${searchTerm}`;
+    // ✅ FIX: Incluir sessionId en la llave para evitar que chats de un canal aparezcan en otro
+    const cacheKey = `${sessionId}-${chats.length}-${filterTab}-${searchTerm}`;
     const cachedResult = sessionStorage.getItem(`chatFilter-${cacheKey}`);
 
     if (cachedResult) {

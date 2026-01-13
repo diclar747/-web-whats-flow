@@ -67,19 +67,29 @@ function authenticateJWT(req, res, next) {
     }
 
     const token = authHeader.substring(7);
-    const decoded = verifyToken(token);
 
-    if (!decoded) {
-        console.warn('[AUTH-UTILS] ⚠️ Token invalid or expired');
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        console.error('[AUTH-UTILS] ❌ Token validation failed:', error.message);
+        console.log('[AUTH-DEBUG] Token:', token.substring(0, 15) + '...');
+
+        if (error.name === 'TokenExpiredError') {
+            return res.status(401).json({
+                success: false,
+                error: 'Token expirado',
+                requiresReauth: true
+            });
+        }
+
         return res.status(401).json({
             success: false,
-            error: 'Token inválido o expirado',
+            error: 'Token inválido',
             requiresReauth: true
         });
     }
-
-    req.user = decoded;
-    next();
 }
 
 /**

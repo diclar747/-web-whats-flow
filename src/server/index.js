@@ -2443,30 +2443,23 @@ async function resolveLid(lid, sessionId, sock = null) {
 async function saveMessageToDB(sessionId, msg) {
     console.log(`[DB-MSG-CALL] ⭐⭐⭐ saveMessageToDB LLAMADO - sessionId: ${sessionId}, messageId: ${msg.id}, chat_jid: ${msg.chat_jid}, from_me: ${msg.from_me}, text: ${(msg.text_content || '').substring(0, 30)}`);
 
-    // ✅ CAMBIO: Obtener session_id del propietario (user.id) en lugar de phoneNumber
-    const ownerSessionId = await getOwnerSessionId(sessionId);
+    // ✅ SMART RESOLUTION: Si sessionId es numérico pequeño (1-999), usarlo directamente
+    // Si es hex largo, resolverlo a través de user_sessions
+    let ownerSessionId;
+    const numericId = parseInt(sessionId);
 
-    // También obtener phoneNumber para emisión de eventos se intenta resolver
-    let phoneNumber = await getUserPhoneNumber(sessionId);
-
-    // 🛡️ FALLBACK: Si phoneNumber no parece un número (es internal ID) y tenemos ownerSessionId
-    if ((!phoneNumber || phoneNumber.length > 20 || !/^\d+$/.test(phoneNumber)) && ownerSessionId) {
-        if (pool) {
-            const connection = await pool.getConnection();
-            try {
-                // Buscar el teléfono real asociado al user ID
-                const [rows] = await connection.execute('SELECT phone FROM users WHERE id = ? LIMIT 1', [ownerSessionId]);
-                if (rows.length > 0 && rows[0].phone) {
-                    console.log(`[DB-MSG] 🔄 Corrigiendo phoneNumber para emisión: ${phoneNumber} -> ${rows[0].phone}`);
-                    phoneNumber = rows[0].phone;
-                }
-            } catch (err) {
-                console.error('[DB-MSG] Error resolviendo phone fallback:', err);
-            } finally {
-                connection.release();
-            }
-        }
+    if (!isNaN(numericId) && numericId > 0 && numericId < 1000 && sessionId == numericId) {
+        // Es un ID numérico simple (1, 2, 3, etc.) - usar directamente
+        ownerSessionId = sessionId;
+        console.log(`[DB-MSG] 🔑 Usando session_id numérico directo: ${ownerSessionId}`);
+    } else {
+        // Es un hex largo o string - necesita resolución
+        ownerSessionId = await getOwnerSessionId(sessionId);
+        console.log(`[DB-MSG] 🔄 Resuelto ${sessionId} -> ${ownerSessionId}`);
     }
+
+    // También obtener phoneNumber para emisión de eventos
+    let phoneNumber = await getUserPhoneNumber(sessionId);
 
     if (!ownerSessionId) {
         console.error(`[DB-MSG] No se pudo obtener ownerSessionId para sessionId ${sessionId}. No se puede guardar mensaje ${msg.id}.`);
@@ -3079,15 +3072,19 @@ async function getUserPhoneNumber(sessionId) {
         }
     }
 
-    // Intento 4: Buscar en user_sessions por phone o session_id o owner_phone_number
+    // Intanto 4: Buscar en user_sessions por id, phone o session_id o owner_phone_number
     if (pool && !memoryStorage.isMemoryMode) {
         try {
             const connection = await pool.getConnection();
             try {
-                // Buscar por phone / session_id / owner_phone_number
+                // Buscar por id / phone / session_id / owner_phone_number
+                // ✅ MEJORA: Buscar también por id numérico y usar COALESCE para el retorno
                 const [phoneRows] = await connection.execute(
-                    'SELECT owner_phone_number as phone, session_id FROM user_sessions WHERE owner_phone_number = ? OR session_id = ? ORDER BY updated_at DESC LIMIT 1',
-                    [sessionId, sessionId]
+                    `SELECT COALESCE(owner_phone_number, phone) as phone, session_id 
+                     FROM user_sessions 
+                     WHERE id = ? OR owner_phone_number = ? OR session_id = ? OR phone = ?
+                     ORDER BY updated_at DESC LIMIT 1`,
+                    [sessionId, sessionId, sessionId, sessionId]
                 );
                 if (phoneRows.length > 0) {
                     const phoneNumber = phoneRows[0].phone;
@@ -3479,9 +3476,9 @@ async function getOwnerSessionId(sessionId) {
                      FROM user_sessions us 
                      LEFT JOIN users u1 ON (u1.phone = us.owner_phone_number)
                      LEFT JOIN users u2 ON (u2.phone = us.phone OR u2.email = us.email)
-                     WHERE us.session_id = ? OR us.owner_phone_number = ? OR us.phone = ? 
+                     WHERE us.id = ? OR us.session_id = ? OR us.owner_phone_number = ? OR us.phone = ? 
                      LIMIT 1`,
-                    [sessionId, sessionId, sessionId]
+                    [sessionId, sessionId, sessionId, sessionId]
                 );
                 if (sessionRows.length > 0) {
                     // Priorizar el dueño (owner_phone_number) si existe en la tabla users
@@ -4822,14 +4819,13 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             // Priorizamos encontrar el HEX que es lo que usa la tabla chats
             const [rows] = await pool.execute(
                 `SELECT session_id, phone FROM user_sessions 
-                 WHERE (session_id = ? OR phone = ? OR id = ?) 
-                 AND session_id REGEXP '^[a-f0-9]+$' 
-                 LIMIT 1`,
+                 WHERE session_id = ? OR phone = ? OR owner_phone_number = ? 
+                 ORDER BY is_active DESC, updated_at DESC LIMIT 1`,
                 [sessionId, sessionId, sessionId]
             );
             if (rows.length > 0) {
                 effectiveSessionId = rows[0].session_id;
-                phoneNumber = rows[0].phone; // Actualizar phoneNumber también si lo encontramos
+                phoneNumber = rows[0].phone || phoneNumber;
                 console.log(`[CHATLIST] 🔄 Mapeado ID/Phone ${sessionId} -> session_id HEX ${effectiveSessionId}`);
             } else {
                 // FALLBACK: Si no encontramos HEX en user_sessions, tal vez es un ID de usuario antiguo (users.id)
@@ -4924,46 +4920,60 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
     const connection = await pool.getConnection();
     try {
         console.log(`[DB-CHATLIST] Loading chat list for session: ${effectiveSessionId} (limit: ${limit}, filter: ${dateFilter})`);
+        console.log(`[DB-CHATLIST] Resolved identifiers - ownerSessionId: ${ownerSessionId}, phoneNumber: ${phoneNumber}`);
 
         // Query usa effectiveSessionId
         const groupFilterSubquery = includeGroups ? '' : " AND chat_jid NOT LIKE '%@g.us'";
 
-        // 📅 Filtro de fecha - OPTIMIZADO: Por defecto 24h para chats individuales
+        // ⚡ DEFAULT: 24h es el estándar para velocidad y limpieza
+        let effectiveDateFilter = 'limit_24h';
+        if (dateFilter && dateFilter !== 'null' && dateFilter !== 'undefined') {
+            effectiveDateFilter = String(dateFilter).toLowerCase();
+        }
         let dateWhereClause = "";
-
-        // 🚀 OPTIMIZACIÓN CRÍTICA: Por defecto, SIEMPRE usar 24h a menos que se pida otra cosa
-        // Esto cumple con el requerimiento de "solo lo que fue del dia nomas"
-        // 🚀 AJUSTE: Filtro por defecto 'months_3' (90 días) para que el usuario vea su historial reciente
-        // ⚡ DEFAULT OPTIMIZADO: El usuario quiere ver SOLAMENTE los chats de las últimas 24h por defecto
-        // ⚡ DEFAULT: Por defecto cargamos las últimas 24h para mantener ligereza,
-        // pero SI el usuario pide 'all', le mostramos TODO.
-        const effectiveDateFilter = dateFilter || 'limit_24h';
 
         if (effectiveDateFilter === 'limit_24h') {
             dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
-            console.log(`[CHATLIST] 📅 Filtro ESTRICTO: Últimas 24 horas`);
+            console.log(`[CHATLIST] 📅 FILTRO ACTIVADO: Últimas 24 horas (Estricto)`);
         } else if (effectiveDateFilter === 'week') {
             dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+            console.log(`[CHATLIST] 📅 FILTRO ACTIVADO: Última Semana`);
         } else if (effectiveDateFilter === 'month') {
             dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
+            console.log(`[CHATLIST] 📅 FILTRO ACTIVADO: Último Mes`);
         } else if (effectiveDateFilter === 'months_3') {
             dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 90 DAY)";
-            console.log(`[CHATLIST] 📅 Filtro AUTO: Últimos 3 meses (Balance ideal)`);
+            console.log(`[CHATLIST] 📅 FILTRO ACTIVADO: Últimos 3 Meses`);
         } else if (effectiveDateFilter === 'all') {
-            dateWhereClause = ""; // SIN FILTRO DE FECHA - COMPLETAMENTE TODO EL HISTORIAL
-            console.log(`[CHATLIST] 📅 Filtro COMPLETO: Mostrando todo el historial de chats`);
-        } else if (effectiveDateFilter === 'month') {
-            dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)";
-            console.log(`[CHATLIST] 📅 Filtro ACTIVO: Último mes`);
-        } else if (effectiveDateFilter === 'all') {
-            // Solo para grupos o cuando se solicita explícitamente
-            console.log(`[CHATLIST] 📅 Filtro: TODOS los chats (puede ser lento)`);
+            dateWhereClause = ""; // TODO el historial
+            console.log(`[CHATLIST] 📅 FILTRO DESACTIVADO: Cargando todo el historial`);
+        } else {
+            // Fallback por seguridad: 24 horas
+            dateWhereClause = "AND c.last_message_time >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
+            console.log(`[CHATLIST] 📅 FILTRO DEFAULT (Security): 24 horas`);
         }
 
+        console.log(`[CHATLIST] 🛡️ SQL Date Clause: "${dateWhereClause}" (Filter requested: ${dateFilter})`);
+
+        console.log(`[CHATLIST] 🛡️ Final dateWhereClause applied: "${dateWhereClause}"`);
+
+        // 🔑 COMPENSACIÓN: Definir allUserSessionIds (que faltaba y causaba el ReferenceError)
+        const allUserSessionIds = await getAllSessionIds(sessionId);
+        console.log(`[CHATLIST] 📱 allUserSessionIds resueltos:`, allUserSessionIds);
+
+        const contactPlaceholders = allUserSessionIds.map(() => '?').join(',');
+
+        // 🔧 FIXED QUERY: Buscar por phone principalmente, permitiendo múltiples session_ids
         const query = `
             SELECT
                 c.jid AS chat_jid,
-                COALESCE(cg.name, con.notify_name, con.name, c.name, SUBSTRING_INDEX(c.jid, '@', 1)) AS contact_name,
+                COALESCE(
+                    cg.name,
+                    con.notify_name,
+                    con.name,
+                    c.name,
+                    SUBSTRING_INDEX(c.jid, '@', 1)
+                ) AS contact_name,
                 c.last_message_content AS last_message_text,
                 c.last_message_time AS last_message_timestamp,
                 c.last_message_from_me,
@@ -4973,32 +4983,133 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                 c.unread_count,
                 SUBSTRING_INDEX(c.jid, '@', 1) AS phone
             FROM chats c
-            LEFT JOIN contacts con ON c.jid = con.jid AND con.session_id = ?
-            LEFT JOIN contact_groups cg ON c.jid = cg.jid AND cg.session_id = ?
-            WHERE c.session_id = ?
-              AND c.phone = ?
+            LEFT JOIN contacts con ON con.id = (
+                SELECT id FROM contacts
+                WHERE jid = c.jid
+                AND session_id IN (${contactPlaceholders})
+                ORDER BY (session_id = c.session_id) DESC, (name IS NOT NULL AND name != '' AND name != '?') DESC, id DESC
+                LIMIT 1
+            )
+            LEFT JOIN contact_groups cg ON cg.jid = c.jid
+                AND cg.session_id IN (${contactPlaceholders})
+            WHERE c.phone = ?
               AND c.jid NOT LIKE '%status@broadcast%'
               AND c.jid NOT LIKE CONCAT(?, '@%')
               ${includeGroups ? '' : 'AND c.is_group = 0'}
               ${dateWhereClause}
+            GROUP BY c.jid
             ORDER BY c.last_message_time DESC
             LIMIT ? OFFSET ?;
         `;
 
-        console.log(`[CHATLIST] 🔍 Filtros: session_id=${ownerSessionId}, phone=${phoneNumber}, includeGroups=${includeGroups}`);
+        console.log(`[CHATLIST] 🔍 Filtros: session_id=${sessionId}, phone=${phoneNumber}, includeGroups=${includeGroups}, dateFilter=${effectiveDateFilter}`);
 
+        // ✅ SMART RESOLUTION: Determinar qué session_id usar en la consulta SQL
+        let sqlSessionId;
+        const numericId = parseInt(sessionId);
+
+        if (!isNaN(numericId) && numericId > 0 && numericId < 1000 && sessionId == numericId) {
+            // Es un ID numérico simple (1, 2, 3, etc.) - usar directamente
+            sqlSessionId = sessionId;
+            console.log(`[CHATLIST] 🔑 Usando session_id numérico directo para SQL: ${sqlSessionId}`);
+        } else {
+            // Es un hex largo - buscar el session_id numérico por teléfono
+            if (phoneNumber && pool) {
+                try {
+                    const [phoneRows] = await connection.execute(
+                        `SELECT session_id FROM user_sessions WHERE phone = ? LIMIT 1`,
+                        [phoneNumber]
+                    );
+                    if (phoneRows.length > 0) {
+                        sqlSessionId = phoneRows[0].session_id;
+                        console.log(`[CHATLIST] 🔄 Resuelto hex ${sessionId} -> session_id ${sqlSessionId} (por phone ${phoneNumber})`);
+                    } else {
+                        // Fallback: usar ownerSessionId
+                        sqlSessionId = ownerSessionId;
+                        console.log(`[CHATLIST] ⚠️ No se encontró session_id para phone ${phoneNumber}, usando ownerSessionId: ${sqlSessionId}`);
+                    }
+                } catch (err) {
+                    console.error(`[CHATLIST] Error buscando session_id por phone:`, err.message);
+                    sqlSessionId = ownerSessionId;
+                }
+            } else {
+                // Sin phoneNumber, usar ownerSessionId resuelto
+                sqlSessionId = ownerSessionId;
+                console.log(`[CHATLIST] 🔄 Usando ownerSessionId resuelto para SQL: ${sqlSessionId} (original: ${sessionId})`);
+            }
+        }
+
+        // 🔧 FIXED PARAMETERS: Removido sqlSessionId ya que la query no lo usa más
         const [rowsFromDB] = await connection.execute(query, [
-            ownerSessionId, // Para contacts JOIN
-            ownerSessionId, // Para groups JOIN
-            ownerSessionId, // Para WHERE c.session_id = ?
+            ...allUserSessionIds, // Para contacts subquery
+            ...allUserSessionIds, // Para groups JOIN
             phoneNumber, // Para WHERE c.phone = ? (filtro por canal)
             phoneNumber || '0', // Para excluir número propio
             limit,
             offset
         ]);
 
-        console.log(`[DB - CHATLIST] ⚡ SQL ejecutado, resultados: ${rowsFromDB.length} `);
+        console.log(`[DB-CHATLIST] ⚡ SQL ejecutado, resultados: ${rowsFromDB.length}`);
 
+        // 🔄 FALLBACK HEROICO: Si la tabla 'chats' no tiene nada para este canal, usar la tabla 'messages'
+        // Esto es vital cuando la tabla 'chats' está desincronizada pero hay historial.
+        if (rowsFromDB.length === 0 && offset === 0 && phoneNumber) {
+            console.log(`[CHATLIST] ⚠️ Tabla 'chats' VACÍA para ${phoneNumber}. Intentando fallback a tabla 'messages'...`);
+
+            let messageDateFilter = "";
+            if (effectiveDateFilter === 'limit_24h') {
+                messageDateFilter = "AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
+            } else if (effectiveDateFilter === 'week') {
+                messageDateFilter = "AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+            }
+
+            const fallbackQuery = `
+                SELECT 
+                    m.chat_jid,
+                    COALESCE(con.notify_name, con.name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as contact_name,
+                    m.text_content as last_message_text,
+                    m.timestamp as last_message_timestamp,
+                    m.from_me as last_message_from_me,
+                    m.status as last_message_status,
+                    IF(m.chat_jid LIKE '%@g.us', 1, 0) as is_group,
+                    con.avatar_url,
+                    0 as unread_count,
+                    SUBSTRING_INDEX(m.chat_jid, '@', 1) as phone
+                FROM messages m
+                LEFT JOIN (
+                    /* Subconsulta para obtener solo el último mensaje de cada chat */
+                    SELECT chat_jid, MAX(timestamp) as max_ts
+                    FROM messages 
+                    WHERE session_id = ? AND phone = ?
+                    GROUP BY chat_jid
+                ) latest ON m.chat_jid = latest.chat_jid AND m.timestamp = latest.max_ts
+                LEFT JOIN contacts con ON m.chat_jid = con.jid AND con.session_id = ?
+                WHERE m.session_id = ? 
+                  AND m.phone = ?
+                  AND latest.max_ts IS NOT NULL
+                  AND m.chat_jid NOT LIKE '%status@broadcast%'
+                  AND m.chat_jid NOT LIKE CONCAT(?, '@%')
+                  ${includeGroups ? '' : "AND m.chat_jid NOT LIKE '%@g.us'"}
+                  ${messageDateFilter}
+                ORDER BY m.timestamp DESC
+                LIMIT ? OFFSET ?;
+            `;
+
+            const [fallbackRows] = await connection.execute(fallbackQuery, [
+                sqlSessionId, phoneNumber, // Subconsulta: usar ID resuelto
+                sqlSessionId, // JOIN contacts: usar ID resuelto
+                sqlSessionId, phoneNumber, // WHERE: usar ID resuelto
+                phoneNumber || '0',
+                limit, offset
+            ]);
+
+            if (fallbackRows.length > 0) {
+                console.log(`[CHATLIST] ✅ Fallback exitoso: ${fallbackRows.length} chats recuperados desde 'messages'`);
+                rowsFromDB = fallbackRows;
+            }
+        }
+
+        // Mapear resultados al formato esperado por el frontend
         let chatList = rowsFromDB.map((row, index) => {
             const normalizedJid = normalizeJid(row.chat_jid);
             const phoneOnly = row.phone || normalizedJid.split('@')[0];
@@ -12498,11 +12609,13 @@ app.post('/api/force-sync/:sessionId', authenticateToken, validateSessionBelongs
 // Obtener chats/contactos
 app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     const { sessionId } = req.params;
-    const { dateFilter = 'limit_24h', limit = 500, offset = 0 } = req.query; // Sin límite - cargar TODOS del día
+    // 🔒 FORZAR FILTRO DE 24H - Ignorar parámetro del frontend
+    const dateFilter = 'limit_24h'; // SIEMPRE 24 horas
+    const { limit = 500, offset = 0 } = req.query;
     const parsedLimit = parseInt(limit);
     const parsedOffset = parseInt(offset);
-    // ✅ GRUPOS HABILITADOS - Permitir incluir grupos en la lista de chats
-    const includeGroups = true; // Habilitado - Mostrar grupos
+    // ✅ GRUPOS DESHABILITADOS - Solo chats individuales
+    const includeGroups = false; // Deshabilitado - Solo individuales
     const phoneNumber = await getUserPhoneNumber(sessionId);
     console.log(`[API-CHATS] ============================================`);
     console.log(`[API-CHATS] 🔍 INICIANDO CARGA DE CHATS`);
@@ -12960,7 +13073,9 @@ LEFT JOIN contacts s
     ON s.jid = m.sender_jid
    AND s.session_id = m.session_id
 
-WHERE m.session_id IN (${placeholders})`;
+WHERE m.session_id IN (${placeholders})
+  AND m.chat_jid NOT LIKE '%@g.us'
+  AND m.chat_jid NOT LIKE 'status@broadcast%'`;
 
         // Ensure params are strings
         // ⚡ OPTIMIZED: No need for join placeholders anymore, just the WHERE clause
