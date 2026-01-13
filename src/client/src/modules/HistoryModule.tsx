@@ -612,13 +612,23 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
       const data = await response.json();
       if (data.success && data.groups && Array.isArray(data.groups)) {
         setGroups(data.groups);
+        console.log(`✅ [HistoryModule] ${data.groups.length} grupos cargados para sessionId: ${currentSessionId}`);
       } else {
         setGroups([]);
       }
     } catch (error) {
+      console.error('❌ [HistoryModule] Error cargando grupos:', error);
       setGroups([]);
     }
   };
+
+  // ✅ Cargar grupos cuando cambia el sessionId
+  useEffect(() => {
+    if (sessionId) {
+      loadGroups();
+      loadStatuses();
+    }
+  }, [sessionId]);
 
   // 📡 Socket.IO: Escuchar actualizaciones de estado en tiempo real
   useEffect(() => {
