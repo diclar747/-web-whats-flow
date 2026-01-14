@@ -25832,6 +25832,81 @@ app.post('/api/clients/:id/assign-plan', verifySuperAdmin, async (req, res) => {
 });
 
 console.log('[ADMIN PANEL ENDPOINTS] ✅ Endpoints del panel de administración registrados');
+
+// ============= WEBHOOK PARA AUTO-DEPLOYMENT =============
+const { execSync } = require('child_process');
+
+app.post('/api/deploy/webhook', express.json(), (req, res) => {
+    console.log('[DEPLOY-WEBHOOK] 🚀 Webhook recibido de GitHub');
+
+    try {
+        // Verificar que viene de GitHub (opcional: agregar validación de secret)
+        const payload = req.body;
+        const ref = payload?.ref;
+        const repository = payload?.repository?.full_name;
+
+        console.log('[DEPLOY-WEBHOOK] 📋 Repositorio:', repository);
+        console.log('[DEPLOY-WEBHOOK] 🌿 Ref:', ref);
+
+        // Solo deployar si es push a la rama principal o claude/
+        if (ref && (ref.includes('main') || ref.includes('master') || ref.includes('claude/'))) {
+            console.log('[DEPLOY-WEBHOOK] ✅ Push detectado en rama válida, iniciando deployment...');
+
+            // Ejecutar script de deployment en background
+            const deployScript = path.join(__dirname, '../../deploy.sh');
+
+            // Ejecutar el script de forma asíncrona
+            execSync(`bash ${deployScript} > /tmp/deployment.log 2>&1 &`, { stdio: 'ignore' });
+
+            console.log('[DEPLOY-WEBHOOK] 🚀 Script de deployment lanzado en background');
+
+            res.json({
+                success: true,
+                message: 'Deployment iniciado',
+                repository,
+                ref
+            });
+        } else {
+            console.log('[DEPLOY-WEBHOOK] ⏭️  Push ignorado (rama no válida)');
+            res.json({
+                success: true,
+                message: 'Push ignorado (rama no válida)',
+                ref
+            });
+        }
+    } catch (error) {
+        console.error('[DEPLOY-WEBHOOK] ❌ Error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error procesando webhook'
+        });
+    }
+});
+
+// Endpoint manual para deployment (sin necesidad de webhook)
+app.post('/api/deploy/manual', authenticateToken, authorizeRole(['admin']), (req, res) => {
+    console.log('[DEPLOY-MANUAL] 🚀 Deployment manual iniciado por:', req.user.email);
+
+    try {
+        const deployScript = path.join(__dirname, '../../deploy.sh');
+        execSync(`bash ${deployScript} > /tmp/deployment.log 2>&1 &`, { stdio: 'ignore' });
+
+        res.json({
+            success: true,
+            message: 'Deployment iniciado manualmente',
+            user: req.user.email
+        });
+    } catch (error) {
+        console.error('[DEPLOY-MANUAL] ❌ Error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error en deployment manual'
+        });
+    }
+});
+
+console.log('[DEPLOY-WEBHOOK] ✅ Endpoints de deployment registrados');
+
 app.get('*', (req, res) => {
     // Si la ruta empieza con /api/, devolver un error JSON en lugar de index.html
     if (req.path.startsWith('/api/')) {
