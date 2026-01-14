@@ -734,7 +734,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                   <ListItemButton onClick={() => handleChatSelect(chat)} sx={{ py: 1.5 }}>
                     <ListItemAvatar>
                       <Badge badgeContent={chat.unread_count && chat.unread_count > 0 ? chat.unread_count : null} color="error">
-                        <Avatar src={chat.avatar_url}>
+                        <Avatar src={`${apiUrl}/api/avatar/${sessionId}/${chat.jid}`}>
                           {(chat.name || '?').charAt(0).toUpperCase()}
                         </Avatar>
                       </Badge>
@@ -790,7 +790,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
               }}
             >
               <Box display="flex" alignItems="center" gap={2}>
-                <Avatar src={selectedChat.avatar_url}>
+                <Avatar src={`${apiUrl}/api/avatar/${sessionId}/${selectedChat.jid}`}>
                   {(selectedChat.name || '?').charAt(0).toUpperCase()}
                 </Avatar>
                 <Box>
@@ -1156,7 +1156,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
                 Chat a transferir:
               </Typography>
               <Box display="flex" alignItems="center" gap={1} mt={1}>
-                <Avatar src={selectedChat.avatar_url} sx={{ width: 32, height: 32 }}>
+                <Avatar src={`${apiUrl}/api/avatar/${sessionId}/${selectedChat.jid}`} sx={{ width: 32, height: 32 }}>
                   {(selectedChat.name || '?').charAt(0).toUpperCase()}
                 </Avatar>
                 <Typography variant="body2">

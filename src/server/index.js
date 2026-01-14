@@ -4783,11 +4783,11 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
         const groupFilterSubquery = includeGroups ? '' : " AND chat_jid NOT LIKE '%@g.us'";
         const groupFilterMain = includeGroups ? '' : " AND m.chat_jid NOT LIKE '%@g.us'";
 
-        // 📅 Filtro de fecha - Por defecto solo hoy
+        // 📅 Filtro de fecha - Por defecto últimas 24 horas
         let dateFilterSQL = '';
         if (dateFilter === 'today') {
-            dateFilterSQL = " AND DATE(timestamp) = CURDATE()";
-            console.log(`[CHATLIST] 📅 Filtrando solo conversaciones de HOY`);
+            dateFilterSQL = " AND timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
+            console.log(`[CHATLIST] 📅 Filtrando últimas 24 HORAS`);
         } else if (dateFilter === 'week') {
             dateFilterSQL = " AND timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
             console.log(`[CHATLIST] 📅 Filtrando últimos 7 días`);
@@ -11177,9 +11177,9 @@ app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionB
             let queryParams = [ownerSessionId, chatJid];
 
             if (dateFilter === 'today') {
-                // Solo mensajes de hoy (desde las 00:00:00 de hoy)
-                dateCondition = 'AND DATE(m.timestamp) = CURDATE()';
-                console.log('[AGENT-MESSAGES] 📅 Cargando solo mensajes de HOY');
+                // Solo mensajes de las últimas 24 horas
+                dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)';
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de las últimas 24 HORAS');
             } else if (dateFilter === 'week') {
                 // Mensajes de los últimos 7 días
                 dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
@@ -12528,7 +12528,7 @@ app.post('/api/force-sync/:sessionId', authenticateToken, validateSessionBelongs
 // Obtener chats/contactos
 app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     const { sessionId } = req.params;
-    const { dateFilter = 'all', limit = 500, offset = 0 } = req.query; // ⚡ OPTIMIZADO: Aumentado de 20 a 500
+    const { dateFilter = 'today', limit = 100, offset = 0 } = req.query; // ⚡ OPTIMIZADO: Default 'today' (24h) y limit 100
     const parsedLimit = parseInt(limit);
     const parsedOffset = parseInt(offset);
     // ✅ GRUPOS HABILITADOS - Permitir incluir grupos en la lista de chats
