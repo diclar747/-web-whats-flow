@@ -1994,6 +1994,7 @@ async function getOrInsertContact(jid, name = null, notifyName = null, phoneNumb
     try {
         let contactName = name || notifyName || jid.split('@')[0];
         let contactNotifyName = notifyName || name || jid.split('@')[0];
+        let avatarUrl = null;
 
         // Intentar obtener nombre más preciso si sock está disponible
         if (sock) {
@@ -2015,6 +2016,18 @@ async function getOrInsertContact(jid, name = null, notifyName = null, phoneNumb
                     console.warn(`[NAME-FORCE] No se pudo obtener nombre real para ${jid}:`, getNameErr.message);
                 }
             }
+
+            // 🆕 OBTENER AVATAR DEL CONTACTO
+            try {
+                avatarUrl = await sock.profilePictureUrl(jid, 'image');
+                if (avatarUrl) {
+                    console.log(`[DB-CONTACT] ✅ Avatar obtenido para ${jid}: ${avatarUrl.substring(0, 50)}...`);
+                }
+            } catch (avatarErr) {
+                // Es normal que algunos contactos no tengan foto de perfil
+                console.log(`[DB-CONTACT] ℹ️ No se pudo obtener avatar para ${jid}: ${avatarErr.message}`);
+                avatarUrl = null;
+            }
         }
 
         // Verificar si tenemos un nombre real (no solo el número de teléfono)
@@ -2025,44 +2038,50 @@ async function getOrInsertContact(jid, name = null, notifyName = null, phoneNumb
 
         // Insertar/actualizar contacto - proteger nombres reales existentes
         const [result] = await connection.execute(
-            `INSERT INTO contacts (jid, name, notify_name, session_id)
-             VALUES (?, ?, ?, ?)
+            `INSERT INTO contacts (jid, name, notify_name, session_id, avatar_url)
+             VALUES (?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE
-                name = CASE 
+                name = CASE
                     -- Solo actualizar si el nuevo nombre es real (no es número ni empieza con # o @)
-                    WHEN ? != SUBSTRING_INDEX(VALUES(jid), '@', 1) 
-                         AND ? NOT LIKE '#%' 
+                    WHEN ? != SUBSTRING_INDEX(VALUES(jid), '@', 1)
+                         AND ? NOT LIKE '#%'
                          AND ? NOT LIKE '@%'
-                         AND ? != '' 
-                         AND ? IS NOT NULL 
+                         AND ? != ''
+                         AND ? IS NOT NULL
                     THEN ?
                     -- Si el nombre existente ya es bueno, no sobrescribir
-                    WHEN name IS NOT NULL 
+                    WHEN name IS NOT NULL
                          AND name != SUBSTRING_INDEX(jid, '@', 1)
                          AND name NOT LIKE '#%'
                          AND name NOT LIKE '@%'
                     THEN name
                     ELSE ?
                 END,
-                notify_name = CASE 
+                notify_name = CASE
                     -- Solo actualizar si el nuevo nombre es real (no es número ni empieza con # o @)
-                    WHEN ? != SUBSTRING_INDEX(VALUES(jid), '@', 1) 
+                    WHEN ? != SUBSTRING_INDEX(VALUES(jid), '@', 1)
                          AND ? NOT LIKE '#%'
-                         AND ? NOT LIKE '@%' 
-                         AND ? != '' 
-                         AND ? IS NOT NULL 
+                         AND ? NOT LIKE '@%'
+                         AND ? != ''
+                         AND ? IS NOT NULL
                     THEN ?
                     -- Si el nombre existente ya es bueno, no sobrescribir
-                    WHEN notify_name IS NOT NULL 
+                    WHEN notify_name IS NOT NULL
                          AND notify_name != SUBSTRING_INDEX(jid, '@', 1)
                          AND notify_name NOT LIKE '#%'
                          AND notify_name NOT LIKE '@%'
                     THEN notify_name
                     ELSE ?
                 END,
+                avatar_url = CASE
+                    -- Actualizar avatar solo si el nuevo valor no es NULL
+                    WHEN ? IS NOT NULL THEN ?
+                    -- Mantener el avatar existente si el nuevo es NULL
+                    ELSE avatar_url
+                END,
                 updated_at = CURRENT_TIMESTAMP`,
             [
-                jid, contactName, contactNotifyName, ownerSessionId,
+                jid, contactName, contactNotifyName, ownerSessionId, avatarUrl,
                 // Parámetros para el CASE de name (6 condiciones)
                 contactName, contactName, contactName, contactName, contactName, contactName,
                 // Valor por defecto si ninguna condición se cumple
@@ -2070,7 +2089,9 @@ async function getOrInsertContact(jid, name = null, notifyName = null, phoneNumb
                 // Parámetros para el CASE de notify_name (6 condiciones)
                 contactNotifyName, contactNotifyName, contactNotifyName, contactNotifyName, contactNotifyName, contactNotifyName,
                 // Valor por defecto si ninguna condición se cumple
-                contactNotifyName
+                contactNotifyName,
+                // Parámetros para avatar_url
+                avatarUrl, avatarUrl
             ]
         );
         console.log(`[DB-CONTACT-SUCCESS] Individual contact ${jid} saved with name: ${contactName}${hasRealName ? ' (REAL NAME)' : ' (NUMBER ONLY)'}`);
@@ -2150,6 +2171,7 @@ async function getOrInsertWhatsAppGroup(jid, name = null, subject = null, phoneN
     try {
         let groupName = name || subject || jid.split('@')[0];
         let groupSubject = subject || name || jid.split('@')[0];
+        let avatarUrl = null;
 
         // Intentar obtener nombre más preciso si sock está disponible
         if (sock) {
@@ -2163,6 +2185,18 @@ async function getOrInsertWhatsAppGroup(jid, name = null, subject = null, phoneN
             } catch (nameErr) {
                 console.warn(`[DB-GROUP] Error obteniendo nombre de sock para ${jid}:`, nameErr.message);
             }
+
+            // 🆕 OBTENER AVATAR DEL GRUPO
+            try {
+                avatarUrl = await sock.profilePictureUrl(jid, 'image');
+                if (avatarUrl) {
+                    console.log(`[DB-GROUP] ✅ Avatar obtenido para grupo ${jid}: ${avatarUrl.substring(0, 50)}...`);
+                }
+            } catch (avatarErr) {
+                // Es normal que algunos grupos no tengan foto de perfil
+                console.log(`[DB-GROUP] ℹ️ No se pudo obtener avatar para grupo ${jid}: ${avatarErr.message}`);
+                avatarUrl = null;
+            }
         }
 
         const description = metadata?.desc || null;
@@ -2175,20 +2209,24 @@ async function getOrInsertWhatsAppGroup(jid, name = null, subject = null, phoneN
         console.log(`[DB-GROUP] Normalizando ${phoneNumber} -> ${ownerUserId}`);
 
         const [result] = await connection.execute(
-            `INSERT INTO contact_groups (jid, name, session_id, description, participants_count, is_announcement, is_restricted)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
+            `INSERT INTO contact_groups (jid, name, session_id, description, participants_count, is_announcement, is_restricted, avatar_url)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE
-                name = CASE 
-                    WHEN VALUES(name) IS NOT NULL AND VALUES(name) != '' AND VALUES(name) != SUBSTRING_INDEX(VALUES(jid), '@', 1) 
-                    THEN VALUES(name) 
-                    ELSE name 
+                name = CASE
+                    WHEN VALUES(name) IS NOT NULL AND VALUES(name) != '' AND VALUES(name) != SUBSTRING_INDEX(VALUES(jid), '@', 1)
+                    THEN VALUES(name)
+                    ELSE name
                 END,
                 description = IF(VALUES(description) IS NOT NULL, VALUES(description), description),
                 participants_count = IF(VALUES(participants_count) > 0, VALUES(participants_count), participants_count),
                 is_announcement = VALUES(is_announcement),
                 is_restricted = VALUES(is_restricted),
+                avatar_url = CASE
+                    WHEN VALUES(avatar_url) IS NOT NULL THEN VALUES(avatar_url)
+                    ELSE avatar_url
+                END,
                 updated_at = CURRENT_TIMESTAMP`,
-            [jid, groupName, ownerUserId, description, participantCount, isAnnouncement, isRestricted]
+            [jid, groupName, ownerUserId, description, participantCount, isAnnouncement, isRestricted, avatarUrl]
         );
         console.log(`[DB-GROUP-SUCCESS] WhatsApp group ${jid} saved to contact_groups for user ${ownerUserId}`);
 
