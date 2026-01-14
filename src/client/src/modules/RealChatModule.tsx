@@ -112,7 +112,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'error'>('checking');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<'all' | 'unread' | 'groups' | 'contacts'>('all');
-  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all'>('all');
+  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all' | 'limit_24h'>('limit_24h');
 
   // Estados para multi-canal
   const [sessions, setSessions] = useState<SessionTab[]>([]);
@@ -227,7 +227,8 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
       console.log('[MULTI-CANAL] 🔄 Cambiando a sesión:', activeSessionId, 'Filtro:', dateFilter);
       loadChats(activeSessionId, dateFilter);
     }
-  }, [activeSessionId, dateFilter, loadChats]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId, dateFilter]); // Removido loadChats para evitar loop infinito
 
   useEffect(() => {
     // Este efecto carga si cambia sessionId prop (raro si usamos activeSessionId, pero mantenemos compatibilidad)
@@ -239,7 +240,8 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
       console.log('RealChatModule: Cargando chats para sessionId prop:', sessionId);
       loadChats(sessionId, dateFilter);
     }
-  }, [sessionId, dateFilter, loadChats, activeSessionId]); // Added activeSessionId dep
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, dateFilter, activeSessionId]); // Removido loadChats para evitar loop infinito
 
   // Ordenar chats por último mensaje
   const sortChatsByLastMessage = (chatsToSort: any[]) => {
@@ -256,7 +258,8 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
       console.log('RealChatModule: Cargando mensajes para chat:', activeChat.id);
       loadMessages(activeChat.id);
     }
-  }, [activeChat, loadMessages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeChat]); // Removido loadMessages para evitar loop infinito
 
   // Reacciones en tiempo real ahora manejadas por el contexto principal del socket.
 

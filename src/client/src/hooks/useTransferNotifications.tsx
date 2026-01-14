@@ -51,56 +51,102 @@ export const useTransferNotifications = (socket: any, userId?: number) => {
     toast.custom(
       (t) => (
         <div
-          className={`${t.visible ? 'animate-enter' : 'animate-leave'
-            } max-w-md w-full bg-white shadow-xl rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5 overflow-hidden`}
           style={{
-            animation: t.visible
-              ? 'enter 0.3s ease-out'
-              : 'leave 0.2s ease-in forwards',
+            maxWidth: '420px',
+            width: '100%',
+            backgroundColor: '#ffffff',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            borderRadius: '0.5rem',
+            pointerEvents: 'auto',
+            display: 'flex',
+            border: '1px solid rgba(0, 0, 0, 0.05)',
+            overflow: 'hidden',
+            animation: t.visible ? 'slideIn 0.3s ease-out' : 'slideOut 0.2s ease-in'
           }}
         >
-          <div className="flex-1 w-0 p-4">
-            <div className="flex items-start">
-              <div className="flex-shrink-0 pt-0.5">
-                <span style={{ fontSize: '32px' }}>📢</span>
+          <div style={{ flex: '1', width: 0, padding: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+              <div style={{ flexShrink: 0, paddingTop: '0.125rem' }}>
+                <span style={{ fontSize: '32px' }}>🔔</span>
               </div>
-              <div className="ml-3 flex-1">
-                <p className="text-sm font-bold text-gray-900">
-                  🔔 Nuevo Chat Asignado
+              <div style={{ marginLeft: '0.75rem', flex: 1 }}>
+                <p style={{
+                  fontSize: '0.875rem',
+                  fontWeight: 'bold',
+                  color: '#111827',
+                  margin: 0
+                }}>
+                  Nuevo Chat Asignado
                 </p>
-                <p className="mt-1 text-sm text-gray-700">
-                  Chat con: <strong>{data.chatName}</strong>
+                <p style={{
+                  marginTop: '0.25rem',
+                  fontSize: '0.875rem',
+                  color: '#374151',
+                  margin: '0.25rem 0 0 0'
+                }}>
+                  Chat con: <strong style={{ color: '#1f2937' }}>{data.chatName}</strong>
                 </p>
                 {data.note && (
-                  <p className="mt-2 text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                  <p style={{
+                    marginTop: '0.5rem',
+                    fontSize: '0.875rem',
+                    color: '#2563eb',
+                    backgroundColor: '#eff6ff',
+                    padding: '0.5rem',
+                    borderRadius: '0.25rem',
+                    border: '1px solid #bfdbfe',
+                    margin: '0.5rem 0 0 0'
+                  }}>
                     📝 {data.note}
                   </p>
                 )}
-                <p className="mt-1 text-xs text-gray-500">
+                <p style={{
+                  marginTop: '0.25rem',
+                  fontSize: '0.75rem',
+                  color: '#6b7280',
+                  margin: '0.25rem 0 0 0'
+                }}>
                   Transferido por Admin
                 </p>
               </div>
             </div>
           </div>
-          <div className="flex border-l border-gray-200">
+          <div style={{ display: 'flex', borderLeft: '1px solid #e5e7eb' }}>
             <button
               onClick={() => {
                 toast.dismiss(t.id);
-                // NO MÁS WINDOW.LOCATION.RELOAD! Usar evento personalizado para actualizar chats
                 console.log('🔄 [NOTIFICATION] Solicitando actualización de chats sin recargar página');
                 window.dispatchEvent(new CustomEvent('reload-assigned-chats', {
                   detail: { chatJid: data.chatJid, navigateToChat: true }
                 }));
-                // Navegar al chat sin recargar la página completa
                 const chatUrl = `/dashboard/chat?chatId=${data.chatJid}&sessionId=${data.sessionId}`;
                 window.history.pushState({}, '', chatUrl);
-                // Forzar actualización del componente de chat actual
                 window.dispatchEvent(new PopStateEvent('popstate'));
               }}
-              className="w-full border border-transparent rounded-none rounded-r-lg p-4 flex items-center justify-center text-sm font-medium text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               style={{
+                width: '100%',
+                border: 'none',
+                borderRadius: '0',
+                borderTopRightRadius: '0.5rem',
+                borderBottomRightRadius: '0.5rem',
+                padding: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.875rem',
+                fontWeight: '500',
+                color: '#2563eb',
+                backgroundColor: 'transparent',
+                cursor: 'pointer',
                 minWidth: '80px',
-                background: 'linear-gradient(to bottom, #f9fafb, #f3f4f6)',
+                transition: 'background-color 0.2s ease',
+                boxShadow: 'inset 0 0 0 1px transparent'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = '#f0f9ff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
               }}
             >
               Ver Chat

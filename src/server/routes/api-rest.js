@@ -465,20 +465,38 @@ router.get('/messages/:sessionId', authenticateAPIKey, async (req, res) => {
 router.get('/chats/:sessionId', authenticateAPIKey, async (req, res) => {
   try {
     const { sessionId } = req.params;
+    const { dateFilter, limit = 500, offset = 0 } = req.query;
+
+    console.log(`[API-CHATS] 📥 GET /api/chats/${sessionId} - dateFilter: ${dateFilter}, limit: ${limit}, offset: ${offset}`);
+
     const connection = await mysql.createConnection(dbConfig);
 
+    // Construir filtro de fecha
+    let dateFilterSQL = '';
+    if (dateFilter === 'today') {
+      dateFilterSQL = 'AND DATE(timestamp) = CURDATE()';
+    } else if (dateFilter === 'limit_24h') {
+      dateFilterSQL = 'AND timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)';
+    }
+
+    console.log(`[API-CHATS] 🔍 SQL Filter: "${dateFilterSQL || 'SIN FILTRO'}"`);
+
     const [chats] = await connection.query(
-      `SELECT DISTINCT remote_jid, push_name, 
-       (SELECT COUNT(*) FROM messages m WHERE m.remote_jid = messages.remote_jid AND m.session_id = ?) as message_count,
+      `SELECT DISTINCT chat_jid as remote_jid,
+       MAX(sender_name) as push_name,
+       COUNT(*) as message_count,
        MAX(timestamp) as last_message_time
-       FROM messages 
-       WHERE session_id = ?
-       GROUP BY remote_jid, push_name
-       ORDER BY last_message_time DESC`,
-      [sessionId, sessionId]
+       FROM messages
+       WHERE session_id = ? ${dateFilterSQL}
+       GROUP BY chat_jid
+       ORDER BY last_message_time DESC
+       LIMIT ? OFFSET ?`,
+      [sessionId, parseInt(limit), parseInt(offset)]
     );
 
     await connection.end();
+
+    console.log(`[API-CHATS] ✅ Retornando ${chats.length} chats para session ${sessionId}`);
 
     res.json({
       success: true,

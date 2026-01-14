@@ -125,10 +125,20 @@ router.post('/budgets', authenticateToken, async (req, res) => {
     const userId = await getNumericUserId(req);
     const { name, category_id, start_date, end_date, total_amount, description } = req.body;
 
+    console.log('[MGMT-BUDGETS-POST] userId:', userId, 'user:', req.user?.id, 'role:', req.user?.role);
+
+    if (!userId) {
+        return res.status(400).json({ success: false, error: 'No se pudo determinar el ID del usuario' });
+    }
+
+    if (!name || !total_amount) {
+        return res.status(400).json({ success: false, error: 'Nombre y monto total son requeridos' });
+    }
+
     try {
         const [result] = await pool.execute(
             'INSERT INTO fin_budgets (user_id, name, category_id, start_date, end_date, total_amount, description) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [userId, name, category_id, start_date, end_date || null, total_amount, description]
+            [userId, name, category_id || null, start_date || null, end_date || null, total_amount, description || null]
         );
         res.json({ success: true, id: result.insertId });
     } catch (error) {
@@ -143,10 +153,20 @@ router.put('/budgets/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { name, category_id, start_date, end_date, total_amount, description, status } = req.body;
 
+    console.log('[MGMT-BUDGETS-PUT] userId:', userId, 'id:', id);
+
+    if (!userId) {
+        return res.status(400).json({ success: false, error: 'No se pudo determinar el ID del usuario' });
+    }
+
+    if (!name || !total_amount) {
+        return res.status(400).json({ success: false, error: 'Nombre y monto total son requeridos' });
+    }
+
     try {
         await pool.execute(
             'UPDATE fin_budgets SET name = ?, category_id = ?, start_date = ?, end_date = ?, total_amount = ?, description = ?, status = ? WHERE id = ? AND user_id = ?',
-            [name, category_id, start_date, end_date || null, total_amount, description, status, id, userId]
+            [name, category_id || null, start_date || null, end_date || null, total_amount, description || null, status || 'active', id, userId]
         );
         res.json({ success: true });
     } catch (error) {
@@ -160,10 +180,17 @@ router.delete('/budgets/:id', authenticateToken, async (req, res) => {
     const userId = await getNumericUserId(req);
     const { id } = req.params;
 
+    console.log('[MGMT-BUDGETS-DELETE] userId:', userId, 'id:', id);
+
+    if (!userId) {
+        return res.status(400).json({ success: false, error: 'No se pudo determinar el ID del usuario' });
+    }
+
     try {
         await pool.execute('DELETE FROM fin_budgets WHERE id = ? AND user_id = ?', [id, userId]);
         res.json({ success: true });
     } catch (error) {
+        console.error('[MGMT-BUDGETS-DELETE] Error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

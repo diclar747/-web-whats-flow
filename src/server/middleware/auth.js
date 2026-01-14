@@ -20,25 +20,30 @@ const authenticateToken = (req, res, next) => {
         const sessionToken = req.headers['x-session-token'] || req.query.sessionToken;
         const deviceId = req.headers['x-device-id'] || req.query.deviceId;
 
+        // 🆕 MEJORADO: Solo validar sesión única si AMBOS headers están presentes Y la sesión existe
+        // Si la sesión no existe (servidor reiniciado), permitir continuar con validación de JWT
         if (sessionToken && deviceId) {
-            // Usar la lógica de validateUniqueSession
-            const { activeSessions } = require('./sessionValidator');
-            const session = activeSessions.get(sessionToken);
+            try {
+                const { activeSessions } = require('./sessionValidator');
+                const session = activeSessions.get(sessionToken);
 
-            if (!session) {
-                return res.status(401).json({
-                    success: false,
-                    error: 'Sesión no válida o expirada (Unique Session)',
-                    requiresReauth: true
-                });
-            }
-
-            if (session.deviceId !== deviceId) {
-                return res.status(403).json({
-                    success: false,
-                    error: 'Esta sesión está activa en otro dispositivo',
-                    requiresReauth: true
-                });
+                // 🆕 Si la sesión existe, validarla; si no existe, continuar sin error
+                // (El JWT será validado después)
+                if (session) {
+                    if (session.deviceId !== deviceId) {
+                        return res.status(403).json({
+                            success: false,
+                            error: 'Esta sesión está activa en otro dispositivo',
+                            requiresReauth: true
+                        });
+                    }
+                } else {
+                    // La sesión no existe (prob. servidor reiniciado) - permitir continuar
+                    console.warn('[AUTH-MIDDLEWARE] Sesión no encontrada en activeSessions (servidor reiniciado?) - validando con JWT');
+                }
+            } catch (err) {
+                console.warn('[AUTH-MIDDLEWARE] Error validando sesión única:', err.message);
+                // Continuar con validación de JWT
             }
         }
 

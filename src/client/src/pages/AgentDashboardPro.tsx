@@ -172,8 +172,8 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
   const [transferNotification, setTransferNotification] = useState<{ open: boolean; chatName?: string; avatar?: string; phoneNumber?: string }>({ open: false });
   const [whatsappConnected, setWhatsappConnected] = useState(false);
   const [chatFilter, setChatFilter] = useState<'all' | 'unread' | 'active' | 'pending' | 'closed'>('all');
-  const [messageDateFilter, setMessageDateFilter] = useState<string>('today'); // 'today', 'week', 'month', 'all'
-  const [chatListDateFilter, setChatListDateFilter] = useState<string>('today'); // Filtro para lista de chats
+  const [messageDateFilter, setMessageDateFilter] = useState<string>('limit_24h'); // 'today', 'week', 'month', 'all', 'limit_24h'
+  const [chatListDateFilter, setChatListDateFilter] = useState<string>('limit_24h'); // Filtro para lista de chats - últimas 24 horas
 
   // Estado de sincronización
   const [syncProgress, setSyncProgress] = useState<{

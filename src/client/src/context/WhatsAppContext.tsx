@@ -344,31 +344,27 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
         const filteredChats = mappedChats.filter(chat => {
           // ✅ FIX: Permitir grupos (se filtrarán visualmente en tabs)
-          // if (chat.isGroup) return false; 
+          // if (chat.isGroup) return false;
 
-          if (chat.id.includes('@lid')) return false;
-          if (chat.id.includes('status@broadcast')) return false;
+          if (chat.id.includes('@lid')) {
+            console.log('[WhatsAppContext] 🚫 Filtrando chat LID:', chat.id);
+            return false;
+          }
+          if (chat.id.includes('status@broadcast')) {
+            console.log('[WhatsAppContext] 🚫 Filtrando status broadcast');
+            return false;
+          }
 
-          // 🛡️ FILTRO MEJORADO: Normalizar números para comparación
+          // 🛡️ FILTRO MEJORADO: Solo filtrar el chat propio si coincide EXACTAMENTE
           const chatNumber = chat.id.split('@')[0].split(':')[0]; // Extraer solo el número
 
-          // Comparar números normalizados (sin @, sin :, sin espacios)
+          // Solo filtrar si el chat ES EXACTAMENTE el número de la sesión actual
           if (currentPhone && chatNumber === currentPhone) {
             console.log('[WhatsAppContext] 🚫 Filtrando chat propio (número exacto):', chat.id, 'vs', currentPhone);
             return false;
           }
 
-          // Verificar variaciones comunes
-          if (currentPhone && (
-            chat.id === currentPhone ||
-            chat.id === `${currentPhone}@s.whatsapp.net` ||
-            chat.id === `${currentPhone}@c.us` ||
-            chat.id.startsWith(currentPhone + ':')
-          )) {
-            console.log('[WhatsAppContext] 🚫 Filtrando chat propio (variación):', chat.id);
-            return false;
-          }
-
+          console.log('[WhatsAppContext] ✅ Chat permitido:', chat.id, '(sessionId:', currentPhone, ')');
           return true;
         })
           // ⚡ ORDENAR EXPLÍCITAMENTE
@@ -675,15 +671,15 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             console.log('[REAL-TIME] 🚫 Ignorando chat LID:', mappedMessage.chatJid);
             return prev;
           }
+
+          // Solo filtrar si el chat ES EXACTAMENTE el número de la sesión actual
           const currentPhone = String(session?.sessionId || '').split(':')[0]?.split('@')[0];
-          if (currentPhone && (chatPhone === currentPhone ||
-            mappedMessage.chatJid === currentPhone ||
-            mappedMessage.chatJid === `${currentPhone}@s.whatsapp.net` ||
-            mappedMessage.chatJid === `${currentPhone}@c.us` ||
-            mappedMessage.chatJid.startsWith(currentPhone + ':'))) {
+          if (currentPhone && chatPhone === currentPhone) {
             console.log('[REAL-TIME] 🚫 Ignorando chat propio en creación:', mappedMessage.chatJid);
             return prev;
           }
+
+          console.log('[REAL-TIME] ✅ Creando nuevo chat:', mappedMessage.chatJid);
 
           const newChat: WhatsAppChat = {
             id: mappedMessage.chatJid,
@@ -1122,44 +1118,46 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     if (!session?.sessionId) return;
 
     try {
-      // 1. Si no es "append" (carga inicial), intentar cargar desde cache para respuesta instantánea
-      if (!append && messagesCacheRef.current.has(chatId) && offset === 0) {
-        console.log(`⚡[CACHE] Cargando mensajes desde cache para: ${chatId} `);
-        const cachedMessages = messagesCacheRef.current.get(chatId) || [];
-        setMessages(cachedMessages);
-        setIsLoading(false);
-      } else if (!append) {
-        // Solo limpiar si no es append y no hay cache
+      // ⚠️ IMPORTANTE: NO cargar desde cache inicialmente
+      // Siempre consultar la BD PRIMERO con el filtro de fecha
+      // Solo mostrar lo que realmente está en el BD para hoy
+      if (!append) {
         setMessages([]);
         setIsLoading(true);
       }
 
-      console.log(`🔄[API] Cargando mensajes para ${chatId} (offset = ${offset}, limit = ${limit}, append = ${append})`);
+      console.log(`🔄[API] Cargando mensajes para ${chatId} (dateFilter=${dateFilter}, limit=${limit}, offset=${offset}, append=${append})`);
 
-      // ⚡ URL paginada - Usar userId en lugar de session.sessionId
+      // ✅ Usar el endpoint correcto: /api/messages/:sessionId/:chatJid
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const effectiveSessionId = userId || session?.sessionId || '1'; // Usar userId si está disponible
-      const response = await fetch(`${API_BASE}/api/messages/${effectiveSessionId}?number=${chatId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`, {
+      const sessionId = session?.sessionId || '1';
+      
+      // Construir URL correctamente con chatJid en la ruta
+      const endpoint = `${API_BASE}/api/messages/${sessionId}/${chatId}?dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`;
+      
+      console.log(`📡 Endpoint: ${endpoint}`);
+      
+      const response = await fetch(endpoint, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
       const data = await response.json();
 
-      if (data.success && data.messages) {
-        console.log(`✅ Mensajes cargados: ${data.messages.length} para chat ${chatId} `);
+      if (data.success && data.messages && data.messages.length > 0) {
+        console.log(`✅ Mensajes cargados: ${data.messages.length} para chat ${chatId} (fecha: ${dateFilter})`);
         const mappedMessages: WhatsAppMessage[] = data.messages.map((msg: any) => ({
           id: msg.id,
-          from: msg.from,
-          to: msg.to,
-          message: msg.message || msg.text || '',
-          text: msg.message || msg.text || '',
+          from: msg.sender_jid || msg.from,
+          to: msg.chat_jid || msg.to,
+          message: msg.text_content || msg.message || msg.text || '',
+          text: msg.text_content || msg.message || msg.text || '',
           timestamp: msg.timestamp,
-          type: msg.type || 'text',
-          isFromMe: Boolean(msg.isFromMe),
+          type: msg.message_type || msg.type || 'text',
+          isFromMe: Boolean(msg.from_me),
           status: msg.status || 'delivered',
-          chatJid: msg.chatJid || chatId,
-          mediaUrl: msg.mediaUrl,
-          mediaMimeType: msg.mediaMimeType,
-          sentBy: msg.sentBy, // Nombre del agente que envió
+          chatJid: msg.chat_jid || chatId,
+          mediaUrl: msg.media_url || msg.mediaUrl,
+          mediaMimeType: msg.media_mime_type || msg.mediaMimeType,
+          sentBy: msg.sender_name || msg.agent_name || msg.sentBy,
           agent_id: msg.agent_id,
           agent_name: msg.agent_name,
           contextInfo: msg.contextInfo
@@ -1167,34 +1165,25 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
         if (append) {
           // AGREGAR AL INICIO (mensajes más viejos arriba)
-          // Filtrar duplicados por si acaso
           setMessages(prev => {
             const existingIds = new Set(prev.map(m => m.id));
             const newUniqueMessages = mappedMessages.filter(m => !existingIds.has(m.id));
-            // Combinar: [nuevos_viejos, ...existentes]
-            // NOTA: Depende del orden que devuelva la API.
-            // Asumimos API devuelve orden descendente (más recientes primero).
-            // Si la API devuelve los mensajes [20..40], deberían ir ANTES de [0..20].
             return [...newUniqueMessages.reverse(), ...prev];
           });
         } else {
-          // Reemplazar todo (y guardar en cache)
-          // Asegurar orden cronológico (más viejo arriba) para visualización correcta
+          // Reemplazar todo (solo lo del día actual)
           const sortedMessages = mappedMessages.sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
           setMessages(sortedMessages);
-          messagesCacheRef.current.set(chatId, sortedMessages);
+          // ⚠️ NO guardar en cache - siempre consultar BD fresca
         }
 
-        // Marcar mensajes como leídos si no son míos (solo en carga inicial no-append)
-        if (!append) {
-          const unreadMessages = mappedMessages.filter(msg => !msg.isFromMe && msg.status !== 'read');
-          if (unreadMessages.length > 0) {
-            console.log(`📖 Marcando ${unreadMessages.length} mensajes como leídos`);
-          }
-        }
+        setIsLoading(false);
       } else {
-        console.log(`ℹ️ No se encontraron mensajes para chat ${chatId} `);
-        setMessages([]);
+        console.log(`ℹ️ No hay mensajes para chat ${chatId} (fecha: ${dateFilter})`);
+        if (!append) {
+          setMessages([]);
+          setIsLoading(false);
+        }
       }
     } catch (err) {
       console.error('❌ Error al cargar mensajes:', err);

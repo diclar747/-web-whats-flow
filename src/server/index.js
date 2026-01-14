@@ -2664,8 +2664,8 @@ async function saveMessageToDB(sessionId, msg) {
         const finalSenderJid = sender_jid || chat_jid;
 
         // 🆕 OBTENER NOMBRE Y AVATAR DEL REMITENTE DESDE CONTACTS
-        let senderName = null;
-        let senderAvatar = null;
+        let senderName = msg.sender_name || null;  // 🆕 Usar primero el sender_name del mensaje
+        let senderAvatar = msg.sender_avatar || null;  // 🆕 Usar primero el sender_avatar del mensaje
         const isGroup = chat_jid.includes('@g.us');
 
         // Para mensajes de GRUPO, buscar el nombre del participante (sender_jid)
@@ -2689,7 +2689,9 @@ async function saveMessageToDB(sessionId, msg) {
                 if (contactRows.length > 0) {
                     const contact = contactRows[0];
                     senderName = contact.name || contact.notify_name || jidToSearch.split('@')[0];
-                    senderAvatar = contact.avatar_url;
+                    if (!senderAvatar) {
+                        senderAvatar = contact.avatar_url;
+                    }
                     console.log(`[DB-MSG] 👤 Contacto guardado - Nombre: ${senderName}`);
                 } else {
                     // Fallback: usar pushName si está disponible, sino el número
@@ -2936,10 +2938,11 @@ async function saveMessageToDB(sessionId, msg) {
 
             // 🆕 EMITIR CHAT UPDATE para actualizar la lista lateral
             const chatJidPhone = chat_jid.split('@')[0];
-            console.log(`[${sessionId}] 🔍 [MONITOR] Emitiendo chat-update para chat_jid=${chat_jid}, phone=${chatJidPhone}, phoneNumber=${phoneNumber}`);
+            console.log(`[${sessionId}] 🔍 [MONITOR] Preparando chat-update para chat_jid=${chat_jid}, chatJidPhone=${chatJidPhone}, phoneNumber=${phoneNumber}`);
 
             // Emitir chat-update a ambas salas (evitando el propio número)
             if (chatJidPhone !== phoneNumber) {
+                console.log(`[${sessionId}] ✅ EMITIENDO chat-update a rooms:`, { roomById, roomByPhone, roomByOwner });
                 const updatePayload = {
                     id: chat_jid,
                     lastMessage: text_content || 'Media',
@@ -11222,10 +11225,105 @@ app.post('/api/send-message', async (req, res) => {
 });
 
 
-// Endpoint específico para agentes - obtener mensajes de un chat
-app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
+// 🆕 Endpoint simplificado para agentes - SIN autenticación requerida
+app.get('/api/messages/:sessionId/:chatJid', async (req, res) => {
     const { sessionId, chatJid } = req.params;
-    const { limit = 25, dateFilter = 'today' } = req.query; // LÍMITE: Solo 25 mensajes más recientes por defecto
+    const { limit = 50, dateFilter = 'today' } = req.query;
+
+    console.log('[MESSAGES-SIMPLE] 📥 Obteniendo mensajes:', { sessionId, chatJid, limit, dateFilter });
+
+    if (!pool) {
+        return res.json({ success: true, messages: [], total_count: 0 });
+    }
+
+    try {
+        const connection = await pool.getConnection();
+        try {
+            // Construir condición de fecha
+            let dateCondition = '';
+            const now = new Date();
+            const params = [chatJid];
+
+            if (dateFilter === 'today') {
+                const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const endOfDay = new Date(startOfDay);
+                endOfDay.setDate(endOfDay.getDate() + 1);
+                dateCondition = 'AND timestamp >= ? AND timestamp < ?';
+                params.push(startOfDay, endOfDay);
+            } else if (dateFilter === 'yesterday') {
+                const yesterday = new Date(now);
+                yesterday.setDate(yesterday.getDate() - 1);
+                const startOfDay = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate());
+                const endOfDay = new Date(startOfDay);
+                endOfDay.setDate(endOfDay.getDate() + 1);
+                dateCondition = 'AND timestamp >= ? AND timestamp < ?';
+                params.push(startOfDay, endOfDay);
+            } else if (dateFilter === 'week') {
+                const startOfWeek = new Date(now);
+                startOfWeek.setDate(now.getDate() - now.getDay());
+                dateCondition = 'AND timestamp >= ?';
+                params.push(startOfWeek);
+            } else if (dateFilter === 'month') {
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                dateCondition = 'AND timestamp >= ?';
+                params.push(startOfMonth);
+            }
+            // Si es 'all', no agregar condición de fecha
+
+            params.push(parseInt(limit) || 50);
+
+            // Query CON FILTRO DE FECHA
+            const [messages] = await connection.execute(
+                `SELECT id, chat_jid, sender_jid, from_me, text_content, message_type, 
+                        media_url, timestamp, status, sender_name, sender_avatar
+                 FROM messages
+                 WHERE chat_jid = ? ${dateCondition}
+                 ORDER BY timestamp DESC
+                 LIMIT ?`,
+                params
+            );
+
+            console.log('[MESSAGES-SIMPLE] ✅ Encontrados:', messages ? messages.length : 0, `mensajes (filtro: ${dateFilter})`);
+
+            // Invertir para orden cronológico (más antiguo al más nuevo)
+            const sortedMessages = (messages || []).reverse().map(msg => ({
+                id: msg.id,
+                chatJid: msg.chat_jid,
+                senderJid: msg.sender_jid,
+                from_me: msg.from_me,
+                type: msg.message_type,
+                message: msg.text_content,
+                mediaUrl: msg.media_url,
+                timestamp: msg.timestamp,
+                status: msg.status,
+                sender_name: msg.sender_name,
+                sender_avatar: msg.sender_avatar
+            }));
+
+            res.json({
+                success: true,
+                messages: sortedMessages,
+                total_count: sortedMessages.length
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[MESSAGES-SIMPLE] ❌ Error:', error.message, error.stack);
+        // En caso de error, devolver array vacío en lugar de 500
+        return res.json({
+            success: true,
+            messages: [],
+            total_count: 0
+        });
+    }
+});
+
+
+// Endpoint específico para agentes - obtener mensajes de un chat (VERSION ANTIGUA - deprecated)
+app.get('/api/messages-deprecated/:sessionId/:chatJid', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
+    const { sessionId, chatJid } = req.params;
+    const { limit = 25, dateFilter = 'today' } = req.query;
 
     console.log('[AGENT-MESSAGES] 📥 Obteniendo mensajes:', { sessionId, chatJid, dateFilter, limit });
 
@@ -11521,7 +11619,36 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
             console.log('[AGENT-SEND] 📝 Nombre del agente recibido del cliente:', finalAgentName);
         }
 
-        // Guardar en base de datos con información del agente
+        // 🆕 OBTENER NOMBRE Y AVATAR DEL CANAL/CONTACTO PARA EL MENSAJE ENVIADO
+        let senderName = null;
+        let senderAvatar = null;
+        
+        if (pool) {
+            try {
+                const conn = await pool.getConnection();
+                // Buscar el contacto en la sesión para obtener nombre y avatar
+                const [contacts] = await conn.execute(
+                    'SELECT name, avatar_url FROM contacts WHERE session_id = ? AND jid = ? LIMIT 1',
+                    [actualSessionId, ownJid]
+                );
+                
+                if (contacts.length > 0) {
+                    senderName = contacts[0].name;
+                    senderAvatar = contacts[0].avatar_url;
+                    console.log('[AGENT-SEND] 📸 Datos del remitente obtenidos:', { senderName, senderAvatar });
+                } else {
+                    // Si no hay contacto, usar el nombre del agente o del channel
+                    senderName = finalAgentName || session.user?.name || session.phone || 'Yo';
+                    console.log('[AGENT-SEND] 📸 Usando nombre del agente como remitente:', senderName);
+                }
+                conn.release();
+            } catch (err) {
+                console.log('[AGENT-SEND] ⚠️ Error obteniendo datos del remitente:', err.message);
+                senderName = finalAgentName || 'Yo';
+            }
+        }
+
+        // Guardar en base de datos con información del agente Y del remitente
         const dbMessage = {
             id: sentResult.key.id,
             chat_jid: jid,
@@ -11534,10 +11661,12 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
             media_url: mediaUrl,
             timestamp: new Date(Number(sentResult.messageTimestamp) * 1000 || Date.now()),
             status: 'pending',
-            assigned_user_id: finalAgentId || null
+            assigned_user_id: finalAgentId || null,
+            sender_name: senderName,  // 🆕 Nombre del canal/remitente
+            sender_avatar: senderAvatar  // 🆕 Avatar del canal/remitente
         };
         await saveMessageToDB(actualSessionId, dbMessage);
-        console.log('[AGENT-SEND] 💾 Mensaje guardado con agentId:', finalAgentId, 'agentName:', finalAgentName || 'Sin agente');
+        console.log('[AGENT-SEND] 💾 Mensaje guardado con agentId:', finalAgentId, 'agentName:', finalAgentName || 'Sin agente', 'senderName:', senderName);
 
         // ✅ Actualizar status de 'pending' a 'sent' en BD para evitar icono de error
         if (pool) {
@@ -11763,7 +11892,36 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
             console.log('[SEND-MEDIA] 📝 Nombre del agente recibido del cliente:', finalAgentName);
         }
 
-        // Guardar en BD
+        // 🆕 OBTENER NOMBRE Y AVATAR DEL CANAL/CONTACTO PARA EL MENSAJE ENVIADO
+        let senderName = null;
+        let senderAvatar = null;
+        
+        if (pool) {
+            try {
+                const conn = await pool.getConnection();
+                // Buscar el contacto en la sesión para obtener nombre y avatar
+                const [contacts] = await conn.execute(
+                    'SELECT name, avatar_url FROM contacts WHERE session_id = ? AND jid = ? LIMIT 1',
+                    [actualSessionId, ownJid]
+                );
+                
+                if (contacts.length > 0) {
+                    senderName = contacts[0].name;
+                    senderAvatar = contacts[0].avatar_url;
+                    console.log('[SEND-MEDIA] 📸 Datos del remitente obtenidos:', { senderName, senderAvatar });
+                } else {
+                    // Si no hay contacto, usar el nombre del agente o del channel
+                    senderName = finalAgentName || session.user?.name || session.phone || 'Yo';
+                    console.log('[SEND-MEDIA] 📸 Usando nombre del agente como remitente:', senderName);
+                }
+                conn.release();
+            } catch (err) {
+                console.log('[SEND-MEDIA] ⚠️ Error obteniendo datos del remitente:', err.message);
+                senderName = finalAgentName || 'Yo';
+            }
+        }
+
+        // Guardar en BD con sender_name y sender_avatar
         const dbMessage = {
             id: sentResult.key.id,
             chat_jid: jid,
@@ -11779,10 +11937,12 @@ app.post('/api/messages/send-media', upload.single('file'), async (req, res) => 
             mime_type: mimetype,
             timestamp: new Date(Number(sentResult.messageTimestamp) * 1000 || Date.now()),
             status: 'pending',
-            assigned_user_id: finalAgentId || null
+            assigned_user_id: finalAgentId || null,
+            sender_name: senderName,  // 🆕 Nombre del canal/remitente
+            sender_avatar: senderAvatar  // 🆕 Avatar del canal/remitente
         };
         await saveMessageToDB(actualSessionId, dbMessage);
-        console.log('[SEND-MEDIA] 💾 Guardado en BD con agente:', finalAgentName || 'Sin agente');
+        console.log('[SEND-MEDIA] 💾 Guardado en BD con agente:', finalAgentName || 'Sin agente', 'senderName:', senderName);
 
         // Emitir evento Socket.IO
         const mediaPayload = {
@@ -18180,14 +18340,16 @@ async function processCampaign(campaignId, sessionId) {
                             await new Promise(resolve => setTimeout(resolve, waitTime));
                         }
                     } else if (!campaign.use_random_timing && i > 0) {
-                        // Delay ALEATORIO: 5-10 segundos para campañas pequeñas (<=5 contactos), 1-2 minutos para grandes
-                        const isSmallCampaign = recipients.length <= 5;
-                        const minDelay = isSmallCampaign ? 5 * 1000 : 60 * 1000; // 5 segundos o 1 minuto
-                        const maxDelay = isSmallCampaign ? 10 * 1000 : 120 * 1000; // 10 segundos o 2 minutos
+                        // Delay ALEATORIO POR DEFECTO: 1-2 minutos entre cada mensaje (sin activar "Envíos Aleatorios")
+                        // Esto evita que WhatsApp bloquee la cuenta
+                        const minDelay = 60 * 1000; // 1 minuto
+                        const maxDelay = 120 * 1000; // 2 minutos
                         const randomDelay = Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
-                        const delaySeconds = (randomDelay / 1000).toFixed(2);
+                        const delayMinutes = (randomDelay / 1000 / 60).toFixed(2);
+                        const delaySecs = Math.floor(randomDelay / 1000) % 60;
+                        const delayMins = Math.floor(randomDelay / 1000 / 60);
 
-                        console.log(`[CAMPAIGN-PROCESSOR] ⏱️  Esperando ${delaySeconds} segundos antes del siguiente mensaje... ${isSmallCampaign ? '(campaña pequeña)' : '(campaña grande)'}`);
+                        console.log(`[CAMPAIGN-PROCESSOR] ⏱️  Esperando ${delayMins}:${String(delaySecs).padStart(2, '0')} (${delayMinutes} min) antes del siguiente mensaje...`);
                         await new Promise(resolve => setTimeout(resolve, randomDelay));
                     }
 
@@ -21370,6 +21532,25 @@ app.post('/api/chat-transfers', async (req, res) => {
 
             console.log(`[CHAT-TRANSFERS] ✅ Chat transferido: ${chat_jid} → Usuario ${to_user_id}`);
 
+            // 🚀 NOTIFICAR AL AGENTE QUE RECIBE EL CHAT
+            if (global.io) {
+                // Obtener el nombre del chat
+                const chatName = chat_jid.split('@')[0] || chat_jid;
+                
+                global.io.to(`agent-${to_user_id}`).emit(`agent-${to_user_id}-new-chat`, {
+                    type: 'transfer',
+                    chatJid: chat_jid,
+                    sessionId: session_id,
+                    chatName: chatName,
+                    transferredFrom: from_user_id,
+                    playSound: true,
+                    showNotification: true,
+                    timestamp: new Date().toISOString(),
+                    note: reason || 'Sin razón especificada'
+                });
+                console.log(`[CHAT-TRANSFERS] 📢 Notificación enviada al agente ${to_user_id}`);
+            }
+
             res.json({ success: true, id: transferResult.insertId, message: 'Chat transferido exitosamente' });
         } finally {
             connection.release();
@@ -21467,7 +21648,26 @@ app.get('/api/agents', async (req, res) => {
             const [agents] = await connection.execute(query, [adminPhone]);
 
             console.log(`[AGENTS] Usuario ${userId} (${adminPhone}) tiene ${agents.length} agentes`);
-            res.json({ success: true, agents });
+
+            // 🆕 VALIDACIÓN DE SESIÓN ACTIVA
+            // Verificar si cada agente tiene una sesión activa con su teléfono
+            const agentsWithValidStatus = agents.map(agent => {
+                // Buscar si el agente tiene una sesión activa
+                const hasActiveSession = agent.phone ? sessions.has(agent.phone) : false;
+                
+                // Si NO tiene sesión activa, su estado DEBE ser 'offline'
+                const validAgent = { ...agent };
+                if (!hasActiveSession && agent.agent_status !== 'offline') {
+                    console.log(`[AGENTS] ⚠️ Agente ${agent.name} (${agent.phone}) sin sesión activa → Forzando estado a 'offline'`);
+                    validAgent.agent_status = 'offline';
+                } else if (hasActiveSession) {
+                    console.log(`[AGENTS] ✅ Agente ${agent.name} (${agent.phone}) tiene sesión activa en ${agent.agent_status}`);
+                }
+                
+                return validAgent;
+            });
+
+            res.json({ success: true, agents: agentsWithValidStatus });
         } finally {
             connection.release();
         }
@@ -21540,9 +21740,22 @@ app.get('/api/agents/available', async (req, res) => {
                 last_activity: user.last_activity
             }));
 
-            console.log(`[AGENTS-AVAILABLE] ✅ ${agents.length} agentes encontrados para admin ${uniqueIds.join(', ')}`);
+            // 🆕 VALIDACIÓN DE SESIÓN ACTIVA
+            // Verificar si cada agente tiene una sesión activa con su teléfono
+            const agentsWithValidStatus = agents.map(agent => {
+                const hasActiveSession = agent.phone ? sessions.has(agent.phone) : false;
+                
+                // Si NO tiene sesión activa, su estado DEBE ser 'offline'
+                if (!hasActiveSession && agent.status !== 'offline') {
+                    console.log(`[AGENTS-AVAILABLE] ⚠️ Agente ${agent.name} sin sesión activa → Forzando estado a 'offline'`);
+                    return { ...agent, status: 'offline' };
+                }
+                return agent;
+            });
 
-            res.json({ success: true, agents });
+            console.log(`[AGENTS-AVAILABLE] ✅ ${agentsWithValidStatus.length} agentes encontrados para admin ${uniqueIds.join(', ')}`);
+
+            res.json({ success: true, agents: agentsWithValidStatus });
         } finally {
             connection.release();
         }

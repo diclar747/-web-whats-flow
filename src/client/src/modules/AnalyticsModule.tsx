@@ -102,6 +102,13 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
   const [activeSessionsCount, setActiveSessionsCount] = useState(0);
 
   const loadAllData = async () => {
+    if (!sessionId || sessionId.trim() === '') {
+      console.warn('⚠️ [AnalyticsModule] sessionId vacío, no se cargará data');
+      setLoading(false);
+      setDashboardData({ messages: { total: 0, sent: 0, received: 0, delivered: 0, read: 0, failed: 0 }, campaigns: { active: 0, total: 0 }, agents: { total: 0, online: 0 }, chatbots: 0, kanbans: 0, connections: 0 });
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -135,11 +142,33 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
         const json = await dashRes.value.json();
         setDashboardData(json.data || json);
       } else {
-        // Fallback to dashboard stats
+        // Fallback to dashboard stats - map flat stats to expected nested shape
         const fallback = await sessionFetch(`/api/dashboard/stats/${sessionId}`);
         if (fallback.ok) {
           const fbJson = await fallback.json();
-          setDashboardData(fbJson.stats || {});
+          const stats = fbJson.stats || {};
+          const msgs = fbJson.messages || {};
+
+          const mapped = {
+            messages: {
+              total: stats.messages || msgs.total || 0,
+              sent: msgs.sent || 0,
+              delivered: msgs.delivered || 0,
+              read: msgs.read || 0,
+              failed: msgs.failed || 0
+            },
+            deliveryRate: fbJson.deliveryRate || 0,
+            readRate: fbJson.readRate || 0,
+            campaigns: { active: stats.campaigns || 0, total: stats.campaigns || 0 },
+            agents: { total: stats.agents || 0, online: stats.agents || 0 },
+            chatbots: stats.chatbots || 0,
+            kanbans: stats.kanbans || 0,
+            messagesFailed: msgs.failed || 0,
+            failureRate: fbJson.failureRate || 0,
+            connections: stats.activeLines || 0
+          };
+
+          setDashboardData(mapped);
         }
       }
 

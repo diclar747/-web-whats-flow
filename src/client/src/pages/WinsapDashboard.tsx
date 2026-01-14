@@ -1460,12 +1460,12 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                   <Routes>
                     <Route path="/" element={
                       <ProtectedRoute module="analytics" action="view">
-                        <AnalyticsModule sessionId={sessionId} />
+                        <AnalyticsModule sessionId={userId || activeSessionId || sessionId} />
                       </ProtectedRoute>
                     } />
                     <Route path="/analytics/*" element={
                       <ProtectedRoute module="analytics" action="view">
-                        <AnalyticsModule sessionId={sessionId} />
+                        <AnalyticsModule sessionId={userId || activeSessionId || sessionId} />
                       </ProtectedRoute>
                     } />
                     <Route path="/chat/*" element={
