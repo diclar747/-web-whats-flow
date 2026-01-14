@@ -684,7 +684,7 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
                           }}
                         >
                           <Avatar
-                            src={chat.avatar_url}
+                            src={`${apiUrl}/api/avatar/${chat.session_id}/${chat.chat_jid}`}
                             sx={{ width: 48, height: 48, bgcolor: '#00a884' }}
                           >
                             {(chat.chat_name || chat.phone_number || '?').charAt(0).toUpperCase()}
@@ -756,7 +756,7 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
               }}
             >
               <Avatar
-                src={selectedChat.avatar_url}
+                src={`${apiUrl}/api/avatar/${selectedChat.session_id}/${selectedChat.chat_jid}`}
                 sx={{ width: 40, height: 40, mr: 2, bgcolor: '#00a884' }}
               >
                 {(selectedChat.chat_name || selectedChat.phone_number || '?').charAt(0).toUpperCase()}
