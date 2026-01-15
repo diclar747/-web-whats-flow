@@ -165,18 +165,18 @@ function registerAuthEndpoints(app, pool) {
                     });
                 }
 
-                // Actualizar last_login
-                await connection.execute(
-                    'UPDATE user_sessions SET last_login = NOW() WHERE id = ?',
-                    [user.id]
-                );
-
-                // Marcar users.session = 1 al iniciar sesión
+                // Actualizar estado de sesión y last_login en la tabla users
                 await connection.execute(
                     'UPDATE users SET session = 1, last_login = NOW() WHERE id = ?',
                     [user.id]
                 );
-                console.log(`[AUTH] ✅ users.session=1 para user_id=${user.id}`);
+                console.log(`[AUTH] ✅ users.session=1 y last_login actualizado para user_id=${user.id}`);
+
+                // Actualizar last_login en user_sessions si existe (session_id es el id del usuario)
+                connection.execute(
+                    'UPDATE user_sessions SET last_login = NOW() WHERE session_id = ? OR id = ? OR phone = ?',
+                    [String(user.id), user.id, user.phone_number]
+                ).catch(err => console.error('[AUTH-WARN] Error al actualizar user_sessions:', err.message));
 
                 // Usar rol de la BD
                 const userRole = user.role || 'admin';

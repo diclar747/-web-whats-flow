@@ -162,16 +162,27 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
       }
 
       const data = await response.json();
-      const sessionsData = (data.sessions || []).map((s: any) => ({
-        sessionId: s.sessionId,
-        phoneNumber: s.phoneNumber,
-        name: s.name,
-        avatar: s.avatar,
-        isConnected: s.isConnected,
-        hasAuth: true,
-        ownerPhone: s.ownerPhone,
-        created_at: s.created_at
-      }));
+      console.log('[WhatsAppConnection] 📋 API Response:', data);
+
+      const sessionsData = (data.sessions || []).map((s: any) => {
+        console.log('[WhatsAppConnection] 🔍 Mapping session:', {
+          sessionId: s.sessionId,
+          phoneNumber: s.phoneNumber,
+          name: s.name,
+          avatar: s.avatar
+        });
+
+        return {
+          sessionId: s.sessionId,
+          phoneNumber: s.phoneNumber,
+          name: s.name,
+          avatar: s.avatar,
+          isConnected: s.isConnected,
+          hasAuth: true,
+          ownerPhone: s.ownerPhone,
+          created_at: s.created_at
+        };
+      });
 
       // 🆕 Sort logic (Verified): Priority strictly to Oldest (Primary)
       sessionsData.sort((a: WhatsAppSession, b: WhatsAppSession) => {
@@ -636,6 +647,19 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                   const iconBg = isPrimary ? 'primary.main' : 'success.main';
                   const displayName = session.name || session.phoneNumber || session.sessionId;
 
+                  // 🔥 Proxy WhatsApp CDN URLs to avoid 403 errors
+                  const getProxiedAvatar = (avatarUrl: string | undefined) => {
+                    if (!avatarUrl) return undefined;
+
+                    // Check if it's a WhatsApp CDN URL
+                    if (avatarUrl.includes('pps.whatsapp.net') || avatarUrl.includes('mmg.whatsapp.net')) {
+                      const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
+                      return `${API_BASE}/api/proxy/avatar?url=${encodeURIComponent(avatarUrl)}`;
+                    }
+
+                    return avatarUrl;
+                  };
+
                   return (
                     <ListItem
                       key={session.sessionId}
@@ -649,7 +673,7 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
                     >
                       <ListItemAvatar>
                         <Avatar
-                          src={session.avatar || undefined}
+                          src={getProxiedAvatar(session.avatar) || undefined}
                           sx={{
                             bgcolor: !session.avatar ? iconBg : undefined,
                             width: 56,

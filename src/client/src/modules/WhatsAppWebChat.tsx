@@ -644,9 +644,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       return '';
     }
 
-    // Si ya es una URL completa (data: o http), retornarla tal cual
+    // Si ya es una URL completa (data: o http), verificar si necesita proxy
     if (mediaUrl.startsWith('data:') || mediaUrl.startsWith('http://') || mediaUrl.startsWith('https://')) {
-      console.log('[getMediaUrl] URL completa detectada:', mediaUrl.substring(0, 50));
+      // 🛡️ PROXY: Si es una URL de WhatsApp CDN, forzar uso de proxy para evitar 403
+      if (mediaUrl.includes('whatsapp.net')) {
+        console.log('[getMediaUrl] 🛡️ Proxying WhatsApp CDN URL:', mediaUrl);
+        return `${getAPIBaseURL()}/api/proxy/avatar?url=${encodeURIComponent(mediaUrl)}`;
+      }
       return mediaUrl;
     }
 
@@ -704,7 +708,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       try {
         console.log('[WhatsAppWebChat] 🔍 Verificando conexión para sessionId:', sessionId);
         const token = localStorage.getItem('token');
-        const response = await fetch(`${getAPIBaseURL()}/api/session/${sessionId}/status`, {
+        const response = await fetch(`${getAPIBaseURL()}/api/sessions/check/${sessionId}`, {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -713,9 +717,10 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         console.log('[WhatsAppWebChat] 📡 Estado de conexión recibido:', {
           success: data.success,
           isConnected: data.isConnected,
-          phoneNumber: data.phoneNumber
+          phoneNumber: data.profile?.phoneNumber || data.sessionId
         });
-        setWhatsappConnected(data.success && data.isConnected);
+        // ✅ Aceptar como conectado si es válido O si está conectado explícitamente
+        setWhatsappConnected((data.success && data.valid) || data.isConnected);
         setConnectionChecking(false);
       } catch (error) {
         console.error('[WhatsAppWebChat] ❌ Error verificando conexión:', error);

@@ -479,27 +479,33 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
     try {
       frontendLogger.log('CHECKING_SESSION_VALIDITY', { sessionId: currentSessionId });
 
-      const response = await sessionFetch(`/api/session/${currentSessionId}/status`);
+      const response = await sessionFetch(`/api/sessions/check/${currentSessionId}`);
       const data = await response.json();
 
-      if (data.success && data.isConnected && data.phoneNumber) {
+      if (data.success && data.valid) {
         frontendLogger.log('SESSION_VALID', {
-          phoneNumber: data.phoneNumber,
+          phoneNumber: data.profile?.phoneNumber,
           isConnected: data.isConnected
         });
 
-        // ✅ WhatsApp está conectado - marcar sesión como válida
+        // ✅ Sesión válida (puede estar conectada o no, pero existe)
         setSessionValid(true);
-        setWhatsappStatus('connected');
-        setUserPhoneNumber(data.phoneNumber);
-        setUserProfilePic(`/api/avatar/${currentSessionId}/${data.phoneNumber}@s.whatsapp.net`);
+        setWhatsappStatus(data.isConnected ? 'connected' : 'disconnected');
 
-        // ℹ️ Token JWT se recibirá automáticamente via Socket.IO (evento 'auth_token')
-        // No es necesario validarlo aquí, el servidor lo envía cuando conecta WhatsApp
-        console.log('[AUTH] ✅ Sesión WhatsApp válida. Token JWT se recibirá via Socket.IO si es necesario.');
+        if (data.profile) {
+          if (data.profile.phoneNumber) setUserPhoneNumber(data.profile.phoneNumber);
+          if (data.profile.avatarUrl) {
+            console.log('[DASHBOARD] 👤 Settig user avatar:', data.profile.avatarUrl);
+            setUserProfilePic(data.profile.avatarUrl);
+          } else if (data.profile.phoneNumber) {
+            setUserProfilePic(`/api/avatar/${currentSessionId}/${data.profile.phoneNumber}@s.whatsapp.net`);
+          }
+        }
+
+        console.log(`[AUTH] ✅ Sesión ${currentSessionId} verificada. Conectada: ${data.isConnected}`);
       } else {
         frontendLogger.log('SESSION_INVALID', {
-          reason: 'Not connected or no phone number',
+          reason: 'Invalid session or check failed',
           data
         });
 
@@ -1458,15 +1464,13 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
               ) : (
                 <Suspense fallback={<ModuleLoadingFallback />}>
                   <Routes>
-                    <Route path="/" element={
-                      <ProtectedRoute module="analytics" action="view">
-                        <AnalyticsModule sessionId={userId || activeSessionId || sessionId} />
-                      </ProtectedRoute>
+                    <ProtectedRoute module="analytics" action="view">
+                      <AnalyticsModule sessionId={activeSessionId || userId || sessionId} />
+                    </ProtectedRoute>
                     } />
-                    <Route path="/analytics/*" element={
-                      <ProtectedRoute module="analytics" action="view">
-                        <AnalyticsModule sessionId={userId || activeSessionId || sessionId} />
-                      </ProtectedRoute>
+                    <ProtectedRoute module="analytics" action="view">
+                      <AnalyticsModule sessionId={activeSessionId || userId || sessionId} />
+                    </ProtectedRoute>
                     } />
                     <Route path="/chat/*" element={
                       <ProtectedRoute module="chat" action="view">
@@ -1504,7 +1508,7 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                     <Route path="/history/*" element={
                       <ProtectedRoute module="chat" action="view">
                         <RequiresWhatsApp sessionId={activeSessionId} moduleName="Historial">
-                          <HistoryModule sessionId={userId || sessionId} />
+                          <HistoryModule sessionId={activeSessionId || userId || sessionId} />
                         </RequiresWhatsApp>
                       </ProtectedRoute>
                     } />
@@ -1538,13 +1542,12 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                         <ChatbotModule sessionId={activeSessionId} />
                       </ProtectedRoute>
                     } />
-                    <Route path="/calendar/*" element={
-                      <ProtectedRoute module="calendar" action="view">
-                        <CalendarModule sessionId={sessionId} />
-                      </ProtectedRoute>
+                    <ProtectedRoute module="calendar" action="view">
+                      <CalendarModule sessionId={activeSessionId || sessionId} />
+                    </ProtectedRoute>
                     } />
                     <Route path="/whatsapp-status/*" element={
-                      <WhatsAppStatusModule sessionId={sessionId} />
+                      <WhatsAppStatusModule sessionId={activeSessionId || sessionId} />
                     } />
                     <Route path="/agents/*" element={
                       <ProtectedRoute module="users" action="view">

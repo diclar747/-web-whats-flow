@@ -482,26 +482,27 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       const checkConnection = async () => {
         try {
-          const response = await fetch(`${API_BASE}/api/session/${savedSessionId}/status`);
+          const response = await fetch(`${API_BASE}/api/sessions/check/${savedSessionId}`);
           const data = await response.json();
 
-          if (data.success && data.isConnected) {
-            console.log('🎉 Sesión conectada, inicializando y cargando chats...');
+          if (data.success && data.valid) { // valid=true significa que la sesión existe
+            console.log('🎉 Sesión verificada, inicializando y cargando chats...', data);
             const newSession: WhatsAppSession = {
               sessionId: savedSessionId,
-              isConnected: true,
-              status: 'connected',
-              lastActivity: new Date().toISOString()
+              isConnected: data.isConnected,
+              status: data.isConnected ? 'connected' : 'disconnected',
+              lastActivity: new Date().toISOString(),
+              phoneNumber: data.profile?.phoneNumber
             };
             setSession(newSession);
-            setConnectionStatus('connected');
+            setConnectionStatus(data.isConnected ? 'connected' : 'disconnected');
 
             // await requestNotificationPermission(); // 🚫 Desactivado para usar Modal UI moderno
 
             console.log('📱 Cargando chats automáticamente...');
             await loadChats(savedSessionId);
           } else {
-            console.log('Sesión guardada pero no conectada. Manteniendo en localStorage para posibles reintentos...');
+            console.log('Sesión no válida o no encontrada. Manteniendo en localStorage para posibles reintentos...');
             setConnectionStatus('disconnected');
           }
         } catch (error) {
@@ -1131,12 +1132,12 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       // ✅ Usar el endpoint correcto: /api/messages/:sessionId/:chatJid
       const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const sessionId = session?.sessionId || '1';
-      
+
       // Construir URL correctamente con chatJid en la ruta
       const endpoint = `${API_BASE}/api/messages/${sessionId}/${chatId}?dateFilter=${dateFilter}&limit=${limit}&offset=${offset}`;
-      
+
       console.log(`📡 Endpoint: ${endpoint}`);
-      
+
       const response = await fetch(endpoint, {
         headers: token ? { 'Authorization': `Bearer ${token}` } : {}
       });
