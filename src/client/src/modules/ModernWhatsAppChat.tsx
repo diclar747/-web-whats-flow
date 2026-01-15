@@ -109,9 +109,12 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
     }
 
     checkWhatsAppConnection();
-    // Verificar cada 10 segundos
-    const interval = setInterval(checkWhatsAppConnection, 10000);
-    return () => clearInterval(interval);
+    // ⚡ OPTIMIZACIÓN: Solo verificar al inicio, luego confiar en eventos de socket
+    // (antes se verificaba cada 10 segundos, causando sobrecarga)
+    // Los eventos whatsapp-connected/disconnected actualizarán el estado en tiempo real
+    return () => {
+      // Limpiar si es necesario
+    };
   }, [sessionId]);
 
   // 🚀 SOCKET: Usar el contexto global que ya está conectado y autenticado
