@@ -10078,16 +10078,30 @@ app.get('/api/session/:sessionId/status', async (req, res) => {
             console.log(`[SESSION-STATUS] BD: usuario=${sessionId}, phone=${bdPhone}, is_active=${isActive}`);
 
             // Si está marcado como activo en BD pero NO en memoria, hay inconsistencia
-            // En este caso, devolvemos isConnected=false y sugerimos reconectar
+            // 🔧 FIX: Actualizar BD automáticamente para reflejar el estado real
             if (isActive && !inMemorySession) {
-                console.log(`[SESSION-STATUS] ⚠️ Inconsistencia: BD dice activo pero no está en memoria`);
+                console.log(`[SESSION-STATUS] ⚠️ Inconsistencia detectada: BD dice is_active=1 pero no está en memoria`);
+                console.log(`[SESSION-STATUS] 🔧 Auto-corrigiendo: Actualizando is_active=0 en BD para ${bdPhone}`);
+
+                // Actualizar BD para marcar como inactivo
+                try {
+                    await connection.execute(
+                        `UPDATE user_sessions SET is_active = 0, updated_at = NOW() WHERE phone = ?`,
+                        [bdPhone]
+                    );
+                    console.log(`[SESSION-STATUS] ✅ BD actualizada: is_active=0 para ${bdPhone}`);
+                } catch (updateErr) {
+                    console.error(`[SESSION-STATUS] ❌ Error actualizando BD:`, updateErr);
+                }
+
                 return res.json({
                     success: true,
                     isConnected: false,
                     sessionId,
                     phoneNumber: bdPhone,
-                    message: 'Sesión requiere reconexión (escanea QR nuevamente)',
-                    source: 'database-stale'
+                    message: 'WhatsApp desconectado. Por favor, escanea el código QR nuevamente.',
+                    source: 'database-auto-corrected',
+                    needsReconnection: true
                 });
             }
 
