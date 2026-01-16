@@ -71,7 +71,8 @@ import {
   Brightness7,
   Schedule,
   CheckCircle,
-  AccountBalance as ManagementIcon
+  AccountBalance as ManagementIcon,
+  Notifications as PushIcon
 } from '@mui/icons-material';
 
 // Componente de llamada entrante (cargado inmediatamente por ser crítico)
@@ -99,6 +100,7 @@ const AgentPermissionsManager = lazy(() => import('../components/AgentPermission
 const WhatsAppStatusModule = lazy(() => import('../modules/WhatsAppStatusModule'));
 const WhatsAppConnectionModule = lazy(() => import('../modules/WhatsAppConnectionModule'));
 const ManagementModule = lazy(() => import('../modules/ManagementModule'));
+const PushNotificationsModule = lazy(() => import('../modules/PushNotificationsModule'));
 
 // Componente de loading para Suspense con animación mejorada
 const ModuleLoadingFallback = () => (
@@ -410,6 +412,13 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
       icon: <ManagementIcon />,
       path: '/dashboard/management',
       color: '#3f51b5'
+    },
+    {
+      id: 'push',
+      label: 'Push',
+      icon: <PushIcon />,
+      path: '/dashboard/push',
+      color: '#6366f1'
     },
     {
       id: 'connection',
@@ -1479,7 +1488,7 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                   <Routes>
                     <Route path="/" element={
                       <ProtectedRoute module="analytics" action="view">
-                        <AnalyticsModule sessionId={activeSessionId || userId || sessionId} />
+                        <AnalyticsModule sessionId={userId || sessionId} />
                       </ProtectedRoute>
                     } />
                     <Route path="/chat/*" element={
@@ -1518,7 +1527,7 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                     <Route path="/history/*" element={
                       <ProtectedRoute module="chat" action="view">
                         <RequiresWhatsApp sessionId={activeSessionId} moduleName="Historial">
-                          <HistoryModule sessionId={activeSessionId || userId || sessionId} />
+                          <HistoryModule sessionId={userId || sessionId} />
                         </RequiresWhatsApp>
                       </ProtectedRoute>
                     } />
@@ -1578,6 +1587,11 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                     <Route path="/connection/*" element={
                       <Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>}>
                         <WhatsAppConnectionModule sessionId={sessionId} />
+                      </Suspense>
+                    } />
+                    <Route path="/push/*" element={
+                      <Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>}>
+                        <PushNotificationsModule />
                       </Suspense>
                     } />
                     <Route path="/settings/*" element={

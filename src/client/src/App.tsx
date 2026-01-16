@@ -29,6 +29,7 @@ import { SocketProvider } from './context/SocketContext';
 import { MobileStatusPublisher } from './modules/MobileStatusPublisher';
 import { setupFetchInterceptor } from './utils/fetchInterceptor';
 import { initSilentLogs } from './utils/silenceLogs';
+import PublicSubscriptionPage from './modules/push/PublicSubscriptionPage';
 
 // Silenciar logs verbosos al iniciar
 initSilentLogs();
@@ -234,6 +235,9 @@ const AppContent: React.FC<{
 
         {/* Ruta para PWA Móvil - Publicador de Estados */}
         <Route path="/mobile/status-publisher" element={<MobileStatusPublisher />} />
+
+        {/* 🔔 Ruta Pública de Suscripción Push */}
+        <Route path="/subscribe/:code" element={<PublicSubscriptionPage />} />
 
         {/* Ruta por defecto - para cualquier otra ruta no definida */}
         <Route path="*" element={

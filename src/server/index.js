@@ -357,6 +357,9 @@ console.log('✅ Endpoints de Campañas Personalizadas cargados');
 require('./system-metrics-endpoints')(app, poolProxy);
 console.log('✅ Endpoints de Métricas del Sistema cargados');
 
+require('./push-notifications-endpoints')(app, poolProxy);
+console.log('✅ Endpoints de Push Notifications cargados');
+
 
 
 
@@ -4832,13 +4835,14 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             console.log(`[CHATLIST] 📅 Cargando TODAS las conversaciones`);
         }
 
-        // 🔧 CONSULTA CORREGIDA - Buscar SOLO por phoneNumber/sessionId real (NO por ownerSessionId)
+        // 🔧 CONSULTA CORREGIDA - Buscar mensajes por phoneNumber, contactos por ownerSessionId
         console.log(`[CHATLIST] 🔍 sessionId recibido: "${sessionId}"`);
         console.log(`[CHATLIST] 🔍 phoneNumber obtenido: "${phoneNumber}"`);
+        console.log(`[CHATLIST] 🔍 ownerSessionId (para contactos): "${ownerSessionId}"`);
 
-        // ⚠️ CRÍTICO: BUSCAR SOLO POR PHONENUMBER
-        // La tabla messages usa session_id para almacenar el número de teléfono (datos históricos)
-        // NO usar sessionId en la búsqueda porque causa mezcla de datos de múltiples usuarios
+        // ⚠️ CRÍTICO:
+        // - Mensajes: Filtrar por phoneNumber del canal
+        // - Contactos: Buscar por ownerSessionId (userId) porque así se guardan
         const query = `
             SELECT
                 m.chat_jid,
@@ -4848,7 +4852,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                     c.name,
                     (SELECT COALESCE(c2.notify_name, c2.name)
                      FROM contacts c2
-                     WHERE c2.session_id = ?
+                     WHERE (c2.session_id = ? OR c2.session_id = ?)
                        AND SUBSTRING_INDEX(c2.jid, '@', 1) = SUBSTRING_INDEX(m.chat_jid, '@', 1)
                      LIMIT 1),
                     SUBSTRING_INDEX(m.chat_jid, '@', 1)
@@ -4863,7 +4867,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                     c.avatar_url,
                     (SELECT c3.avatar_url
                      FROM contacts c3
-                     WHERE c3.session_id = ?
+                     WHERE (c3.session_id = ? OR c3.session_id = ?)
                        AND c3.avatar_url IS NOT NULL AND c3.avatar_url != ''
                        AND SUBSTRING_INDEX(c3.jid, '@', 1) = SUBSTRING_INDEX(m.chat_jid, '@', 1)
                      LIMIT 1)
@@ -4880,7 +4884,7 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                     WHEN m.chat_jid LIKE '%@lid' THEN (
                         SELECT SUBSTRING_INDEX(c2.jid, '@', 1)
                         FROM contacts c2
-                        WHERE c2.session_id = ?
+                        WHERE (c2.session_id = ? OR c2.session_id = ?)
                           AND c2.jid LIKE '%@s.whatsapp.net'
                           AND (c2.name = c.name OR c2.notify_name = c.notify_name)
                         LIMIT 1
@@ -4888,9 +4892,9 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
                     ELSE SUBSTRING_INDEX(m.chat_jid, '@', 1)
                 END AS phone
             FROM messages m
-            LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = ?
-            LEFT JOIN contact_groups cg ON m.chat_jid = cg.jid AND cg.session_id = ?
-            WHERE (m.session_id = ? OR m.session_id = ?)
+            LEFT JOIN contacts c ON m.chat_jid = c.jid AND (c.session_id = ? OR c.session_id = ?)
+            LEFT JOIN contact_groups cg ON m.chat_jid = cg.jid AND (cg.session_id = ? OR cg.session_id = ?)
+            WHERE (m.session_id = ? OR m.phone = ?)
               AND m.chat_jid NOT LIKE '%status@broadcast%'
               AND m.chat_jid NOT LIKE CONCAT(?, '@%')
               ${includeGroups ? '' : 'AND m.chat_jid NOT LIKE \'%@g.us\''}
@@ -4899,16 +4903,22 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             LIMIT 3000;
         `;
 
-        console.log(`[CHATLIST] 🔎 BUSCANDO EN BD: messages WHERE session_id = ${effectiveSessionId}`);
+        // 🔥 FIX: Contactos buscan por ownerSessionId (userId), mensajes por phoneNumber
+        console.log(`[CHATLIST] 🔎 BUSCANDO: messages WHERE session_id=${phoneNumber}, contacts WHERE session_id=${ownerSessionId}`);
         const [allRows] = await connection.execute(query, [
-            effectiveSessionId, // 1. c2.session_id
-            effectiveSessionId, // 2. c3.session_id
-            effectiveSessionId, // 3. c2.session_id
-            effectiveSessionId, // 4. c.session_id
-            effectiveSessionId, // 5. cg.session_id
-            userSessionId,      // 6. m.session_id (numeric)
-            effectiveSessionId, // 7. m.session_id (fallback/string)
-            phoneNumber          // 8. CONCAT propio número
+            ownerSessionId,     // 1. c2.session_id (subquery nombre)
+            phoneNumber,        // 2. c2.session_id fallback
+            ownerSessionId,     // 3. c3.session_id (subquery avatar)
+            phoneNumber,        // 4. c3.session_id fallback
+            ownerSessionId,     // 5. c2.session_id (subquery phone @lid)
+            phoneNumber,        // 6. c2.session_id fallback
+            ownerSessionId,     // 7. c.session_id (JOIN contacts)
+            phoneNumber,        // 8. c.session_id fallback
+            ownerSessionId,     // 9. cg.session_id (JOIN contact_groups)
+            phoneNumber,        // 10. cg.session_id fallback
+            phoneNumber,        // 11. m.session_id = phoneNumber del canal
+            phoneNumber,        // 12. m.phone = phoneNumber del canal
+            phoneNumber         // 13. CONCAT propio número
         ]);
 
         console.log(`[DB-CHATLIST] ⚡ SQL ejecutado con filtro SQL, total rows: ${allRows.length}`);
@@ -13263,16 +13273,17 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
         console.log(`[API - HISTORY] ✅ Encontrados ${checkMessages[0].count} mensajes para usuario ${userId}`);
 
         let query = `SELECT m.id, m.session_id, m.chat_jid,
-    COALESCE(c.name, c.notify_name, cg.name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as chat_name,
-    COALESCE(c.avatar_url, cg.avatar_url) as chat_avatar,
+    COALESCE(c.name, c.notify_name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as chat_name,
+    c.avatar_url as chat_avatar,
     m.sender_jid,
     COALESCE(s.name, s.notify_name, SUBSTRING_INDEX(m.sender_jid, '@', 1)) as sender_name,
     m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status
                      FROM messages m
                      LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = m.session_id
-                     LEFT JOIN contact_groups cg ON m.chat_jid = cg.jid AND cg.session_id = m.session_id
                      LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id = m.session_id
-                     WHERE ${sessionFilter}`;
+                     WHERE ${sessionFilter}
+                     AND m.chat_jid LIKE '%@s.whatsapp.net'`;
+        // 🔥 Filtro: Solo chats individuales (@s.whatsapp.net), excluye grupos (@g.us) y estados (@broadcast)
         // queryParams ya contiene los session_ids
 
         if (chatJid) {

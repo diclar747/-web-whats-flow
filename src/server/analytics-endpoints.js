@@ -713,39 +713,55 @@ module.exports = function (app, pool) {
 
             const connection = await pool.getConnection();
             try {
-                // 🔄 Si recibimos un email, mapear a USER ID (NO phone)
-                if (sessionId.includes('@')) {
-                    const [userRows] = await connection.execute(
-                        'SELECT id, phone FROM users WHERE email = ? OR admin_phone = ? LIMIT 1',
-                        [sessionId, sessionId]
-                    );
+                // 🔄 Resolver sessionId a user ID y phone
+                let sessionIds = [sessionId];
+                let phoneNumbers = [];
 
-                    if (userRows.length > 0 && userRows[0].id) {
-                        console.log(`[ANALYTICS-DASHBOARD] 📧 Email ${sessionId} mapeado a user ID: ${userRows[0].id} (phone: ${userRows[0].phone})`);
-                        sessionId = String(userRows[0].id);
+                // Si es email o teléfono, buscar el user.id correspondiente
+                const [userRows] = await connection.execute(
+                    'SELECT id, phone, email FROM users WHERE email = ? OR phone = ? OR id = ? OR session_id = ? LIMIT 1',
+                    [sessionId, sessionId, sessionId, sessionId]
+                );
+
+                if (userRows.length > 0) {
+                    const user = userRows[0];
+                    console.log(`[ANALYTICS-DASHBOARD] 👤 Usuario encontrado: id=${user.id}, phone=${user.phone}`);
+                    if (!sessionIds.includes(String(user.id))) {
+                        sessionIds.push(String(user.id));
+                    }
+                    if (user.phone && !phoneNumbers.includes(user.phone)) {
+                        phoneNumbers.push(user.phone);
                     }
                 }
 
-                // Obtener todos los sessionIds relacionados (incluyendo por owner_phone_number)
-                let sessionIds = [sessionId];
+                // Si el sessionId parece un teléfono, agregarlo a phoneNumbers
+                if (/^\d{10,15}$/.test(sessionId) && !phoneNumbers.includes(sessionId)) {
+                    phoneNumbers.push(sessionId);
+                }
 
-                // Búsqueda por owner_phone_number
+                // Búsqueda adicional por owner_phone_number en user_sessions
                 const [ownerRows] = await connection.execute(
-                    'SELECT DISTINCT session_id FROM user_sessions WHERE owner_phone_number = ?',
-                    [sessionId]
+                    'SELECT DISTINCT session_id, phone FROM user_sessions WHERE owner_phone_number = ? OR phone = ?',
+                    [sessionId, sessionId]
                 );
 
                 for (const row of ownerRows) {
                     if (row.session_id && !sessionIds.includes(row.session_id)) {
                         sessionIds.push(row.session_id);
                     }
+                    if (row.phone && !phoneNumbers.includes(row.phone)) {
+                        phoneNumbers.push(row.phone);
+                    }
                 }
 
-                const placeholders = sessionIds.map(() => '?').join(',');
+                console.log(`[ANALYTICS-DASHBOARD] 📋 SessionIds: [${sessionIds.join(', ')}], Phones: [${phoneNumbers.join(', ')}]`);
 
-                // Messages stats
-                const [messageStats] = await connection.execute(`
-                    SELECT 
+                const sessionPlaceholders = sessionIds.map(() => '?').join(',');
+                const phonePlaceholders = phoneNumbers.length > 0 ? phoneNumbers.map(() => '?').join(',') : null;
+
+                // Messages stats - buscar por session_id O por phone
+                const messageQuery = phonePlaceholders
+                    ? `SELECT
                         COUNT(*) as total,
                         SUM(CASE WHEN from_me = 1 THEN 1 ELSE 0 END) as sent,
                         SUM(CASE WHEN from_me = 0 THEN 1 ELSE 0 END) as received,
@@ -753,8 +769,20 @@ module.exports = function (app, pool) {
                         SUM(CASE WHEN from_me = 1 AND status = 'read' THEN 1 ELSE 0 END) as read_count,
                         SUM(CASE WHEN from_me = 1 AND status = 'failed' THEN 1 ELSE 0 END) as failed
                     FROM messages
-                    WHERE session_id IN (${placeholders})
-                `, sessionIds);
+                    WHERE session_id IN (${sessionPlaceholders}) OR phone IN (${phonePlaceholders})`
+                    : `SELECT
+                        COUNT(*) as total,
+                        SUM(CASE WHEN from_me = 1 THEN 1 ELSE 0 END) as sent,
+                        SUM(CASE WHEN from_me = 0 THEN 1 ELSE 0 END) as received,
+                        SUM(CASE WHEN from_me = 1 AND status = 'delivered' THEN 1 ELSE 0 END) as delivered,
+                        SUM(CASE WHEN from_me = 1 AND status = 'read' THEN 1 ELSE 0 END) as read_count,
+                        SUM(CASE WHEN from_me = 1 AND status = 'failed' THEN 1 ELSE 0 END) as failed
+                    FROM messages
+                    WHERE session_id IN (${sessionPlaceholders})`;
+
+                const messageParams = phonePlaceholders ? [...sessionIds, ...phoneNumbers] : sessionIds;
+                const [messageStats] = await connection.execute(messageQuery, messageParams);
+                const placeholders = sessionPlaceholders;
 
                 const ms = messageStats[0] || {};
                 const totalSent = ms.sent || 0;
@@ -774,12 +802,12 @@ module.exports = function (app, pool) {
 
                 // Agents stats - get admin_phone from sessionId
                 let adminPhone = null;
-                const [userRows] = await connection.execute(
+                const [agentUserRows] = await connection.execute(
                     'SELECT phone FROM users WHERE phone = ? OR admin_phone = ? LIMIT 1',
                     [sessionId, sessionId]
                 );
-                if (userRows.length > 0) {
-                    adminPhone = userRows[0].phone;
+                if (agentUserRows.length > 0) {
+                    adminPhone = agentUserRows[0].phone;
                 }
 
                 const [agents] = await connection.execute(
