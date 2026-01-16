@@ -13,7 +13,8 @@ import {
     Send, BarChart, Delete, Edit, Refresh,
     Visibility, ContentCopy, CheckCircle, ErrorOutline,
     GroupWork, Mouse, Assessment, TrendingUp, History,
-    DeviceHub, Language, OpenInNew, Warning
+    DeviceHub, Language, OpenInNew, Warning,
+    SignalCellularAlt, Wifi, BatteryFull, FlashlightOn, CameraAlt
 } from '@mui/icons-material';
 import axios from 'axios';
 
@@ -616,138 +617,211 @@ const PushNotificationsModule: React.FC = () => {
                                             <Grid item xs={12} sm={6} md={4} lg={3} key={camp.id}>
                                                 <Card sx={{
                                                     borderRadius: 4,
-                                                    background: 'linear-gradient(145deg, #1e1e2f 0%, #161625 100%)', // DataBox-like deep blue/black
-                                                    color: 'white',
-                                                    height: '100%',
-                                                    display: 'flex',
-                                                    flexDirection: 'column',
-                                                    position: 'relative',
-                                                    overflow: 'hidden',
+                                                    bgcolor: '#1e293b', // Slate 800 - cleaner dark
+                                                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
                                                     border: '1px solid rgba(255,255,255,0.05)',
-                                                    boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
                                                     transition: 'all 0.3s ease',
+                                                    display: 'flex', flexDirection: 'column', height: '100%',
+                                                    position: 'relative', overflow: 'visible',
                                                     '&:hover': {
-                                                        transform: 'translateY(-5px)',
-                                                        boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
-                                                        borderColor: alpha(theme.palette.primary.main, 0.3)
+                                                        transform: 'translateY(-4px)',
+                                                        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+                                                        borderColor: '#6366f1'
                                                     }
                                                 }}>
-                                                    {/* Top Glow Line */}
+                                                    {/* 1. Header Image / Gradient Area */}
                                                     <Box sx={{
-                                                        position: 'absolute', top: 0, left: 0, right: 0, height: 2,
-                                                        background: `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                                                        boxShadow: `0 0 10px ${theme.palette.primary.main}`
-                                                    }} />
+                                                        height: 120, width: '100%',
+                                                        borderTopLeftRadius: 16, borderTopRightRadius: 16,
+                                                        position: 'relative',
+                                                        overflow: 'hidden',
+                                                        backgroundImage: camp.image_url ? `url(${camp.image_url})` : 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                                                        backgroundSize: 'cover', backgroundPosition: 'center',
+                                                    }}>
+                                                        <Box sx={{ position: 'absolute', inset: 0, bgcolor: 'rgba(0,0,0,0.3)' }} /> {/* Overlay */}
 
-                                                    {/* Header: Status & Icon */}
-                                                    <Box sx={{ p: 3, pb: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                                        <Box sx={{
-                                                            width: 48, height: 48, borderRadius: 3,
-                                                            background: 'linear-gradient(135deg, rgba(59,130,246,0.1), rgba(59,130,246,0.05))',
-                                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                            border: '1px solid rgba(59,130,246,0.1)'
-                                                        }}>
-                                                            {camp.image_url ? (
-                                                                <img src={camp.image_url} alt="" style={{ width: '100%', height: '100%', borderRadius: 10, objectFit: 'cover' }} />
-                                                            ) : (
-                                                                <Send sx={{ color: '#3b82f6' }} />
-                                                            )}
-                                                        </Box>
+                                                        {/* Status Badge */}
                                                         <Chip
-                                                            label={camp.status === 'sent' ? 'SENT' : (camp.status === 'sending' ? 'SENDING' : 'DRAFT')}
+                                                            label={camp.status === 'sent' ? 'ENVIADO' : (camp.status === 'sending' ? 'ENVIANDO' : 'BORRADOR')}
                                                             size="small"
                                                             sx={{
-                                                                fontWeight: 800, fontSize: 10, height: 22,
-                                                                bgcolor: camp.status === 'sent' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                                                                color: camp.status === 'sent' ? '#34d399' : '#fbbf24',
-                                                                border: '1px solid',
-                                                                borderColor: camp.status === 'sent' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'
+                                                                position: 'absolute', top: 12, right: 12, // Removed zIndex
+                                                                bgcolor: camp.status === 'sent' ? 'rgba(16, 185, 129, 0.9)' : 'rgba(245, 158, 11, 0.9)',
+                                                                color: 'white', fontWeight: 800, fontSize: 10,
+                                                                backdropFilter: 'blur(4px)',
+                                                                height: 20
                                                             }}
                                                         />
                                                     </Box>
 
-                                                    <CardContent sx={{ p: 3, flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                                        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 700, letterSpacing: 1, mb: 1, display: 'block' }}>
+                                                    {/* 2. Floating Icon */}
+                                                    <Box sx={{
+                                                        width: 44, height: 44,
+                                                        bgcolor: '#0f172a', // Darker bg
+                                                        borderRadius: '12px',
+                                                        border: '4px solid #1e293b', // Matches card bg
+                                                        position: 'absolute', top: 96, left: 20,
+                                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+                                                        zIndex: 2 // Low zIndex just to sit above card path
+                                                    }}>
+                                                        <Notifications sx={{ color: 'white', fontSize: 20 }} />
+                                                    </Box>
+
+                                                    <CardContent sx={{ pt: 5, px: 2.5, pb: 2.5, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                                        {/* Title */}
+                                                        <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 700, fontSize: 10, mb: 0.5, letterSpacing: 0.5 }}>
                                                             {camp.name?.toUpperCase()}
                                                         </Typography>
-                                                        <Typography variant="h6" fontWeight="800" sx={{
-                                                            mb: 3, fontSize: 18, lineHeight: 1.4,
-                                                            overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', minHeight: 50
-                                                        }}>
+                                                        <Typography variant="h6" sx={{ fontWeight: 800, mb: 1, lineHeight: 1.3, fontSize: 16, minHeight: 42 }}>
                                                             {camp.title}
                                                         </Typography>
 
-                                                        {/* Metrics Container - DataBox Style */}
+                                                        {/* DYNAMIC PERFORMANCE CHART (Area Chart) */}
+                                                        {/* Visualizes: Sent -> Delivered -> Viewed -> Clicked */}
                                                         <Box sx={{
-                                                            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 3, mt: 'auto'
+                                                            mt: 1, mb: 2, height: 80, position: 'relative',
+                                                            bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 3, overflow: 'hidden',
+                                                            display: 'flex', alignItems: 'flex-end'
                                                         }}>
-                                                            {/* VISTOS Metric */}
-                                                            <Box sx={{
-                                                                p: 2, borderRadius: 3,
-                                                                bgcolor: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.03)'
-                                                            }}>
-                                                                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 800, letterSpacing: 0.5 }}>VISTOS</Typography>
-                                                                <Typography variant="h4" fontWeight="900" sx={{ mt: 1, color: '#3b82f6', letterSpacing: -1 }}>
-                                                                    {camp.total_viewed || 0}
-                                                                </Typography>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                                                                    <Visibility sx={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }} />
-                                                                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)' }}>Views</Typography>
+                                                            {(() => {
+                                                                // Calculate Data Points
+                                                                const sent = camp.total_sent || 0;
+                                                                const dlvr = camp.total_delivered || 0;
+                                                                const view = camp.total_viewed || 0;
+                                                                const clck = camp.total_clicked || 0;
+
+                                                                // Find true max to normalize chart properly (avoid negative coordinates if view > sent)
+                                                                const maxValue = Math.max(sent, dlvr, view, clck, 1);
+
+                                                                // Normalizing height (max height 50px inside 80px container to leave top padding)
+                                                                const h = 50;
+                                                                const paddingTop = 10;
+
+                                                                // Helper to calculate Y position (inverted for SVG)
+                                                                const getY = (val: number) => {
+                                                                    const normalized = (val / maxValue) * h;
+                                                                    return h + paddingTop - normalized; // Inverted: 0 is top, so h - val puts it at bottom if val is small
+                                                                };
+
+                                                                const ySent = getY(sent);
+                                                                const yDlvr = getY(dlvr);
+                                                                const yView = getY(view);
+                                                                const yClck = getY(clck);
+
+                                                                // SVG Points (4 distinct points distributed horizontally)
+                                                                // x coordinates: 0%, 33%, 66%, 100%
+
+                                                                // Smooth Curve Command (Cubic Bezier approx)
+                                                                const pathData = `
+                                                                    M 0,${60} 
+                                                                    L 0,${ySent} 
+                                                                    C 16,${ySent} 16,${yDlvr} 33,${yDlvr} 
+                                                                    C 50,${yDlvr} 50,${yView} 66,${yView} 
+                                                                    C 83,${yView} 83,${yClck} 100,${yClck} 
+                                                                    L 100,${60} Z
+                                                                `;
+
+                                                                const linePath = `
+                                                                    M 0,${ySent} 
+                                                                    C 16,${ySent} 16,${yDlvr} 33,${yDlvr}
+                                                                    C 50,${yDlvr} 50,${yView} 66,${yView}
+                                                                    C 83,${yView} 83,${yClck} 100,${yClck}
+                                                                `;
+
+                                                                return (
+                                                                    <svg viewBox="0 0 100 60" preserveAspectRatio="none" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+                                                                        <defs>
+                                                                            <linearGradient id={`grad-${camp.id}`} x1="0" y1="0" x2="0" y2="1">
+                                                                                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.5" />
+                                                                                <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+                                                                            </linearGradient>
+                                                                            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                                                                                <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+                                                                                <feMerge>
+                                                                                    <feMergeNode in="coloredBlur" />
+                                                                                    <feMergeNode in="SourceGraphic" />
+                                                                                </feMerge>
+                                                                            </filter>
+                                                                        </defs>
+                                                                        {/* Area Fill */}
+                                                                        <path d={pathData} fill={`url(#grad-${camp.id})`} />
+                                                                        {/* Stroke Line with Glow */}
+                                                                        <path d={linePath} fill="none" stroke="#60a5fa" strokeWidth="3" vectorEffect="non-scaling-stroke" filter="url(#glow)" />
+
+                                                                        {/* Dots with white fill and blue border */}
+                                                                        <circle cx="0" cy={ySent} r="2" fill="#1e293b" stroke="#60a5fa" strokeWidth="1" />
+                                                                        <circle cx="33" cy={yDlvr} r="2" fill="#1e293b" stroke="#60a5fa" strokeWidth="1" />
+                                                                        <circle cx="66" cy={yView} r="2" fill="#1e293b" stroke="#60a5fa" strokeWidth="1" />
+                                                                        <circle cx="100" cy={yClck} r="2" fill="#1e293b" stroke="#60a5fa" strokeWidth="1" />
+                                                                    </svg>
+                                                                );
+                                                            })()}
+
+                                                            {/* Overlay Labels */}
+                                                            <Box sx={{ position: 'absolute', bottom: 4, left: 4, right: 4, display: 'flex', justifyContent: 'space-between', px: 1 }}>
+                                                                <Typography variant="caption" sx={{ fontSize: 9, color: 'rgba(255,255,255,0.5)' }}>Enviado</Typography>
+                                                                <Typography variant="caption" sx={{ fontSize: 9, color: 'rgba(255,255,255,0.5)' }}>Click</Typography>
+                                                            </Box>
+                                                        </Box>
+
+                                                        {/* Detailed Stats Row */}
+                                                        <Box sx={{
+                                                            display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1,
+                                                            p: 1.5, mb: 3,
+                                                            bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.03)'
+                                                        }}>
+                                                            <Box>
+                                                                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 9, display: 'block', fontWeight: 700 }}>VISTOS</Typography>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <Typography variant="subtitle2" sx={{ fontWeight: 900, color: 'white' }}>{camp.total_viewed || 0}</Typography>
+                                                                    <Typography variant="caption" sx={{ fontSize: 9, color: '#34d399', fontWeight: 700 }}>
+                                                                        {camp.total_sent > 0 ? Math.round(((camp.total_viewed || 0) / camp.total_sent) * 100) : 0}%
+                                                                    </Typography>
                                                                 </Box>
                                                             </Box>
-
-                                                            {/* CLICKS Metric */}
-                                                            <Box sx={{
-                                                                p: 2, borderRadius: 3,
-                                                                bgcolor: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.03)'
-                                                            }}>
-                                                                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)', fontWeight: 800, letterSpacing: 0.5 }}>CLICKS</Typography>
-                                                                <Typography variant="h4" fontWeight="900" sx={{ mt: 1, color: '#10b981', letterSpacing: -1 }}>
-                                                                    {camp.total_clicked || 0}
-                                                                </Typography>
-                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-                                                                    <Mouse sx={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }} />
-                                                                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)' }}>Clicks</Typography>
+                                                            <Box>
+                                                                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 9, display: 'block', fontWeight: 700 }}>CLICKS</Typography>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <Typography variant="subtitle2" sx={{ fontWeight: 900, color: 'white' }}>{camp.total_clicked || 0}</Typography>
+                                                                    <Typography variant="caption" sx={{ fontSize: 9, color: '#60a5fa', fontWeight: 700 }}>
+                                                                        {camp.total_viewed > 0 ? Math.round(((camp.total_clicked || 0) / camp.total_viewed) * 100) : 0}%
+                                                                    </Typography>
+                                                                </Box>
+                                                            </Box>
+                                                            <Box>
+                                                                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 9, display: 'block', fontWeight: 700 }}>CTR</Typography>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <Typography variant="subtitle2" sx={{ fontWeight: 900, color: 'white' }}>
+                                                                        {camp.total_sent > 0 ? ((camp.total_clicked / camp.total_sent) * 100).toFixed(1) : '0'}%
+                                                                    </Typography>
                                                                 </Box>
                                                             </Box>
                                                         </Box>
 
-                                                        {/* Footer Actions */}
-                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 2, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                                                            <Box>
-                                                                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)', fontWeight: 700 }}>CTR PERFORMANCE</Typography>
-                                                                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
-                                                                    <Typography variant="h6" fontWeight="900" color="white">
-                                                                        {camp.total_sent > 0 ? ((camp.total_clicked / camp.total_sent) * 100).toFixed(1) : '0.0'}%
-                                                                    </Typography>
-                                                                    <TrendingUp sx={{ fontSize: 14, color: '#10b981' }} />
-                                                                </Box>
-                                                            </Box>
-                                                            <Stack direction="row" spacing={1}>
-                                                                <Tooltip title="Eliminar">
-                                                                    <IconButton
-                                                                        size="small"
-                                                                        onClick={() => setConfirmDelete({ open: true, type: 'campaign', id: camp.id })}
-                                                                        sx={{ color: 'rgba(255,255,255,0.2)', '&:hover': { color: '#ef4444', bgcolor: 'rgba(239, 68, 68, 0.1)' } }}
-                                                                    >
-                                                                        <Delete fontSize="small" />
-                                                                    </IconButton>
-                                                                </Tooltip>
-                                                                <Tooltip title="Reenviar">
-                                                                    <IconButton
-                                                                        size="small"
-                                                                        onClick={() => handleResendCampaign(camp.id)}
-                                                                        sx={{
-                                                                            bgcolor: 'rgba(59, 130, 246, 0.1)',
-                                                                            color: '#3b82f6',
-                                                                            border: '1px solid rgba(59, 130, 246, 0.2)',
-                                                                            '&:hover': { bgcolor: '#3b82f6', color: 'white' }
-                                                                        }}
-                                                                    >
-                                                                        <Refresh fontSize="small" />
-                                                                    </IconButton>
-                                                                </Tooltip>
-                                                            </Stack>
+                                                        {/* Actions Footer */}
+                                                        <Box sx={{ mt: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 2, borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                                            <Button
+                                                                size="small"
+                                                                variant="contained"
+                                                                startIcon={<Refresh sx={{ fontSize: 16 }} />}
+                                                                onClick={() => handleResendCampaign(camp.id)}
+                                                                sx={{
+                                                                    borderRadius: 2, fontSize: 11, px: 2, py: 0.5,
+                                                                    bgcolor: 'rgba(255,255,255,0.05)', color: 'white', fontWeight: 600, textTransform: 'none',
+                                                                    boxShadow: 'none', border: '1px solid rgba(255,255,255,0.1)',
+                                                                    '&:hover': { bgcolor: 'rgba(255,255,255,0.1)', boxShadow: 'none' }
+                                                                }}
+                                                            >
+                                                                Reenviar
+                                                            </Button>
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() => setConfirmDelete({ open: true, type: 'campaign', id: camp.id })}
+                                                                sx={{ color: 'text.disabled', '&:hover': { color: 'error.main' } }}
+                                                            >
+                                                                <Delete fontSize="small" />
+                                                            </IconButton>
                                                         </Box>
                                                     </CardContent>
                                                 </Card>
@@ -761,58 +835,187 @@ const PushNotificationsModule: React.FC = () => {
                             {activeTab === 4 && (
                                 <Box>
                                     <Grid container spacing={3} sx={{ mb: 4 }}>
+                                        {/* Left Column: Key KPIs */}
                                         <Grid item xs={12} md={4}>
-                                            <Paper sx={{ p: 4, borderRadius: 5, height: '100%', bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider' }}>
-                                                <Typography variant="h6" fontWeight="900" sx={{ mb: 3 }}>Resumen Global</Typography>
-                                                <Stack spacing={4}>
-                                                    <Box>
-                                                        <Typography variant="caption" color="text.secondary" fontWeight="800">TOTAL CAMPAÑAS REALIZADAS</Typography>
-                                                        <Typography variant="h3" fontWeight="900" color="primary.main">{overview.total_campaigns || 0}</Typography>
-                                                    </Box>
-                                                    <Box>
-                                                        <Typography variant="caption" color="text.secondary" fontWeight="800">NOTIFICACIONES ENTREGADAS</Typography>
-                                                        <Typography variant="h4" fontWeight="900">{overview.total_sent || 0}</Typography>
-                                                    </Box>
-                                                    <Box sx={{ p: 2, bgcolor: alpha(theme.palette.success.main, 0.05), borderRadius: 3, border: '1px solid', borderColor: alpha(theme.palette.success.main, 0.1) }}>
-                                                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                                            <Box>
-                                                                <Typography variant="caption" color="success.main" fontWeight="800">CONVERSIÓN MEDIA (CTR)</Typography>
-                                                                <Typography variant="h4" fontWeight="900" color="success.main">
-                                                                    {overview.total_sent > 0 ? ((overview.total_clicked / overview.total_sent) * 100).toFixed(2) : 0}%
-                                                                </Typography>
-                                                            </Box>
-                                                            <TrendingUp color="success" sx={{ fontSize: 40 }} />
-                                                        </Stack>
-                                                    </Box>
-                                                </Stack>
+                                            <Paper sx={{
+                                                p: 3, borderRadius: 4, height: '100%',
+                                                bgcolor: '#1e293b', color: 'white', // Slate 800
+                                                border: '1px solid rgba(255,255,255,0.05)',
+                                                display: 'flex', flexDirection: 'column', gap: 3
+                                            }}>
+                                                <Typography variant="h6" fontWeight="900" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                    <Assessment sx={{ color: '#818cf8' }} /> Resumen Global
+                                                </Typography>
+
+                                                <Box sx={{ p: 2.5, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, letterSpacing: 1 }}>CAMPAÑAS TOTALES</Typography>
+                                                    <Typography variant="h3" fontWeight="900" sx={{ mt: 1, background: '-webkit-linear-gradient(45deg, #fff 30%, #94a3b8 90%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                                                        {overview.total_campaigns || 0}
+                                                    </Typography>
+                                                </Box>
+
+                                                <Box sx={{ p: 2.5, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, letterSpacing: 1 }}>NOTIFICACIONES ENVIADAS</Typography>
+                                                    <Typography variant="h4" fontWeight="900" sx={{ mt: 1, color: 'white' }}>
+                                                        {overview.total_sent || 0}
+                                                    </Typography>
+                                                </Box>
+
+                                                <Box sx={{
+                                                    p: 3, mt: 'auto', borderRadius: 3,
+                                                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0) 100%)',
+                                                    border: '1px solid rgba(16, 185, 129, 0.2)'
+                                                }}>
+                                                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                                        <Box>
+                                                            <Typography variant="caption" sx={{ color: '#34d399', fontWeight: 800 }}>CONVERSIÓN (CTR)</Typography>
+                                                            <Typography variant="h3" fontWeight="900" sx={{ color: '#34d399' }}>
+                                                                {overview.total_sent > 0 ? ((overview.total_clicked / overview.total_sent) * 100).toFixed(1) : 0}%
+                                                            </Typography>
+                                                        </Box>
+                                                        <TrendingUp sx={{ fontSize: 48, color: '#34d399', opacity: 0.5 }} />
+                                                    </Stack>
+                                                </Box>
                                             </Paper>
                                         </Grid>
+
+                                        {/* Right Column: Visualizations & Funnel */}
                                         <Grid item xs={12} md={8}>
-                                            <Paper sx={{ p: 4, borderRadius: 5, height: '100%', border: '1px solid', borderColor: 'divider' }}>
-                                                <Typography variant="h6" fontWeight="900" sx={{ mb: 3 }}>Tráfico y Rendimiento</Typography>
-                                                <Grid container spacing={4}>
+                                            <Paper sx={{
+                                                p: 4, borderRadius: 4, height: '100%',
+                                                bgcolor: '#0f172a', color: 'white', // Slate 900
+                                                border: '1px solid rgba(255,255,255,0.05)'
+                                            }}>
+                                                <Box sx={{ mb: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Typography variant="h6" fontWeight="900">Rendimiento de Impacto</Typography>
+                                                    <Chip label="Global" size="small" sx={{ bgcolor: '#3b82f6', color: 'white', fontWeight: 700 }} />
+                                                </Box>
+
+                                                <Grid container spacing={3}>
+                                                    {/* Views Card */}
                                                     <Grid item xs={12} sm={6}>
-                                                        <Box sx={{ p: 3, borderRadius: 4, bgcolor: alpha(theme.palette.info.main, 0.05), textAlign: 'center' }}>
-                                                            <Visibility sx={{ fontSize: 40, color: 'info.main', mb: 1.5 }} />
-                                                            <Typography variant="h4" fontWeight="900">{overview.total_viewed || 0}</Typography>
-                                                            <Typography variant="body2" color="text.secondary" fontWeight="700">IMPRESIONES TOTALES</Typography>
+                                                        <Box sx={{
+                                                            p: 3, borderRadius: 3, bgcolor: '#1e293b',
+                                                            display: 'flex', alignItems: 'center', gap: 2,
+                                                            borderLeft: '4px solid #38bdf8'
+                                                        }}>
+                                                            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}>
+                                                                <Visibility />
+                                                            </Box>
+                                                            <Box>
+                                                                <Typography variant="h5" fontWeight="900" color="white">{overview.total_viewed || 0}</Typography>
+                                                                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700 }}>VISTAS TOTALES</Typography>
+                                                            </Box>
                                                         </Box>
                                                     </Grid>
+
+                                                    {/* Clicks Card */}
                                                     <Grid item xs={12} sm={6}>
-                                                        <Box sx={{ p: 3, borderRadius: 4, bgcolor: alpha(theme.palette.primary.main, 0.05), textAlign: 'center' }}>
-                                                            <Mouse sx={{ fontSize: 40, color: 'primary.main', mb: 1.5 }} />
-                                                            <Typography variant="h4" fontWeight="900">{overview.total_clicked || 0}</Typography>
-                                                            <Typography variant="body2" color="text.secondary" fontWeight="700">CLICKS TOTALES</Typography>
+                                                        <Box sx={{
+                                                            p: 3, borderRadius: 3, bgcolor: '#1e293b',
+                                                            display: 'flex', alignItems: 'center', gap: 2,
+                                                            borderLeft: '4px solid #4ade80'
+                                                        }}>
+                                                            <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(74, 222, 128, 0.1)', color: '#4ade80' }}>
+                                                                <Mouse />
+                                                            </Box>
+                                                            <Box>
+                                                                <Typography variant="h5" fontWeight="900" color="white">{overview.total_clicked || 0}</Typography>
+                                                                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700 }}>CLICKS (INTERACCIÓN)</Typography>
+                                                            </Box>
                                                         </Box>
                                                     </Grid>
+
+                                                    {/* GLOBAL FUNNEL CHART */}
                                                     <Grid item xs={12}>
-                                                        <Box sx={{ p: 3, borderRadius: 4, bgcolor: 'background.default', border: '1px solid', borderColor: 'divider' }}>
-                                                            <Typography variant="subtitle2" fontWeight="800" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                                <History color="primary" /> Historial de Eficiencia
-                                                            </Typography>
-                                                            <Typography variant="body2" color="text.secondary">
-                                                                Tus campañas están teniendo un impacto continuo. Sigue segmentando por categorías para aumentar el CTR.
-                                                            </Typography>
+                                                        <Box sx={{ mt: 2, p: 4, borderRadius: 3, bgcolor: '#1e293b', position: 'relative', overflow: 'hidden' }}>
+                                                            <Typography variant="subtitle2" sx={{ color: '#94a3b8', fontWeight: 700, mb: 3 }}>EMBUDO DE CONVERSIÓN (GRÁFICO DE ÁREA)</Typography>
+
+                                                            {/* DYNAMIC PERFORMANCE CHART (Area Chart for Global) */}
+                                                            <Box sx={{
+                                                                height: 200, position: 'relative',
+                                                                bgcolor: 'rgba(0,0,0,0.2)', borderRadius: 3, overflow: 'hidden',
+                                                                display: 'flex', alignItems: 'flex-end', px: 2, pb: 2
+                                                            }}>
+                                                                {(() => {
+                                                                    // Calculate Data Points based on Overview
+                                                                    const sent = overview.total_sent || 0;
+                                                                    const dlvr = overview.total_delivered || 0;
+                                                                    const view = overview.total_viewed || 0;
+                                                                    const clck = overview.total_clicked || 0;
+
+                                                                    // Find true max to normalize chart properly
+                                                                    const maxValue = Math.max(sent, dlvr, view, clck, 1);
+
+                                                                    // Normalizing height (max height 160px inside 200px container)
+                                                                    const h = 160;
+                                                                    const paddingTop = 20;
+
+                                                                    // Helper to calculate Y position (inverted for SVG)
+                                                                    const getY = (val: number) => {
+                                                                        const normalized = (val / maxValue) * h;
+                                                                        return h + paddingTop - normalized;
+                                                                    };
+
+                                                                    const ySent = getY(sent);
+                                                                    const yDlvr = getY(dlvr);
+                                                                    const yView = getY(view);
+                                                                    const yClck = getY(clck);
+
+                                                                    // Smooth Curve Command
+                                                                    const pathData = `
+                                                                        M 0,${180} 
+                                                                        L 0,${ySent} 
+                                                                        C 16,${ySent} 16,${yDlvr} 33,${yDlvr} 
+                                                                        C 50,${yDlvr} 50,${yView} 66,${yView} 
+                                                                        C 83,${yView} 83,${yClck} 100,${yClck} 
+                                                                        L 100,${180} Z
+                                                                    `;
+
+                                                                    const linePath = `
+                                                                        M 0,${ySent} 
+                                                                        C 16,${ySent} 16,${yDlvr} 33,${yDlvr}
+                                                                        C 50,${yDlvr} 50,${yView} 66,${yView}
+                                                                        C 83,${yView} 83,${yClck} 100,${yClck}
+                                                                    `;
+
+                                                                    return (
+                                                                        <svg viewBox="0 0 100 180" preserveAspectRatio="none" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+                                                                            <defs>
+                                                                                <linearGradient id="grad-global" x1="0" y1="0" x2="0" y2="1">
+                                                                                    <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.5" />
+                                                                                    <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+                                                                                </linearGradient>
+                                                                                <filter id="glow-global" x="-50%" y="-50%" width="200%" height="200%">
+                                                                                    <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+                                                                                    <feMerge>
+                                                                                        <feMergeNode in="coloredBlur" />
+                                                                                        <feMergeNode in="SourceGraphic" />
+                                                                                    </feMerge>
+                                                                                </filter>
+                                                                            </defs>
+                                                                            {/* Area Fill */}
+                                                                            <path d={pathData} fill="url(#grad-global)" />
+                                                                            {/* Stroke Line with Glow */}
+                                                                            <path d={linePath} fill="none" stroke="#60a5fa" strokeWidth="2" vectorEffect="non-scaling-stroke" filter="url(#glow-global)" />
+
+                                                                            {/* Dots with white fill and blue border - Larger for main chart */}
+                                                                            <circle cx="0" cy={ySent} r="1.5" fill="#1e293b" stroke="#60a5fa" strokeWidth="0.5" />
+                                                                            <circle cx="33" cy={yDlvr} r="1.5" fill="#1e293b" stroke="#60a5fa" strokeWidth="0.5" />
+                                                                            <circle cx="66" cy={yView} r="1.5" fill="#1e293b" stroke="#60a5fa" strokeWidth="0.5" />
+                                                                            <circle cx="100" cy={yClck} r="1.5" fill="#1e293b" stroke="#60a5fa" strokeWidth="0.5" />
+                                                                        </svg>
+                                                                    );
+                                                                })()}
+
+                                                                {/* Labels underneath */}
+                                                                <Box sx={{ position: 'absolute', bottom: 10, left: 16, right: 16, display: 'flex', justifyContent: 'space-between', zIndex: 2 }}>
+                                                                    <Typography variant="caption" sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>ENVIADOS</Typography>
+                                                                    <Typography variant="caption" sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>ENTREGADOS</Typography>
+                                                                    <Typography variant="caption" sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>VISTOS</Typography>
+                                                                    <Typography variant="caption" sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700 }}>CLICKS</Typography>
+                                                                </Box>
+                                                            </Box>
                                                         </Box>
                                                     </Grid>
                                                 </Grid>
@@ -995,40 +1198,123 @@ const PushNotificationsModule: React.FC = () => {
 
                         {/* PREVIEW PRO */}
                         <Grid item xs={12} md={5}>
-                            <Box sx={{ position: 'sticky', top: 0 }}>
-                                <Typography variant="overline" sx={{ fontWeight: 900, color: 'text.secondary', display: 'block', mb: 2, textAlign: 'center' }}>VISTA PREVIA EN NAVEGADOR</Typography>
+                            <Box sx={{ position: 'sticky', top: 0, textAlign: 'center' }}>
+                                <Typography variant="overline" sx={{ fontWeight: 900, color: 'text.secondary', display: 'block', mb: 3 }}>
+                                    VISTA PREVIA (LOCK SCREEN)
+                                </Typography>
+
+                                {/* PHONE MOCKUP FRAME */}
                                 <Box sx={{
-                                    bgcolor: '#1e293b', p: 2.5, borderRadius: 5, color: 'white',
-                                    boxShadow: '0 20px 40px -15px rgba(0,0,0,0.5)', border: '1px solid #334155'
+                                    width: 270,
+                                    height: 520,
+                                    bgcolor: 'black',
+                                    borderRadius: '38px',
+                                    border: '4px solid #2d2d2d',
+                                    boxShadow: '0 30px 60px -10px rgba(0,0,0,0.6)',
+                                    position: 'relative',
+                                    margin: '0 auto',
+                                    overflow: 'hidden'
                                 }}>
-                                    <Box sx={{ display: 'flex', gap: 1.5, mb: 1.5 }}>
-                                        <Box sx={{ width: 44, height: 44, bgcolor: '#3b82f6', borderRadius: 2, display: 'flex', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }}>
-                                            <Notifications sx={{ color: 'white' }} />
+                                    {/* Mute Switch & Buttons Side */}
+                                    <Box sx={{ position: 'absolute', top: 80, left: -6, width: 3, height: 25, bgcolor: '#222', borderTopLeftRadius: 2, borderBottomLeftRadius: 2 }} />
+                                    <Box sx={{ position: 'absolute', top: 120, left: -6, width: 3, height: 50, bgcolor: '#222', borderTopLeftRadius: 2, borderBottomLeftRadius: 2 }} />
+                                    <Box sx={{ position: 'absolute', top: 110, right: -6, width: 3, height: 80, bgcolor: '#222', borderTopRightRadius: 2, borderBottomRightRadius: 2 }} />
+
+                                    {/* SCREEN */}
+                                    <Box sx={{
+                                        width: '100%',
+                                        height: '100%',
+                                        bgcolor: '#0f172a',
+                                        background: 'linear-gradient(180deg, #1e1b4b 0%, #312e81 40%, #c026d3 100%)', // Futuristic Purple/Blue Gradient
+                                        position: 'relative',
+                                        display: 'flex',
+                                        flexDirection: 'column'
+                                    }}>
+                                        {/* Status Bar */}
+                                        <Box sx={{
+                                            height: 40, px: 2.5, pt: 1.5,
+                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                            zIndex: 20
+                                        }}>
+                                            <Typography sx={{ color: 'white', fontSize: 11, fontWeight: 700 }}>12:42</Typography>
+                                            <Stack direction="row" spacing={0.5} sx={{ color: 'white', alignItems: 'center' }}>
+                                                <Box sx={{ width: 14, height: 14, bgcolor: 'white', opacity: 0.2, borderRadius: '50%' }} /> {/* Fake signal */}
+                                                <Box sx={{ width: 14, height: 14, bgcolor: 'white', opacity: 0.2, borderRadius: 2 }} /> {/* Fake wifi */}
+                                                <Box sx={{ width: 22, height: 10, borderRadius: 1, border: '1px solid rgba(255,255,255,0.4)', position: 'relative' }}>
+                                                    <Box sx={{ width: '60%', height: '100%', bgcolor: 'white' }} />
+                                                </Box>
+                                            </Stack>
                                         </Box>
-                                        <Box sx={{ minWidth: 0 }}>
-                                            <Typography variant="subtitle2" sx={{ fontWeight: '900', display: 'flex', justifyContent: 'space-between', fontSize: 13, gap: 1 }}>
-                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{campaignForm.title || 'Tu Título Aquí'}</span>
-                                                <span style={{ opacity: 0.5, fontSize: 10, flexShrink: 0 }}>AHORA</span>
-                                            </Typography>
-                                            <Typography variant="caption" sx={{ opacity: 0.8, display: 'block', lineHeight: 1.3, mt: 0.5 }}>
-                                                {campaignForm.description || 'El contenido de tu mensaje aparecerá aquí en el centro de notificaciones.'}
-                                            </Typography>
+
+                                        {/* Dynamic Island / Notch */}
+                                        <Box sx={{
+                                            position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
+                                            width: 80, height: 22, bgcolor: 'black', borderRadius: 12, zIndex: 30
+                                        }} />
+
+                                        {/* Clock on Lock Screen */}
+                                        <Box sx={{ mt: 5, textAlign: 'center', color: 'white', opacity: 0.9 }}>
+                                            <Typography sx={{ fontSize: 56, fontWeight: 200, lineHeight: 1 }}>12:42</Typography>
+                                            <Typography sx={{ fontSize: 14, fontWeight: 500 }}>Miércoles, 16 Enero</Typography>
                                         </Box>
+
+                                        {/* NOTIFICATION ITEM */}
+                                        <Box sx={{
+                                            mx: 1.5, mt: 3,
+                                            bgcolor: 'rgba(255, 255, 255, 0.15)', // Glassmorphism
+                                            backdropFilter: 'blur(12px)',
+                                            borderRadius: 2.5,
+                                            overflow: 'hidden',
+                                            color: 'white',
+                                            boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
+                                            transition: 'all 0.3s ease',
+                                            animation: 'slideIn 0.5s ease-out',
+                                            '@keyframes slideIn': {
+                                                '0%': { opacity: 0, transform: 'translateY(20px)' },
+                                                '100%': { opacity: 1, transform: 'translateY(0)' }
+                                            }
+                                        }}>
+                                            {/* Header */}
+                                            <Box sx={{ p: 1.2, pb: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <Box sx={{
+                                                    width: 20, height: 20, bgcolor: 'black', borderRadius: 1.5, // App Icon box
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                }}>
+                                                    <Notifications sx={{ fontSize: 12, color: 'white' }} />
+                                                </Box>
+                                                <Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, flex: 1 }}>WHATSFLOW</Typography>
+                                                <Typography sx={{ fontSize: 10, opacity: 0.6 }}>AHORA</Typography>
+                                            </Box>
+
+                                            {/* Content */}
+                                            <Box sx={{ px: 1.5, pb: 1.5, pt: 0.5 }}>
+                                                <Typography sx={{ fontSize: 13, fontWeight: 700, mb: 0.3 }}>
+                                                    {campaignForm.title || 'Tu Título Aquí'}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: 12, lineHeight: 1.35, opacity: 0.9 }}>
+                                                    {campaignForm.description || 'El contenido de tu mensaje aparecerá aquí de forma inmersiva.'}
+                                                </Typography>
+
+                                                {/* Image Preview */}
+                                                {campaignForm.imageUrl && (
+                                                    <Box sx={{ mt: 1.5, borderRadius: 2, overflow: 'hidden', aspectRatio: '16/9', bgcolor: 'rgba(0,0,0,0.1)' }}>
+                                                        <img src={campaignForm.imageUrl} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                    </Box>
+                                                )}
+                                            </Box>
+                                        </Box>
+
+                                        {/* Bottom Action Indicators */}
+                                        <Stack direction="row" sx={{ position: 'absolute', bottom: 30, left: 0, right: 0, px: 4 }} justifyContent="space-between">
+                                            <Box sx={{ width: 40, height: 40, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(5px)' }}>
+                                                <FlashlightOn sx={{ fontSize: 18, color: 'white' }} />
+                                            </Box>
+                                            <Box sx={{ width: 40, height: 40, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(5px)' }}>
+                                                <CameraAlt sx={{ fontSize: 18, color: 'white' }} />
+                                            </Box>
+                                        </Stack>
+                                        <Box sx={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', width: 100, height: 4, bgcolor: 'white', borderRadius: 2 }} />
                                     </Box>
-                                    {campaignForm.imageUrl && (
-                                        <Box sx={{ width: '100%', height: 140, borderRadius: 2.5, overflow: 'hidden', mb: 1.5, border: '1px solid #334155' }}>
-                                            <img src={campaignForm.imageUrl} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        </Box>
-                                    )}
-                                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ borderTop: '1px solid #334155', pt: 1.5 }}>
-                                        <Typography variant="caption" sx={{ opacity: 0.4, fontWeight: 700, letterSpacing: 1 }}>WHATSFLOW PUSH</Typography>
-                                        <Box sx={{ px: 1.5, py: 0.5, bgcolor: alpha('#3b82f6', 0.2), borderRadius: 1.5, color: '#60a5fa', fontSize: 10, fontWeight: 900 }}>DETALLES</Box>
-                                    </Stack>
-                                </Box>
-                                <Box sx={{ mt: 3, p: 2, bgcolor: alpha(theme.palette.info.main, 0.05), borderRadius: 3, border: '1px dashed', borderColor: theme.palette.info.main }}>
-                                    <Typography variant="caption" color="info.main" sx={{ display: 'flex', alignItems: 'center', gap: 1, fontWeight: 700 }}>
-                                        <Language fontSize="inherit" /> Se enviará a todos los navegadores registrados.
-                                    </Typography>
                                 </Box>
                             </Box>
                         </Grid>

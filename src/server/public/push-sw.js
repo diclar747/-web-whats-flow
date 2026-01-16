@@ -66,11 +66,11 @@ self.addEventListener('push', (event) => {
         actions: [
             {
                 action: 'open',
-                title: 'Abrir'
+                title: 'Ver más'
             },
             {
                 action: 'close',
-                title: 'Cerrar'
+                title: 'Gracias'
             }
         ]
     };
