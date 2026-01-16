@@ -767,10 +767,17 @@ const PushNotificationsModule: React.FC = () => {
 
                                                         {/* Detailed Stats Row */}
                                                         <Box sx={{
-                                                            display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1,
+                                                            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, // Increased grid to 4 columns
                                                             p: 1.5, mb: 3,
                                                             bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 2, border: '1px solid rgba(255,255,255,0.03)'
                                                         }}>
+                                                            <Box>
+                                                                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 9, display: 'block', fontWeight: 700 }}>VOLUMEN</Typography>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                                    <Typography variant="subtitle2" sx={{ fontWeight: 900, color: 'white' }}>{camp.total_sent || 0}</Typography>
+                                                                    <Typography variant="caption" sx={{ fontSize: 9, color: 'text.disabled', fontWeight: 700 }}>Subs</Typography>
+                                                                </Box>
+                                                            </Box>
                                                             <Box>
                                                                 <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 9, display: 'block', fontWeight: 700 }}>VISTOS</Typography>
                                                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>

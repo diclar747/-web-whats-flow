@@ -1715,7 +1715,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
             <Tab label={`Recibidos (${chatStats.received})`} icon={<CallReceived style={{ width: 18, height: 18 }} />} iconPosition="start" />
             <Tab label={`Enviados (${chatStats.sent})`} icon={<CallMade style={{ width: 18, height: 18 }} />} iconPosition="start" />
             <Tab label={`Sin leer (${chatStats.pending})`} icon={<MarkEmailUnread style={{ width: 18, height: 18 }} />} iconPosition="start" />
-            <Tab label={`Grupos (${chatStats.groups})`} icon={<Group style={{ width: 18, height: 18 }} />} iconPosition="start" />
+            {/* ❌ GRUPOS OCULTOS - Solo chats individuales de últimos 7 días */}
+            {/* <Tab label={`Grupos (${chatStats.groups})`} icon={<Group style={{ width: 18, height: 18 }} />} iconPosition="start" /> */}
             <Tab label="Estados" icon={<DonutLarge style={{ width: 18, height: 18 }} />} iconPosition="start" />
           </Tabs>
         )}

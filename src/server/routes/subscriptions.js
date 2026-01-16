@@ -597,16 +597,18 @@ router.get('/my-subscription', async (req, res) => {
         });
       }
 
-      // 3. Si no está en user_sessions, buscar en users (Agentes)
+      // 3. Si no está en user_sessions, buscar en users (Agentes o Usuarios con plan_id)
       const [users] = await connection.query(`
         SELECT *, DATEDIFF(subscription_end_date, NOW()) as days_remaining FROM users WHERE phone = ? OR email = ? LIMIT 1
       `, [effectiveIdentifier, effectiveIdentifier]);
 
       if (users.length > 0) {
         const user = users[0];
+
+        // 🔧 FIX: Usar plan_id en lugar subscription_plan (que no existe en users)
         const [planDetails] = await connection.query(
-          'SELECT id, name as plan_name, name as plan_display_name, price, max_agents, max_messages, max_channels, bot_enabled, api_enabled FROM plans WHERE name = ?',
-          [user.subscription_plan]
+          'SELECT id, name as plan_name, name as plan_display_name, price, max_agents, max_messages, max_channels, bot_enabled, api_enabled FROM plans WHERE id = ?',
+          [user.plan_id]
         );
 
         const plan = planDetails.length > 0 ? planDetails[0] : null;
@@ -615,8 +617,8 @@ router.get('/my-subscription', async (req, res) => {
           success: true,
           subscription: {
             phone: user.phone,
-            subscription_plan: user.subscription_plan,
-            subscription_status: user.subscription_status,
+            subscription_plan: plan ? plan.plan_name : null,
+            subscription_status: 'active', // Si está en users y tiene plan, asumimos activo
             subscription_start_date: user.subscription_start_date,
             subscription_end_date: user.subscription_end_date,
             days_remaining: user.days_remaining > 0 ? user.days_remaining : 0,
@@ -625,7 +627,7 @@ router.get('/my-subscription', async (req, res) => {
               price: Number(plan.price),
               max_users: plan.max_agents || 0,
               max_messages_per_month: plan.max_messages || 0,
-              max_channels: plan.max_channels || 0,
+              max_channels: plan.max_channels || 1, // ✅ Ahora incluye el max_channels correcto
               messages_sent_this_month: 0,
               max_campaigns: 100,
               max_contacts: 10000,
