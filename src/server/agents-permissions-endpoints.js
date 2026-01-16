@@ -1301,6 +1301,7 @@ module.exports = function (app, pool) {
                         users.name,
                         users.email,
                         users.phone,
+                        users.session_id,
                         COALESCE(contacts.avatar_url, users.avatar_url) as avatar_url,
                         users.role,
                         users.agent_status,

@@ -348,20 +348,28 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
       setUserName(savedUserName || 'Agente');
       console.log('✅ AgentId establecido:', userId);
 
-      // Obtener avatar del agente desde el backend
+      let fetchedSessionId = null;
+
+      // Obtener avatar y session_id del agente desde el backend
       try {
         const avatarResponse = await fetch(`${apiUrl}/api/users/${userId}/profile`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const avatarData = await avatarResponse.json();
-        if (avatarData.success && avatarData.user?.avatar_url) {
-          setAgentAvatar(avatarData.user.avatar_url);
-          console.log('✅ Avatar del agente cargado:', avatarData.user.avatar_url);
+        if (avatarData.success) {
+          if (avatarData.user?.avatar_url) {
+            setAgentAvatar(avatarData.user.avatar_url);
+            console.log('✅ Avatar del agente cargado:', avatarData.user.avatar_url);
+          }
+          if (avatarData.user?.session_id) {
+            fetchedSessionId = avatarData.user.session_id;
+            console.log('✅ SessionID recuperado del perfil del agente:', fetchedSessionId);
+          }
         } else {
-          console.log('⚠️ No se encontró avatar para el agente');
+          console.log('⚠️ No se encontró avatar/perfil para el agente');
         }
       } catch (error) {
-        console.error('Error cargando avatar del agente:', error);
+        console.error('Error cargando perfil del agente:', error);
       }
 
       // Solicitar permisos de notificación de manera más efectiva
@@ -393,12 +401,12 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
 
 
 
-      // 🔧 CORRECCIÓN: Usar sessionId del AGENTE ACTUAL (no del admin)
-      // El agente es un usuario normal que se loguea con email/password
-      // Su sessionId es su user.id en la BD
-      const agentSessionId = sessionStorage.getItem('sessionId') || userId;
-      
+      // 🔧 CORRECCIÓN: Usar sessionId del perfil del agente (vinculado al admin)
+      // Si no existe, usar userId como fallback
+      const agentSessionId = fetchedSessionId || sessionStorage.getItem('sessionId') || userId;
+
       console.log('🔍 [AGENT-SESSION] Usando sessionId del agente:', {
+        fromProfile: fetchedSessionId,
         fromSessionStorage: sessionStorage.getItem('sessionId'),
         fromUserId: userId,
         final: agentSessionId
@@ -406,7 +414,7 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
 
       if (agentSessionId) {
         setSessionId(agentSessionId);
-        
+
         // El agente puede ser responsable de una conexión de WhatsApp
         // Verificar el estado de conexión para su sesión
         try {
@@ -414,12 +422,12 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           const statusData = await statusResponse.json();
-          
+
           if (statusData.success && statusData.isConnected) {
             setWhatsappConnected(true);
             setPhoneNumber(statusData.phoneNumber); // El número de WhatsApp conectado
             console.log('✅ WhatsApp conectado para agente:', statusData.phoneNumber);
-            
+
             // Guardar en sessionStorage para uso global
             sessionStorage.setItem('adminSessionId', agentSessionId);
             sessionStorage.setItem('adminPhoneNumber', statusData.phoneNumber || '');
