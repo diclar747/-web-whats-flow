@@ -863,8 +863,21 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
     socket.on(`dashboard-stats-${sessionId}`, handleStatsUpdate);
     socket.on(`connection-${sessionId}`, handleConnectionUpdate);
     socket.on('connection-update', handleConnectionUpdate);
-    socket.on('whatsapp-connected', fetchSessions);
-    socket.on('whatsapp-disconnected', fetchSessions);
+    socket.on('whatsapp-connected', (data: any) => {
+      console.log('[SOCKET] ✅ WhatsApp conectado:', data);
+      setWhatsappStatus('connected');
+      fetchSessions();
+      fetchDashboardStats();
+      // Refrescar avatar y datos del perfil
+      if (sessionId) {
+        checkSessionValidity(sessionId);
+      }
+    });
+    socket.on('whatsapp-disconnected', (data: any) => {
+      console.log('[SOCKET] ❌ WhatsApp desconectado:', data);
+      setWhatsappStatus('disconnected');
+      fetchSessions();
+    });
     socket.on('session-updated', fetchSessions);
     socket.on('auth_token', handleAuthToken);
     socket.on('agent-force-logout', handleAgentForceLogout);
@@ -893,15 +906,15 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
       socket.off(`dashboard-stats-${sessionId}`, handleStatsUpdate);
       socket.off(`connection-${sessionId}`, handleConnectionUpdate);
       socket.off('connection-update', handleConnectionUpdate);
-      // COMENTADO: Ya NO escuchamos eventos de logout de WhatsApp
-      // socket.off('session-logged-out', handleSessionLoggedOut);
-      // socket.off(`session-logged-out-${sessionId}`, handleSessionLoggedOut);
+      socket.off('whatsapp-connected');
+      socket.off('whatsapp-disconnected');
+      socket.off('session-updated');
       socket.off('auth_token', handleAuthToken);
       socket.off('agent-force-logout', handleAgentForceLogout);
       socket.off('sync-progress');
       // NO desconectar el socket, es compartido globalmente
     };
-  }, [socket, isConnected, sessionId, handleStatsUpdate, handleConnectionUpdate, handleSessionLoggedOut, handleAuthToken, handleAgentForceLogout]);
+  }, [socket, isConnected, sessionId, handleStatsUpdate, handleConnectionUpdate, handleSessionLoggedOut, handleAuthToken, handleAgentForceLogout, fetchSessions, fetchDashboardStats, checkSessionValidity]);
 
   const handleNavigation = (path: string) => {
     navigate(path);
@@ -1464,13 +1477,10 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
               ) : (
                 <Suspense fallback={<ModuleLoadingFallback />}>
                   <Routes>
-                    <ProtectedRoute module="analytics" action="view">
-                      <AnalyticsModule sessionId={activeSessionId || userId || sessionId} />
-                    </ProtectedRoute>
-                    } />
-                    <ProtectedRoute module="analytics" action="view">
-                      <AnalyticsModule sessionId={activeSessionId || userId || sessionId} />
-                    </ProtectedRoute>
+                    <Route path="/" element={
+                      <ProtectedRoute module="analytics" action="view">
+                        <AnalyticsModule sessionId={activeSessionId || userId || sessionId} />
+                      </ProtectedRoute>
                     } />
                     <Route path="/chat/*" element={
                       <ProtectedRoute module="chat" action="view">
@@ -1542,9 +1552,10 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                         <ChatbotModule sessionId={activeSessionId} />
                       </ProtectedRoute>
                     } />
-                    <ProtectedRoute module="calendar" action="view">
-                      <CalendarModule sessionId={activeSessionId || sessionId} />
-                    </ProtectedRoute>
+                    <Route path="/calendar/*" element={
+                      <ProtectedRoute module="calendar" action="view">
+                        <CalendarModule sessionId={activeSessionId || sessionId} />
+                      </ProtectedRoute>
                     } />
                     <Route path="/whatsapp-status/*" element={
                       <WhatsAppStatusModule sessionId={activeSessionId || sessionId} />

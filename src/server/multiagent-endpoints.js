@@ -54,6 +54,48 @@ module.exports = function (app, pool) {
         return sessionId; // Fallback
     }
 
+    /**
+     * Obtiene el número de teléfono de una sesión
+     */
+    async function getUserPhoneNumber(sessionId) {
+        if (!sessionId) return null;
+
+        // Si sessionId ya parece un teléfono (10-15 dígitos), devolverlo
+        if (/^\d{10,15}$/.test(sessionId)) {
+            return sessionId;
+        }
+
+        if (pool) {
+            try {
+                const connection = await pool.getConnection();
+                try {
+                    // Buscar en user_sessions
+                    const [rows] = await connection.execute(
+                        'SELECT phone FROM user_sessions WHERE session_id = ? OR phone = ? OR id = ? LIMIT 1',
+                        [sessionId, sessionId, sessionId]
+                    );
+                    if (rows.length > 0 && rows[0].phone) {
+                        return rows[0].phone;
+                    }
+
+                    // Buscar en users
+                    const [userRows] = await connection.execute(
+                        'SELECT phone FROM users WHERE id = ? LIMIT 1',
+                        [sessionId]
+                    );
+                    if (userRows.length > 0 && userRows[0].phone) {
+                        return userRows[0].phone;
+                    }
+                } finally {
+                    connection.release();
+                }
+            } catch (err) {
+                console.error('[getUserPhoneNumber] Error:', err.message);
+            }
+        }
+        return sessionId;
+    }
+
     // Middleware para verificar autenticación (compatible con sistema base64)
     const authenticateToken = async (req, res, next) => {
         console.log(`[AUTH-MIDDLEWARE] Route: ${req.path}, Method: ${req.method}`);
@@ -1432,8 +1474,10 @@ module.exports = function (app, pool) {
 
             const connection = await pool.getConnection();
             try {
-                // Query SIMPLIFICADA: solo columnas que existen
-                // Sin LEFT JOIN con contacts o users (pueden no existir o tener esquema diferente)
+                // ✅ Obtener ownerSessionId y phoneNumber
+                const ownerSessionId = await getOwnerSessionId(sessionId);
+                const phoneNumber = await getUserPhoneNumber(sessionId);
+
                 let query = `
                     SELECT
                         m.id,
@@ -1451,10 +1495,11 @@ module.exports = function (app, pool) {
                         m.agent_id,
                         m.agent_name
                     FROM messages m
-                    WHERE m.session_id = ? AND m.chat_jid = ?
+                    WHERE (m.session_id = ? AND (m.phone = ? OR m.phone IS NULL))
+                      AND m.chat_jid = ?
                 `;
 
-                const params = [sessionId, chatJid];
+                const params = [ownerSessionId, phoneNumber, chatJid];
 
                 // Filtro por fecha (hoy)
                 if (dateFilter === 'today') {
@@ -1542,6 +1587,10 @@ module.exports = function (app, pool) {
             console.log(`[AGENT-CHATS] 📥 GET /api/agents/${agentId}/chats - sessionId: ${sessionId}, dateFilter: ${dateFilter}, havingClause: "${havingClause || 'SIN FILTRO'}"`);
 
             try {
+                // ✅ Obtener ownerSessionId y phoneNumber
+                const ownerSessionId = await getOwnerSessionId(sessionId);
+                const phoneNumber = await getUserPhoneNumber(sessionId);
+
                 // Query con JOIN a messages para filtrar SOLO chats con mensajes recientes
                 const [chats] = await connection.execute(
                     `SELECT
@@ -1551,13 +1600,13 @@ module.exports = function (app, pool) {
                         ca.assigned_at as assignedAt,
                         MAX(m.timestamp) as lastMessageTime
                      FROM chat_assignments ca
-                     INNER JOIN messages m ON m.chat_jid = ca.chat_jid
-                     WHERE ca.user_id = ?
+                     INNER JOIN messages m ON m.chat_jid = ca.chat_jid AND m.session_id = ca.session_id AND (m.phone = ? OR m.phone IS NULL)
+                     WHERE ca.user_id = ? AND (ca.session_id = ? OR ca.session_id = ?)
                      GROUP BY ca.chat_jid, ca.status, ca.assigned_at
                      ${havingClause}
                      ORDER BY lastMessageTime DESC
                      LIMIT ? OFFSET ?`,
-                    [agentId, parseInt(limit), parseInt(offset)]
+                    [phoneNumber, agentId, ownerSessionId, phoneNumber, parseInt(limit), parseInt(offset)]
                 );
 
                 console.log(`[AGENT-CHATS] ✅ Retornando ${chats ? chats.length : 0} chats para agente ${agentId}`);

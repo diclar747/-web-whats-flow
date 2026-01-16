@@ -482,7 +482,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       // This allows loading chats for valid session IDs (even short ones) that are in allSessions
       const isValidSession = allSessions && allSessions.length > 0
         ? allSessions.some(s => s.sessionId === sessionId)
-        : sessionId.length >= 5 || isNaN(Number(sessionId));
+        : sessionId.length >= 1 || !isNaN(Number(sessionId)); // Permitir IDs numéricos cortos
 
       if (!isValidSession) {
         console.warn(`[WhatsAppWebChat] 🚫 Skipping loadChats for invalid sessionId '${sessionId}'. Not in allSessions.`);
@@ -504,8 +504,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
     console.log(`[PERFORMANCE] Filtrando ${messages.length} mensajes con filtros:`, { dateFilter, quickFilter });
 
     const filtered = messages.filter(msg => {
-      // Si no hay filtro de fecha, mostrar todos
-      if (!dateFilter) return true;
+      // Si no hay filtro de fecha o es 'all', mostrar todos
+      if (!dateFilter || dateFilter === 'all') return true;
 
       // Obtener fecha del mensaje (solo fecha, sin hora) en formato comparable
       const msgTimestamp = new Date(msg.timestamp);

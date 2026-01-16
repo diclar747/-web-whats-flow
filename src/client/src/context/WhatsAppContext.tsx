@@ -81,6 +81,8 @@ export interface WhatsAppChat {
   assigned_agent_name?: string;
   status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed' | 'pending';
   lastUpdate?: number; // 🔥 NUEVO: Timestamp del último cambio para animaciones
+  phone_channel?: string; // 🔥 NUEVO: Canal de origen del chat
+  channel_phone?: string; // 🔥 NUEVO: Número del canal de origen
 }
 
 interface MessageReaction {
@@ -97,15 +99,17 @@ interface WhatsAppMessage {
   message: string;
   text?: string;
   timestamp: string;
-  type: 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker' | 'system';
+  type: 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker' | 'system' | 'imageMessage' | 'videoMessage' | 'audioMessage' | 'ptt' | 'documentMessage' | 'stickerMessage';
   isFromMe: boolean;
   status?: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   chatJid?: string;
   mediaUrl?: string;
   mediaMimeType?: string;
+  fileName?: string; // 🔥 Nombre del archivo para documentos
   sentBy?: string; // Nombre del agente que envió el mensaje
   agent_id?: number; // 🔥 ID del agente que envió el mensaje
   agent_name?: string; // 🔥 Nombre del agente que envió el mensaje
+  channelPhone?: string; // 🔥 Canal de origen del mensaje
   reactions?: MessageReaction[];
   contextInfo?: {
     quotedMessageId?: string;
@@ -213,7 +217,16 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
   useEffect(() => {
     activeChatRef.current = activeChat;
-  }, [activeChat]);
+
+    // 🔥 AUTOMATIC MESSAGE LOADING
+    if (activeChat?.id) {
+      // Avoid reloading if it's the same chat (optional check, but good for perf)
+      // But since we want to ensure messages are loaded, just call it.
+      // loadMessages handles state reset.
+      console.log(`[WhatsAppContext] 🔄 Chat activo cambiado a ${activeChat.id}, cargando mensajes...`);
+      loadMessages(activeChat.id, 'all', 50);
+    }
+  }, [activeChat?.id]);
 
   const requestNotificationPermission = async () => {
     if ('Notification' in window) {
@@ -528,13 +541,9 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     const handleMessage = (newMessage: WhatsAppMessage) => {
       console.log('📨 [REAL-TIME] handleMessage recibido:', newMessage);
 
-      // 🛡️ SECURITY: Filter events for the current session only
-      // @ts-ignore
-      const msgChannel = newMessage.channelPhone;
-      if (msgChannel && session?.phoneNumber && msgChannel !== session.phoneNumber) {
-        console.log(`[SOCKET] 🛡️ Ignorando MENSAJE de otro canal (${msgChannel}) en sesión actual (${session.phoneNumber})`);
-        return;
-      }
+      // ⚡ ACTUALIZACIÓN: Ahora no filtramos por canal individual porque el backend ya lo hace
+      // El backend devuelve solo los mensajes que pertenecen al usuario actual
+      // pero mantenemos el channelPhone para mostrarlo al usuario
 
       // ⚡ OPTIMIZACIÓN: Normalizar chatJid de forma más eficiente
       const rawChatJid = newMessage.chatJid || (newMessage as any).chat_jid || newMessage.to || newMessage.from;
@@ -552,7 +561,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         agent_name: (newMessage as any).agent_name
       };
 
-      // ⚡ OPTIMIZACIÓN: Notificaciones Inmediatas (Sin requestIdleCallback)
+      // ⚡ OPTIMIZACIÓN: Notificaciones Inmediatas (Con info del canal)
       if (!mappedMessage.isFromMe) {
         console.log('🔔 [REAL-TIME] Procesando notificación para mensaje entrante...');
 
@@ -1115,13 +1124,13 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
 
   // ⚡ OPTIMIZADO: Soporte para paginación y "Load More"
-  const loadMessages = async (chatId: string, dateFilter: string = 'today', limit: number = 50, offset: number = 0, append: boolean = false): Promise<void> => {
+  const loadMessages = async (chatId: string, dateFilter: string = 'week', limit: number = 50, offset: number = 0, append: boolean = false): Promise<void> => {
     if (!session?.sessionId) return;
 
     try {
       // ⚠️ IMPORTANTE: NO cargar desde cache inicialmente
       // Siempre consultar la BD PRIMERO con el filtro de fecha
-      // Solo mostrar lo que realmente está en el BD para hoy
+      // Ahora por defecto carga mensajes de los últimos 7 días
       if (!append) {
         setMessages([]);
         setIsLoading(true);
@@ -1172,7 +1181,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             return [...newUniqueMessages.reverse(), ...prev];
           });
         } else {
-          // Reemplazar todo (solo lo del día actual)
+          // Reemplazar todo (ahora incluye mensajes de la semana completa)
           const sortedMessages = mappedMessages.sort((a, b) => new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime());
           setMessages(sortedMessages);
           // ⚠️ NO guardar en cache - siempre consultar BD fresca
