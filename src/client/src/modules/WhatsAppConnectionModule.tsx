@@ -778,6 +778,11 @@ const WhatsAppConnectionModule: React.FC<WhatsAppConnectionModuleProps> = ({ ses
             ¿Estás seguro de que deseas eliminar esta sesión de WhatsApp?
             Esto eliminará la conexión y los archivos de autenticación. Podrás reconectar en cualquier momento escaneando el código QR nuevamente.
           </DialogContentText>
+          <Alert severity="info" sx={{ mt: 2 }}>
+            <Typography variant="body2">
+              <strong>Información:</strong> Actualmente tienes <strong>{waSessions.length}</strong> de <strong>{Number.isFinite(normalizedMaxChannels) ? normalizedMaxChannels : '∞'}</strong> canales disponibles en tu plan <strong>{subscriptionStatus === 'active' ? 'Manager' : 'desconocido'}</strong>.
+            </Typography>
+          </Alert>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeDisconnectDialog}>Cancelar</Button>

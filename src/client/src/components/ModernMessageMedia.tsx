@@ -59,20 +59,20 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
       return '';
     }
 
-    // Si ya es una URL completa, retornarla tal cual
+    // 🛡️ SECURITY: Usar proxy para URLs de WhatsApp CDN para evitar 403 y CORS
+    if (url.startsWith('http') && (url.includes('whatsapp.net') || url.includes('pps.whatsapp.net') || url.includes('mmg.whatsapp.net'))) {
+      console.log('[ModernMessageMedia] 🛡️ Proxying WhatsApp CDN URL:', url.substring(0, 50) + '...');
+      return `/api/proxy/avatar?url=${encodeURIComponent(url)}`;
+    }
+
+    // Si ya es una URL completa (y no es de WhatsApp), retornarla tal cual
     if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('blob:')) {
-      console.log('[ModernMessageMedia] ✅ URL completa detectada:', url.substring(0, 50) + '...');
       return url;
     }
 
     // Construir URL completa para rutas relativas
     const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
     const fullUrl = url.startsWith('/') ? `${API_BASE}${url}` : `${API_BASE}/${url}`;
-    console.log('[ModernMessageMedia] 🔗 URL procesada:', {
-      original: url,
-      base: API_BASE,
-      final: fullUrl
-    });
     return fullUrl;
   };
 

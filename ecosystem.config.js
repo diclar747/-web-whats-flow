@@ -26,7 +26,7 @@ module.exports = {
         // 🔧 VARIABLES DE ENTORNO
         env_production: {
             NODE_ENV: 'production',
-            PORT: 3003
+            PORT: 3000
         },
 
         // 🔄 ZERO DOWNTIME RELOAD

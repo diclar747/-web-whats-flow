@@ -36,6 +36,44 @@ module.exports = function (app, pool) {
         return Math.round((numerator / denominator) * 100 * 100) / 100;
     }
 
+    /**
+     * Helper to get phone number from session ID
+     */
+    async function getPhoneNumber(sessionId) {
+        if (!pool) return sessionId;
+        try {
+            // Check if sessionId is already a phone number
+            if (/^\+?\d{10,15}$/.test(sessionId)) {
+                return sessionId.replace(/\+/g, '');
+            }
+
+            // Check if sessionId is a User ID (small number)
+            if (!isNaN(sessionId) && parseInt(sessionId) < 1000000) {
+                const [userRows] = await pool.query(
+                    'SELECT phone FROM users WHERE id = ? LIMIT 1',
+                    [sessionId]
+                );
+                if (userRows.length > 0 && userRows[0].phone) {
+                    return userRows[0].phone;
+                }
+            }
+
+            // Query user_sessions
+            const [rows] = await pool.query(
+                'SELECT phone FROM user_sessions WHERE session_id = ? LIMIT 1',
+                [sessionId]
+            );
+
+            if (rows.length > 0 && rows[0].phone) {
+                return rows[0].phone;
+            }
+            return sessionId; // Fallback
+        } catch (error) {
+            console.error('[ANALYTICS] Error resolving phone number:', error);
+            return sessionId;
+        }
+    }
+
     // ============================================
     // MESSAGE ANALYTICS ENDPOINTS
     // ============================================
@@ -54,6 +92,9 @@ module.exports = function (app, pool) {
                 return res.status(400).json({ error: 'sessionId is required' });
             }
 
+            const phoneNumber = await getPhoneNumber(sessionId);
+            console.log(`[ANALYTICS-OVERVIEW] Resolved ${sessionId} -> ${phoneNumber}`);
+
             const query = `
                 SELECT 
                     COUNT(*) as total_messages,
@@ -64,11 +105,11 @@ module.exports = function (app, pool) {
                     SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as total_failed,
                     SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as total_pending
                 FROM messages
-                WHERE session_id = ?
+                WHERE phone = ?
                 AND DATE(timestamp) BETWEEN ? AND ?
             `;
 
-            const [results] = await pool.query(query, [sessionId, startDate, endDate]);
+            const [results] = await pool.query(query, [phoneNumber, startDate, endDate]);
             const data = results[0];
 
             // Calculate rates
@@ -106,18 +147,20 @@ module.exports = function (app, pool) {
                 return res.status(400).json({ error: 'sessionId is required' });
             }
 
+            const phoneNumber = await getPhoneNumber(sessionId);
+
             const query = `
                 SELECT 
                     message_type,
                     COUNT(*) as count
                 FROM messages
-                WHERE session_id = ?
+                WHERE phone = ?
                 AND DATE(timestamp) BETWEEN ? AND ?
                 GROUP BY message_type
                 ORDER BY count DESC
             `;
 
-            const [results] = await pool.query(query, [sessionId, startDate, endDate]);
+            const [results] = await pool.query(query, [phoneNumber, startDate, endDate]);
 
             res.json({
                 success: true,
@@ -144,6 +187,8 @@ module.exports = function (app, pool) {
                 return res.status(400).json({ error: 'sessionId is required' });
             }
 
+            const phoneNumber = await getPhoneNumber(sessionId);
+
             const query = `
                 SELECT 
                     DATE(timestamp) as date,
@@ -152,13 +197,13 @@ module.exports = function (app, pool) {
                     SUM(CASE WHEN from_me = 0 THEN 1 ELSE 0 END) as received,
                     SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
                 FROM messages
-                WHERE session_id = ?
+                WHERE phone = ?
                 AND DATE(timestamp) BETWEEN ? AND ?
                 GROUP BY DATE(timestamp)
                 ORDER BY date ASC
             `;
 
-            const [results] = await pool.query(query, [sessionId, startDate, endDate]);
+            const [results] = await pool.query(query, [phoneNumber, startDate, endDate]);
 
             res.json({
                 success: true,
@@ -185,6 +230,8 @@ module.exports = function (app, pool) {
                 return res.status(400).json({ error: 'sessionId is required' });
             }
 
+            const phoneNumber = await getPhoneNumber(sessionId);
+
             const query = `
                 SELECT 
                     m.agent_id,
@@ -193,14 +240,14 @@ module.exports = function (app, pool) {
                     SUM(CASE WHEN m.from_me = 1 THEN 1 ELSE 0 END) as sent,
                     SUM(CASE WHEN m.from_me = 0 THEN 1 ELSE 0 END) as received
                 FROM messages m
-                WHERE m.session_id = ?
+                WHERE m.phone = ?
                 AND m.agent_id IS NOT NULL
                 AND DATE(m.timestamp) BETWEEN ? AND ?
                 GROUP BY m.agent_id, m.agent_name
                 ORDER BY total_messages DESC
             `;
 
-            const [results] = await pool.query(query, [sessionId, startDate, endDate]);
+            const [results] = await pool.query(query, [phoneNumber, startDate, endDate]);
 
             res.json({
                 success: true,
@@ -228,18 +275,20 @@ module.exports = function (app, pool) {
             }
 
             // Get hourly distribution
+            const phoneNumber = await getPhoneNumber(sessionId);
+
             const hourlyQuery = `
                 SELECT 
                     HOUR(timestamp) as hour,
                     COUNT(*) as count
                 FROM messages
-                WHERE session_id = ?
+                WHERE phone = ?
                 AND DATE(timestamp) BETWEEN ? AND ?
                 GROUP BY HOUR(timestamp)
                 ORDER BY hour ASC
             `;
 
-            const [hourlyResults] = await pool.query(hourlyQuery, [sessionId, startDate, endDate]);
+            const [hourlyResults] = await pool.query(hourlyQuery, [phoneNumber, startDate, endDate]);
 
             // Calculate messages per hour average
             const totalMessages = hourlyResults.reduce((sum, row) => sum + row.count, 0);

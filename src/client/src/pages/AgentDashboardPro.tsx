@@ -393,33 +393,48 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
 
 
 
-      // Obtener sessionId del ADMIN desde la base de datos
-      try {
-        const response = await fetch(`/api/users/${userId}/session`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await response.json();
-        console.log('🔍 [AGENT-SESSION] Respuesta:', data);
+      // 🔧 CORRECCIÓN: Usar sessionId del AGENTE ACTUAL (no del admin)
+      // El agente es un usuario normal que se loguea con email/password
+      // Su sessionId es su user.id en la BD
+      const agentSessionId = sessionStorage.getItem('sessionId') || userId;
+      
+      console.log('🔍 [AGENT-SESSION] Usando sessionId del agente:', {
+        fromSessionStorage: sessionStorage.getItem('sessionId'),
+        fromUserId: userId,
+        final: agentSessionId
+      });
 
-        if (data.success && data.sessionId) {
-          setSessionId(data.sessionId);
-          setPhoneNumber(data.phoneNumber);
-          setWhatsappConnected(true); // ✅ WhatsApp está conectado
-          console.log('✅ Usando sesión del admin:', data.sessionId);
-          console.log('✅ Número del admin:', data.phoneNumber);
-
-          // Guardar en sessionStorage para uso global
-          sessionStorage.setItem('adminSessionId', data.sessionId);
-          sessionStorage.setItem('adminPhoneNumber', data.phoneNumber || '');
-          sessionStorage.setItem('whinsap_session', data.sessionId); // Para Socket
-        } else {
-          setWhatsappConnected(false); // ❌ WhatsApp NO está conectado
-          console.error('❌ No se pudo obtener sesión del admin:', data.message);
-          showSnackbar('⚠️ El administrador no tiene WhatsApp conectado. No podrás enviar mensajes.', 'error');
+      if (agentSessionId) {
+        setSessionId(agentSessionId);
+        
+        // El agente puede ser responsable de una conexión de WhatsApp
+        // Verificar el estado de conexión para su sesión
+        try {
+          const statusResponse = await fetch(`/api/session/${agentSessionId}/status`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const statusData = await statusResponse.json();
+          
+          if (statusData.success && statusData.isConnected) {
+            setWhatsappConnected(true);
+            setPhoneNumber(statusData.phoneNumber); // El número de WhatsApp conectado
+            console.log('✅ WhatsApp conectado para agente:', statusData.phoneNumber);
+            
+            // Guardar en sessionStorage para uso global
+            sessionStorage.setItem('adminSessionId', agentSessionId);
+            sessionStorage.setItem('adminPhoneNumber', statusData.phoneNumber || '');
+            sessionStorage.setItem('whinsap_session', agentSessionId);
+          } else {
+            setWhatsappConnected(false);
+            console.log('❌ WhatsApp NO está conectado para agente:', statusData.message);
+          }
+        } catch (error) {
+          console.error('❌ Error verificando estado de conexión:', error);
+          setWhatsappConnected(false);
         }
-      } catch (error) {
-        console.error('❌ Error obteniendo sessionId:', error);
-        showSnackbar('Error al conectar con el sistema. Recarga la página.', 'error');
+      } else {
+        console.error('❌ No hay sessionId disponible para el agente');
+        showSnackbar('Error: No se pudo establecer la sesión', 'error');
       }
     };
 

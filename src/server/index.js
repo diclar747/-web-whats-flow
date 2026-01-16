@@ -10064,10 +10064,10 @@ app.get('/api/sessions/check/:sessionId', async (req, res) => {
             try {
                 // Obtener datos del usuario/sesión
                 const [userRows] = await connection.execute(
-                    `SELECT u.name, us.phone, us.avatar_url 
-                     FROM user_sessions us 
-                     LEFT JOIN users u ON u.phone = us.phone 
-                     WHERE us.session_id = ? OR us.phone = ? OR us.owner_phone_number = ? 
+                    `SELECT u.name, us.phone, us.avatar_url
+                     FROM user_sessions us
+                     LEFT JOIN users u ON u.phone = us.phone
+                     WHERE us.session_id = ? OR us.phone = ? OR us.owner_phone_number = ?
                      ORDER BY us.is_active DESC, us.updated_at DESC LIMIT 1`,
                     [sessionId, phoneNumber, sessionId]
                 );
@@ -10075,14 +10075,37 @@ app.get('/api/sessions/check/:sessionId', async (req, res) => {
                 if (userRows.length > 0) {
                     profile.name = userRows[0].name || userRows[0].phone || profile.name;
                     profile.phoneNumber = userRows[0].phone || profile.phoneNumber;
+                }
 
-                    if (userRows[0].avatar_url) {
-                        const avatarUrl = userRows[0].avatar_url;
-                        if (avatarUrl.includes('pps.whatsapp.net') || avatarUrl.includes('mmg.whatsapp.net')) {
-                            profile.avatarUrl = `/api/avatar/${sessionId}/${profile.phoneNumber}@s.whatsapp.net`;
-                        } else {
-                            profile.avatarUrl = avatarUrl;
-                        }
+                // 🔧 FIX: Obtener avatar de la CONEXIÓN PRINCIPAL (la más antigua con avatar)
+                // La línea principal es la primera que se conectó (created_at ASC)
+                const [primaryRows] = await connection.execute(
+                    `SELECT us.avatar_url, us.phone, us.session_id
+                     FROM user_sessions us
+                     WHERE us.avatar_url IS NOT NULL
+                     AND us.is_active = 1
+                     ORDER BY us.is_primary DESC, us.created_at ASC
+                     LIMIT 1`
+                );
+
+                if (primaryRows.length > 0 && primaryRows[0].avatar_url) {
+                    const avatarUrl = primaryRows[0].avatar_url;
+                    const primaryPhone = primaryRows[0].phone;
+                    const primarySessionId = primaryRows[0].session_id;
+                    console.log(`[SESSIONS-CHECK] 🖼️ Avatar de conexión principal: ${primaryPhone} (session: ${primarySessionId})`);
+
+                    if (avatarUrl.includes('pps.whatsapp.net') || avatarUrl.includes('mmg.whatsapp.net')) {
+                        profile.avatarUrl = `/api/avatar/${primarySessionId}/${primaryPhone}@s.whatsapp.net`;
+                    } else {
+                        profile.avatarUrl = avatarUrl;
+                    }
+                } else if (userRows.length > 0 && userRows[0].avatar_url) {
+                    // Fallback: usar avatar de la sesión actual si no hay principal activa
+                    const avatarUrl = userRows[0].avatar_url;
+                    if (avatarUrl.includes('pps.whatsapp.net') || avatarUrl.includes('mmg.whatsapp.net')) {
+                        profile.avatarUrl = `/api/avatar/${sessionId}/${profile.phoneNumber}@s.whatsapp.net`;
+                    } else {
+                        profile.avatarUrl = avatarUrl;
                     }
                 }
             } finally {
@@ -10711,21 +10734,47 @@ app.post('/api/sessions/:sessionId/disconnect', async (req, res) => {
         if (pool) {
             const connection = await pool.getConnection();
             try {
-                // Primero intentar por session_id
-                let [result] = await connection.execute(
-                    'DELETE FROM user_sessions WHERE session_id = ?',
-                    [sessionId]
-                );
-
-                // Si no se eliminó nada y tenemos phoneNumber, intentar por phone
-                if (result.affectedRows === 0 && phoneNumber) {
-                    [result] = await connection.execute(
-                        'DELETE FROM user_sessions WHERE phone = ?',
-                        [phoneNumber]
-                    );
+                // 🔧 FIX: Si no tenemos phoneNumber y sessionId parece ser un teléfono, usarlo directamente
+                if (!phoneNumber && /^\d{10,15}$/.test(sessionId)) {
+                    phoneNumber = sessionId;
+                    console.log(`[SESSION-DISCONNECT] 📞 Usando sessionId como phoneNumber: ${phoneNumber}`);
                 }
 
-                console.log(`[SESSION-DISCONNECT] ✅ Eliminadas ${result.affectedRows} sesiones de BD`);
+                // 🔧 FIX: Buscar en BD para obtener datos antes de eliminar
+                const [existingRows] = await connection.execute(
+                    'SELECT session_id, phone FROM user_sessions WHERE session_id = ? OR phone = ? LIMIT 1',
+                    [sessionId, phoneNumber || sessionId]
+                );
+
+                if (existingRows.length > 0) {
+                    const dbSessionId = existingRows[0].session_id;
+                    const dbPhone = existingRows[0].phone;
+                    console.log(`[SESSION-DISCONNECT] 📋 Encontrado en BD: session_id=${dbSessionId}, phone=${dbPhone}`);
+
+                    // Eliminar por el session_id real de la BD
+                    const [result] = await connection.execute(
+                        'DELETE FROM user_sessions WHERE session_id = ?',
+                        [dbSessionId]
+                    );
+                    console.log(`[SESSION-DISCONNECT] ✅ Eliminadas ${result.affectedRows} sesiones de BD`);
+
+                    // Actualizar phoneNumber para eliminar archivos de auth correctamente
+                    if (!phoneNumber) phoneNumber = dbPhone;
+                } else {
+                    // Fallback: intentar eliminar por session_id o phone directamente
+                    let [result] = await connection.execute(
+                        'DELETE FROM user_sessions WHERE session_id = ?',
+                        [sessionId]
+                    );
+
+                    if (result.affectedRows === 0 && phoneNumber) {
+                        [result] = await connection.execute(
+                            'DELETE FROM user_sessions WHERE phone = ?',
+                            [phoneNumber]
+                        );
+                    }
+                    console.log(`[SESSION-DISCONNECT] ✅ Eliminadas ${result.affectedRows} sesiones de BD (fallback)`);
+                }
             } catch (dbErr) {
                 console.error('[SESSION-DISCONNECT] Error eliminando de BD:', dbErr);
             } finally {
@@ -11288,38 +11337,51 @@ app.post('/api/send-message', async (req, res) => {
 // Endpoint específico para agentes - obtener mensajes de un chat
 app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     const { sessionId, chatJid } = req.params;
-    const { limit = 25, dateFilter = 'today' } = req.query; // LÍMITE: Solo 25 mensajes más recientes por defecto
+    const { limit = 25, dateFilter = 'week' } = req.query; // CAMBIADO: Por defecto 'week' para los últimos 7 días
+    const authorizedUserId = req.sessionUserId; // Obtenido del middleware de validación
 
-    console.log('[AGENT-MESSAGES] 📥 Obteniendo mensajes:', { sessionId, chatJid, dateFilter, limit });
+    console.log('[AGENT-MESSAGES] 📥 Obteniendo mensajes:', { sessionId, chatJid, dateFilter, limit, authorizedUserId });
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'DB no disponible' });
     }
 
     try {
-        // ✅ Obtener ownerSessionId (users.id)
-        const ownerSessionId = await getOwnerSessionId(sessionId);
-
-        // Obtener el número de teléfono del sessionId
-        let phoneNumber = await getUserPhoneNumber(sessionId);
-        if (!phoneNumber) {
-            phoneNumber = sessionId;
-        }
-
+        // Buscar todos los números/canales asociados al usuario autenticado
+        // Esto permite manejar múltiples conexiones para el mismo usuario
         const connection = await pool.getConnection();
         try {
+            // Obtener todos los session_ids y phone_numbers asociados al usuario
+            const [userSessions] = await connection.execute(
+                `SELECT session_id, phone, owner_phone_number
+                 FROM user_sessions
+                 WHERE (user_id = ? OR phone = (SELECT phone FROM users WHERE id = ? LIMIT 1))
+                   AND is_active = 1`,
+                [authorizedUserId, authorizedUserId]
+            );
+
+            // Colección de identificadores válidos para el usuario
+            const validSessionIds = [authorizedUserId.toString()];
+            const validPhoneNumbers = [];
+
+            for (const session of userSessions) {
+                if (session.session_id) validSessionIds.push(session.session_id);
+                if (session.phone) validPhoneNumbers.push(session.phone);
+                if (session.owner_phone_number) validPhoneNumbers.push(session.owner_phone_number);
+            }
+
             // Construir filtro de fecha según el parámetro
             let dateCondition = '';
-            let queryParams = [ownerSessionId, chatJid];
+            let queryParams = [chatJid]; // Solo chatJid en posición fija
 
             if (dateFilter === 'today') {
                 // Solo mensajes de las últimas 24 horas
                 dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)';
                 console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de las últimas 24 HORAS');
             } else if (dateFilter === 'week') {
-                // Mensajes de los últimos 7 días
+                // Mensajes de los últimos 7 días - AHORA ES EL DEFAULT
                 dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
-                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de la SEMANA');
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de los ÚLTIMOS 7 DÍAS');
             } else if (dateFilter === 'month') {
                 // Mensajes del mes actual
                 dateCondition = 'AND MONTH(m.timestamp) = MONTH(CURDATE()) AND YEAR(m.timestamp) = YEAR(CURDATE())';
@@ -11334,51 +11396,90 @@ app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionB
                 console.log('[AGENT-MESSAGES] 📅 Cargando TODOS los mensajes');
             }
 
+            // Construir condiciones para session_id y phone
+            const sessionConditions = validSessionIds.map(() => 'm.session_id = ?').join(' OR ');
+            const phoneConditions = validPhoneNumbers.map(() => 'm.phone = ?').join(' OR ');
+
+            let whereConditions = '';
+            if (validSessionIds.length > 0 && validPhoneNumbers.length > 0) {
+                whereConditions = `AND ((${sessionConditions}) OR (${phoneConditions}))`;
+                queryParams.push(...validSessionIds, ...validPhoneNumbers);
+            } else if (validSessionIds.length > 0) {
+                whereConditions = `AND (${sessionConditions})`;
+                queryParams.push(...validSessionIds);
+            } else if (validPhoneNumbers.length > 0) {
+                whereConditions = `AND (${phoneConditions})`;
+                queryParams.push(...validPhoneNumbers);
+            } else {
+                // Fallback: solo usar el userId del token
+                whereConditions = 'AND m.session_id = ?';
+                queryParams.push(authorizedUserId.toString());
+            }
+
             // Query con filtro de fecha - OPTIMIZADO: Solo últimos N mensajes
-            // Buscar por session_id con ownerSessionId O phoneNumber para soportar ambos formatos
+            // Ahora busca por cualquiera de los session_ids o phone_numbers del usuario
             const query = `SELECT
                 m.id, m.session_id, m.chat_jid, m.sender_jid,
                 m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content,
                 m.media_url, m.media_mime_type, m.caption, m.file_name,
-                m.timestamp, m.status, m.sender_name, m.sender_avatar
+                m.timestamp, m.status, m.sender_name, m.sender_avatar,
+                m.phone as channel_phone  -- Incluir el número del canal para identificación
             FROM messages m
-            WHERE (m.session_id = ? OR m.session_id = ?)
-              AND m.chat_jid = ?
-              ${dateCondition}
+            WHERE m.chat_jid = ?
+            ${whereConditions}
+            ${dateCondition}
             ORDER BY m.timestamp DESC
             LIMIT ?`;
 
-            queryParams = [ownerSessionId, phoneNumber, chatJid];
-            if (dateCondition && dateCondition.includes('DATE(m.timestamp) = ?')) {
-                queryParams.push(dateFilter);
-            }
-            queryParams.push(parseInt(limit, 10));
+            queryParams.push(parseInt(limit, 10)); // Añadir el límite al final
 
             const [messagesDesc] = await connection.execute(query, queryParams);
             // Invertir para mostrar en orden cronológico (más antiguo primero)
             const messages = messagesDesc.reverse();
 
             console.log('[AGENT-MESSAGES] ✅ Encontrados:', messages.length, 'mensajes para', dateFilter || 'sin filtro');
-            console.log('[AGENT-MESSAGES] 🔍 Buscando con ownerSessionId:', ownerSessionId, 'phoneNumber:', phoneNumber, 'chatJid:', chatJid);
+            console.log('[AGENT-MESSAGES] 🔍 Buscando con validSessionIds:', validSessionIds, 'validPhoneNumbers:', validPhoneNumbers, 'chatJid:', chatJid);
 
-            // Obtener el total de mensajes (sin filtro de fecha)
-            const [totalResult] = await connection.execute(
-                `SELECT COUNT(*) as total FROM messages m
-                 WHERE (m.session_id = ? OR m.session_id = ?)
-                   AND m.chat_jid = ?`,
-                [ownerSessionId, phoneNumber, chatJid]
-            );
+            // Obtener el total de mensajes (sin filtro de fecha) para mostrar estadísticas
+            let totalQuery = `SELECT COUNT(*) as total FROM messages m WHERE m.chat_jid = ?`;
+            let totalParams = [chatJid];
+
+            if (validSessionIds.length > 0 && validPhoneNumbers.length > 0) {
+                totalQuery += ` AND ((${sessionConditions}) OR (${phoneConditions}))`;
+                totalParams.push(...validSessionIds, ...validPhoneNumbers);
+            } else if (validSessionIds.length > 0) {
+                totalQuery += ` AND (${sessionConditions})`;
+                totalParams.push(...validSessionIds);
+            } else if (validPhoneNumbers.length > 0) {
+                totalQuery += ` AND (${phoneConditions})`;
+                totalParams.push(...validPhoneNumbers);
+            } else {
+                totalQuery += ` AND m.session_id = ?`;
+                totalParams.push(authorizedUserId.toString());
+            }
+
+            const [totalResult] = await connection.execute(totalQuery, totalParams);
             const totalCount = totalResult[0]?.total || 0;
 
-            // Marcar como leídos los mensajes recibidos
-            await connection.execute(
-                `UPDATE messages SET is_read = true
-                 WHERE chat_jid = ?
-                   AND (session_id = ? OR session_id = ? OR phone = ?)
-                   AND from_me = false
-                   AND COALESCE(is_read, false) = false`,
-                [chatJid, ownerSessionId, phoneNumber, phoneNumber]
-            );
+            // Marcar como leídos los mensajes recibidos en todos los canales del usuario
+            let readQuery = `UPDATE messages SET is_read = true WHERE chat_jid = ? AND from_me = false AND COALESCE(is_read, false) = false`;
+            let readParams = [chatJid];
+
+            if (validSessionIds.length > 0 && validPhoneNumbers.length > 0) {
+                readQuery += ` AND ((session_id = ?${validSessionIds.slice(1).map(() => ', ?').join('')}) OR (phone = ?${validPhoneNumbers.slice(1).map(() => ', ?').join('')}))`;
+                readParams.push(...validSessionIds, ...validPhoneNumbers);
+            } else if (validSessionIds.length > 0) {
+                readQuery += ` AND (session_id = ?${validSessionIds.slice(1).map(() => ', ?').join('')})`;
+                readParams.push(...validSessionIds);
+            } else if (validPhoneNumbers.length > 0) {
+                readQuery += ` AND (phone = ?${validPhoneNumbers.slice(1).map(() => ', ?').join('')})`;
+                readParams.push(...validPhoneNumbers);
+            } else {
+                readQuery += ` AND session_id = ?`;
+                readParams.push(authorizedUserId.toString());
+            }
+
+            await connection.execute(readQuery, readParams);
 
             res.json({
                 success: true,
@@ -11403,7 +11504,8 @@ app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionB
                     timestamp: msg.timestamp,
                     status: msg.status,
                     sender_name: msg.sender_name,
-                    sender_avatar: msg.sender_avatar
+                    sender_avatar: msg.sender_avatar,
+                    channelPhone: msg.channel_phone // ✅ Nuevo: incluir el canal del mensaje
                 }))
             });
         } finally {
@@ -13046,90 +13148,119 @@ app.get('/api/messages', async (req, res) => {
 app.get('/api/history/messages', authenticateToken, async (req, res) => {
     let { limit = 10000, offset = 0, sessionId, chatJid, startDate, endDate, direction, status: filterStatus, viewAllHistory } = req.query;
 
-    console.log(`[API - HISTORY] Request for sessionId: ${sessionId} by user: ${req.user?.email}`);
+    console.log(`[API - HISTORY] Request for sessionId: ${sessionId} by user: ${req.user?.email} (userId: ${req.user?.id})`);
 
     if (!pool) {
         return res.status(503).json({ success: false, error: 'Servicio de base de datos no disponible.' });
     }
 
-    // 🔥 RESOLVER EL ID "REAL" (NUMÉRICO DE LA BD)
-    const ownerSessionId = await getOwnerSessionId(sessionId);
-    console.log(`[API - HISTORY] Resolved ownerSessionId for ${sessionId} -> ${ownerSessionId}`);
-
     // 🔥 SEGURIDAD: Verificar que el usuario tenga permiso para ver este historial
+    const userId = req.user?.id;
     const userEmail = req.user?.email;
     const userPhone = req.user?.phone;
     const userRole = req.user?.role;
     const isSuperAdmin = userRole === 'super_admin' || userRole === 'superadmin';
     const isAdminView = viewAllHistory === 'true' && isSuperAdmin;
-
-    if (!isAdminView && !sessionId) {
-        return res.status(400).json({ success: false, error: 'sessionId requerido' });
-    }
+    const isPrivilegedRole = ['super_admin', 'superadmin', 'admin', 'supervisor'].includes(userRole);
 
     const connection = await pool.getConnection();
     try {
-        let activeSessionId = ownerSessionId || sessionId;
+        // 🔥 ACTUALIZACIÓN: Obtener todos los números/canales asociados al usuario autenticado
+        // Esto permite manejar múltiples conexiones para el mismo usuario
+        let validSessionIds = [];
+        let validPhoneNumbers = [];
 
-        // 🔥 VALIDACIÓN DE PERMISOS: Usuario solo puede ver su propio historial
-        if (!isAdminView) {
-            // Verificar que el sessionId pertenece al usuario autenticado
-            const [sessionCheck] = await connection.execute(
-                'SELECT email, phone FROM user_sessions WHERE session_id = ? OR phone = ? OR id = ? OR owner_phone_number = ? ORDER BY is_active DESC, is_primary DESC, created_at DESC LIMIT 1',
-                [activeSessionId, activeSessionId, activeSessionId, activeSessionId]
+        if (isAdminView) {
+            // SuperAdmin en modo admin ve todo
+            console.log(`[API - HISTORY] 👑 Modo Admin: SuperAdmin ${userEmail} viendo todo el historial`);
+        } else {
+            // 🔥 FIX: SIEMPRE agregar el userId como session_id válido (porque messages.session_id = users.id)
+            validSessionIds.push(String(userId));
+
+            // También agregar el teléfono del usuario autenticado directamente
+            if (userPhone) {
+                validPhoneNumbers.push(userPhone);
+            }
+
+            // Buscar sesiones adicionales del usuario (opcional, para múltiples conexiones)
+            // Nota: user_sessions no tiene user_id, usamos phone o email para relacionar
+            const [userSessions] = await connection.execute(
+                `SELECT session_id, phone, owner_phone_number
+                 FROM user_sessions
+                 WHERE phone = ? OR email = ?`,
+                [userPhone || '', userEmail || '']
             );
 
-            if (sessionCheck.length === 0) {
-                console.warn(`[API - HISTORY] ⚠️ SessionId no encontrado: ${activeSessionId} (original: ${sessionId})`);
-                return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
-            }
-
-            const sessionOwnerEmail = sessionCheck[0].email;
-            const sessionOwnerPhone = sessionCheck[0].phone;
-
-            // Permitir roles privilegiados
-            const isPrivilegedRole = ['super_admin', 'superadmin', 'admin', 'supervisor'].includes(userRole);
-            if (isPrivilegedRole) {
-                console.log(`[API - HISTORY] 👑 Acceso por rol ${userRole} a sessionId ${sessionId}`);
-            } else {
-                // Permitir acceso si el usuario tiene asignaciones activas en esta sesión
-                const [assignRows] = await connection.execute(
-                    'SELECT COUNT(*) AS cnt FROM chat_assignments WHERE session_id = ? AND user_id = ? AND status = "active"',
-                    [activeSessionId, req.user.id]
-                );
-
-                const hasActiveAssignment = assignRows[0] && assignRows[0].cnt > 0;
-
-                // Verificar que el email o phone del token coincide con el dueño de la sesión
-                // O si tiene asignaciones activas en la sesión
-                const isOwner = (userEmail && userEmail === sessionOwnerEmail) ||
-                    (userPhone && userPhone === sessionOwnerPhone);
-
-                if (!isOwner && !hasActiveAssignment) {
-                    console.warn(`[API - HISTORY] ⚠️ INTENTO DE ACCESO NO AUTORIZADO: Usuario ${userEmail || userPhone} intentó acceder al historial de ${sessionOwnerEmail || sessionOwnerPhone}`);
-                    return res.status(403).json({ success: false, error: 'No tienes permiso para ver este historial' });
+            for (const session of userSessions) {
+                if (session.session_id && !validSessionIds.includes(session.session_id)) {
+                    validSessionIds.push(session.session_id);
                 }
-
-                console.log(`[API - HISTORY] ✅ Acceso autorizado: ${userEmail || userPhone} a sessionId ${sessionId}`);
+                if (session.phone && !validPhoneNumbers.includes(session.phone)) {
+                    validPhoneNumbers.push(session.phone);
+                }
+                if (session.owner_phone_number && !validPhoneNumbers.includes(session.owner_phone_number)) {
+                    validPhoneNumbers.push(session.owner_phone_number);
+                }
             }
-        } else {
-            console.log(`[API - HISTORY] 👑 Modo Admin: SuperAdmin ${userEmail || userPhone} viendo todo el historial`);
+
+            console.log(`[API - HISTORY] 📋 Session IDs del usuario ${userId}: [${validSessionIds.join(', ')}]`);
+            console.log(`[API - HISTORY] 📋 Phone Numbers del usuario ${userId}: [${validPhoneNumbers.join(', ')}]`);
         }
 
-        // ✅ FIX: Ya no usar fallback automático - solo mostrar mensajes del sessionId específico
+        // 🔧 FIX: Construir query para buscar mensajes de TODOS los session_ids y phone_numbers del usuario
+        let sessionFilter;
+        let queryParams = [];
+
+        if (isAdminView) {
+            // Admin ve todo - sin filtro de session
+            sessionFilter = '1=1';
+        } else {
+            // Usuario normal: filtrar por sus session_ids y phone_numbers
+            let filters = [];
+
+            if (validSessionIds.length > 0) {
+                const sessionPlaceholders = validSessionIds.map(() => '?').join(', ');
+                filters.push(`m.session_id IN (${sessionPlaceholders})`);
+                queryParams.push(...validSessionIds);
+            }
+
+            if (validPhoneNumbers.length > 0) {
+                const phonePlaceholders = validPhoneNumbers.map(() => '?').join(', ');
+                filters.push(`m.phone IN (${phonePlaceholders})`);
+                queryParams.push(...validPhoneNumbers);
+            }
+
+            // Si solo hay un tipo de filtro, usarlo directamente
+            if (filters.length === 1) {
+                sessionFilter = filters[0];
+            }
+            // Si hay ambos tipos, combinar con OR
+            else if (filters.length === 2) {
+                sessionFilter = `(${filters.join(' OR ')})`;
+            }
+            // Si no hay filtros (caso improbable pero por segurança)
+            else {
+                sessionFilter = 'm.session_id = ?';
+                queryParams = [userId.toString()];
+            }
+        }
+
+        // Verificar que hay mensajes
         let [checkMessages] = await connection.execute(
-            'SELECT COUNT(*) as count FROM messages WHERE session_id = ?',
-            [activeSessionId]
+            `SELECT COUNT(*) as count FROM messages m WHERE ${sessionFilter}`,
+            queryParams
         );
 
         if (checkMessages[0].count === 0) {
-            console.log(`[API - HISTORY] No messages found for sessionId: ${activeSessionId}`);
+            console.log(`[API - HISTORY] No messages found for user ${userId}`);
             return res.json({
                 success: true,
                 messages: [],
                 pagination: { total: 0, limit: parseInt(limit, 10), offset: parseInt(offset, 10), page: 1, totalPages: 0 }
             });
         }
+
+        console.log(`[API - HISTORY] ✅ Encontrados ${checkMessages[0].count} mensajes para usuario ${userId}`);
 
         let query = `SELECT m.id, m.session_id, m.chat_jid,
     COALESCE(c.name, c.notify_name, cg.name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as chat_name,
@@ -13138,11 +13269,11 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
     COALESCE(s.name, s.notify_name, SUBSTRING_INDEX(m.sender_jid, '@', 1)) as sender_name,
     m.from_me, m.agent_id, m.agent_name, m.message_type, m.text_content, m.media_url, m.media_mime_type, m.timestamp, m.status
                      FROM messages m
-                     LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = ?
-                     LEFT JOIN contact_groups cg ON m.chat_jid = cg.jid AND cg.session_id = ?
-                     LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id = ?
-                     WHERE m.session_id = ?`;
-        const queryParams = [activeSessionId, activeSessionId, activeSessionId, activeSessionId];
+                     LEFT JOIN contacts c ON m.chat_jid = c.jid AND c.session_id = m.session_id
+                     LEFT JOIN contact_groups cg ON m.chat_jid = cg.jid AND cg.session_id = m.session_id
+                     LEFT JOIN contacts s ON m.sender_jid = s.jid AND s.session_id = m.session_id
+                     WHERE ${sessionFilter}`;
+        // queryParams ya contiene los session_ids
 
         if (chatJid) {
             const fullChatJid = chatJid.includes('@') ? chatJid : `${chatJid} @s.whatsapp.net`;
@@ -13201,15 +13332,7 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
             agentName: msg.agent_name || null
         }));
 
-        console.log(`[API - HISTORY] Usando activeSessionId: ${activeSessionId}`);
-        const ticMsg = historyMessages.find(m => m.chatJid.includes('120363420507868002'));
-        if (ticMsg) {
-            console.log('[API - HISTORY] DEBUG TIC MSG:', JSON.stringify(ticMsg, null, 2));
-        } else {
-            console.log('[API - HISTORY] No se encontró mensaje del grupo Tic en esta página.');
-        }
-
-        console.log(`[API - HISTORY] ✅ Historial cargado: ${historyMessages.length} mensajes, total en BD: ${totalMessages}, sessionId: ${sessionId}`);
+        console.log(`[API - HISTORY] ✅ Historial cargado: ${historyMessages.length} mensajes, total en BD: ${totalMessages}, userId: ${userId}, sessionIds: [${validSessionIds.join(', ')}]`);
 
         res.json({
             success: true,
@@ -15627,61 +15750,51 @@ app.get('/api/avatar/:sessionId/:jid', async (req, res) => {
     }
 
     try {
-        // Obtener el identificador correcto para la BD (User ID '1' or phone)
-        const dbIdentifier = await getUserDbIdentifier(sessionId);
-        const phoneNumber = dbIdentifier; // Keep variable name for query compatibility
-
-        if (!phoneNumber) {
-            return res.redirect(defaultAvatar);
-        }
-
         const connection = await pool.getConnection();
         try {
-            // Primero: Si el JID es del usuario actual, buscar en user_sessions
-            const userJid = phoneNumber + '@s.whatsapp.net';
-            if (userJid === jid) {
-                const [userRows] = await connection.execute(
-                    'SELECT avatar_url FROM user_sessions WHERE phone = ? AND avatar_url IS NOT NULL ORDER BY last_activity DESC LIMIT 1',
-                    [phoneNumber]
-                );
+            // Extraer phone del JID (ej: 595994854167@s.whatsapp.net -> 595994854167)
+            const jidPhone = jid.split('@')[0];
 
-                if (userRows.length > 0 && userRows[0].avatar_url) {
-                    const avatarUrl = userRows[0].avatar_url;
-                    console.log(`[API-AVATAR] Avatar del usuario encontrado en user_sessions: ${phoneNumber}`);
-
-                    // Si es una URL de WhatsApp CDN, usar el proxy interno para evitar 403
-                    if (avatarUrl.includes('pps.whatsapp.net') || avatarUrl.includes('mmg.whatsapp.net')) {
-                        console.log(`[API-AVATAR] 🛡️ Proxying WhatsApp avatar for ${phoneNumber}`);
-                        return res.redirect(`/api/proxy/avatar?url=${encodeURIComponent(avatarUrl)}`);
-                    }
-
-                    return res.redirect(avatarUrl);
-                }
-            }
-
-            // Segundo: Buscar en contacts
-            const [rows] = await connection.execute(
-                'SELECT avatar_url FROM contacts WHERE jid = ? AND session_id = ? AND avatar_url IS NOT NULL',
-                [jid, phoneNumber]
+            // 🔧 FIX: Buscar avatar en user_sessions por phone o session_id
+            const [userRows] = await connection.execute(
+                `SELECT avatar_url FROM user_sessions
+                 WHERE (phone = ? OR session_id = ? OR id = ?)
+                 AND avatar_url IS NOT NULL
+                 ORDER BY is_active DESC, last_activity DESC LIMIT 1`,
+                [jidPhone, sessionId, sessionId]
             );
 
-            if (rows.length > 0 && rows[0].avatar_url) {
-                const avatarUrl = rows[0].avatar_url;
+            if (userRows.length > 0 && userRows[0].avatar_url) {
+                const avatarUrl = userRows[0].avatar_url;
+                console.log(`[API-AVATAR] ✅ Avatar encontrado para ${jidPhone}`);
 
-                // Si es una URL de WhatsApp CDN, usar el proxy interno
+                // Si es URL de WhatsApp CDN, usar proxy para evitar 403
                 if (avatarUrl.includes('pps.whatsapp.net') || avatarUrl.includes('mmg.whatsapp.net')) {
                     return res.redirect(`/api/proxy/avatar?url=${encodeURIComponent(avatarUrl)}`);
                 }
-
-                res.redirect(avatarUrl);
-            } else {
-                res.redirect(defaultAvatar);
+                return res.redirect(avatarUrl);
             }
+
+            // Fallback: Buscar en contacts
+            const [contactRows] = await connection.execute(
+                'SELECT avatar_url FROM contacts WHERE jid = ? AND avatar_url IS NOT NULL LIMIT 1',
+                [jid]
+            );
+
+            if (contactRows.length > 0 && contactRows[0].avatar_url) {
+                const avatarUrl = contactRows[0].avatar_url;
+                if (avatarUrl.includes('pps.whatsapp.net') || avatarUrl.includes('mmg.whatsapp.net')) {
+                    return res.redirect(`/api/proxy/avatar?url=${encodeURIComponent(avatarUrl)}`);
+                }
+                return res.redirect(avatarUrl);
+            }
+
+            res.redirect(defaultAvatar);
         } finally {
             connection.release();
         }
     } catch (error) {
-        console.error(`[API-AVATAR] Error obteniendo avatar para ${jid}:`, error);
+        console.error(`[API-AVATAR] Error:`, error);
         res.redirect(defaultAvatar);
     }
 });
@@ -20042,11 +20155,19 @@ app.get('/api/users/:id', async (req, res) => {
         const connection = await pool.getConnection();
         try {
             // ✅ FIX: Permitir buscar por ID o por Teléfono
+            // 🔧 FIX: Priorizar avatar de la CONEXIÓN PRINCIPAL (is_primary=1 o más antigua)
             const [users] = await connection.execute(
-                `SELECT 
+                `SELECT
                     id, name, email, phone, role, status, is_admin, is_super_admin, admin_phone, last_login, created_at, updated_at,
-                    COALESCE(avatar_url, (SELECT avatar_url FROM user_sessions WHERE (phone = users.phone OR session_id = users.session_id OR owner_phone_number = CAST(users.id AS CHAR)) AND avatar_url IS NOT NULL ORDER BY last_activity DESC LIMIT 1)) as avatar_url
-                 FROM users 
+                    COALESCE(
+                        avatar_url,
+                        (SELECT avatar_url FROM user_sessions
+                         WHERE (phone = users.phone OR owner_phone_number = users.phone OR owner_phone_number = CAST(users.id AS CHAR))
+                         AND avatar_url IS NOT NULL
+                         ORDER BY is_primary DESC, created_at ASC
+                         LIMIT 1)
+                    ) as avatar_url
+                 FROM users
                  WHERE id = ? OR phone = ? OR email = ?`,
                 [id, id, id]
             );
@@ -25646,16 +25767,7 @@ app.get('/api/analytics/chatbots', (req, res) => {
     res.json({ success: true, data: { total: 0, active: 0, interactions: 0 } });
 });
 
-app.get('/api/analytics/dashboard', async (req, res) => {
-    const { sessionId } = req.query;
-    try {
-        const statsRes = await fetch(`http://127.0.0.1:${process.env.PORT || 3000}/api/dashboard/stats/${sessionId}`);
-        const stats = await statsRes.json();
-        res.json({ success: true, data: stats.stats });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
+// NOTA: /api/analytics/dashboard está definido más abajo con implementación completa
 
 app.get('/api/analytics/messages', async (req, res) => {
     const { sessionId } = req.query;
@@ -26530,10 +26642,12 @@ server.listen(PORT, '0.0.0.0', async () => {
 
 // ============= ANALYTICS DASHBOARD ENDPOINT =============
 app.get('/api/analytics/dashboard', async (req, res) => {
-    console.log('[ANALYTICS-DASHBOARD-ENDPOINT] 🚀 NUEVA VERSIÓN EJECUTADA - sessionId:', req.query.sessionId);
+    console.log('[ANALYTICS-DASHBOARD] 🚀 Request recibido - sessionId:', req.query.sessionId);
     const { sessionId } = req.query;
 
     if (!pool || !sessionId) {
+        console.log('[ANALYTICS-DASHBOARD] ⚠️ No pool o sessionId vacío');
+
         return res.json({
             success: true,
             data: {
@@ -26556,7 +26670,9 @@ app.get('/api/analytics/dashboard', async (req, res) => {
         try {
             // Get all session IDs for this user
             const sessionIds = await getAllSessionIds(sessionId);
+            console.log('[ANALYTICS-DASHBOARD] 📋 SessionIds resueltos:', sessionIds);
             if (!sessionIds || sessionIds.length === 0) {
+                console.log('[ANALYTICS-DASHBOARD] ⚠️ No se encontraron sessionIds');
                 return res.json({
                     success: true,
                     data: {

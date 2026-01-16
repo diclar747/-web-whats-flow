@@ -32,8 +32,12 @@ import {
   Reply as ReplyIcon,
   Close as CloseIcon,
   Refresh as RefreshIcon,
-  WhatsApp
+  WhatsApp,
+  PlayArrow as PlayArrowIcon,
+  Description as DescriptionIcon,
+  Download as DownloadIcon
 } from '@mui/icons-material';
+import { Tooltip } from '@mui/material';
 
 const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const { isDarkMode = true } = useTheme(); // 🌙 Tema oscuro por defecto
@@ -50,6 +54,8 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   const [filterType, setFilterType] = useState<'all' | 'unread' | 'groups' | 'contacts'>('all');
   const [whatsappConnected, setWhatsappConnected] = useState<boolean>(false);
   const [showQRPrompt, setShowQRPrompt] = useState<boolean>(false);
+  const [activeChannel, setActiveChannel] = useState<string>('all'); // Nuevo: para filtrar por canal
+  const [channels, setChannels] = useState<string[]>([]); // Nuevo: lista de canales disponibles
   const messagesEndRef = useRef<null | HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -205,10 +211,28 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
     }
   }, [sessionId, loadChats, whatsappConnected]);
 
+  // Efecto para detectar y agrupar canales
+  useEffect(() => {
+    if (chats && chats.length > 0) {
+      // Detectar canales únicos basados en la información de origen
+      const uniqueChannels = Array.from(new Set(chats.map(chat => {
+        // Intentar identificar el canal por el chat o mensaje
+        return chat.phone_channel || chat.channel_phone || 'General';
+      }))).filter(channel => channel && channel !== 'General' && channel !== 'undefined');
+
+      if (uniqueChannels.length > 0) {
+        setChannels(uniqueChannels);
+        if (!activeChannel || activeChannel === 'all') {
+          setActiveChannel('all'); // Mostrar todos por defecto
+        }
+      }
+    }
+  }, [chats]);
+
   useEffect(() => {
     if (activeChat && loadMessages) {
       console.log('RealChatModule: Cargando mensajes para chat:', activeChat.id);
-      loadMessages(activeChat.id);
+      loadMessages(activeChat.id, 'week'); // Cargar los últimos 7 días por defecto
     }
   }, [activeChat, loadMessages]);
 
@@ -376,13 +400,36 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
   };
 
   const filteredChats = chats && chats.length > 0 ? chats.filter(chat => {
+    // Filtro de búsqueda
     if (searchTerm && !chat.name.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+
+    // Filtro por tipo de chat
+    let typeMatch = true;
     switch (filterType) {
-      case 'unread': return chat.unreadCount && chat.unreadCount > 0;
-      case 'groups': return chat.isGroup;
-      case 'contacts': return !chat.isGroup;
-      default: return true;
+      case 'unread':
+        typeMatch = Boolean(chat.unreadCount && chat.unreadCount > 0);
+        break;
+      case 'groups':
+        typeMatch = Boolean(chat.isGroup);
+        break;
+      case 'contacts':
+        typeMatch = Boolean(!chat.isGroup);
+        break;
+      default:
+        typeMatch = true;
+        break;
     }
+
+    // Filtro por canal si está seleccionado
+    let channelMatch = true;
+    if (activeChannel && activeChannel !== 'all') {
+      const chatChannel = chat.phone_channel || chat.channel_phone ||
+                         (chat.id.includes('@') ? chat.id.split('@')[0] : null) ||
+                         (chat.id.includes(':') ? chat.id.split(':')[0] : null);
+      channelMatch = chatChannel === activeChannel;
+    }
+
+    return typeMatch && channelMatch;
   }) : [];
 
   return (
@@ -406,6 +453,81 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
           alignItems: 'center',
           gap: '8px'
         }}>
+          {/* Selector de canales */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center', minWidth: 0, flex: 1 }}>
+            <Button
+              variant={activeChannel === 'all' ? 'contained' : 'outlined'}
+              size="small"
+              onClick={() => setActiveChannel('all')}
+              sx={{
+                fontSize: '0.75rem',
+                height: 28,
+                minWidth: 'auto',
+                px: 1.5,
+                borderRadius: '14px',
+                backgroundColor: activeChannel === 'all' ? (isDarkMode ? '#2a3942' : '#e9edef') : 'transparent',
+                borderColor: isDarkMode ? '#303d45' : '#d1d7db',
+                color: activeChannel === 'all' ? (isDarkMode ? '#e9edef' : '#111b21') : (isDarkMode ? '#aebac1' : '#667781'),
+                textTransform: 'none',
+                whiteSpace: 'nowrap',
+                '&:hover': {
+                  backgroundColor: isDarkMode ? 'rgba(42,57,66,0.3)' : 'rgba(233,237,239,0.5)',
+                  borderColor: isDarkMode ? '#4a5568' : '#b0b6bd'
+                }
+              }}
+            >
+              Todos
+            </Button>
+
+            {channels.map((channel, index) => (
+              <Button
+                key={channel}
+                variant={activeChannel === channel ? 'contained' : 'outlined'}
+                size="small"
+                onClick={() => setActiveChannel(channel)}
+                sx={{
+                  fontSize: '0.75rem',
+                  height: 28,
+                  minWidth: 'auto',
+                  px: 1.5,
+                  borderRadius: '14px',
+                  backgroundColor: activeChannel === channel ? (isDarkMode ? '#2a3942' : '#e9edef') : 'transparent',
+                  borderColor: isDarkMode ? '#303d45' : '#d1d7db',
+                  color: activeChannel === channel ? (isDarkMode ? '#e9edef' : '#111b21') : (isDarkMode ? '#aebac1' : '#667781'),
+                  textTransform: 'none',
+                  whiteSpace: 'nowrap',
+                  position: 'relative',
+                  '&:hover': {
+                    backgroundColor: isDarkMode ? 'rgba(42,57,66,0.3)' : 'rgba(233,237,239,0.5)',
+                    borderColor: isDarkMode ? '#4a5568' : '#b0b6bd'
+                  }
+                }}
+              >
+                Canal {index + 1}
+                <span style={{
+                  position: 'absolute',
+                  top: -5,
+                  right: -5,
+                  backgroundColor: '#00a884',
+                  color: 'white',
+                  borderRadius: '50%',
+                  width: 16,
+                  height: 16,
+                  fontSize: '0.6rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  {chats.filter(chat =>
+                    (chat.phone_channel === channel || chat.channel_phone === channel ||
+                     (chat.id.includes('@') && chat.id.split('@')[0] === channel) ||
+                     (chat.id.includes(':') && chat.id.split(':')[0] === channel))
+                  ).length}
+                </span>
+              </Button>
+            ))}
+          </Box>
+
           <TextField
             fullWidth
             size="small"
@@ -414,7 +536,9 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
               startAdornment: <SearchIcon style={{ marginRight: 8 }} />,
               style: {
                 backgroundColor: isDarkMode ? '#111b21' : '#fff',
-                borderRadius: '8px'
+                borderRadius: '8px',
+                marginLeft: '8px',
+                flex: 0.5
               }
             }}
             value={searchTerm}
@@ -930,75 +1054,183 @@ const ModernWhatsAppChat: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                           </Paper>
                         )}
 
-                        {msg.type === 'image' && msg.mediaUrl ? (
-                          <div>
-                            <img
-                              src={msg.mediaUrl.startsWith('data:') ? msg.mediaUrl : `${getAPIBaseURL()}${msg.mediaUrl}`}
-                              alt="Imagen"
-                              style={{
-                                maxWidth: '100%',
-                                borderRadius: '5px',
-                                marginBottom: msg.message ? '8px' : '0'
-                              }}
-                            />
-                            {msg.message && <p>{msg.message}</p>}
-                          </div>
-                        ) : msg.type === 'video' && msg.mediaUrl ? (
-                          <div>
-                            <video
-                              controls
-                              style={{
-                                maxWidth: '100%',
-                                borderRadius: '5px',
-                                marginBottom: msg.message ? '8px' : '0'
-                              }}
-                            >
-                              <source src={msg.mediaUrl.startsWith('data:') ? msg.mediaUrl : `${getAPIBaseURL()}${msg.mediaUrl}`} type={msg.mediaMimeType} />
-                            </video>
-                            {msg.message && <p>{msg.message}</p>}
-                          </div>
-                        ) : msg.type === 'audio' && msg.mediaUrl ? (
-                          <div>
-                            <audio
-                              controls
-                              style={{
-                                width: '100%',
-                                marginBottom: msg.message ? '8px' : '0'
-                              }}
-                            >
-                              <source src={msg.mediaUrl.startsWith('data:') ? msg.mediaUrl : `${getAPIBaseURL()}${msg.mediaUrl}`} type={msg.mediaMimeType} />
-                            </audio>
-                            {msg.message && <p>{msg.message}</p>}
-                          </div>
-                        ) : msg.type === 'document' && msg.mediaUrl ? (
-                          <div>
-                            <a
-                              href={msg.mediaUrl.startsWith('data:') ? msg.mediaUrl : `${getAPIBaseURL()}${msg.mediaUrl}`}
-                              download={msg.message}
-                              style={{
-                                color: '#007bff',
-                                textDecoration: 'none',
+                        {/* Renderizado de mensajes multimedia avanzado */}
+                        {msg.type === 'image' || msg.type === 'imageMessage' ? (
+                          msg.mediaUrl ? (
+                            <Box sx={{ maxWidth: '300px', mb: msg.message ? 1 : 0 }}>
+                              <img
+                                src={msg.mediaUrl.startsWith('data:') ? msg.mediaUrl : `${getAPIBaseURL()}${msg.mediaUrl}`}
+                                alt="Imagen adjunta"
+                                style={{
+                                  maxWidth: '100%',
+                                  borderRadius: '8px',
+                                  display: 'block',
+                                  cursor: 'pointer'
+                                }}
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.onerror = null;
+                                  target.src = '/placeholder-image.jpg'; // Imagen de fallback
+                                }}
+                              />
+                              {msg.message && (
+                                <Typography variant="body2" sx={{ mt: 1, fontStyle: 'italic', wordBreak: 'break-word' }}>
+                                  {msg.message}
+                                </Typography>
+                              )}
+                            </Box>
+                          ) : null
+                        ) : msg.type === 'video' || msg.type === 'videoMessage' ? (
+                          msg.mediaUrl ? (
+                            <Box sx={{ maxWidth: '300px', mb: msg.message ? 1 : 0 }}>
+                              <video
+                                controls
+                                style={{
+                                  maxWidth: '100%',
+                                  borderRadius: '8px',
+                                  display: 'block'
+                                }}
+                                onError={(e) => {
+                                  console.error('Error al cargar el video:', e);
+                                }}
+                              >
+                                <source
+                                  src={msg.mediaUrl.startsWith('data:') ? msg.mediaUrl : `${getAPIBaseURL()}${msg.mediaUrl}`}
+                                  type={msg.mediaMimeType || 'video/mp4'}
+                                />
+                                Tu navegador no soporta videos.
+                              </video>
+                              {msg.message && (
+                                <Typography variant="body2" sx={{ mt: 1, fontStyle: 'italic', wordBreak: 'break-word' }}>
+                                  {msg.message}
+                                </Typography>
+                              )}
+                            </Box>
+                          ) : null
+                        ) : msg.type === 'audio' || msg.type === 'audioMessage' || msg.type === 'ptt' ? (
+                          msg.mediaUrl ? (
+                            <Box sx={{ minWidth: '200px', maxWidth: '300px' }}>
+                              <Box sx={{
                                 display: 'flex',
-                                alignItems: 'center'
-                              }}
-                            >
-                              <AttachIcon sx={{ mr: 1, fontSize: 16 }} />
-                              {msg.message}
-                            </a>
-                          </div>
+                                alignItems: 'center',
+                                gap: 1,
+                                bgcolor: isDarkMode ? '#2a3942' : '#f0f2f5',
+                                p: 1,
+                                borderRadius: 2
+                              }}>
+                                <PlayArrowIcon sx={{ color: '#00a884', fontSize: 24 }} />
+                                <audio
+                                  controls
+                                  style={{
+                                    flex: 1,
+                                    height: '24px'
+                                  }}
+                                  onError={(e) => {
+                                    console.error('Error al cargar el audio:', e);
+                                  }}
+                                >
+                                  <source
+                                    src={msg.mediaUrl.startsWith('data:') ? msg.mediaUrl : `${getAPIBaseURL()}${msg.mediaUrl}`}
+                                    type={msg.mediaMimeType || 'audio/ogg'}
+                                  />
+                                  Tu navegador no soporta audio.
+                                </audio>
+                              </Box>
+                              {msg.message && (
+                                <Typography variant="caption" sx={{ mt: 0.5, display: 'block', fontStyle: 'italic' }}>
+                                  {msg.message}
+                                </Typography>
+                              )}
+                            </Box>
+                          ) : null
+                        ) : msg.type === 'document' || msg.type === 'documentMessage' ? (
+                          msg.mediaUrl ? (
+                            <Box sx={{
+                              maxWidth: '300px',
+                              border: `1px solid ${isDarkMode ? '#303d45' : '#e9edef'}`,
+                              borderRadius: 2,
+                              p: 1.5
+                            }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                <DescriptionIcon sx={{ color: '#9e9e9e', fontSize: 32 }} />
+                                <Box sx={{ flex: 1, minWidth: 0 }}>
+                                  <Typography variant="body2" noWrap>
+                                    {msg.message || msg.fileName || 'Documento adjunto'}
+                                  </Typography>
+                                  <Typography variant="caption" color="textSecondary">
+                                    {msg.mediaMimeType || 'Documento'}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                              <Button
+                                variant="outlined"
+                                size="small"
+                                startIcon={<DownloadIcon />}
+                                href={msg.mediaUrl.startsWith('data:') ? msg.mediaUrl : `${getAPIBaseURL()}${msg.mediaUrl}`}
+                                download={msg.message || msg.fileName || 'documento'}
+                                sx={{
+                                  mt: 1,
+                                  width: '100%',
+                                  color: '#00a884',
+                                  borderColor: '#00a884',
+                                  '&:hover': {
+                                    borderColor: '#008f7a',
+                                    backgroundColor: isDarkMode ? 'rgba(0, 168, 132, 0.1)' : 'rgba(0, 168, 132, 0.04)'
+                                  }
+                                }}
+                              >
+                                Descargar
+                              </Button>
+                            </Box>
+                          ) : null
+                        ) : msg.type === 'sticker' || msg.type === 'stickerMessage' ? (
+                          msg.mediaUrl ? (
+                            <Box sx={{ maxWidth: '200px' }}>
+                              <img
+                                src={msg.mediaUrl.startsWith('data:') ? msg.mediaUrl : `${getAPIBaseURL()}${msg.mediaUrl}`}
+                                alt="Sticker"
+                                style={{
+                                  maxWidth: '100%',
+                                  height: 'auto',
+                                  borderRadius: '8px',
+                                  display: 'block'
+                                }}
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.onerror = null;
+                                  target.src = '/placeholder-sticker.jpg';
+                                }}
+                              />
+                            </Box>
+                          ) : null
                         ) : (
-                          <p>{msg.message}</p>
+                          <Typography variant="body1" sx={{ wordBreak: 'break-word' }}>
+                            {msg.message}
+                          </Typography>
                         )}
 
                         <div style={{
                           fontSize: '0.7rem',
                           textAlign: 'right',
                           color: isDarkMode ? '#aebac1' : '#667781',
-                          marginTop: '4px'
+                          marginTop: '4px',
+                          display: 'flex',
+                          justifyContent: 'flex-end',
+                          alignItems: 'center',
+                          gap: '4px'
                         }}>
-                          {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {msg.channelPhone && (
+                            <Tooltip title={`Mensaje del canal: ${msg.channelPhone}`}>
+                              <span style={{ fontSize: '0.6rem', color: '#00a884', fontWeight: 'bold' }}>
+                                #{msg.channelPhone.substring(0, 3)}
+                              </span>
+                            </Tooltip>
+                          )}
+                          <span>
+                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                           {msg.isFromMe && (
-                            <span style={{ marginLeft: '4px' }}>
+                            <span>
                               {msg.status === 'read' ? (
                                 <DoneAllIcon sx={{ fontSize: '14px', color: '#34b7f1' }} />
                               ) : msg.status === 'delivered' ? (
