@@ -11,6 +11,9 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import WinsapDashboard from './pages/WinsapDashboard';
 import Login from './pages/Login'; // 🆕 Email/password login
 import Register from './pages/Register'; // 🆕 Registration page
+import ForgotPassword from './pages/ForgotPassword'; // 🆕 Password recovery
+import ResetPassword from './pages/ResetPassword'; // 🆕 Reset password
+import AccountActivation from './pages/AccountActivation'; // 🆕 Account activation
 import LandingPage from './components/LandingPageComplete'; // 🆕 Complete landing with services/pricing
 import AdminLogin from './pages/admin/AdminLogin';
 // import AdminDashboard from './pages/admin/AdminDashboard'; // Removed as per request
@@ -102,6 +105,19 @@ const AppContent: React.FC<{
             <Register />
           )
         } />
+
+        {/* 🆕 Ruta de recuperación de contraseña */}
+        <Route path="/forgot-password" element={
+          (sessionId || (token && user)) ? (
+            <Navigate to="/dashboard" replace />
+          ) : (
+            <ForgotPassword />
+          )
+        } />
+
+        {/* 🆕 Ruta de restablecimiento de contraseña */}
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
+        <Route path="/activate/:token" element={<AccountActivation />} />
 
         {/* Dashboard - Requiere sessionId para todos */}
         <Route path="/admin/agents" element={
