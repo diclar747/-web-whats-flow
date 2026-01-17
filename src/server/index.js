@@ -13188,12 +13188,12 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
         finalQueryParams.push(...queryParams);
 
         // 🔧 SIMPLIFICADO: Consulta directa sin JOINs para evitar duplicados
-        let query = `SELECT DISTINCT 
+        let query = `SELECT 
             m.id,
             m.session_id,
             m.chat_jid,
-            COALESCE(c.notify_name, c.name, SUBSTRING_INDEX(m.chat_jid, '@', 1)) as chat_name,
-            c.avatar_url as chat_avatar,
+            MAX(COALESCE(c.notify_name, c.name, SUBSTRING_INDEX(m.chat_jid, '@', 1))) as chat_name,
+            MAX(c.avatar_url) as chat_avatar,
             m.sender_jid,
             SUBSTRING_INDEX(m.sender_jid, '@', 1) as sender_name,
             m.from_me,
@@ -13234,7 +13234,7 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
             finalQueryParams.push(filterStatus);
         }
 
-        query += ' ORDER BY m.timestamp DESC';
+        query += ' GROUP BY m.id ORDER BY m.timestamp DESC';
 
         // Crear query de conteo reemplazando el SELECT
         const countQuery = query.replace(/SELECT[\s\S]+?FROM/, 'SELECT COUNT(DISTINCT m.id) as total FROM');
