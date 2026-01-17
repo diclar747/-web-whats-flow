@@ -7,7 +7,8 @@ import {
   Dialog,
   DialogContent,
   Tooltip,
-  Skeleton
+  Skeleton,
+  Avatar
 } from '@mui/material';
 import {
   PlayArrow,
@@ -26,27 +27,50 @@ import {
 interface ModernMessageMediaProps {
   type: string;
   mediaUrl?: string;
+  media_url?: string; // Fallback snake_case
   mediaMimeType?: string;
+  media_mime_type?: string; // Fallback snake_case
   message?: string;
   isFromMe: boolean;
   isDarkMode: boolean;
   fileName?: string;
+  senderAvatar?: string; // Nuevo: Avatar del remitente para audios
 }
 
 const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
   type,
-  mediaUrl,
-  mediaMimeType,
+  mediaUrl: propMediaUrl,
+  media_url,
+  mediaMimeType: propMediaMimeType,
+  media_mime_type,
   message,
   isFromMe,
   isDarkMode,
-  fileName
+  fileName,
+  senderAvatar
 }) => {
+  const mediaUrl = propMediaUrl || media_url;
+  const mediaMimeType = propMediaMimeType || media_mime_type;
+
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [showImagePreview, setShowImagePreview] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [audioProgress, setAudioProgress] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const audioRef = React.useRef<HTMLAudioElement>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  // 🐛 DEBUG: Log props recibidos
+  console.log('[ModernMessageMedia] 🔍 Props recibidos:', {
+    type,
+    mediaUrl,
+    mediaMimeType,
+    hasMessage: !!message,
+    isFromMe,
+    fileName
+  });
 
   if (!mediaUrl) {
     console.warn('[ModernMessageMedia] ⚠️ mediaUrl está vacío para tipo:', type);
@@ -67,12 +91,18 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
 
     // Si ya es una URL completa (y no es de WhatsApp), retornarla tal cual
     if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('blob:')) {
+      console.log('[ModernMessageMedia] ✅ URL completa detectada:', url.substring(0, 50) + '...');
       return url;
     }
 
     // Construir URL completa para rutas relativas
     const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
     const fullUrl = url.startsWith('/') ? `${API_BASE}${url}` : `${API_BASE}/${url}`;
+    console.log('[ModernMessageMedia] 🔗 URL procesada:', {
+      original: url,
+      base: API_BASE,
+      final: fullUrl
+    });
     return fullUrl;
   };
 
@@ -307,53 +337,171 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
     );
   }
 
-  // 🎵 AUDIO
+  // 🎵 AUDIO - Diseño SOFISTICADO (WhatsApp Style Premium)
   if (type === 'audio' || type === 'audioMessage' || type === 'ptt') {
-    const isPTT = type === 'ptt';
+    const formatTime = (seconds: number) => {
+      if (isNaN(seconds)) return "0:00";
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      return (h > 0 ? `${h}:` : "") + `${m}:${s < 10 ? "0" : ""}${s}`;
+    };
+
+    const togglePlay = () => {
+      if (audioRef.current) {
+        if (isPlaying) {
+          audioRef.current.pause();
+        } else {
+          audioRef.current.play();
+        }
+        setIsPlaying(!isPlaying);
+      }
+    };
+
+    const handleTimeUpdate = () => {
+      if (audioRef.current) {
+        setCurrentTime(audioRef.current.currentTime);
+        setAudioProgress((audioRef.current.currentTime / audioRef.current.duration) * 100);
+      }
+    };
+
+    const handleLoadedMetadata = () => {
+      if (audioRef.current) {
+        setAudioDuration(audioRef.current.duration);
+        setIsLoading(false);
+      }
+    };
+
     return (
       <Box
         sx={{
-          minWidth: '250px',
+          minWidth: '280px',
           maxWidth: '350px',
-          p: 1.5,
+          p: '10px 14px',
           bgcolor: isFromMe
-            ? (isDarkMode ? 'rgba(0, 168, 132, 0.15)' : 'rgba(0, 168, 132, 0.1)')
-            : (isDarkMode ? 'rgba(42, 57, 66, 0.8)' : 'rgba(0, 0, 0, 0.05)'),
+            ? (isDarkMode ? 'rgba(0, 168, 132, 0.15)' : '#d9fdd3') // Color mensaje WhatsApp Me
+            : (isDarkMode ? '#202c33' : '#ffffff'), // Color mensaje WhatsApp Other
           borderRadius: '12px',
-          border: `1px solid ${isFromMe ? 'rgba(0, 168, 132, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+          boxShadow: '0 1px 1px rgba(0,0,0,0.1)',
           display: 'flex',
           alignItems: 'center',
-          gap: 1
+          gap: 1.5,
+          position: 'relative',
+          overflow: 'hidden'
         }}
       >
-        <Mic sx={{ color: '#00a884', fontSize: 24 }} />
-        <Box sx={{ flex: 1 }}>
-          <audio
-            controls
-            controlsList="nodownload"
-            style={{
-              width: '100%',
-              height: '32px',
-              outline: 'none'
+        {/* Avatar sobre el audio */}
+        <Box sx={{ position: 'relative' }}>
+          <Avatar
+            src={senderAvatar}
+            sx={{
+              width: 48,
+              height: 48,
+              border: isDarkMode ? '1.5px solid #2a3942' : '1.5px solid #f0f2f5',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}
-            onError={(e) => {
-              console.error('[ModernMessageMedia] ❌ Error cargando audio:', {
-                originalUrl: mediaUrl,
-                processedUrl: getMediaUrl(mediaUrl),
-                mimeType: mediaMimeType,
-                error: e
-              });
-              setHasError(true);
-            }}
-          >
-            <source src={getMediaUrl(mediaUrl)} type={mediaMimeType || 'audio/mpeg'} />
-            Tu navegador no soporta audio
-          </audio>
+          />
+          <Box sx={{
+            position: 'absolute',
+            bottom: -2,
+            right: -2,
+            bgcolor: '#00a884',
+            borderRadius: '50%',
+            p: 0.3,
+            display: 'flex',
+            border: `2px solid ${isFromMe ? (isDarkMode ? '#1e293b' : '#d9fdd3') : (isDarkMode ? '#202c33' : '#ffffff')}`
+          }}>
+            <Mic sx={{ color: 'white', fontSize: 12 }} />
+          </Box>
         </Box>
+
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <IconButton
+              size="small"
+              onClick={togglePlay}
+              sx={{
+                padding: 0,
+                color: isDarkMode ? '#8696a0' : '#54656f',
+                '&:hover': { color: '#00a884' }
+              }}
+            >
+              {isPlaying ? <Pause sx={{ fontSize: 32 }} /> : <PlayArrow sx={{ fontSize: 32 }} />}
+            </IconButton>
+
+            {/* Waveform Visualization (Simulada para estética Premium) */}
+            <Box sx={{
+              flex: 1,
+              height: 24,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px',
+              cursor: 'pointer',
+              position: 'relative'
+            }}>
+              {[...Array(24)].map((_, i) => {
+                const isActive = (i / 24) * 100 < audioProgress;
+                return (
+                  <Box
+                    key={i}
+                    sx={{
+                      width: 2.5,
+                      height: `${(Math.sin(i * 0.5) * 10 + 15)}%`,
+                      bgcolor: isActive ? '#00a884' : (isDarkMode ? '#54656f' : '#b6bec3'),
+                      borderRadius: '4px',
+                      transition: 'height 0.2s ease, background-color 0.1s'
+                    }}
+                  />
+                );
+              })}
+
+              {/* Overlay invisible para slider real o interactividad */}
+              <Box
+                sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const x = e.clientX - rect.left;
+                  const pct = x / rect.width;
+                  if (audioRef.current) {
+                    audioRef.current.currentTime = audioRef.current.duration * pct;
+                  }
+                }}
+              />
+            </Box>
+          </Box>
+
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="caption" sx={{ color: isDarkMode ? '#8696a0' : '#667781', fontSize: '0.7rem' }}>
+              {isPlaying ? formatTime(currentTime) : (audioDuration ? formatTime(audioDuration) : "0:00")}
+            </Typography>
+            {isFromMe && (
+              <Box sx={{ display: 'flex', alignItems: 'center', opacity: 0.6 }}>
+                {/* Aquí podrías poner el check de visto pero viene de fuera */}
+              </Box>
+            )}
+          </Box>
+        </Box>
+
+        <audio
+          ref={audioRef}
+          onTimeUpdate={handleTimeUpdate}
+          onLoadedMetadata={handleLoadedMetadata}
+          onEnded={() => setIsPlaying(false)}
+          onError={(e) => setHasError(true)}
+          style={{ display: 'none' }}
+        >
+          <source src={getMediaUrl(mediaUrl)} type={mediaMimeType || 'audio/mpeg'} />
+          {mediaMimeType?.includes('ogg') && (
+            <source src={getMediaUrl(mediaUrl)} type="audio/ogg; codecs=opus" />
+          )}
+        </audio>
+
         {hasError && (
-          <Typography variant="caption" color="error">
-            Error al cargar audio
-          </Typography>
+          <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Typography variant="caption" color="error" sx={{ bgcolor: 'white', px: 1, borderRadius: 1 }}>
+              Error cargando audio
+            </Typography>
+          </Box>
         )}
       </Box>
     );
