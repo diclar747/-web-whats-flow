@@ -16,6 +16,25 @@ const chatbotInteractions = new Map();
 const chatbotFlows = new Map();
 const chatbotSettings = new Map();
 
+// Función para resolver el ID de usuario real si se proporciona un teléfono o session_id string
+async function resolveUserId(identifier, connection) {
+  if (!identifier) return null;
+
+  // Si ya es un ID numérico pequeño (< 1000000), es probable que sea el user_id
+  if (/^\d+$/.test(identifier) && parseInt(identifier) < 1000000) {
+    return identifier;
+  }
+
+  // Buscar en users por phone o admin_phone o session_id
+  const [userResult] = await connection.query(
+    'SELECT id FROM users WHERE phone = ? OR admin_phone = ? OR session_id = ? LIMIT 1',
+    [identifier, identifier, identifier]
+  );
+  if (userResult.length > 0) return userResult[0].id.toString();
+
+  return identifier; // Fallback
+}
+
 // GET - Obtener flujos de un session desde BD
 router.get('/flows/:sessionId', async (req, res) => {
   try {
@@ -23,14 +42,18 @@ router.get('/flows/:sessionId', async (req, res) => {
     console.log(`[CHATBOT-DEBUG] Recibida petición de flujos para sessionId: '${sessionId}'`);
     const connection = await mysql.createConnection(dbConfig);
 
+    // Resolver el ID de usuario real
+    const resolvedId = await resolveUserId(sessionId, connection);
+    console.log(`[CHATBOT-DEBUG] sessionId original: '${sessionId}', resolvedId: '${resolvedId}'`);
+
     let flows;
-    
-    // Primero intentar con sessionId exacto
+
+    // Primero intentar con resolvedId
     const [exactFlows] = await connection.query(
       'SELECT * FROM chatbot_flows WHERE session_id = ? ORDER BY created_at DESC',
-      [sessionId]
+      [resolvedId]
     );
-    
+
     // Si no hay resultados y sessionId es un número pequeño (ID de usuario), buscar todos los flujos
     // como fallback (esto maneja el caso donde sessionId=1 pero los flujos están guardados con phone IDs)
     if (exactFlows.length === 0 && /^\d+$/.test(sessionId) && parseInt(sessionId) < 100) {
@@ -94,6 +117,10 @@ router.post('/flows/:sessionId', async (req, res) => {
 
     const connection = await mysql.createConnection(dbConfig);
 
+    // Resolver el ID de usuario real para guardar consistentemente
+    const resolvedId = await resolveUserId(sessionId, connection);
+    console.log(`[CHATBOT-SAVE] Guardando flujo para resolvedId: '${resolvedId}' (original: '${sessionId}')`);
+
     // Guardar todos los datos del flujo en flow_data como JSON
     const completeFlowData = {
       name: flowData.name,
@@ -121,7 +148,7 @@ router.post('/flows/:sessionId', async (req, res) => {
         session_id, flow_name, flow_data, is_active
       ) VALUES (?, ?, ?, ?)`,
       [
-        sessionId,
+        resolvedId,
         flowData.name,
         JSON.stringify(completeFlowData),
         flowData.active !== false ? 1 : 0
@@ -167,6 +194,10 @@ router.put('/flows/:sessionId/:flowId', async (req, res) => {
 
     const connection = await mysql.createConnection(dbConfig);
 
+    // Resolver el ID de usuario real
+    const resolvedId = await resolveUserId(sessionId, connection);
+    console.log(`[CHATBOT-UPDATE] Actualizando flujo para resolvedId: '${resolvedId}' (original: '${sessionId}')`);
+
     // Guardar todos los datos del flujo en flow_data como JSON
     const completeFlowData = {
       name: updatedFlow.name,
@@ -190,15 +221,15 @@ router.put('/flows/:sessionId/:flowId', async (req, res) => {
     };
 
     const [result] = await connection.query(
-      `UPDATE chatbot_flows SET 
-        flow_name = ?, flow_data = ?, is_active = ?
-      WHERE id = ? AND session_id = ?`,
+      `UPDATE chatbot_flows 
+       SET session_id = ?, flow_name = ?, flow_data = ?, is_active = ?
+       WHERE id = ?`,
       [
+        resolvedId,
         updatedFlow.name,
         JSON.stringify(completeFlowData),
         updatedFlow.active !== false ? 1 : 0,
-        flowId,
-        sessionId
+        flowId
       ]
     );
 
@@ -222,10 +253,11 @@ router.delete('/flows/:sessionId/:flowId', async (req, res) => {
     const { sessionId, flowId } = req.params;
 
     const connection = await mysql.createConnection(dbConfig);
+    const resolvedId = await resolveUserId(sessionId, connection);
 
     await connection.query(
       'DELETE FROM chatbot_flows WHERE id = ? AND session_id = ?',
-      [flowId, sessionId]
+      [flowId, resolvedId]
     );
 
     await connection.end();
@@ -246,15 +278,16 @@ router.patch('/flows/:sessionId/:flowId/toggle', async (req, res) => {
     const { active } = req.body;
 
     const connection = await mysql.createConnection(dbConfig);
+    const resolvedId = await resolveUserId(sessionId, connection);
 
     await connection.query(
       'UPDATE chatbot_flows SET is_active = ? WHERE id = ? AND session_id = ?',
-      [active ? 1 : 0, flowId, sessionId]
+      [active ? 1 : 0, flowId, resolvedId]
     );
 
     const [flows] = await connection.query(
       'SELECT * FROM chatbot_flows WHERE id = ? AND session_id = ?',
-      [flowId, sessionId]
+      [flowId, resolvedId]
     );
 
     await connection.end();
@@ -294,14 +327,15 @@ router.get('/settings/:sessionId', async (req, res) => {
 
     // Intentar obtener desde BD primero
     const connection = await mysql.createConnection(dbConfig);
+    const resolvedId = await resolveUserId(sessionId, connection);
     let rows;
-    
-    // Primero intentar con sessionId exacto
+
+    // Primero intentar con resolvedId
     const [exactRows] = await connection.query(
       'SELECT * FROM chatbot_settings WHERE session_id = ?',
-      [sessionId]
+      [resolvedId]
     );
-    
+
     // Si no hay resultados y sessionId es un número pequeño, buscar cualquier configuración como fallback
     if (exactRows.length === 0 && /^\d+$/.test(sessionId) && parseInt(sessionId) < 100) {
       console.log(`[CHATBOT-DEBUG] No se encontró configuración para sessionId='${sessionId}', usando primera disponible...`);
@@ -312,7 +346,7 @@ router.get('/settings/:sessionId', async (req, res) => {
     } else {
       rows = exactRows;
     }
-    
+
     await connection.end();
 
     let settings;
@@ -378,11 +412,12 @@ router.put('/settings/:sessionId', async (req, res) => {
     const settings = req.body;
 
     const connection = await mysql.createConnection(dbConfig);
+    const resolvedId = await resolveUserId(sessionId, connection); // Added resolvedId
 
     // Verificar si existe configuración
     const [existing] = await connection.query(
       'SELECT id FROM chatbot_settings WHERE session_id = ?',
-      [sessionId]
+      [resolvedId] // Changed to resolvedId
     );
 
     const aiConfig = settings.aiConfig || {};
@@ -423,7 +458,7 @@ router.put('/settings/:sessionId', async (req, res) => {
           aiConfig.scrapedContent || '',
           aiConfig.temperature || 0.7,
           aiConfig.maxTokens || 500,
-          sessionId
+          resolvedId // Changed to resolvedId
         ]
       );
     } else {
@@ -436,7 +471,7 @@ router.put('/settings/:sessionId', async (req, res) => {
           ai_website_url, ai_scraped_content, ai_temperature, ai_max_tokens
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          sessionId,
+          resolvedId, // Changed to resolvedId
           settings.enabled ? 1 : 0,
           settings.workingHours?.enabled ? 1 : 0,
           settings.workingHours?.start || '09:00',
@@ -802,11 +837,12 @@ router.get('/analytics/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const connection = await mysql.createConnection(dbConfig);
+    const resolvedId = await resolveUserId(sessionId, connection); // Added resolvedId
 
     // Obtener configuración del chatbot
     const [settings] = await connection.query(
       'SELECT enabled FROM chatbot_settings WHERE session_id = ?',
-      [sessionId]
+      [resolvedId] // Changed to resolvedId
     );
 
     const chatbotEnabled = settings.length > 0 ? Boolean(settings[0].enabled) : false;

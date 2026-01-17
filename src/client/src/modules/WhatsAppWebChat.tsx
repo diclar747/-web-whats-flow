@@ -1357,8 +1357,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       // 🟢 MANEJO DE ESTADOS (STATUS)
       const isStatus = chat.id === 'status@broadcast' || chat.id.includes('status@broadcast') || chat.name === 'status';
 
-      // Si estamos en la pestaña Estados (5), SOLO mostrar estados
-      if (filterTab === 5) {
+      // Si estamos en la pestaña Estados (4), SOLO mostrar estados
+      if (filterTab === 4) {
         return isStatus;
       }
 
@@ -1388,10 +1388,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         // Sin Leer: Chats con mensajes pendientes (Mixto: Grupos o Chats, pero NO estados)
         return !isStatus && chat.unreadCount && chat.unreadCount > 0;
       }
-      if (filterTab === 4) {
-        // Grupos: SOLO grupos (NO estados)
-        return chat.isGroup === true && !isStatus;
-      }
+      // NOTA: filterTab === 4 es ahora ESTADOS, no Grupos.
+
 
       return true;
     });
@@ -1722,7 +1720,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         )}
 
         {/* Lista de chats - Mostrar solo avatares si está colapsado */}
-        {filterTab === 5 ? (
+        {filterTab === 4 ? (
           <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
             <StatusList sessionId={sessionId} />
           </Box>
