@@ -521,7 +521,64 @@ router.get('/my-subscription', async (req, res) => {
         isUserSuperAdmin = !!userRows[0].is_super_admin;
       }
 
-      // 2. Buscar en user_sessions (Clientes/Líneas)
+      // 🔧 CAMBIO DE ORDEN: Buscar primero en users (administradores con planes asignados)
+      // Esto evita que al conectar un número, se sobrescriba el plan con el registro vacío de user_sessions
+
+      // 1. Buscar en users (Administradores/Agentes con plan_id o subscription_plan)
+      const [users] = await connection.query(`
+        SELECT *, DATEDIFF(subscription_end_date, NOW()) as days_remaining FROM users WHERE phone = ? OR email = ? LIMIT 1
+      `, [effectiveIdentifier, effectiveIdentifier]);
+
+      if (users.length > 0) {
+        const user = users[0];
+
+        // 🔧 FIX: Buscar plan por subscription_plan (nombre) primero, luego por plan_id
+        let planDetails = [];
+
+        if (user.subscription_plan) {
+          // Intentar buscar por nombre del plan
+          [planDetails] = await connection.query(
+            'SELECT id, name as plan_name, name as plan_display_name, price, max_agents, max_messages, max_channels, bot_enabled, api_enabled FROM plans WHERE name = ?',
+            [user.subscription_plan]
+          );
+        }
+
+        // Si no se encontró por nombre y existe plan_id, buscar por ID
+        if (planDetails.length === 0 && user.plan_id) {
+          [planDetails] = await connection.query(
+            'SELECT id, name as plan_name, name as plan_display_name, price, max_agents, max_messages, max_channels, bot_enabled, api_enabled FROM plans WHERE id = ?',
+            [user.plan_id]
+          );
+        }
+
+        const plan = planDetails.length > 0 ? planDetails[0] : null;
+
+        return res.json({
+          success: true,
+          subscription: {
+            phone: user.phone,
+            subscription_plan: plan ? plan.plan_name : user.subscription_plan,
+            subscription_status: user.subscription_status || 'inactive', // ✅ Usar el estado real de la BD
+            subscription_start_date: user.subscription_start_date,
+            subscription_end_date: user.subscription_end_date,
+            days_remaining: user.days_remaining > 0 ? user.days_remaining : 0,
+            plan_details: plan ? {
+              ...plan,
+              price: Number(plan.price),
+              max_users: plan.max_agents || 0,
+              max_messages_per_month: plan.max_messages || 0,
+              max_channels: plan.max_channels || 1,
+              messages_sent_this_month: 0,
+              max_campaigns: 100,
+              max_contacts: 10000,
+              bot_enabled: !!plan.bot_enabled,
+              api_enabled: !!plan.api_enabled
+            } : null
+          }
+        });
+      }
+
+      // 2. Si NO está en users, buscar en user_sessions (Clientes/Líneas conectadas)
       const [userSessions] = await connection.query(`
         SELECT * FROM user_sessions 
         WHERE (phone = ? OR session_id = ? OR owner_phone_number = ? OR email = ?) 
@@ -548,7 +605,6 @@ router.get('/my-subscription', async (req, res) => {
                 plan_display_name: 'Plan Administrador',
                 max_users: 999999,
                 max_messages_per_month: 999999,
-                messages_sent_this_month: session.messages_sent_this_month || 0,
                 max_channels: 999999,
                 bot_enabled: true,
                 api_enabled: true
@@ -597,49 +653,7 @@ router.get('/my-subscription', async (req, res) => {
         });
       }
 
-      // 3. Si no está en user_sessions, buscar en users (Agentes o Usuarios con plan_id)
-      const [users] = await connection.query(`
-        SELECT *, DATEDIFF(subscription_end_date, NOW()) as days_remaining FROM users WHERE phone = ? OR email = ? LIMIT 1
-      `, [effectiveIdentifier, effectiveIdentifier]);
-
-      if (users.length > 0) {
-        const user = users[0];
-
-        // 🔧 FIX: Usar plan_id en lugar subscription_plan (que no existe en users)
-        const [planDetails] = await connection.query(
-          'SELECT id, name as plan_name, name as plan_display_name, price, max_agents, max_messages, max_channels, bot_enabled, api_enabled FROM plans WHERE id = ?',
-          [user.plan_id]
-        );
-
-        const plan = planDetails.length > 0 ? planDetails[0] : null;
-
-        return res.json({
-          success: true,
-          subscription: {
-            phone: user.phone,
-            subscription_plan: plan ? plan.plan_name : null,
-            subscription_status: 'active', // Si está en users y tiene plan, asumimos activo
-            subscription_start_date: user.subscription_start_date,
-            subscription_end_date: user.subscription_end_date,
-            days_remaining: user.days_remaining > 0 ? user.days_remaining : 0,
-            plan_details: plan ? {
-              ...plan,
-              price: Number(plan.price),
-              max_users: plan.max_agents || 0,
-              max_messages_per_month: plan.max_messages || 0,
-              max_channels: plan.max_channels || 1, // ✅ Ahora incluye el max_channels correcto
-              messages_sent_this_month: 0,
-              max_campaigns: 100,
-              max_contacts: 10000,
-              bot_enabled: !!plan.bot_enabled,
-              api_enabled: !!plan.api_enabled
-            } : null
-          }
-        });
-
-      }
-
-      // 4. No encontrado
+      // 3. No encontrado en ninguna tabla
       res.json({ success: true, subscription: null });
 
     } finally {
