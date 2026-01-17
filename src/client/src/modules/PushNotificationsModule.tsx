@@ -26,24 +26,30 @@ const StyledConfirmDialog: React.FC<{
     onClose: () => void;
     onConfirm: () => void;
     loading?: boolean;
-}> = ({ open, title, message, onClose, onConfirm, loading }) => (
+    confirmText?: string;
+    confirmColor?: 'error' | 'primary' | 'success' | 'warning';
+}> = ({ open, title, message, onClose, onConfirm, loading, confirmText = 'Eliminar', confirmColor = 'error' }) => (
     <Dialog open={open} onClose={onClose} TransitionComponent={Zoom} maxWidth="xs" fullWidth
         PaperProps={{
             sx: { borderRadius: 3, p: 1, bgcolor: 'background.paper', backgroundImage: 'none' }
         }}
     >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'error.main' }}>
-            <Warning color="error" /> {title}
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, color: `${confirmColor}.main` }}>
+            <Warning color={confirmColor} /> {title}
         </DialogTitle>
         <DialogContent>
             <Typography variant="body1">{message}</Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
             <Button onClick={onClose} disabled={loading} sx={{ borderRadius: 2 }}>Cancelar</Button>
-            <Button onClick={onConfirm} variant="contained" color="error" disabled={loading}
-                sx={{ borderRadius: 2, px: 3, boxShadow: '0 4px 14px 0 rgba(239, 68, 68, 0.39)' }}
+            <Button onClick={onConfirm} variant="contained" color={confirmColor} disabled={loading}
+                sx={{
+                    borderRadius: 2, px: 3,
+                    boxShadow: confirmColor === 'error' ? '0 4px 14px 0 rgba(239, 68, 68, 0.39)' :
+                        confirmColor === 'primary' ? '0 4px 14px 0 rgba(59, 130, 246, 0.39)' : 'none'
+                }}
             >
-                {loading ? <CircularProgress size={24} /> : 'Eliminar'}
+                {loading ? <CircularProgress size={24} /> : confirmText}
             </Button>
         </DialogActions>
     </Dialog>
@@ -70,6 +76,11 @@ const PushNotificationsModule: React.FC = () => {
     // Deletion Modal
     const [confirmDelete, setConfirmDelete] = useState<{ open: boolean, type: 'category' | 'url' | 'campaign', id: number | null }>({
         open: false, type: 'category', id: null
+    });
+
+    // Confirmation for campaign resend
+    const [confirmResend, setConfirmResend] = useState<{ open: boolean, id: number | null }>({
+        open: false, id: null
     });
 
     // Forms
@@ -202,12 +213,15 @@ const PushNotificationsModule: React.FC = () => {
         }
     };
 
-    const handleResendCampaign = async (id: number) => {
+    const handleResendCampaign = async () => {
+        if (!confirmResend.id) return;
+
         try {
             setLoading(true);
-            await axios.post(`/api/push/campaigns/${id}/resend`, {}, getAuthHeaders());
-            setSnackbar({ open: true, message: 'Campaña reenviada con éxito', severity: 'success' });
+            await axios.post(`/api/push/campaigns/${confirmResend.id}/resend`, {}, getAuthHeaders());
+            setSnackbar({ open: true, message: '✅ Campaña reenviada con éxito', severity: 'success' });
             loadCampaigns();
+            setConfirmResend({ open: false, id: null });
         } catch (error: any) {
             setSnackbar({ open: true, message: 'Error al reenviar la campaña', severity: 'error' });
         } finally {
@@ -812,7 +826,7 @@ const PushNotificationsModule: React.FC = () => {
                                                                 size="small"
                                                                 variant="contained"
                                                                 startIcon={<Refresh sx={{ fontSize: 16 }} />}
-                                                                onClick={() => handleResendCampaign(camp.id)}
+                                                                onClick={() => setConfirmResend({ open: true, id: camp.id })}
                                                                 sx={{
                                                                     borderRadius: 2, fontSize: 11, px: 2, py: 0.5,
                                                                     bgcolor: 'rgba(255,255,255,0.05)', color: 'white', fontWeight: 600, textTransform: 'none',
@@ -1348,6 +1362,17 @@ const PushNotificationsModule: React.FC = () => {
                 message={`Esta acción no se puede deshacer. Se eliminará permanentemente esta ${confirmDelete.type === 'category' ? 'categoría' : (confirmDelete.type === 'url' ? 'URL de suscripción' : 'campaña')}.`}
                 onClose={() => setConfirmDelete({ open: false, type: 'category', id: null })}
                 onConfirm={executeDeletion}
+            />
+
+            {/* CONFIRM RESEND DIALOG */}
+            <StyledConfirmDialog
+                open={confirmResend.open}
+                title="🔄 ¿Reenviar Campaña?"
+                message="Esta acción reenviará la campaña a todos los suscriptores nuevamente. ¿Deseas continuar?"
+                onClose={() => setConfirmResend({ open: false, id: null })}
+                onConfirm={handleResendCampaign}
+                confirmText="Reenviar"
+                confirmColor="primary"
             />
 
             <Snackbar

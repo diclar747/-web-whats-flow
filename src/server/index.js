@@ -2802,6 +2802,8 @@ async function saveMessageToDB(sessionId, msg) {
             const shouldIncrementUnread = (!from_me && !is_read) ? 1 : 0;
             const unreadIncrement = shouldIncrementUnread;
 
+            // ❌ DESHABILITADO - Ya no usamos tabla chats, consultamos directo desde messages
+            /*
             await connection.execute(
                 `INSERT INTO chats (jid, session_id, phone, name, unread_count, last_message_time, last_message_content, last_message_status, last_message_from_me, is_group, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
@@ -2828,6 +2830,8 @@ async function saveMessageToDB(sessionId, msg) {
                 ]
             );
             console.log(`[DB-CHAT] ✅ Chat updated: ${chat_jid}`);
+            */
+            console.log(`[DB-MSG] ℹ️ Tabla chats deshabilitada - consultamos directo desde messages`);
         } catch (chatErr) {
             console.error(`[DB-CHAT] ❌ Error updating chat ${chat_jid}:`, chatErr.message);
         }
@@ -3096,7 +3100,7 @@ async function getUserPhoneNumber(sessionId) {
             try {
                 // Buscar por phone / session_id / owner_phone_number
                 const [phoneRows] = await connection.execute(
-                    'SELECT owner_phone_number as phone, session_id FROM user_sessions WHERE owner_phone_number = ? OR session_id = ? ORDER BY updated_at DESC LIMIT 1',
+                    'SELECT phone, session_id FROM user_sessions WHERE owner_phone_number = ? OR session_id = ? ORDER BY updated_at DESC LIMIT 1',
                     [sessionId, sessionId]
                 );
                 if (phoneRows.length > 0) {
@@ -12757,182 +12761,153 @@ app.post('/api/force-sync/:sessionId', authenticateToken, validateSessionBelongs
 // Obtener chats/contactos
 app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser, async (req, res) => {
     const { sessionId } = req.params;
-    // 🔧 CAMBIO: Default 7 días (no 24h) y NO incluir grupos
-    const { dateFilter = '7days', limit = 100, offset = 0 } = req.query;
+    const { dateFilter = 'all', limit = 25, offset = 0 } = req.query;
     const parsedLimit = parseInt(limit);
     const parsedOffset = parseInt(offset);
-    // ❌ GRUPOS DESHABILITADOS - Solo chats individuales
-    const includeGroups = false;
-    const phoneNumber = await getUserPhoneNumber(sessionId);
-    console.log(`[API-CHATS] ============================================`);
-    console.log(`[API-CHATS] 🔍 INICIANDO CARGA DE CHATS`);
-    console.log(`[API-CHATS] sessionId recibido: "${sessionId}"`);
-    console.log(`[API-CHATS] phoneNumber obtenido: "${phoneNumber}"`);
-    console.log(`[API-CHATS] dateFilter: "${dateFilter}"`);
-    console.log(`[API-CHATS] limit: ${parsedLimit}, offset: ${parsedOffset}`);
-    console.log(`[API-CHATS] ============================================`);
-    const session = sessions.get(sessionId) || (phoneNumber ? sessions.get(phoneNumber) : undefined);
 
-    // No bloquear la UI si no hay conexión: intentar cargar desde DB igualmente
+    const phoneNumber = await getUserPhoneNumber(sessionId);
+    const ownerSessionId = await getOwnerSessionId(phoneNumber);
+
+    console.log(`[API-CHATS-OPTIMIZED] ============================================`);
+    console.log(`[API-CHATS-OPTIMIZED] 🚀 CONSULTA DIRECTA DESDE MESSAGES (SIN FILTRO DE TIEMPO)`);
+    console.log(`[API-CHATS-OPTIMIZED] sessionId: "${sessionId}"`);
+    console.log(`[API-CHATS-OPTIMIZED] phoneNumber: "${phoneNumber}"`);
+    console.log(`[API-CHATS-OPTIMIZED] ownerSessionId: "${ownerSessionId}"`);
+    console.log(`[API-CHATS-OPTIMIZED] dateFilter: "${dateFilter}" (IGNORADO - CARGA TODO)`);
+    console.log(`[API-CHATS-OPTIMIZED] limit: ${parsedLimit}, offset: ${parsedOffset}`);
+    console.log(`[API-CHATS-OPTIMIZED] ============================================`);
+
+    const session = sessions.get(sessionId) || (phoneNumber ? sessions.get(phoneNumber) : undefined);
     const isConnected = !!(session && session.isConnected);
 
     try {
-        console.log(`[API][${sessionId}] 📅 Solicitud de chats con filtro: ${dateFilter}, includeGroups: ${includeGroups}`);
-
-        let chats = [];
-        let source = 'database';
-
-        // ⚡ PRIORIDAD 1: SIEMPRE cargar desde DB primero (es mucho más rápido)
-        console.log(`[API][${sessionId}] 🚀 Cargando chats desde BD(paginado: limit ${parsedLimit}, offset ${parsedOffset})...`);
         const startTime = Date.now();
-        chats = await loadChatListFromDB(sessionId, includeGroups, dateFilter, parsedLimit, parsedOffset);
-        const dbLoadTime = Date.now() - startTime;
-        console.log(`[API][${sessionId}] ✅ ${chats.length} chats cargados desde BD en ${dbLoadTime} ms`);
 
-        // 🚫 FILTRO ADICIONAL - Excluir el número propio del resultado
-        const beforeFilter = chats.length;
-        chats = chats.filter(chat => {
-            const chatPhoneOnly = chat.id ? chat.id.split('@')[0] : '';
-            const isOwn = chatPhoneOnly === phoneNumber;
-            if (isOwn) {
-                console.log(`[API][${sessionId}] 🚫 REMOVIENDO NÚMERO PROPIO: ${chat.id} (phoneNumber: ${phoneNumber})`);
+        // 🔥 CONSULTA DIRECTA DESDE MESSAGES - TIEMPO REAL (SIN FILTRO DE TIEMPO)
+        // Agrupa por chat_jid y obtiene el último mensaje de cada conversación
+        const [chats] = await pool.query(`
+            SELECT 
+                m.chat_jid as id,
+                MAX(m.timestamp) as last_message_time,
+                (SELECT m2.text_content 
+                 FROM messages m2 
+                 WHERE m2.chat_jid = m.chat_jid 
+                   AND m2.session_id = ?
+                   AND m2.phone = ?
+                 ORDER BY m2.timestamp DESC 
+                 LIMIT 1) as last_message_content,
+                (SELECT m2.from_me 
+                 FROM messages m2 
+                 WHERE m2.chat_jid = m.chat_jid 
+                   AND m2.session_id = ?
+                   AND m2.phone = ?
+                 ORDER BY m2.timestamp DESC 
+                 LIMIT 1) as last_message_from_me,
+                (SELECT m2.status 
+                 FROM messages m2 
+                 WHERE m2.chat_jid = m.chat_jid 
+                   AND m2.session_id = ?
+                   AND m2.phone = ?
+                 ORDER BY m2.timestamp DESC 
+                 LIMIT 1) as last_message_status,
+                (SELECT m2.message_type 
+                 FROM messages m2 
+                 WHERE m2.chat_jid = m.chat_jid 
+                   AND m2.session_id = ?
+                   AND m2.phone = ?
+                 ORDER BY m2.timestamp DESC 
+                 LIMIT 1) as last_message_type,
+                SUM(CASE WHEN NOT m.from_me AND NOT m.is_read THEN 1 ELSE 0 END) as unread_count,
+                (SELECT c.name 
+                 FROM contacts c 
+                 WHERE c.jid = m.chat_jid 
+                   AND c.session_id = ?
+                 LIMIT 1) as contact_name,
+                (SELECT c.avatar_url 
+                 FROM contacts c 
+                 WHERE c.jid = m.chat_jid 
+                   AND c.session_id = ?
+                 LIMIT 1) as avatar_url
+            FROM messages m
+            WHERE m.session_id = ?
+              AND m.phone = ?
+              AND m.chat_jid NOT LIKE '%@g.us'
+              AND m.chat_jid NOT LIKE '%status@broadcast%'
+              AND m.chat_jid NOT LIKE CONCAT(?, '@%')
+            GROUP BY m.chat_jid
+            ORDER BY last_message_time DESC
+            LIMIT ? OFFSET ?
+        `, [
+            ownerSessionId, phoneNumber,  // last_message_content
+            ownerSessionId, phoneNumber,  // last_message_from_me
+            ownerSessionId, phoneNumber,  // last_message_status
+            ownerSessionId, phoneNumber,  // last_message_type
+            ownerSessionId,               // contact_name
+            ownerSessionId,               // avatar_url
+            ownerSessionId, phoneNumber,  // WHERE clause
+            phoneNumber,                  // Exclude own number
+            parsedLimit, parsedOffset     // LIMIT OFFSET
+        ]);
+
+        const queryTime = Date.now() - startTime;
+        console.log(`[API-CHATS-OPTIMIZED] ✅ ${chats.length} chats cargados en ${queryTime}ms (DIRECTO DESDE MESSAGES)`);
+
+        // Mapear al formato esperado por el frontend
+        const formattedChats = chats.map(chat => {
+            const phoneOnly = chat.id.split('@')[0];
+            const isGroup = chat.id.includes('@g.us');
+
+            // Determinar el contenido del último mensaje
+            let lastMessage = chat.last_message_content || '';
+            if (!lastMessage && chat.last_message_type) {
+                const typeMap = {
+                    'imageMessage': '📷 Imagen',
+                    'videoMessage': '🎥 Video',
+                    'audioMessage': '🎵 Audio',
+                    'documentMessage': '📄 Documento',
+                    'stickerMessage': '🎨 Sticker',
+                    'contactMessage': '👤 Contacto',
+                    'locationMessage': '📍 Ubicación'
+                };
+                lastMessage = typeMap[chat.last_message_type] || 'Multimedia';
             }
-            return !isOwn;
+
+            return {
+                id: chat.id,
+                name: chat.contact_name || phoneOnly,
+                isGroup: isGroup,
+                lastMessage: lastMessage,
+                timestamp: chat.last_message_time,
+                fromMe: !!chat.last_message_from_me,
+                status: chat.last_message_status || 'sent',
+                unreadCount: parseInt(chat.unread_count) || 0,
+                avatar: chat.avatar_url,
+                isOnline: !isGroup,
+                source: 'messages_realtime'
+            };
         });
-        if (chats.length < beforeFilter) {
-            console.log(`[API][${sessionId}] 🧹 Se removieron ${beforeFilter - chats.length} chats(número propio)`);
-        }
 
-        console.log(`[API][${sessionId}] ✅ RESULTADO FINAL: ${chats.length} chats para devolver al cliente(phoneNumber: "${phoneNumber}")`);
-        if (chats.length > 0) {
-            console.log(`[API][${sessionId}] PRIMER CHAT: ${chats[0].id} `);
-        }
-
-        source = 'database';
-
-        // 🔄 FALLBACK: Solo si la DB está vacía, intentar desde memoria
-        if (chats.length === 0 && session && session.sock && session.sock.store && session.sock.store.chats) {
-            console.log(`[API][${sessionId}] 📦 BD vacía, cargando desde memoria de WhatsApp...`);
-
-            try {
-                let memoryChats = [];
-
-                // Intentar obtener chats del store
-                if (session.sock.store.chats.all) {
-                    memoryChats = session.sock.store.chats.all();
-                } else if (session.sock.store.chats.values) {
-                    memoryChats = Array.from(session.sock.store.chats.values());
-                } else {
-                    memoryChats = Array.from(session.sock.store.chats || []);
-                }
-
-                console.log(`[API][${sessionId}] 📱 Chats en memoria: ${memoryChats.length} `);
-
-                // Filtrar y mapear chats
-                chats = memoryChats
-                    .filter(chat => {
-                        if (!chat || !chat.id) return false;
-                        // Filtrar grupos si includeGroups es false
-                        if (!includeGroups && chat.id.includes('@g.us')) return false;
-                        // Filtrar status broadcasts
-                        if (chat.id.includes('status@broadcast')) return false;
-                        // 🚫 EXCLUIR PROPIO NÚMERO
-                        const chatPhoneOnly = chat.id.split('@')[0];
-                        if (chatPhoneOnly === phoneNumber) {
-                            console.log(`[API][${sessionId}] 🚫 Excluyendo propio número: ${phoneNumber} `);
-                            return false;
-                        }
-                        return true;
-                    })
-                    .map(chat => {
-                        const normalizedId = normalizeJid(chat.id);
-                        const phoneOnly = normalizedId.split('@')[0];
-                        return {
-                            id: normalizedId,
-                            name: chat.name || chat.subject || phoneOnly,
-                            isGroup: chat.id.includes('@g.us'),
-                            lastMessage: chat.lastMessage?.message || 'Sin mensajes',
-                            timestamp: chat.conversationTimestamp ? new Date(chat.conversationTimestamp * 1000).toISOString() : new Date().toISOString(),
-                            fromMe: chat.lastMessage?.key?.fromMe || false,
-                            unreadCount: chat.unreadCount || 0,
-                            avatar: null,
-                            isOnline: !chat.id.includes('@g.us')
-                        };
-                    })
-                    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-
-                source = 'memory';
-                console.log(`[API][${sessionId}] ✅ Devolviendo ${chats.length} chats desde MEMORIA`);
-            } catch (memoryError) {
-                console.error(`[API][${sessionId}] ❌ Error obteniendo chats de memoria: `, memoryError);
-                chats = [];
-            }
-        }
-
-        // 🟢 FIX: FUSIONAR GRUPOS DESDE contact_groups (Siempre)
-        // Como los grupos suelen filtrarse de la tabla chats/messages, los buscamos explícitamente
-        try {
-            console.log(`[API][${sessionId}] 🧩 Buscando grupos en tabla contact_groups para el número: ${phoneNumber}`);
-            const [groups] = await pool.query(
-                `SELECT jid, name, avatar_url, updated_at, created_at FROM contact_groups WHERE session_id = ?`,
-                [phoneNumber] // ✅ USAR phoneNumber (que es el string real) en lugar de sessionId (que puede ser ID de usuario)
-            );
-
-            if (groups.length > 0) {
-                console.log(`[API][${sessionId}] 🧩 Encontrados ${groups.length} grupos en contact_groups`);
-
-                // Mapa de IDs existentes para evitar duplicados
-                const existingIds = new Set(chats.map(c => c.id));
-                let newGroupsAdded = 0;
-
-                groups.forEach(g => {
-                    const normalizedGroupJid = normalizeJid(g.jid);
-
-                    if (!existingIds.has(normalizedGroupJid)) {
-                        chats.push({
-                            id: normalizedGroupJid,
-                            name: g.name || 'Grupo sin nombre',
-                            isGroup: true,
-                            lastMessage: 'Grupo sincronizado',
-                            timestamp: (g.updated_at || g.created_at || new Date()).toISOString(),
-                            fromMe: false,
-                            status: 'read',
-                            unreadCount: 0,
-                            avatar: g.avatar_url,
-                            isOnline: false,
-                            source: 'contact_groups'
-                        });
-                        existingIds.add(normalizedGroupJid);
-                        newGroupsAdded++;
-                    }
-                });
-
-                console.log(`[API][${sessionId}] ✅ Se fusionaron ${newGroupsAdded} grupos nuevos a la lista de chats`);
-
-                // Reordenar por timestamp después de fusionar
-                chats.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-            } else {
-                console.log(`[API][${sessionId}] ⚠️ No se encontraron grupos en contact_groups`);
-            }
-        } catch (groupError) {
-            console.error(`[API][${sessionId}] ❌ Error obteniendo grupos de contact_groups:`, groupError);
+        console.log(`[API-CHATS-OPTIMIZED] ✅ RESULTADO FINAL: ${formattedChats.length} chats para devolver`);
+        if (formattedChats.length > 0) {
+            console.log(`[API-CHATS-OPTIMIZED] PRIMER CHAT: ${formattedChats[0].id} - "${formattedChats[0].lastMessage}"`);
         }
 
         res.json({
             success: true,
             sessionId,
-            chats,
+            chats: formattedChats,
             pagination: {
                 limit: parsedLimit,
                 offset: parsedOffset,
-                count: chats.length,
-                hasMore: chats.length === parsedLimit // Si devolvió el límite completo, probablemente hay más
+                count: formattedChats.length,
+                hasMore: formattedChats.length === parsedLimit
             },
             isConnected,
-            source
+            source: 'messages_realtime',
+            queryTime: `${queryTime}ms`
         });
     } catch (error) {
-        console.error(`[API][${sessionId}] Error cargando chats: `, error);
+        console.error(`[API-CHATS-OPTIMIZED] ❌ Error cargando chats desde messages:`, error);
         res.status(500).json({
             success: false,
             error: 'Error interno del servidor al cargar chats.',
