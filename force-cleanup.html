@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Limpieza de Sesión - Winsap</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 500px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            background: #d4edda;
+            color: #155724;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔄 Actualizando Sistema</h1>
+        <div class="status" id="status">
+            Limpiando datos antiguos...<br>
+            Esto tomará solo un momento.
+        </div>
+    </div>
+
+    <script>
+        // Limpiar TODO
+        localStorage.clear();
+        sessionStorage.clear();
+
+        // Limpiar cookies
+        document.cookie.split(";").forEach(function (c) {
+            document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+        });
+
+        // Limpiar IndexedDB
+        if (window.indexedDB) {
+            indexedDB.databases().then(dbs => {
+                dbs.forEach(db => indexedDB.deleteDatabase(db.name));
+            }).catch(() => { });
+        }
+
+        // Mostrar mensaje y redirigir
+        document.getElementById('status').innerHTML = '✅ Limpieza completada.<br>Redirigiendo al login...';
+
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 1500);
+    </script>
+</body>
+
+</html>

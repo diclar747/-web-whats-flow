@@ -1371,12 +1371,13 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
 
                                   {/* 🆕 Componente moderno para renderizar medios */}
                                   <ModernMessageMedia
-                                    type={msg.type === 'audio' ? 'audioMessage' : msg.type} // Normalizar audio
-                                    mediaUrl={msg.mediaUrl || (msg as any).media_url} // Soporte para ambas llaves
-                                    mediaMimeType={msg.mediaMimeType || (msg as any).media_mime_type}
-                                    message={msg.message || (msg as any).text_content}
+                                    type={msg.type}
+                                    mediaUrl={msg.mediaUrl}
+                                    mediaMimeType={msg.mediaMimeType}
+                                    message={msg.message}
                                     isFromMe={msg.isFromMe}
                                     isDarkMode={isDarkMode}
+                                    senderAvatar={getContactAvatar(msg) || undefined}
                                   />
 
                                   {/* 🆕 Acciones modernas del mensaje (responder, reenviar, reaccionar, etc.) */}

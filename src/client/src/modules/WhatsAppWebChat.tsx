@@ -2311,203 +2311,17 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                           </Box>
                         )}
 
-                        {/* Contenido según tipo */}
-                        {(() => {
-                          // Debug log
-                          if (msg.mediaUrl) {
-                            console.log(`[CHAT-DEBUG] Mensaje ID: ${msg.id}, Tipo: ${msg.type}, mediaUrl: ${msg.mediaUrl}, mediaMimeType: ${msg.mediaMimeType}`);
-                          }
-                          return null;
-                        })()}
-
-                        {msg.type === 'image' && msg.mediaUrl ? (
-                          <Box sx={{ mb: 1 }}>
-                            <Box
-                              sx={{
-                                maxWidth: '300px',
-                                maxHeight: '300px',
-                                borderRadius: '8px',
-                                overflow: 'hidden',
-                                cursor: 'pointer',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                                transition: 'transform 0.2s ease-in-out',
-                                '&:hover': {
-                                  transform: 'scale(1.02)',
-                                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-                                }
-                              }}
-                              onClick={() => handleImageClick(msg.mediaUrl!)}
-                            >
-                              <img
-                                src={getMediaUrl(msg.mediaUrl)}
-                                alt="Imagen"
-                                loading="lazy"
-                                style={{
-                                  maxWidth: '100%',
-                                  maxHeight: '300px',
-                                  display: 'block',
-                                  objectFit: 'cover'
-                                }}
-                                onError={(e) => {
-                                  console.error('Error cargando imagen. URL original:', msg.mediaUrl, 'URL procesada:', getMediaUrl(msg.mediaUrl));
-                                  e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="300"%3E%3Crect width="300" height="300" fill="%23f0f0f0"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999"%3EImagen no disponible%3C/text%3E%3C/svg%3E';
-                                }}
-                              />
-                            </Box>
-                          </Box>
-                        ) : msg.type === 'video' && msg.mediaUrl ? (
-                          <Box sx={{ mb: 1 }}>
-                            <video
-                              controls
-                              style={{
-                                maxWidth: '300px',
-                                maxHeight: '300px',
-                                borderRadius: '8px',
-                                display: 'block',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                              }}
-                              onError={(e) => {
-                                console.error('Error cargando video:', msg.mediaUrl);
-                              }}
-                            >
-                              <source src={getMediaUrl(msg.mediaUrl)} type={msg.mediaMimeType || 'video/mp4'} />
-                              Tu navegador no soporta la reproducción de videos.
-                            </video>
-                          </Box>
-                        ) : msg.type === 'audio' && msg.mediaUrl ? (
-                          <Box sx={{ mb: 1 }}>
-                            <Box sx={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 1.5,
-                              backgroundColor: msg.isFromMe ? 'rgba(0,0,0,0.05)' : 'rgba(0,0,0,0.05)',
-                              p: 1.5,
-                              borderRadius: 2,
-                              minWidth: 250,
-                              boxShadow: '0 1px 2px rgba(0,0,0,0.1)'
-                            }}>
-                              <Avatar
-                                src={getAvatarUrlForJid(getSenderJidForMessage(msg) || '')}
-                                sx={{ width: 32, height: 32 }}
-                              >
-                                {(activeChat?.name || (getSenderJidForMessage(msg) || 'U').split('@')[0]).charAt(0).toUpperCase()}
-                              </Avatar>
-                              <IconButton
-                                size="small"
-                                onClick={() => handlePlayAudio(msg.id, msg.mediaUrl!)}
-                                sx={{
-                                  width: 36,
-                                  height: 36,
-                                  bgcolor: colors.primary,
-                                  color: 'white',
-                                  '&:hover': {
-                                    bgcolor: '#008069'
-                                  }
-                                }}
-                              >
-                                {playingAudio === msg.id ? (
-                                  <Box sx={{ width: 12, height: 12, bgcolor: 'white', borderRadius: '2px' }} />
-                                ) : (
-                                  <PlayArrow sx={{ fontSize: 20 }} />
-                                )}
-                              </IconButton>
-                              <Box sx={{ flex: 1 }}>
-                                <Box sx={{ height: 28, display: 'flex', alignItems: 'center', gap: 0.3 }}>
-                                  {[...Array(40)].map((_, i) => (
-                                    <Box
-                                      key={i}
-                                      sx={{
-                                        width: 2,
-                                        height: Math.random() * 20 + 8,
-                                        bgcolor: playingAudio === msg.id ? colors.primary : colors.textSecondary,
-                                        opacity: playingAudio === msg.id ? 0.8 : 0.5,
-                                        borderRadius: 1,
-                                        transition: 'all 0.2s ease'
-                                      }}
-                                    />
-                                  ))}
-                                </Box>
-                              </Box>
-                              <Typography variant="caption" sx={{ color: colors.textSecondary, minWidth: 35, fontSize: '0.75rem', fontWeight: 500 }}>
-                                {playingAudio === msg.id ? '▶ ' : ''}
-                                <audio
-                                  ref={(el) => {
-                                    if (el && !audioRefs.current[msg.id]) {
-                                      audioRefs.current[msg.id] = el;
-                                    }
-                                  }}
-                                  src={getMediaUrl(msg.mediaUrl)}
-                                  style={{ display: 'none' }}
-                                />
-                                Audio
-                              </Typography>
-                            </Box>
-                          </Box>
-                        ) : msg.type === 'document' && msg.mediaUrl ? (
-                          <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1, p: 1.5, bgcolor: msg.isFromMe ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)', borderRadius: 2, maxWidth: '300px' }}>
-                            <Box sx={{ width: 40, height: 40, borderRadius: '50%', bgcolor: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                              <Description sx={{ fontSize: 20 }} />
-                            </Box>
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                              <Typography variant="body2" sx={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {msg.message || 'Documento.pdf'}
-                              </Typography>
-                              <Typography variant="caption" sx={{ color: colors.textSecondary }}>
-                                Documento
-                              </Typography>
-                            </Box>
-                            <IconButton size="small" onClick={() => window.open(msg.mediaUrl, '_blank')} sx={{ color: colors.textSecondary }}>
-                              <Download fontSize="small" />
-                            </IconButton>
-                          </Box>
-                        ) : msg.type === 'sticker' && msg.mediaUrl ? (
-                          // Sticker
-                          <Box sx={{ mb: 1 }}>
-                            <Box
-                              sx={{
-                                maxWidth: '150px',
-                                maxHeight: '150px',
-                                borderRadius: '8px',
-                                overflow: 'hidden',
-                                cursor: 'pointer',
-                                transition: 'transform 0.2s ease-in-out',
-                                '&:hover': {
-                                  transform: 'scale(1.1)'
-                                }
-                              }}
-                              onClick={() => handleImageClick(msg.mediaUrl!)}
-                            >
-                              <img
-                                src={getMediaUrl(msg.mediaUrl)}
-                                alt="Sticker"
-                                loading="lazy"
-                                style={{
-                                  maxWidth: '100%',
-                                  maxHeight: '150px',
-                                  display: 'block',
-                                  objectFit: 'contain',
-                                  backgroundColor: 'transparent'
-                                }}
-                                onError={(e) => {
-                                  console.error('Error cargando sticker:', msg.mediaUrl);
-                                  e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="150" height="150"%3E%3Crect width="150" height="150" fill="%23f0f0f0"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999"%3ESticker no disponible%3C/text%3E%3C/svg%3E';
-                                }}
-                              />
-                            </Box>
-                          </Box>
-                        ) : (msg.type === 'image' || msg.type === 'video' || msg.type === 'audio' || msg.type === 'document' || msg.type === 'sticker') && !msg.mediaUrl ? (
-                          // Fallback para multimedia sin URL
-                          <Box sx={{ mb: 1, p: 1.5, bgcolor: 'rgba(255,152,0,0.1)', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Error sx={{ color: '#ff9800', fontSize: 20 }} />
-                            <Box>
-                              <Typography variant="body2" sx={{ color: colors.text, fontWeight: 500 }}>
-                                {msg.type === 'image' ? '🖼️ Imagen' : msg.type === 'video' ? '🎥 Video' : msg.type === 'audio' ? '🔊 Audio' : msg.type === 'sticker' ? '🎨 Sticker' : '📄 Documento'}
-                              </Typography>
-                              <Typography variant="caption" sx={{ color: colors.textSecondary }}>
-                                {msg.message || 'Multimedia no disponible'}
-                              </Typography>
-                            </Box>
-                          </Box>
+                        {/* Contenido según tipo - Unificado usando ModernMessageMedia */}
+                        {['image', 'video', 'audio', 'document', 'sticker'].includes(msg.type) ? (
+                          <ModernMessageMedia
+                            type={msg.type}
+                            mediaUrl={msg.mediaUrl}
+                            mediaMimeType={msg.mediaMimeType}
+                            message={msg.message}
+                            isFromMe={msg.isFromMe}
+                            isDarkMode={true}
+                            senderAvatar={getAvatarUrlForJid(getSenderJidForMessage(msg)) || undefined}
+                          />
                         ) : (
                           <Typography
                             variant="body2"
@@ -3444,16 +3258,16 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                                 </Typography>
                               )}
                               <ModernMessageMedia
-                                // Determine type more robustly
                                 type={
-                                  msg.type === 'audio' || msg.message_type === 'audio' ? 'audioMessage' :
-                                    msg.type === 'image' || msg.message_type === 'image' ? 'imageMessage' :
-                                      msg.type === 'video' || msg.message_type === 'video' ? 'videoMessage' :
-                                        msg.type === 'sticky' || msg.type === 'sticker' || msg.message_type === 'sticker' ? 'stickerMessage' :
-                                          msg.type === 'document' || msg.message_type === 'document' ? 'documentMessage' :
+                                  // Determine type more robustly (handle 'audioMessage', 'imageMessage' etc from DB)
+                                  ['audio', 'audioMessage', 'ptt'].includes(msg.type || msg.message_type || '') ? 'audioMessage' :
+                                    ['image', 'imageMessage'].includes(msg.type || msg.message_type || '') ? 'imageMessage' :
+                                      ['video', 'videoMessage'].includes(msg.type || msg.message_type || '') ? 'videoMessage' :
+                                        ['sticker', 'stickerMessage', 'sticky'].includes(msg.type || msg.message_type || '') ? 'stickerMessage' :
+                                          ['document', 'documentMessage'].includes(msg.type || msg.message_type || '') ? 'documentMessage' :
                                             'chat'
                                 }
-                                mediaUrl={getMediaUrl(msg.media_url || msg.mediaUrl)}
+                                mediaUrl={msg.media_url || msg.mediaUrl}
                                 mediaMimeType={msg.media_mime_type}
                                 message={msg.text_content || msg.message || msg.caption || ''}
                                 isFromMe={!!msg.from_me}

@@ -1575,51 +1575,63 @@ module.exports = function (app, pool) {
                 return res.json({ success: true, sessionId, chats: [], count: 0 });
             }
 
-            // Build date filter query - FILTRAR POR FECHA DEL ÚLTIMO MENSAJE
-            let dateFilterSQL = '';
-            let havingClause = '';
+            // Build date filter - FILTRAR POR FECHA DE ASIGNACIÓN (más flexible)
+            let dateWhereClause = '';
             if (dateFilter === 'today') {
-                havingClause = 'HAVING DATE(MAX(m.timestamp)) = CURDATE()';
+                dateWhereClause = 'AND DATE(ca.assigned_at) = CURDATE()';
             } else if (dateFilter === 'limit_24h') {
-                havingClause = 'HAVING MAX(m.timestamp) >= DATE_SUB(NOW(), INTERVAL 24 HOUR)';
+                dateWhereClause = 'AND ca.assigned_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)';
             }
+            // Si no hay filtro de fecha, mostrar todos los chats asignados
 
-            console.log(`[AGENT-CHATS] 📥 GET /api/agents/${agentId}/chats - sessionId: ${sessionId}, dateFilter: ${dateFilter}, havingClause: "${havingClause || 'SIN FILTRO'}"`);
+            console.log(`[AGENT-CHATS] 📥 GET /api/agents/${agentId}/chats - sessionId: ${sessionId}, dateFilter: ${dateFilter}, dateWhereClause: "${dateWhereClause || 'SIN FILTRO'}"`);
 
             try {
-                // ✅ Obtener ownerSessionId y phoneNumber
-                const ownerSessionId = await getOwnerSessionId(sessionId);
-                const phoneNumber = await getUserPhoneNumber(sessionId);
+                // ✅ FIXED: Removemos la dependencia de ownerSessionId/phoneNumber
+                // Los agentes deben ver TODOS sus chats asignados sin importar el session_id
 
-                // Query con JOIN a messages para filtrar SOLO chats con mensajes recientes
+                // Query mejorada con LEFT JOIN para incluir chats sin mensajes
                 const [chats] = await connection.execute(
                     `SELECT
                         ca.chat_jid as id,
                         ca.chat_jid as chatJid,
+                        ca.session_id,
                         ca.status,
                         ca.assigned_at as assignedAt,
-                        MAX(m.timestamp) as lastMessageTime
+                        COALESCE(MAX(m.timestamp), ca.assigned_at) as lastMessageTime,
+                        COALESCE(c.name, cg.name, SUBSTRING_INDEX(ca.chat_jid, '@', 1)) as name,
+                        COALESCE(c.avatar_url, cg.avatar_url) as avatar,
+                        COUNT(DISTINCT m.id) as message_count,
+                        SUM(CASE WHEN m.from_me = 0 AND m.is_read = 0 THEN 1 ELSE 0 END) as unreadCount
                      FROM chat_assignments ca
-                     INNER JOIN messages m ON m.chat_jid = ca.chat_jid AND m.session_id = ca.session_id AND (m.phone = ? OR m.phone IS NULL)
-                     WHERE ca.user_id = ? AND (ca.session_id = ? OR ca.session_id = ?)
-                     GROUP BY ca.chat_jid, ca.status, ca.assigned_at
-                     ${havingClause}
-                     ORDER BY lastMessageTime DESC
+                     LEFT JOIN messages m ON m.chat_jid = ca.chat_jid AND m.session_id = ca.session_id
+                     LEFT JOIN contacts c ON c.jid = ca.chat_jid AND c.session_id = ca.session_id
+                     LEFT JOIN contact_groups cg ON cg.jid = ca.chat_jid AND cg.session_id = ca.session_id
+                     WHERE ca.user_id = ?
+                       AND ca.status IN ('pending', 'active')
+                       ${dateWhereClause}
+                     GROUP BY ca.chat_jid, ca.session_id, ca.status, ca.assigned_at, c.name, cg.name, c.avatar_url, cg.avatar_url
+                     ORDER BY ca.status = 'pending' DESC, lastMessageTime DESC
                      LIMIT ? OFFSET ?`,
-                    [phoneNumber, agentId, ownerSessionId, phoneNumber, parseInt(limit), parseInt(offset)]
+                    [agentId, parseInt(limit), parseInt(offset)]
                 );
 
-                console.log(`[AGENT-CHATS] ✅ Retornando ${chats ? chats.length : 0} chats para agente ${agentId}`);
+                console.log(`[AGENT-CHATS] ✅ Retornando ${chats ? chats.length : 0} chats para agente ${agentId} (status: pending/active)`);
 
-                // Procesar chats - extraer nombre del chat_jid
+                // Procesar chats - ahora incluyen nombre, avatar y otros datos
                 const processedChats = (chats || []).map(chat => ({
                     id: chat.id,
                     chatJid: chat.chatJid,
-                    name: chat.chatJid.split('@')[0] || chat.chatJid,
-                    avatar: '',
-                    isGroup: chat.chatJid.includes('-') && !chat.chatJid.includes('@g'),
+                    name: chat.name || chat.chatJid.split('@')[0] || 'Sin nombre',
+                    avatar: chat.avatar || '',
+                    isGroup: chat.chatJid.includes('@g.us'),
                     status: chat.status,
-                    assignedAt: chat.assignedAt
+                    assignedAt: chat.assignedAt,
+                    lastMessageTime: chat.lastMessageTime,
+                    lastMessage: '', // Se puede agregar después si es necesario
+                    unreadCount: parseInt(chat.unreadCount) || 0,
+                    message_count: parseInt(chat.message_count) || 0,
+                    sessionId: chat.session_id
                 }));
 
                 res.json({

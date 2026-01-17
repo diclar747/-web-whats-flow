@@ -550,11 +550,20 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       const normalizedChatJid = rawChatJid?.includes('@') ? rawChatJid : `${rawChatJid}@s.whatsapp.net`;
       const chatPhone = normalizedChatJid?.split('@')[0];
 
+      // Normalize message type to simple format (audio, image, video, etc.)
+      let normalizedType: any = newMessage.type || (newMessage as any).message_type || 'text';
+      if (typeof normalizedType === 'string') {
+        normalizedType = normalizedType.replace('Message', '').toLowerCase();
+        if (normalizedType === 'ptt') normalizedType = 'audio';
+        if (normalizedType === 'conversation' || normalizedType === 'extendedtext') normalizedType = 'text';
+      }
+
       // ⚡ OPTIMIZACIÓN: Mapear mensaje con operaciones mínimas
       const mappedMessage: WhatsAppMessage = {
         ...newMessage,
         message: newMessage.message || newMessage.text || '',
         text: newMessage.message || newMessage.text || '',
+        type: normalizedType as any,
         chatJid: normalizedChatJid,
         isFromMe: Boolean((newMessage as any).from_me || newMessage.isFromMe),
         agent_id: (newMessage as any).agent_id,
@@ -1154,24 +1163,54 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
       if (data.success && data.messages && data.messages.length > 0) {
         console.log(`✅ Mensajes cargados: ${data.messages.length} para chat ${chatId} (fecha: ${dateFilter})`);
-        const mappedMessages: WhatsAppMessage[] = data.messages.map((msg: any) => ({
-          id: msg.id,
-          from: msg.sender_jid || msg.from,
-          to: msg.chat_jid || msg.to,
-          message: msg.text_content || msg.message || msg.text || '',
-          text: msg.text_content || msg.message || msg.text || '',
-          timestamp: msg.timestamp,
-          type: msg.message_type || msg.type || 'text',
-          isFromMe: Boolean(msg.from_me),
-          status: msg.status || 'delivered',
-          chatJid: msg.chat_jid || chatId,
-          mediaUrl: msg.media_url || msg.mediaUrl,
-          mediaMimeType: msg.media_mime_type || msg.mediaMimeType,
-          sentBy: msg.sender_name || msg.agent_name || msg.sentBy,
-          agent_id: msg.agent_id,
-          agent_name: msg.agent_name,
-          contextInfo: msg.contextInfo
-        }));
+
+        // 🐛 DEBUG: Log first message to see exact API structure
+        if (data.messages.length > 0) {
+          console.log('[loadMessages] 🔍 Primer mensaje de API (raw):', data.messages[0]);
+        }
+
+        const mappedMessages: WhatsAppMessage[] = data.messages.map((msg: any) => {
+          // Normalize message type to simple format (audio, image, video, etc.)
+          let normalizedType: any = msg.message_type || msg.type || 'text';
+          if (typeof normalizedType === 'string') {
+            normalizedType = normalizedType.replace('Message', '').toLowerCase();
+            if (normalizedType === 'ptt') normalizedType = 'audio';
+            if (normalizedType === 'conversation' || normalizedType === 'extendedtext') normalizedType = 'text';
+          }
+
+          const mapped = {
+            id: msg.id,
+            from: msg.sender_jid || msg.from,
+            to: msg.chat_jid || msg.to,
+            message: msg.text_content || msg.message || msg.text || '',
+            text: msg.text_content || msg.message || msg.text || '',
+            timestamp: msg.timestamp,
+            type: normalizedType as any,
+            isFromMe: Boolean(msg.from_me),
+            status: msg.status || 'delivered',
+            chatJid: msg.chat_jid || chatId,
+            mediaUrl: msg.media_url || msg.mediaUrl,
+            mediaMimeType: msg.media_mime_type || msg.mediaMimeType,
+            sentBy: msg.sender_name || msg.agent_name || msg.sentBy,
+            agent_id: msg.agent_id,
+            agent_name: msg.agent_name,
+            contextInfo: msg.contextInfo
+          };
+
+          // 🐛 DEBUG: Log mapping for media messages
+          if (msg.message_type && msg.message_type !== 'conversation') {
+            console.log('[loadMessages] 🎯 Media message mapping:', {
+              id: msg.id,
+              type: msg.message_type,
+              media_url_from_api: msg.media_url,
+              mediaUrl_from_api: msg.mediaUrl,
+              mapped_mediaUrl: mapped.mediaUrl,
+              hasMediaUrl: !!mapped.mediaUrl
+            });
+          }
+
+          return mapped;
+        });
 
         if (append) {
           // AGREGAR AL INICIO (mensajes más viejos arriba)
