@@ -25,6 +25,7 @@ const { validateSessionBelongsToUser } = require('./middleware/validateSession')
 const { initializePlanMiddleware, checkActivePlan } = require('./middleware/checkActivePlan');
 const { validateUniqueSession, createUniqueSession, destroySession } = require('./middleware/sessionValidator');
 const { generalLimiter, authLimiter, apiMessageLimiter, webhookLimiter, qrLimiter } = require('./middleware/rateLimiter');
+const { sendPlanActivationMessage } = require('./utils/subscriptionNotification');
 
 // Importar sistema de logging para debug de sesiones (desactivado temporalmente)
 // const sessionLogger = require('./sessionLogger');
@@ -26023,8 +26024,17 @@ app.post('/api/clients/:id/assign-plan', verifySuperAdmin, async (req, res) => {
                     [plan_id, userPhone, userEmail]
                 );
 
-                console.log(`[ADMIN ASSIGN PLAN] ✅ Plan actualizado en tabla users`);
                 console.log(`[ADMIN ASSIGN PLAN] 📱 Actualizadas ${updateSessions.affectedRows} sesiones en user_sessions`);
+
+                // 🎉 Enviar mensaje de bienvenida al cliente utilizando la utilidad centralizada
+                if (userPhone) {
+                    console.log('[ADMIN ASSIGN PLAN] 📨 Enviando mensaje de bienvenida a:', userPhone);
+                    setTimeout(() => {
+                        sendPlanActivationMessage(userPhone, planName, 30).catch(err => {
+                            console.error('[ADMIN ASSIGN PLAN] Error enviando mensaje de bienvenida:', err);
+                        });
+                    }, 2000); // Esperar 2 segundos para que el commit se complete
+                }
             }
 
             res.json({ success: true, message: `Plan ${planName} asignado correctamente` });

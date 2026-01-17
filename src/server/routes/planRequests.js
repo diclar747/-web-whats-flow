@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
 const { requireSuperAdmin } = require('../auth-utils');
 const { checkAdmin } = require('../middleware/subscriptionMiddleware');
+const { sendPlanActivationMessage } = require('../utils/subscriptionNotification');
 
 module.exports = function (app, pool) {
     // ============================================
@@ -84,26 +85,13 @@ module.exports = function (app, pool) {
                         `⏳ Tu solicitud será verificada en breve y tu plan será activado.\n\n` +
                         `¡Gracias por confiar en nosotros! 🚀`;
 
-                    // Buscar sesión activa del super admin para enviar el mensaje
-                    const [adminSession] = await connection.execute(
-                        'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 LIMIT 1',
-                        ['595994854167']
-                    );
+                    // Usar la utilidad de carga de WhatsApp para enviar desde el admin
+                    const { sendWhatsAppMessage } = require('../whatsapp-loader');
+                    await sendWhatsAppMessage('session_595994854167', phone, whatsappMessage).catch(err => {
+                        console.log('[PLAN-REQUEST] ⚠️ No se pudo enviar mensaje WhatsApp al cliente:', err.message);
+                    });
 
-                    if (adminSession.length > 0) {
-                        const sessionId = adminSession[0].session_id;
-                        const axios = require('axios');
-
-                        await axios.post(`http://localhost:3000/api/send-message`, {
-                            sessionId: sessionId,
-                            to: phone,
-                            message: whatsappMessage
-                        }).catch(err => {
-                            console.log('[PLAN-REQUEST] ⚠️ No se pudo enviar mensaje WhatsApp al cliente:', err.message);
-                        });
-
-                        console.log('[PLAN-REQUEST] ✅ Mensaje WhatsApp enviado al cliente:', phone);
-                    }
+                    console.log('[PLAN-REQUEST] ✅ Mensaje WhatsApp enviado al cliente:', phone);
                 } catch (whatsappError) {
                     console.log('[PLAN-REQUEST] ⚠️ Error enviando WhatsApp:', whatsappError.message);
                     // No fallar la solicitud si el WhatsApp falla
@@ -339,36 +327,21 @@ module.exports = function (app, pool) {
 
                 // Enviar mensaje de WhatsApp al cliente notificando la aprobación
                 try {
-                    const whatsappMessage = `✅ *¡Tu solicitud ha sido aprobada!*\n\n` +
-                        `🎉 ¡Felicidades! Tu plan *${request.plan_name}* ha sido activado exitosamente.\n\n` +
-                        `📋 *Detalles de tu plan:*\n` +
-                        `📌 Plan: ${request.plan_name}\n` +
-                        `📌 Duración: ${request.duration_days} días\n` +
-                        `📌 Precio: Gs. ${request.plan_price.toLocaleString()}\n\n` +
-                        `🚀 Ya puedes disfrutar de todas las funcionalidades de tu plan.\n\n` +
-                        `💼 ¡Gracias por tu preferencia y confianza!\n\n` +
-                        `Si tienes alguna consulta, estamos aquí para ayudarte. 😊`;
+                    // 🎉 Utilizar la nueva utilidad centralizada para enviar el mensaje de bienvenida
+                    console.log('[PLAN-REQUEST] 📨 Enviando notificación de aprobación a:', request.phone_number);
 
-                    // Buscar sesión activa del super admin para enviar el mensaje
-                    const [adminSession] = await connection.execute(
-                        'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 LIMIT 1',
-                        ['595994854167']
-                    );
-
-                    if (adminSession.length > 0) {
-                        const sessionId = adminSession[0].session_id;
-                        const axios = require('axios');
-
-                        await axios.post(`http://localhost:3000/api/send-message`, {
-                            sessionId: sessionId,
-                            to: request.phone_number,
-                            message: whatsappMessage
-                        }).catch(err => {
-                            console.log('[PLAN-REQUEST] ⚠️ No se pudo enviar mensaje WhatsApp al cliente:', err.message);
+                    // Ejecutar de forma asíncrona pero registrar errores
+                    sendPlanActivationMessage(request.phone_number, request.plan_name, request.duration_days)
+                        .then(success => {
+                            if (success) {
+                                console.log('[PLAN-REQUEST] ✅ Mensaje de aprobación enviado por WhatsApp a:', request.phone_number);
+                            } else {
+                                console.log('[PLAN-REQUEST] ⚠️ Falló el envío de mensaje de aprobación a:', request.phone_number);
+                            }
+                        })
+                        .catch(err => {
+                            console.error('[PLAN-REQUEST] ❌ Error en sendPlanActivationMessage:', err);
                         });
-
-                        console.log('[PLAN-REQUEST] ✅ Mensaje de aprobación enviado por WhatsApp a:', request.phone_number);
-                    }
                 } catch (whatsappError) {
                     console.log('[PLAN-REQUEST] ⚠️ Error enviando WhatsApp de aprobación:', whatsappError.message);
                     // No fallar la aprobación si el WhatsApp falla

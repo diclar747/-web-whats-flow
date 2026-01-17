@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { checkAdmin, checkSubscription } = require('../middleware/subscriptionMiddleware');
+const { sendPlanActivationMessage } = require('../utils/subscriptionNotification');
 
 // Función para obtener el pool desde el servidor principal
 function getPool(req) {
@@ -66,153 +67,6 @@ async function resolveSessionId(req, rawId) {
   } catch (err) {
     console.warn('[SUBSCRIPTIONS] ⚠️ Error resolviendo sessionId:', err.message);
     return rawId;
-  }
-}
-
-// Función para enviar mensaje de bienvenida al activar plan
-async function sendWelcomeMessage(phone, planName, days) {
-  try {
-    const sessions = global.whatsappSessions || new Map();
-
-    // Buscar la sesión activa del cliente
-    let clientSession = null;
-    for (const [sessionId, sessionData] of sessions.entries()) {
-      if (sessionData.phoneNumber === phone && sessionData.isConnected) {
-        clientSession = sessionData;
-        break;
-      }
-    }
-
-    if (!clientSession || !clientSession.sock) {
-      console.log(`[WELCOME-MSG] ⚠️ No hay sesión activa para ${phone}, buscando admin para enviar...`);
-
-      // Buscar sesión del admin para enviar el mensaje
-      const adminPhone = '595994854167';
-      for (const [sessionId, sessionData] of sessions.entries()) {
-        if (sessionData.phoneNumber === adminPhone && sessionData.isConnected) {
-          clientSession = sessionData;
-          break;
-        }
-      }
-
-      if (!clientSession || !clientSession.sock) {
-        console.log(`[WELCOME-MSG] ⚠️ No hay sesión activa del admin, no se puede enviar mensaje`);
-        return false;
-      }
-    }
-
-    // Mensajes creativos según el plan
-    const messages = {
-      basic: `🎉 ¡FELICIDADES! 🎉
-
-✨ Tu Plan BÁSICO ha sido activado exitosamente ✨
-
-🚀 ¡Gracias por confiar en nosotros! 
-
-📋 Detalles de tu plan:
-• Plan: Básico
-• Duración: ${days} días
-• Estado: ✅ ACTIVO
-
-💡 Ahora puedes disfrutar de todas las funcionalidades básicas de WhatsFlow.
-
-¿Necesitas ayuda? Estamos aquí para ti 🤝
-
-¡Bienvenido a WhatsFlow! 💙`,
-
-      standard: `🎊 ¡EXCELENTE ELECCIÓN! 🎊
-
-⭐ Tu Plan ESTÁNDAR ha sido activado con éxito ⭐
-
-🙌 ¡Muchas gracias por tu preferencia!
-
-📋 Detalles de tu plan:
-• Plan: Estándar
-• Duración: ${days} días
-• Estado: ✅ ACTIVO
-
-🎯 Ahora tienes acceso a:
-✅ Todas las funciones básicas
-✅ Campañas avanzadas
-✅ Más contactos y mensajes
-✅ Soporte prioritario
-
-💪 ¡Estás listo para llevar tu negocio al siguiente nivel!
-
-¿Preguntas? Contáctanos cuando quieras 📞
-
-¡Bienvenido a WhatsFlow! 🚀`,
-
-      premium: `🏆 ¡BIENVENIDO AL PLAN PREMIUM! 🏆
-
-👑 Tu Plan PREMIUM ha sido activado exitosamente 👑
-
-🌟 ¡Gracias por elegirnos como tu socio tecnológico!
-
-📋 Detalles de tu plan:
-• Plan: Premium
-• Duración: ${days} días
-• Estado: ✅ ACTIVO
-
-💎 Tienes acceso ILIMITADO a:
-✅ TODAS las funcionalidades
-✅ Campañas ilimitadas
-✅ Contactos sin límite
-✅ Bot IA avanzado
-✅ API personalizada
-✅ Soporte VIP 24/7
-✅ Asesoría personalizada
-
-🎁 ¡Y muchos beneficios exclusivos más!
-
-🔥 ¡Prepárate para transformar tu negocio!
-
-Tu éxito es nuestro éxito 💪
-
-¡Bienvenido a la experiencia Premium de WhatsFlow! 🎯`,
-
-      pro: `🚀 ¡PLAN PRO ACTIVADO! 🚀
-
-💼 Tu Plan PROFESIONAL está listo para usar 💼
-
-🎯 ¡Gracias por confiar en nuestra plataforma!
-
-📋 Detalles de tu plan:
-• Plan: Profesional
-• Duración: ${days} días
-• Estado: ✅ ACTIVO
-
-⚡ Funcionalidades PRO desbloqueadas:
-✅ Multi-agentes
-✅ Campañas automatizadas
-✅ Gestión avanzada de contactos
-✅ Reportes detallados
-✅ Integraciones premium
-✅ Soporte preferencial
-
-🎓 ¿Necesitas capacitación? ¡Te ayudamos!
-
-📈 ¡Impulsa tu negocio con WhatsFlow Pro!
-
-Estamos contigo en cada paso 🤝
-
-¡Bienvenido! 💙`
-    };
-
-    // Obtener el mensaje según el plan (default: basic)
-    const planKey = planName.toLowerCase().replace(/\s+/g, '_');
-    const message = messages[planKey] || messages.basic.replace('BÁSICO', planName.toUpperCase()).replace('Básico', planName);
-
-    // Enviar mensaje al cliente
-    const jid = `${phone}@s.whatsapp.net`;
-    await clientSession.sock.sendMessage(jid, { text: message });
-
-    console.log(`[WELCOME-MSG] ✅ Mensaje de bienvenida enviado a ${phone} para plan ${planName}`);
-    return true;
-
-  } catch (error) {
-    console.error(`[WELCOME-MSG] ❌ Error enviando mensaje de bienvenida:`, error);
-    return false;
   }
 }
 
@@ -897,10 +751,10 @@ router.post('/activate', checkAdmin, async (req, res) => {
 
           await connection.commit();
 
-          // 🎉 Enviar mensaje de bienvenida al cliente
+          // 🎉 Enviar mensaje de bienvenida al cliente utilizando la utilidad centralizada
           console.log('[ACTIVATE] 📨 Enviando mensaje de bienvenida a:', phone);
           setTimeout(() => {
-            sendWelcomeMessage(phone, finalPlanName, subscriptionDays).catch(err => {
+            sendPlanActivationMessage(phone, finalPlanName, subscriptionDays).catch(err => {
               console.error('[ACTIVATE] Error enviando mensaje de bienvenida:', err);
             });
           }, 2000); // Esperar 2 segundos para que el commit se complete
@@ -946,10 +800,10 @@ router.post('/activate', checkAdmin, async (req, res) => {
         `, [targetUserId, finalPlanName, startDate, endDate, subscriptionDays, plan.price, adminId]);
       await connection.commit();
 
-      // 🎉 Enviar mensaje de bienvenida al cliente
+      // 🎉 Enviar mensaje de bienvenida al cliente utilizando la utilidad centralizada
       console.log('[ACTIVATE] 📨 Enviando mensaje de bienvenida a:', phone);
       setTimeout(() => {
-        sendWelcomeMessage(phone, finalPlanName, subscriptionDays).catch(err => {
+        sendPlanActivationMessage(phone, finalPlanName, subscriptionDays).catch(err => {
           console.error('[ACTIVATE] Error enviando mensaje de bienvenida:', err);
         });
       }, 2000); // Esperar 2 segundos para que el commit se complete
