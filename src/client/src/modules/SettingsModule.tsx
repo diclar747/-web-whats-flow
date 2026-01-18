@@ -325,6 +325,10 @@ interface SystemPreferences {
   general: {
     companyName: string;
     companyLogo?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    city?: string;
     timezone: string;
     dateFormat: string;
     timeFormat: '12h' | '24h';
@@ -410,6 +414,17 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
     message: '',
     severity: 'success' as 'success' | 'error' | 'warning' | 'info'
   });
+
+  // Estados para Account Info y Password Change
+  const [showPassword, setShowPassword] = useState(false);
+  const [changePasswordDialogOpen, setChangePasswordDialogOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [passwordError, setPasswordError] = useState('');
+  const [userAccountInfo, setUserAccountInfo] = useState<{ email: string; name: string } | null>(null);
 
 
 
@@ -509,6 +524,12 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
             userIsAdmin = true;
             console.log('[SETTINGS] 👑 Super Admin detectado por email: sistempar@gmail.com');
           }
+
+          // 👤 Guardar información de cuenta para mostrar en UI
+          setUserAccountInfo({
+            email: userData.email || userData.phone_number || '',
+            name: userData.name || userData.username || 'Usuario'
+          });
         } catch (e) {
           console.error('[SETTINGS] Error parseando usuario:', e);
         }
@@ -754,8 +775,8 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
         }
       ];
 
-      // Mock System Preferences
-      const mockSystemPreferences: SystemPreferences = {
+      // 🔄 Cargar configuración real desde el servidor
+      let mockSystemPreferences: SystemPreferences = {
         general: {
           companyName: 'Tu Empresa',
           timezone: 'America/Asuncion',
@@ -816,6 +837,45 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
           apiCalls: 250000
         }
       };
+
+      // 🔄 Cargar settings reales desde la API y mezclar con defaults
+      try {
+        if (token) {
+          const settingsResponse = await fetch(`${getAPIBaseURL()}/api/settings/profile`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            }
+          });
+
+          if (settingsResponse.ok) {
+            const settingsData = await settingsResponse.json();
+            if (settingsData.success && settingsData.settings) {
+              console.log('[SETTINGS] 📥 Settings cargados desde API:', settingsData.settings);
+
+              // Mezclar settings reales con los defaults
+              mockSystemPreferences = {
+                ...mockSystemPreferences,
+                general: {
+                  ...mockSystemPreferences.general,
+                  ...(settingsData.settings.general || {})
+                },
+                notifications: {
+                  ...mockSystemPreferences.notifications,
+                  ...(settingsData.settings.notifications || {})
+                },
+                performance: {
+                  ...mockSystemPreferences.performance,
+                  ...(settingsData.settings.performance || {})
+                }
+              };
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('[SETTINGS] No se pudieron cargar settings personalizados, usando defaults:', error);
+      }
 
       // Los usuarios ya fueron cargados arriba, no necesitamos setUsers(mockUsers)
       setSecuritySettings(mockSecuritySettings);
@@ -1080,13 +1140,145 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
   const handleSaveSettings = async () => {
     setSaveStatus('saving');
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const token = localStorage.getItem('token');
+
+      // Preparar datos a guardar
+      const settingsData = {
+        companyName: systemPreferences?.general?.companyName || '',
+        address: systemPreferences?.general?.address || '',
+        phone: systemPreferences?.general?.phone || '',
+        email: systemPreferences?.general?.email || '',
+        city: systemPreferences?.general?.city || 'Asunción',
+        timezone: systemPreferences?.general?.timezone || 'America/Asuncion',
+        currency: systemPreferences?.general?.currency || 'PYG',
+        language: systemPreferences?.general?.language || 'es',
+        notifications: {
+          email: systemPreferences?.notifications?.email?.enabled || false,
+          webhook: {
+            enabled: systemPreferences?.notifications?.webhook?.enabled || false,
+            url: systemPreferences?.notifications?.webhook?.url || '',
+            events: systemPreferences?.notifications?.webhook?.events || []
+          }
+        },
+        performance: {
+          maxConcurrentChats: systemPreferences?.performance?.maxConcurrentChats || 100,
+          messageRetentionDays: systemPreferences?.performance?.messageRetentionDays || 365,
+          autoDeleteInactiveChats: systemPreferences?.performance?.autoDeleteInactiveChats || false,
+          compressionLevel: systemPreferences?.performance?.compressionLevel || 'medium',
+          cacheDuration: systemPreferences?.performance?.cacheDuration || 3600
+        }
+      };
+
+      const response = await fetch(`${getAPIBaseURL()}/api/settings/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(settingsData)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Error al guardar configuración');
+      }
+
       setSaveStatus('saved');
+      setSnackbar({
+        open: true,
+        message: '✅ Configuración guardada exitosamente',
+        severity: 'success'
+      });
+
+      // 🔄 Recargar configuración desde el servidor
+      await loadSettingsData();
+
       setTimeout(() => setSaveStatus('idle'), 2000);
+
     } catch (error) {
+      console.error('Error guardando configuración:', error);
       setSaveStatus('error');
+      setSnackbar({
+        open: true,
+        message: `❌ Error: ${(error as Error).message || 'Error desconocido'}`,
+        severity: 'error'
+      });
       setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+  };
+
+  // 🔒 Handler para cambio de contraseña
+  const handleChangePassword = async () => {
+    setPasswordError('');
+
+    // Validación del formulario
+    if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
+      setPasswordError('Todos los campos son requeridos');
+      return;
+    }
+
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordError('Las contraseñas no coinciden');
+      return;
+    }
+
+    // Validar requisitos de contraseña
+    if (passwordForm.newPassword.length < 8) {
+      setPasswordError('La contraseña debe tener al menos 8 caracteres');
+      return;
+    }
+
+    if (!/[A-Z]/.test(passwordForm.newPassword)) {
+      setPasswordError('La contraseña debe contener al menos una mayúscula');
+      return;
+    }
+
+    if (!/[a-z]/.test(passwordForm.newPassword)) {
+      setPasswordError('La contraseña debe contener al menos una minúscula');
+      return;
+    }
+
+    if (!/[0-9]/.test(passwordForm.newPassword)) {
+      setPasswordError('La contraseña debe contener al menos un número');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${getAPIBaseURL()}/api/auth/change-password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          currentPassword: passwordForm.currentPassword,
+          newPassword: passwordForm.newPassword
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setPasswordError(data.error || 'Error al cambiar la contraseña');
+        return;
+      }
+
+      // Éxito
+      setSnackbar({
+        open: true,
+        message: '✅ Contraseña cambiada exitosamente',
+        severity: 'success'
+      });
+
+      // Limpiar formulario y cerrar modal
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setChangePasswordDialogOpen(false);
+
+    } catch (error) {
+      console.error('Error cambiando contraseña:', error);
+      setPasswordError('Error de conexión. Intenta de nuevo.');
     }
   };
 
@@ -1172,6 +1364,10 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
                       fullWidth
                       label="Nombre de la Empresa"
                       value={systemPreferences.general.companyName}
+                      onChange={(e) => setSystemPreferences({
+                        ...systemPreferences,
+                        general: { ...systemPreferences.general, companyName: e.target.value }
+                      })}
                       variant="outlined"
                       size="small"
                       placeholder="Ej: Mi Empresa SRL"
@@ -1181,6 +1377,11 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
                     <TextField
                       fullWidth
                       label="Dirección"
+                      value={systemPreferences.general.address || ''}
+                      onChange={(e) => setSystemPreferences({
+                        ...systemPreferences,
+                        general: { ...systemPreferences.general, address: e.target.value }
+                      })}
                       variant="outlined"
                       size="small"
                       placeholder="Ej: Av. Mariscal López 1234, Asunción"
@@ -1190,6 +1391,11 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
                     <TextField
                       fullWidth
                       label="Teléfono"
+                      value={systemPreferences.general.phone || ''}
+                      onChange={(e) => setSystemPreferences({
+                        ...systemPreferences,
+                        general: { ...systemPreferences.general, phone: e.target.value }
+                      })}
                       variant="outlined"
                       size="small"
                       placeholder="Ej: +595 21 123456"
@@ -1199,6 +1405,11 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
                     <TextField
                       fullWidth
                       label="Email"
+                      value={systemPreferences.general.email || ''}
+                      onChange={(e) => setSystemPreferences({
+                        ...systemPreferences,
+                        general: { ...systemPreferences.general, email: e.target.value }
+                      })}
                       variant="outlined"
                       size="small"
                       placeholder="Ej: contacto@miempresa.com.py"
@@ -1208,9 +1419,13 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
                     <TextField
                       fullWidth
                       label="Ciudad"
+                      value={systemPreferences.general.city || 'Asunción'}
+                      onChange={(e) => setSystemPreferences({
+                        ...systemPreferences,
+                        general: { ...systemPreferences.general, city: e.target.value }
+                      })}
                       variant="outlined"
                       size="small"
-                      value="Asunción"
                       placeholder="Asunción"
                     />
                   </Grid>
@@ -1373,6 +1588,80 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
 
       {selectedTab === 1 && securitySettings && (
         <Grid container spacing={3}>
+          {/* 👤 Nueva Sección: Información de Cuenta */}
+          {userAccountInfo && (
+            <Grid item xs={12}>
+              <Card>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Email color="primary" /> Información de Cuenta
+                  </Typography>
+                  <Grid container spacing={2} sx={{ mt: 1 }}>
+                    <Grid item xs={12} md={6}>
+                      <TextField
+                        fullWidth
+                        label="Correo Electrónico"
+                        value={userAccountInfo.email}
+                        variant="outlined"
+                        size="small"
+                        disabled
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <Email fontSize="small" />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <TextField
+                        fullWidth
+                        label="Contraseña"
+                        type={showPassword ? 'text' : 'password'}
+                        value="••••••••"
+                        variant="outlined"
+                        size="small"
+                        disabled
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <Lock fontSize="small" />
+                            </InputAdornment>
+                          ),
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton
+                                size="small"
+                                onClick={() => setShowPassword(!showPassword)}
+                                edge="end"
+                              >
+                                {showPassword ? <VisibilityOff /> : <Visibility />}
+                              </IconButton>
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <Button
+                        variant="contained"
+                        startIcon={<VpnKey />}
+                        onClick={() => setChangePasswordDialogOpen(true)}
+                        sx={{
+                          bgcolor: '#795548',
+                          '&:hover': { bgcolor: '#5d4037' }
+                        }}
+                      >
+                        Cambiar Contraseña
+                      </Button>
+                    </Grid>
+                  </Grid>
+                </CardContent>
+              </Card>
+            </Grid>
+          )}
+
           {/* Configuración de seguridad */}
           <Grid item xs={12} md={6}>
             <Card>
@@ -2151,6 +2440,128 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
             }}
           >
             Guardar Privilegios
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🔒 Modal de Cambio de Contraseña */}
+      <Dialog
+        open={changePasswordDialogOpen}
+        onClose={() => {
+          setChangePasswordDialogOpen(false);
+          setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+          setPasswordError('');
+        }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+          }
+        }}
+      >
+        <DialogTitle sx={{
+          pb: 2,
+          background: 'linear-gradient(135deg, #795548 0%, #5d4037 100%)',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
+        }}>
+          <VpnKey /> Cambiar Contraseña
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 3 }}>
+            Tu nueva contraseña debe tener al menos 8 caracteres e incluir mayúsculas, minúsculas y números.
+          </Typography>
+
+          {passwordError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {passwordError}
+            </Alert>
+          )}
+
+          <TextField
+            fullWidth
+            label="Contraseña Actual"
+            type="password"
+            value={passwordForm.currentPassword}
+            onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+            variant="outlined"
+            sx={{ mb: 2 }}
+            autoFocus
+          />
+
+          <TextField
+            fullWidth
+            label="Nueva Contraseña"
+            type="password"
+            value={passwordForm.newPassword}
+            onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+            variant="outlined"
+            sx={{ mb: 2 }}
+            helperText="Mínimo 8 caracteres, 1 mayúscula, 1 minúscula, 1 número"
+          />
+
+          <TextField
+            fullWidth
+            label="Confirmar Nueva Contraseña"
+            type="password"
+            value={passwordForm.confirmPassword}
+            onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+            variant="outlined"
+          />
+
+          {/* Indicadores de validación en tiempo real */}
+          {passwordForm.newPassword && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="caption" color="textSecondary" sx={{ mb: 1, display: 'block' }}>
+                Requisitos de seguridad:
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Typography variant="caption" sx={{ color: passwordForm.newPassword.length >= 8 ? 'success.main' : 'text.secondary' }}>
+                  {passwordForm.newPassword.length >= 8 ? '✓' : '○'} Al menos 8 caracteres
+                </Typography>
+                <Typography variant="caption" sx={{ color: /[A-Z]/.test(passwordForm.newPassword) ? 'success.main' : 'text.secondary' }}>
+                  {/[A-Z]/.test(passwordForm.newPassword) ? '✓' : '○'} Una mayúscula
+                </Typography>
+                <Typography variant="caption" sx={{ color: /[a-z]/.test(passwordForm.newPassword) ? 'success.main' : 'text.secondary' }}>
+                  {/[a-z]/.test(passwordForm.newPassword) ? '✓' : '○'} Una minúscula
+                </Typography>
+                <Typography variant="caption" sx={{ color: /[0-9]/.test(passwordForm.newPassword) ? 'success.main' : 'text.secondary' }}>
+                  {/[0-9]/.test(passwordForm.newPassword) ? '✓' : '○'} Un número
+                </Typography>
+                {passwordForm.confirmPassword && (
+                  <Typography variant="caption" sx={{ color: passwordForm.newPassword === passwordForm.confirmPassword ? 'success.main' : 'error.main' }}>
+                    {passwordForm.newPassword === passwordForm.confirmPassword ? '✓' : '✗'} Las contraseñas coinciden
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2, gap: 1 }}>
+          <Button
+            onClick={() => {
+              setChangePasswordDialogOpen(false);
+              setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+              setPasswordError('');
+            }}
+            variant="outlined"
+          >
+            Cancelar
+          </Button>
+          <Button
+            onClick={handleChangePassword}
+            variant="contained"
+            startIcon={<VpnKey />}
+            sx={{
+              bgcolor: '#795548',
+              '&:hover': { bgcolor: '#5d4037' }
+            }}
+          >
+            Cambiar Contraseña
           </Button>
         </DialogActions>
       </Dialog>

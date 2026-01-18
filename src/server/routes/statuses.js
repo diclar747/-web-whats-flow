@@ -469,7 +469,7 @@ module.exports = (app, io) => {
             } else {
                 // Estado solo texto - Estructura específica para estados
                 statusContent = {
-                    text: status.text_content || '📱 Estado de WhatsFlow',
+                    text: status.text_content || '📱 Estado de Winsap',
                     backgroundColor: status.background_color || '#315594', // Color azul por defecto
                     font: 1 // 1 = SERIF, 2 = NORICAN, 3 = BRYNDAN_WRITE, 4 = BEBASNEUE, 5 = OSWALD
                 };
@@ -499,7 +499,7 @@ module.exports = (app, io) => {
                 } else {
                     // Estado de texto - EXACTAMENTE como el ejemplo de Baileys
                     messageContent = {
-                        text: status.text_content || '📱 Estado de WhatsFlow'
+                        text: status.text_content || '📱 Estado de Winsap'
                     };
                 }
 

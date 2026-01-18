@@ -26,6 +26,7 @@ const { initializePlanMiddleware, checkActivePlan } = require('./middleware/chec
 const { validateUniqueSession, createUniqueSession, destroySession } = require('./middleware/sessionValidator');
 const { generalLimiter, authLimiter, apiMessageLimiter, webhookLimiter, qrLimiter } = require('./middleware/rateLimiter');
 const { sendPlanActivationMessage } = require('./utils/subscriptionNotification');
+const { sendPlanApprovalEmail } = require('./utils/subscriptionEmail');
 
 // Importar sistema de logging para debug de sesiones (desactivado temporalmente)
 // const sessionLogger = require('./sessionLogger');
@@ -5491,7 +5492,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             auth: state,
             printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
-            browser: ['WhatsFlow', 'Chrome', '120.0.0'],
+            browser: ['Winsap', 'Chrome', '120.0.0'],
             syncFullHistory: syncHistory,
             shouldSyncHistoryMessage: (msg) => {
                 return syncHistory;
@@ -19683,6 +19684,245 @@ app.get('/api/auth/me', async (req, res) => {
     res.status(401).json({ success: false, error: 'Not authenticated' });
 });
 
+// 🔒 PUT /api/auth/change-password - Cambiar contraseña del usuario autenticado
+app.put('/api/auth/change-password', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'Token no proporcionado' });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const { currentPassword, newPassword } = req.body;
+
+        // Validar request
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ error: 'Contraseña actual y nueva contraseña son requeridas' });
+        }
+
+        // Validar requisitos de nueva contraseña
+        if (newPassword.length < 8) {
+            return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+        }
+
+        if (!/[A-Z]/.test(newPassword)) {
+            return res.status(400).json({ error: 'La contraseña debe contener al menos una mayúscula' });
+        }
+
+        if (!/[a-z]/.test(newPassword)) {
+            return res.status(400).json({ error: 'La contraseña debe contener al menos una minúscula' });
+        }
+
+        if (!/[0-9]/.test(newPassword)) {
+            return res.status(400).json({ error: 'La contraseña debe contener al menos un número' });
+        }
+
+        const connection = await pool.getConnection();
+
+        try {
+            // Obtener usuario actual
+            const [users] = await connection.execute(
+                'SELECT id, email, phone, password FROM users WHERE id = ?',
+                [decoded.userId]
+            );
+
+            if (users.length === 0) {
+                return res.status(404).json({ error: 'Usuario no encontrado' });
+            }
+
+            const user = users[0];
+
+            // Verificar contraseña actual
+            const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+            if (!isPasswordValid) {
+                return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+            }
+
+            // Hash nueva contraseña
+            const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+            // Actualizar contraseña en base de datos
+            await connection.execute(
+                'UPDATE users SET password = ?, updated_at = NOW() WHERE id = ?',
+                [hashedPassword, user.id]
+            );
+
+            console.log(`[CHANGE-PASSWORD] ✅ Contraseña actualizada para usuario ${user.email || user.phone}`);
+
+            res.json({
+                success: true,
+                message: 'Contraseña actualizada exitosamente'
+            });
+
+        } finally {
+            connection.release();
+        }
+
+    } catch (error) {
+        console.error('[CHANGE-PASSWORD] Error:', error);
+
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(401).json({ error: 'Token inválido' });
+        }
+
+        res.status(500).json({ error: 'Error del servidor al cambiar contraseña' });
+    }
+});
+
+// 📖 GET /api/settings/profile - Obtener configuración de perfil del usuario
+app.get('/api/settings/profile', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'Token no proporcionado' });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const connection = await pool.getConnection();
+
+        try {
+            const [users] = await connection.execute(
+                'SELECT id, email, phone, settings FROM users WHERE id = ?',
+                [decoded.userId]
+            );
+
+            if (users.length === 0) {
+                return res.status(404).json({ error: 'Usuario no encontrado' });
+            }
+
+            const user = users[0];
+            let settings = {};
+
+            // Parsear settings si existen
+            if (user.settings) {
+                try {
+                    settings = typeof user.settings === 'string'
+                        ? JSON.parse(user.settings)
+                        : user.settings;
+                } catch (e) {
+                    console.warn('[SETTINGS] Error parsing settings:', e);
+                }
+            }
+
+            res.json({
+                success: true,
+                settings: settings,
+                email: user.email,
+                phone: user.phone
+            });
+
+        } finally {
+            connection.release();
+        }
+
+    } catch (error) {
+        console.error('[SETTINGS] Error:', error);
+
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(401).json({ error: 'Token inválido' });
+        }
+
+        res.status(500).json({ error: 'Error del servidor al cargar configuración' });
+    }
+});
+
+// 📝 PUT /api/settings/profile - Guardar configuración de perfil del usuario
+app.put('/api/settings/profile', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ error: 'Token no proporcionado' });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const {
+            companyName,
+            address,
+            phone,
+            email,
+            city,
+            timezone,
+            currency,
+            language,
+            notifications,
+            performance
+        } = req.body;
+
+        const connection = await pool.getConnection();
+
+        try {
+            // Obtener configuración actual del usuario
+            const [users] = await connection.execute(
+                'SELECT id, email, phone, settings FROM users WHERE id = ?',
+                [decoded.userId]
+            );
+
+            if (users.length === 0) {
+                return res.status(404).json({ error: 'Usuario no encontrado' });
+            }
+
+            const user = users[0];
+
+            // Parsear settings existentes o crear nuevo objeto
+            let currentSettings = {};
+            if (user.settings) {
+                try {
+                    currentSettings = typeof user.settings === 'string'
+                        ? JSON.parse(user.settings)
+                        : user.settings;
+                } catch (e) {
+                    console.warn('[SETTINGS] Error parsing existing settings:', e);
+                    currentSettings = {};
+                }
+            }
+
+            // Actualizar settings con los nuevos valores
+            const updatedSettings = {
+                ...currentSettings,
+                general: {
+                    ...(currentSettings.general || {}),
+                    companyName: companyName || currentSettings.general?.companyName || '',
+                    address: address || currentSettings.general?.address || '',
+                    phone: phone || currentSettings.general?.phone || '',
+                    email: email || currentSettings.general?.email || '',
+                    city: city || currentSettings.general?.city || 'Asunción',
+                    timezone: timezone || currentSettings.general?.timezone || 'America/Asuncion',
+                    currency: currency || currentSettings.general?.currency || 'PYG',
+                    language: language || currentSettings.general?.language || 'es'
+                },
+                notifications: notifications || currentSettings.notifications || {},
+                performance: performance || currentSettings.performance || {}
+            };
+
+            // Guardar en la base de datos como JSON string
+            await connection.execute(
+                'UPDATE users SET settings = ?, updated_at = NOW() WHERE id = ?',
+                [JSON.stringify(updatedSettings), user.id]
+            );
+
+            console.log(`[SETTINGS] ✅ Configuración actualizada para usuario ${user.email || user.phone}`);
+
+            res.json({
+                success: true,
+                message: 'Configuración actualizada exitosamente',
+                settings: updatedSettings
+            });
+
+        } finally {
+            connection.release();
+        }
+
+    } catch (error) {
+        console.error('[SETTINGS] Error:', error);
+
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(401).json({ error: 'Token inválido' });
+        }
+
+        res.status(500).json({ error: 'Error del servidor al guardar configuración' });
+    }
+});
+
 // ============= FIN ENDPOINTS DE AUTENTICACIÓN =============
 
 // ============= MIDDLEWARE DE SESIÓN ESPECÍFICA PARA QR =============
@@ -26034,6 +26274,18 @@ app.post('/api/clients/:id/assign-plan', verifySuperAdmin, async (req, res) => {
                             console.error('[ADMIN ASSIGN PLAN] Error enviando mensaje de bienvenida:', err);
                         });
                     }, 2000); // Esperar 2 segundos para que el commit se complete
+                }
+
+                // 📧 Enviar email de bienvenida/activación
+                if (userEmail) {
+                    console.log('[ADMIN ASSIGN PLAN] 📨 Enviando email de activación a:', userEmail);
+                    sendPlanApprovalEmail(userEmail, userInfo[0].name || 'Cliente', {
+                        name: planName,
+                        price: 0, // No tenemos el precio aquí directamente del body, podríamos buscarlo si fuera crítico
+                        days: 30
+                    }).catch(err => {
+                        console.error('[ADMIN ASSIGN PLAN] ❌ Error enviando email de activación:', err.message);
+                    });
                 }
             }
 

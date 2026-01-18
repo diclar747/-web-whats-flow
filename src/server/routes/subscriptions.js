@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { checkAdmin, checkSubscription } = require('../middleware/subscriptionMiddleware');
 const { sendPlanActivationMessage } = require('../utils/subscriptionNotification');
+const { sendPlanApprovalEmail } = require('../utils/subscriptionEmail');
 
 // Función para obtener el pool desde el servidor principal
 function getPool(req) {
@@ -367,10 +368,20 @@ router.get('/my-subscription', async (req, res) => {
 
       // Buscar usuario para ver si es super admin
       let isUserSuperAdmin = false;
-      const [userRows] = await connection.execute(
-        'SELECT phone, is_super_admin FROM users WHERE phone = ? OR email = ? LIMIT 1',
-        [effectiveIdentifier, effectiveIdentifier]
-      );
+
+      // 🆕 Determinar si el identificador parece un ID de usuario (número pequeño)
+      const isLikelyUserId = /^\d{1,6}$/.test(effectiveIdentifier);
+
+      let userCheckQuery = 'SELECT phone, is_super_admin FROM users WHERE phone = ? OR email = ?';
+      let userCheckParams = [effectiveIdentifier, effectiveIdentifier];
+
+      if (isLikelyUserId) {
+        userCheckQuery += ' OR id = ?';
+        userCheckParams.push(effectiveIdentifier);
+      }
+
+      const [userRows] = await connection.execute(userCheckQuery + ' LIMIT 1', userCheckParams);
+
       if (userRows.length > 0) {
         isUserSuperAdmin = !!userRows[0].is_super_admin;
       }
@@ -379,9 +390,16 @@ router.get('/my-subscription', async (req, res) => {
       // Esto evita que al conectar un número, se sobrescriba el plan con el registro vacío de user_sessions
 
       // 1. Buscar en users (Administradores/Agentes con plan_id o subscription_plan)
-      const [users] = await connection.query(`
-        SELECT *, DATEDIFF(subscription_end_date, NOW()) as days_remaining FROM users WHERE phone = ? OR email = ? LIMIT 1
-      `, [effectiveIdentifier, effectiveIdentifier]);
+      // 🆕 También buscar por ID si el identificador parece un ID de usuario
+      let usersQuery = 'SELECT *, DATEDIFF(subscription_end_date, NOW()) as days_remaining FROM users WHERE phone = ? OR email = ?';
+      let usersParams = [effectiveIdentifier, effectiveIdentifier];
+
+      if (isLikelyUserId) {
+        usersQuery += ' OR id = ?';
+        usersParams.push(effectiveIdentifier);
+      }
+
+      const [users] = await connection.query(usersQuery + ' LIMIT 1', usersParams);
 
       if (users.length > 0) {
         const user = users[0];
@@ -758,6 +776,22 @@ router.post('/activate', checkAdmin, async (req, res) => {
               console.error('[ACTIVATE] Error enviando mensaje de bienvenida:', err);
             });
           }, 2000); // Esperar 2 segundos para que el commit se complete
+
+          // 📧 Enviar email de bienvenida/activación
+          try {
+            const [users] = await connection.execute('SELECT email, name FROM users WHERE phone = ? LIMIT 1', [phone]);
+            if (users.length > 0 && users[0].email) {
+              sendPlanApprovalEmail(users[0].email, users[0].name || 'Cliente', {
+                name: finalPlanName,
+                price: plan.price || 0,
+                days: subscriptionDays
+              }).catch(err => {
+                console.error('[ACTIVATE] ❌ Error enviando email de activación:', err.message);
+              });
+            }
+          } catch (e) {
+            console.warn('[ACTIVATE] No se pudo enviar email:', e.message);
+          }
 
           return res.json({
             success: true,

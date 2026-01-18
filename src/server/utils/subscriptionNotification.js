@@ -1,10 +1,52 @@
-/**
- * Utility to send WhatsApp notifications for subscription plan activations and approvals
- */
+const fs = require('fs');
+const path = require('path');
 const { sendWhatsAppMessage } = require('../whatsapp-loader');
 
-const ADMIN_SESSION_ID = 'session_595994854167'; // Sesión del admin principal para enviar notificaciones
-const DEFAULT_PHONE = '595994854167';
+const ADMIN_PHONE = '595994854167';
+const BASE_AUTH_DIR = path.join(__dirname, '../../auth_info_multi');
+
+/**
+ * Dynamically finds the correct sessionId for the admin phone number
+ */
+async function findAdminSessionId() {
+    try {
+        // 1. Intentar buscar en las carpetas de autenticación
+        if (fs.existsSync(BASE_AUTH_DIR)) {
+            const dirs = fs.readdirSync(BASE_AUTH_DIR);
+
+            // Priorizar por fecha de modificación (más recientes primero)
+            const stats = dirs.map(dir => {
+                const fullPath = path.join(BASE_AUTH_DIR, dir);
+                return {
+                    name: dir,
+                    path: path.join(fullPath, 'creds.json'),
+                    time: fs.statSync(fullPath).mtime.getTime()
+                };
+            }).filter(d => fs.existsSync(d.path))
+                .sort((a, b) => b.time - a.time);
+
+            for (const item of stats) {
+                try {
+                    const creds = JSON.parse(fs.readFileSync(item.path, 'utf8'));
+                    const myId = creds.me && creds.me.id;
+                    if (myId && myId.includes(ADMIN_PHONE)) {
+                        console.log(`[SUBSCRIPTION-NOTIF] 🔍 Encontrada sesión admin en carpeta: ${item.name}`);
+                        return item.name;
+                    }
+                } catch (e) {
+                    // Ignorar errores de lectura/json
+                }
+            }
+        }
+
+        // 2. Fallback: Usar el ID que sabemos que funciona actualmente (53f080714c0394eb)
+        return '53f080714c0394eb';
+    } catch (error) {
+        console.error('[SUBSCRIPTION-NOTIF] Error buscando sesión admin:', error.message);
+        return '53f080714c0394eb';
+    }
+}
+
 
 /**
  * Sends a welcome/activation message when a plan is approved or manually assigned
@@ -31,9 +73,9 @@ async function sendPlanActivationMessage(phone, planName, days) {
                 `• Plan: Básico\n` +
                 `• Duración: ${days} días\n` +
                 `• Estado: ✅ ACTIVO\n\n` +
-                `💡 Ahora puedes disfrutar de todas las funcionalidades básicas de WhatsFlow.\n\n` +
+                `💡 Ahora puedes disfrutar de todas las funcionalidades de Winsap.\n\n` +
                 `¿Necesitas ayuda? Estamos aquí para ti 🤝\n\n` +
-                `¡Bienvenido a WhatsFlow! 💙`,
+                `¡Bienvenido a Winsap! 💙`,
 
             standard: `🎊 ¡EXCELENTE ELECCIÓN! 🎊\n\n` +
                 `⭐ Tu Plan *ESTÁNDAR* ha sido activado con éxito ⭐\n\n` +
@@ -49,7 +91,7 @@ async function sendPlanActivationMessage(phone, planName, days) {
                 `✅ Soporte prioritario\n\n` +
                 `💪 ¡Estás listo para llevar tu negocio al siguiente nivel!\n\n` +
                 `¿Preguntas? Contáctanos cuando quieras 📞\n\n` +
-                `¡Bienvenido a WhatsFlow! 🚀`,
+                `¡Bienvenido a Winsap! 🚀`,
 
             premium: `🏆 ¡BIENVENIDO AL PLAN PREMIUM! 🏆\n\n` +
                 `👑 Tu Plan *PREMIUM* ha sido activado exitosamente 👑\n\n` +
@@ -69,7 +111,7 @@ async function sendPlanActivationMessage(phone, planName, days) {
                 `🎁 ¡Y muchos beneficios exclusivos más!\n\n` +
                 `🔥 ¡Prepárate para transformar tu negocio!\n\n` +
                 `Tu éxito es nuestro éxito 💪\n\n` +
-                `¡Bienvenido a la experiencia Premium de WhatsFlow! 🎯`,
+                `¡Bienvenido a la experiencia Premium de Winsap! 🎯`,
 
             pro: `🚀 ¡PLAN PRO ACTIVADO! 🚀\n\n` +
                 `💼 Tu Plan *PROFESIONAL* está listo para usar 💼\n\n` +
@@ -86,7 +128,7 @@ async function sendPlanActivationMessage(phone, planName, days) {
                 `✅ Integraciones premium\n` +
                 `✅ Soporte preferencial\n\n` +
                 `🎓 ¿Necesitas capacitación? ¡Te ayudamos!\n\n` +
-                `📈 ¡Impulsa tu negocio con WhatsFlow Pro!\n\n` +
+                `📈 ¡Impulsa tu negocio con Winsap Pro!\n\n` +
                 `Estamos contigo en cada paso 🤝\n\n` +
                 `¡Bienvenido! 💙`
         };
@@ -118,15 +160,16 @@ async function sendPlanActivationMessage(phone, planName, days) {
         }
 
         // Usar whatsapp-loader para enviar el mensaje desde la sesión del admin
-        console.log(`[SUBSCRIPTION-NOTIF] 📨 Enviando notificación de plan ${planName} a ${cleanPhone} desde ${ADMIN_SESSION_ID}`);
+        const adminSessionId = await findAdminSessionId();
+        console.log(`[SUBSCRIPTION-NOTIF] 📨 Enviando notificación de plan ${planName} a ${cleanPhone} desde ${adminSessionId}`);
 
-        const result = await sendWhatsAppMessage(ADMIN_SESSION_ID, cleanPhone, message);
+        const result = await sendWhatsAppMessage(adminSessionId, cleanPhone, message);
 
         if (result.success) {
-            console.log(`[SUBSCRIPTION-NOTIF] ✅ Notificación enviada exitosamente`);
+            console.log(`[SUBSCRIPTION-NOTIF] ✅ Notificación enviada exitosamente desde ${adminSessionId}`);
             return true;
         } else {
-            console.error(`[SUBSCRIPTION-NOTIF] ❌ Error al enviar notificación:`, result.error);
+            console.error(`[SUBSCRIPTION-NOTIF] ❌ Error al enviar notificación desde ${adminSessionId}:`, result.error);
             return false;
         }
 
@@ -137,5 +180,6 @@ async function sendPlanActivationMessage(phone, planName, days) {
 }
 
 module.exports = {
-    sendPlanActivationMessage
+    sendPlanActivationMessage,
+    findAdminSessionId
 };

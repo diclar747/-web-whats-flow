@@ -110,7 +110,7 @@ const ManagementModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                         <Box>
                             <Breadcrumbs separator={<NavigateNext fontSize="small" sx={{ color: theme.palette.text.disabled }} />} sx={{ mb: 1.5 }}>
                                 <Link underline="none" color="inherit" href="#" sx={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', fontWeight: 500, color: theme.palette.text.secondary }}>
-                                    WhatsFlow
+                                    Winsap
                                 </Link>
                                 <Typography color="primary" sx={{ display: 'flex', alignItems: 'center', fontSize: '0.875rem', fontWeight: 600 }}>
                                     Administración Inteligente
