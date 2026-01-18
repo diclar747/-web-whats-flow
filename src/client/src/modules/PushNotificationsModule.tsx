@@ -1303,7 +1303,7 @@ const PushNotificationsModule: React.FC = () => {
                                                 }}>
                                                     <Notifications sx={{ fontSize: 12, color: 'white' }} />
                                                 </Box>
-                                                <Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, flex: 1 }}>WHATSFLOW</Typography>
+                                                <Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, flex: 1 }}>WINSAP</Typography>
                                                 <Typography sx={{ fontSize: 10, opacity: 0.6 }}>AHORA</Typography>
                                             </Box>
 

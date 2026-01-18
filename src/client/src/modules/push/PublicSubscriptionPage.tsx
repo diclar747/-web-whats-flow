@@ -236,7 +236,7 @@ const PublicSubscriptionPage: React.FC = () => {
                             letterSpacing: 2
                         }}
                     >
-                        POWERED BY WHATSFLOW PUSH
+                        POWERED BY WINSAP PUSH
                     </Typography>
                 </Container>
             </Fade>
