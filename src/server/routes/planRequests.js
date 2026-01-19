@@ -102,71 +102,72 @@ module.exports = function (app, pool) {
                 }
 
                 // Buscar email del usuario
-                let userQuery = 'SELECT email, name FROM users WHERE phone = ?';
-                let userParams = [phone];
+                try {
+                    let userQuery = 'SELECT email, name FROM users WHERE phone = ?';
+                    let userParams = [phone];
 
-                if (/^\d{1,6}$/.test(phone)) {
-                    userQuery += ' OR id = ?';
-                    userParams.push(phone);
+                    if (/^\d{1,6}$/.test(phone)) {
+                        userQuery += ' OR id = ?';
+                        userParams.push(phone);
+                    }
+
+                    const [users] = await connection.execute(userQuery + ' LIMIT 1', userParams);
+
+                    if (users.length > 0 && users[0].email) {
+                        const user = users[0];
+                        console.log('[PLAN-REQUEST] 📨 Enviando email de solicitud a:', user.email);
+                        sendPlanRequestEmail(user.email, user.name || 'Cliente', {
+                            name: plan.name,
+                            price: plan.price
+                        }).catch(err => {
+                            console.error('[PLAN-REQUEST] ❌ Error enviando email de solicitud:', err.message);
+                        });
+                    }
+                } catch (emailError) {
+                    console.log('[PLAN-REQUEST] ⚠️ Error preparando email de solicitud:', emailError.message);
                 }
 
-                const [users] = await connection.execute(userQuery + ' LIMIT 1', userParams);
+                res.json({
+                    success: true,
+                    message: 'Solicitud enviada exitosamente. El administrador la revisará pronto.',
+                    paymentInfo: {
+                        alias: '3626142',
+                        bank: 'Banco UENO',
+                        amount: plan.price,
+                        planName: plan.name
+                    }
+                });
 
-                if (users.length > 0 && users[0].email) {
-                    const user = users[0];
-                    console.log('[PLAN-REQUEST] 📨 Enviando email de solicitud a:', user.email);
-                    sendPlanRequestEmail(user.email, user.name || 'Cliente', {
-                        name: plan.name,
-                        price: plan.price
-                    }).catch(err => {
-                        console.error('[PLAN-REQUEST] ❌ Error enviando email de solicitud:', err.message);
-                    });
-                }
-            } catch (emailError) {
-                console.log('[PLAN-REQUEST] ⚠️ Error preparando email de solicitud:', emailError.message);
+            } catch (error) {
+                await connection.rollback();
+                throw error;
+            } finally {
+                connection.release();
             }
-
-            res.json({
-                success: true,
-                message: 'Solicitud enviada exitosamente. El administrador la revisará pronto.',
-                paymentInfo: {
-                    alias: '3626142',
-                    bank: 'Banco UENO',
-                    amount: plan.price,
-                    planName: plan.name
-                }
-            });
-
         } catch (error) {
-            await connection.rollback();
-            throw error;
-        } finally {
-            connection.release();
+            console.error('[PLAN-REQUEST] Error creating request:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al crear solicitud'
+            });
         }
-    } catch (error) {
-        console.error('[PLAN-REQUEST] Error creating request:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Error al crear solicitud'
-        });
-    }
-});
+    });
 
-// GET /api/plan-requests/my-request - Cliente consulta su solicitud
-app.get('/api/plan-requests/my-request', async (req, res) => {
-    const phone = req.query.phone;
+    // GET /api/plan-requests/my-request - Cliente consulta su solicitud
+    app.get('/api/plan-requests/my-request', async (req, res) => {
+        const phone = req.query.phone;
 
-    if (!phone) {
-        return res.status(400).json({
-            success: false,
-            error: 'Teléfono requerido'
-        });
-    }
+        if (!phone) {
+            return res.status(400).json({
+                success: false,
+                error: 'Teléfono requerido'
+            });
+        }
 
-    try {
-        const connection = await pool.getConnection();
         try {
-            const [requests] = await connection.execute(`
+            const connection = await pool.getConnection();
+            try {
+                const [requests] = await connection.execute(`
                     SELECT pr.*, p.name as plan_display_name, p.description as plan_description
                     FROM plan_requests pr
                     LEFT JOIN plans p ON pr.plan_id = p.id
@@ -175,44 +176,44 @@ app.get('/api/plan-requests/my-request', async (req, res) => {
                     LIMIT 1
                 `, [phone]);
 
-            if (requests.length === 0) {
-                return res.json({
+                if (requests.length === 0) {
+                    return res.json({
+                        success: true,
+                        request: null
+                    });
+                }
+
+                res.json({
                     success: true,
-                    request: null
+                    request: requests[0]
                 });
+
+            } finally {
+                connection.release();
             }
-
-            res.json({
-                success: true,
-                request: requests[0]
+        } catch (error) {
+            console.error('[PLAN-REQUEST] Error fetching request:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al obtener solicitud'
             });
-
-        } finally {
-            connection.release();
         }
-    } catch (error) {
-        console.error('[PLAN-REQUEST] Error fetching request:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Error al obtener solicitud'
-        });
-    }
-});
+    });
 
-// ============================================
-// ENDPOINTS PARA ADMINISTRADORES
-// ============================================
+    // ============================================
+    // ENDPOINTS PARA ADMINISTRADORES
+    // ============================================
 
-// GET /api/plan-requests - Admin obtiene todas las solicitudes
-app.get('/api/plan-requests', authenticateToken, requireSuperAdmin, async (req, res) => {
-    const status = req.query.status; // 'pending', 'approved', 'rejected', o undefined para todas
+    // GET /api/plan-requests - Admin obtiene todas las solicitudes
+    app.get('/api/plan-requests', authenticateToken, requireSuperAdmin, async (req, res) => {
+        const status = req.query.status; // 'pending', 'approved', 'rejected', o undefined para todas
 
-    console.log('[PLAN-REQUEST] GET /api/plan-requests - status:', status);
+        console.log('[PLAN-REQUEST] GET /api/plan-requests - status:', status);
 
-    try {
-        const connection = await pool.getConnection();
         try {
-            let query = `
+            const connection = await pool.getConnection();
+            try {
+                let query = `
                     SELECT
                         pr.*,
                         p.name as plan_display_name,
@@ -224,74 +225,74 @@ app.get('/api/plan-requests', authenticateToken, requireSuperAdmin, async (req, 
                     LEFT JOIN plans p ON pr.plan_id = p.id
                 `;
 
-            const params = [];
+                const params = [];
 
-            if (status) {
-                query += ' WHERE pr.status = ?';
-                params.push(status);
+                if (status) {
+                    query += ' WHERE pr.status = ?';
+                    params.push(status);
+                }
+
+                query += ' ORDER BY pr.requested_at DESC';
+
+                const [requests] = await connection.execute(query, params);
+
+                console.log('[PLAN-REQUEST] Requests found:', requests.length);
+
+                res.json({
+                    success: true,
+                    requests
+                });
+
+            } finally {
+                connection.release();
             }
-
-            query += ' ORDER BY pr.requested_at DESC';
-
-            const [requests] = await connection.execute(query, params);
-
-            console.log('[PLAN-REQUEST] Requests found:', requests.length);
-
-            res.json({
-                success: true,
-                requests
+        } catch (error) {
+            console.error('[PLAN-REQUEST] Error fetching requests:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al obtener solicitudes'
             });
-
-        } finally {
-            connection.release();
         }
-    } catch (error) {
-        console.error('[PLAN-REQUEST] Error fetching requests:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Error al obtener solicitudes'
-        });
-    }
-});
+    });
 
-// PUT /api/plan-requests/:id/approve - Admin aprueba una solicitud
-app.put('/api/plan-requests/:id/approve', authenticateToken, requireSuperAdmin, async (req, res) => {
-    const { id } = req.params;
-    const adminPhone = req.user?.phone || req.body?.adminPhone || '595994854167';
+    // PUT /api/plan-requests/:id/approve - Admin aprueba una solicitud
+    app.put('/api/plan-requests/:id/approve', authenticateToken, requireSuperAdmin, async (req, res) => {
+        const { id } = req.params;
+        const adminPhone = req.user?.phone || req.body?.adminPhone || '595994854167';
 
-    console.log('[PLAN-REQUEST] Aprobando solicitud:', { id, adminPhone });
+        console.log('[PLAN-REQUEST] Aprobando solicitud:', { id, adminPhone });
 
-    try {
-        const connection = await pool.getConnection();
         try {
-            await connection.beginTransaction();
+            const connection = await pool.getConnection();
+            try {
+                await connection.beginTransaction();
 
-            // Obtener la solicitud
-            const [requests] = await connection.execute(
-                'SELECT * FROM plan_requests WHERE id = ?',
-                [id]
-            );
+                // Obtener la solicitud
+                const [requests] = await connection.execute(
+                    'SELECT * FROM plan_requests WHERE id = ?',
+                    [id]
+                );
 
-            if (requests.length === 0) {
-                await connection.rollback();
-                return res.status(404).json({
-                    success: false,
-                    error: 'Solicitud no encontrada'
-                });
-            }
+                if (requests.length === 0) {
+                    await connection.rollback();
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Solicitud no encontrada'
+                    });
+                }
 
-            const request = requests[0];
+                const request = requests[0];
 
-            if (request.status !== 'pending') {
-                await connection.rollback();
-                return res.status(400).json({
-                    success: false,
-                    error: 'Esta solicitud ya fue procesada'
-                });
-            }
+                if (request.status !== 'pending') {
+                    await connection.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Esta solicitud ya fue procesada'
+                    });
+                }
 
-            // Marcar solicitud como aprobada
-            await connection.execute(`
+                // Marcar solicitud como aprobada
+                await connection.execute(`
                     UPDATE plan_requests
                     SET status = 'approved',
                         reviewed_at = NOW(),
@@ -299,18 +300,18 @@ app.put('/api/plan-requests/:id/approve', authenticateToken, requireSuperAdmin, 
                     WHERE id = ?
                 `, [adminPhone, id]);
 
-            // Activar plan en user_sessions y users
-            const startDate = new Date();
-            const endDate = new Date(startDate.getTime() + request.duration_days * 24 * 60 * 60 * 1000);
+                // Activar plan en user_sessions y users
+                const startDate = new Date();
+                const endDate = new Date(startDate.getTime() + request.duration_days * 24 * 60 * 60 * 1000);
 
-            // 1. Actualizar user_sessions
-            const [sessions] = await connection.execute(
-                'SELECT * FROM user_sessions WHERE phone = ?',
-                [request.phone_number]
-            );
+                // 1. Actualizar user_sessions
+                const [sessions] = await connection.execute(
+                    'SELECT * FROM user_sessions WHERE phone = ?',
+                    [request.phone_number]
+                );
 
-            if (sessions.length > 0) {
-                await connection.execute(`
+                if (sessions.length > 0) {
+                    await connection.execute(`
                         UPDATE user_sessions
                         SET
                             subscription_plan = ?,
@@ -320,18 +321,18 @@ app.put('/api/plan-requests/:id/approve', authenticateToken, requireSuperAdmin, 
                             subscription_days = ?
                         WHERE phone = ?
                     `, [request.plan_name, startDate, endDate, request.duration_days, request.phone_number]);
-                console.log('[PLAN-REQUEST] Plan activado en user_sessions para:', request.phone_number);
-            } else {
-                await connection.execute(`
+                    console.log('[PLAN-REQUEST] Plan activado en user_sessions para:', request.phone_number);
+                } else {
+                    await connection.execute(`
                         INSERT INTO user_sessions
                         (phone, session_id, subscription_plan, subscription_status, subscription_start_date, subscription_end_date, subscription_days, is_active)
                         VALUES (?, ?, ?, 'active', ?, ?, ?, 0)
                     `, [request.phone_number, `session_${request.phone_number}`, request.plan_name, startDate, endDate, request.duration_days]);
-            }
+                }
 
-            // 2. Actualizar tabla users (SINCRONIZACIÓN CRÍTICA)
-            // Buscamos al usuario por su teléfono tanto en 'phone' como en 'admin_phone' (si es el admin quien solicitó para sí mismo)
-            await connection.execute(`
+                // 2. Actualizar tabla users (SINCRONIZACIÓN CRÍTICA)
+                // Buscamos al usuario por su teléfono tanto en 'phone' como en 'admin_phone' (si es el admin quien solicitó para sí mismo)
+                await connection.execute(`
                     UPDATE users 
                     SET 
                         subscription_plan = ?,
@@ -342,121 +343,122 @@ app.put('/api/plan-requests/:id/approve', authenticateToken, requireSuperAdmin, 
                         plan_id = ?
                     WHERE phone = ? OR email = ?
                 `, [
-                request.plan_name,
-                startDate,
-                endDate,
-                request.duration_days,
-                request.plan_id,
-                request.phone_number,
-                request.phone_number // Por si el teléfono está en el campo email (viejos registros)
-            ]);
-            console.log('[PLAN-REQUEST] Plan sincronizado en tabla users para:', request.phone_number);
+                    request.plan_name,
+                    startDate,
+                    endDate,
+                    request.duration_days,
+                    request.plan_id,
+                    request.phone_number,
+                    request.phone_number // Por si el teléfono está en el campo email (viejos registros)
+                ]);
+                console.log('[PLAN-REQUEST] Plan sincronizado en tabla users para:', request.phone_number);
 
-            await connection.commit();
+                await connection.commit();
 
-            // Enviar mensaje de WhatsApp al cliente notificando la aprobación
-            try {
-                // 🎉 Utilizar la nueva utilidad centralizada para enviar el mensaje de bienvenida
-                console.log('[PLAN-REQUEST] 📨 Enviando notificación de aprobación a:', request.phone_number);
+                // Enviar mensaje de WhatsApp al cliente notificando la aprobación
+                try {
+                    // 🎉 Utilizar la nueva utilidad centralizada para enviar el mensaje de bienvenida
+                    console.log('[PLAN-REQUEST] 📨 Enviando notificación de aprobación a:', request.phone_number);
 
-                // Ejecutar de forma asíncrona pero registrar errores
-                sendPlanActivationMessage(request.phone_number, request.plan_name, request.duration_days)
-                    .then(success => {
-                        if (success) {
-                            console.log('[PLAN-REQUEST] ✅ Mensaje de aprobación enviado por WhatsApp a:', request.phone_number);
-                        } else {
-                            console.log('[PLAN-REQUEST] ⚠️ Falló el envío de mensaje de aprobación a:', request.phone_number);
-                        }
-                    })
-                    .catch(err => {
-                        console.error('[PLAN-REQUEST] ❌ Error en sendPlanActivationMessage:', err);
-                    });
-            } catch (whatsappError) {
-                console.log('[PLAN-REQUEST] ⚠️ Error enviando WhatsApp de aprobación:', whatsappError.message);
-                // No fallar la aprobación si el WhatsApp falla
-            }
+                    // Ejecutar de forma asíncrona pero registrar errores
+                    sendPlanActivationMessage(request.phone_number, request.plan_name, request.duration_days)
+                        .then(success => {
+                            if (success) {
+                                console.log('[PLAN-REQUEST] ✅ Mensaje de aprobación enviado por WhatsApp a:', request.phone_number);
+                            } else {
+                                console.log('[PLAN-REQUEST] ⚠️ Falló el envío de mensaje de aprobación a:', request.phone_number);
+                            }
+                        })
+                        .catch(err => {
+                            console.error('[PLAN-REQUEST] ❌ Error en sendPlanActivationMessage:', err);
+                        });
+                } catch (whatsappError) {
+                    console.log('[PLAN-REQUEST] ⚠️ Error enviando WhatsApp de aprobación:', whatsappError.message);
+                    // No fallar la aprobación si el WhatsApp falla
+                }
 
-            // Buscar email del usuario
-            let userSearchQuery = 'SELECT email, name FROM users WHERE phone = ? OR phone = ?';
-            let userSearchParams = [request.phone_number, request.phone_number.replace(/^\+/, '')];
+                // Buscar email del usuario
+                try {
+                    let userSearchQuery = 'SELECT email, name FROM users WHERE phone = ? OR phone = ?';
+                    let userSearchParams = [request.phone_number, request.phone_number.replace(/^\+/, '')];
 
-            if (/^\d{1,6}$/.test(request.phone_number)) {
-                userSearchQuery += ' OR id = ?';
-                userSearchParams.push(request.phone_number);
-            }
+                    if (/^\d{1,6}$/.test(request.phone_number)) {
+                        userSearchQuery += ' OR id = ?';
+                        userSearchParams.push(request.phone_number);
+                    }
 
-            const [users] = await connection.execute(userSearchQuery + ' LIMIT 1', userSearchParams);
+                    const [users] = await connection.execute(userSearchQuery + ' LIMIT 1', userSearchParams);
 
-            if (users.length > 0 && users[0].email) {
-                const user = users[0];
-                console.log('[PLAN-REQUEST] 📨 Enviando email de aprobación a:', user.email);
-                sendPlanApprovalEmail(user.email, user.name || 'Cliente', {
-                    name: request.plan_name,
-                    price: request.plan_price,
-                    days: request.duration_days
-                }).catch(err => {
-                    console.error('[PLAN-REQUEST] ❌ Error enviando email de aprobación:', err.message);
+                    if (users.length > 0 && users[0].email) {
+                        const user = users[0];
+                        console.log('[PLAN-REQUEST] 📨 Enviando email de aprobación a:', user.email);
+                        sendPlanApprovalEmail(user.email, user.name || 'Cliente', {
+                            name: request.plan_name,
+                            price: request.plan_price,
+                            days: request.duration_days
+                        }).catch(err => {
+                            console.error('[PLAN-REQUEST] ❌ Error enviando email de aprobación:', err.message);
+                        });
+                    }
+                } catch (emailError) {
+                    console.log('[PLAN-REQUEST] ⚠️ Error preparando email de aprobación:', emailError.message);
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Solicitud aprobada y plan activado exitosamente'
                 });
+
+            } catch (error) {
+                await connection.rollback();
+                throw error;
+            } finally {
+                connection.release();
             }
-        } catch (emailError) {
-            console.log('[PLAN-REQUEST] ⚠️ Error preparando email de aprobación:', emailError.message);
+        } catch (error) {
+            console.error('[PLAN-REQUEST] Error approving request:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al aprobar solicitud'
+            });
         }
-
-        res.json({
-            success: true,
-            message: 'Solicitud aprobada y plan activado exitosamente'
-        });
-
-    } catch (error) {
-        await connection.rollback();
-        throw error;
-    } finally {
-        connection.release();
-    }
-} catch (error) {
-    console.error('[PLAN-REQUEST] Error approving request:', error);
-    res.status(500).json({
-        success: false,
-        error: 'Error al aprobar solicitud'
-    });
-}
     });
 
-// PUT /api/plan-requests/:id/reject - Admin rechaza una solicitud
-app.put('/api/plan-requests/:id/reject', authenticateToken, requireSuperAdmin, async (req, res) => {
-    const { id } = req.params;
-    const { reason } = req.body;
-    const adminPhone = req.user?.phone || req.body?.adminPhone || '595994854167';
+    // PUT /api/plan-requests/:id/reject - Admin rechaza una solicitud
+    app.put('/api/plan-requests/:id/reject', authenticateToken, requireSuperAdmin, async (req, res) => {
+        const { id } = req.params;
+        const { reason } = req.body;
+        const adminPhone = req.user?.phone || req.body?.adminPhone || '595994854167';
 
-    console.log('[PLAN-REQUEST] Rechazando solicitud:', { id, reason, adminPhone });
+        console.log('[PLAN-REQUEST] Rechazando solicitud:', { id, reason, adminPhone });
 
-    try {
-        const connection = await pool.getConnection();
         try {
-            // Obtener la solicitud
-            const [requests] = await connection.execute(
-                'SELECT * FROM plan_requests WHERE id = ?',
-                [id]
-            );
+            const connection = await pool.getConnection();
+            try {
+                // Obtener la solicitud
+                const [requests] = await connection.execute(
+                    'SELECT * FROM plan_requests WHERE id = ?',
+                    [id]
+                );
 
-            if (requests.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Solicitud no encontrada'
-                });
-            }
+                if (requests.length === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Solicitud no encontrada'
+                    });
+                }
 
-            const request = requests[0];
+                const request = requests[0];
 
-            if (request.status !== 'pending') {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Esta solicitud ya fue procesada'
-                });
-            }
+                if (request.status !== 'pending') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Esta solicitud ya fue procesada'
+                    });
+                }
 
-            // Marcar solicitud como rechazada
-            await connection.execute(`
+                // Marcar solicitud como rechazada
+                await connection.execute(`
                     UPDATE plan_requests
                     SET status = 'rejected',
                         reviewed_at = NOW(),
@@ -465,56 +467,56 @@ app.put('/api/plan-requests/:id/reject', authenticateToken, requireSuperAdmin, a
                     WHERE id = ?
                 `, [adminPhone, reason || 'Sin motivo especificado', id]);
 
-            res.json({
-                success: true,
-                message: 'Solicitud rechazada'
-            });
-
-        } finally {
-            connection.release();
-        }
-    } catch (error) {
-        console.error('[PLAN-REQUEST] Error rejecting request:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Error al rechazar solicitud'
-        });
-    }
-});
-
-// DELETE /api/plan-requests/:id - Admin elimina una solicitud
-app.delete('/api/plan-requests/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
-    const { id } = req.params;
-
-    try {
-        const connection = await pool.getConnection();
-        try {
-            const [result] = await connection.execute(
-                'DELETE FROM plan_requests WHERE id = ?',
-                [id]
-            );
-
-            if (result.affectedRows === 0) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Solicitud no encontrada'
+                res.json({
+                    success: true,
+                    message: 'Solicitud rechazada'
                 });
+
+            } finally {
+                connection.release();
             }
-
-            res.json({
-                success: true,
-                message: 'Solicitud eliminada'
+        } catch (error) {
+            console.error('[PLAN-REQUEST] Error rejecting request:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al rechazar solicitud'
             });
-
-        } finally {
-            connection.release();
         }
-    } catch (error) {
-        console.error('[PLAN-REQUEST] Error deleting request:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Error al eliminar solicitud'
-        });
-    }
-});
+    });
+
+    // DELETE /api/plan-requests/:id - Admin elimina una solicitud
+    app.delete('/api/plan-requests/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
+        const { id } = req.params;
+
+        try {
+            const connection = await pool.getConnection();
+            try {
+                const [result] = await connection.execute(
+                    'DELETE FROM plan_requests WHERE id = ?',
+                    [id]
+                );
+
+                if (result.affectedRows === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Solicitud no encontrada'
+                    });
+                }
+
+                res.json({
+                    success: true,
+                    message: 'Solicitud eliminada'
+                });
+
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('[PLAN-REQUEST] Error deleting request:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Error al eliminar solicitud'
+            });
+        }
+    });
 };

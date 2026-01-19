@@ -54,113 +54,196 @@ export const useTransferNotifications = (socket: any, userId?: number) => {
           style={{
             maxWidth: '420px',
             width: '100%',
-            backgroundColor: '#ffffff',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-            borderRadius: '0.5rem',
+            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.3)',
+            borderRadius: '16px',
             pointerEvents: 'auto',
             display: 'flex',
-            border: '1px solid rgba(0, 0, 0, 0.05)',
+            border: '1px solid rgba(99, 102, 241, 0.3)',
             overflow: 'hidden',
-            animation: t.visible ? 'slideIn 0.3s ease-out' : 'slideOut 0.2s ease-in'
+            animation: t.visible ? 'slideIn 0.3s ease-out' : 'slideOut 0.2s ease-in',
+            backdropFilter: 'blur(10px)'
           }}
         >
-          <div style={{ flex: '1', width: 0, padding: '1rem' }}>
+          <div style={{ flex: '1', width: 0, padding: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start' }}>
-              <div style={{ flexShrink: 0, paddingTop: '0.125rem' }}>
-                <span style={{ fontSize: '32px' }}>🔔</span>
+              <div style={{
+                flexShrink: 0,
+                paddingTop: '0.125rem',
+                width: '48px',
+                height: '48px',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 8px 16px rgba(99, 102, 241, 0.4)'
+              }}>
+                <span style={{ fontSize: '28px' }}>🔔</span>
               </div>
-              <div style={{ marginLeft: '0.75rem', flex: 1 }}>
+              <div style={{ marginLeft: '1rem', flex: 1 }}>
                 <p style={{
-                  fontSize: '0.875rem',
+                  fontSize: '0.95rem',
                   fontWeight: 'bold',
-                  color: '#111827',
-                  margin: 0
+                  color: '#f1f5f9',
+                  margin: 0,
+                  letterSpacing: '0.02em'
                 }}>
                   Nuevo Chat Asignado
                 </p>
                 <p style={{
-                  marginTop: '0.25rem',
+                  marginTop: '0.5rem',
                   fontSize: '0.875rem',
-                  color: '#374151',
-                  margin: '0.25rem 0 0 0'
+                  color: '#cbd5e1',
+                  margin: '0.5rem 0 0 0',
+                  lineHeight: '1.5'
                 }}>
-                  Chat con: <strong style={{ color: '#1f2937' }}>{data.chatName}</strong>
+                  Chat con: <strong style={{ color: '#e0e7ff', fontWeight: 600 }}>{data.chatName}</strong>
                 </p>
                 {data.note && (
                   <p style={{
-                    marginTop: '0.5rem',
+                    marginTop: '0.75rem',
                     fontSize: '0.875rem',
-                    color: '#2563eb',
-                    backgroundColor: '#eff6ff',
-                    padding: '0.5rem',
-                    borderRadius: '0.25rem',
-                    border: '1px solid #bfdbfe',
-                    margin: '0.5rem 0 0 0'
+                    color: '#a5b4fc',
+                    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                    padding: '0.625rem',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    margin: '0.75rem 0 0 0',
+                    backdropFilter: 'blur(4px)'
                   }}>
                     📝 {data.note}
                   </p>
                 )}
                 <p style={{
-                  marginTop: '0.25rem',
+                  marginTop: '0.5rem',
                   fontSize: '0.75rem',
-                  color: '#6b7280',
-                  margin: '0.25rem 0 0 0'
+                  color: '#94a3b8',
+                  margin: '0.5rem 0 0 0'
                 }}>
-                  Transferido por Admin
+                  🔄 Transferido por Admin
                 </p>
               </div>
             </div>
-          </div>
-          <div style={{ display: 'flex', borderLeft: '1px solid #e5e7eb' }}>
-            <button
-              onClick={() => {
-                toast.dismiss(t.id);
-                console.log('🔄 [NOTIFICATION] Solicitando actualización de chats sin recargar página');
-                window.dispatchEvent(new CustomEvent('reload-assigned-chats', {
-                  detail: { chatJid: data.chatJid, navigateToChat: true }
-                }));
-                const chatUrl = `/dashboard/chat?chatId=${data.chatJid}&sessionId=${data.sessionId}`;
-                window.history.pushState({}, '', chatUrl);
-                window.dispatchEvent(new PopStateEvent('popstate'));
-              }}
-              style={{
-                width: '100%',
-                border: 'none',
-                borderRadius: '0',
-                borderTopRightRadius: '0.5rem',
-                borderBottomRightRadius: '0.5rem',
-                padding: '1rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '0.875rem',
-                fontWeight: '500',
-                color: '#2563eb',
-                backgroundColor: 'transparent',
-                cursor: 'pointer',
-                minWidth: '80px',
-                transition: 'background-color 0.2s ease',
-                boxShadow: 'inset 0 0 0 1px transparent'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = '#f0f9ff';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'transparent';
-              }}
-            >
-              Ver Chat
-            </button>
+
+            {/* Botones Aceptar/Rechazar */}
+            <div style={{
+              display: 'flex',
+              gap: '0.75rem',
+              marginTop: '1.25rem',
+              paddingTop: '1rem',
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+            }}>
+              <button
+                onClick={async () => {
+                  toast.dismiss(t.id);
+                  try {
+                    const apiBase = window.location.origin;
+                    await fetch(`${apiBase}/api/agent/transfer/accept`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                      },
+                      body: JSON.stringify({
+                        chatJid: data.chatJid,
+                        sessionId: data.sessionId
+                      })
+                    });
+                    toast.success('✅ Transferencia aceptada');
+                    window.dispatchEvent(new CustomEvent('reload-assigned-chats', {
+                      detail: { chatJid: data.chatJid, navigateToChat: true }
+                    }));
+                  } catch (e) {
+                    toast.error('Error al aceptar');
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '0.875rem 1.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.875rem',
+                  fontWeight: '600',
+                  color: '#ffffff',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(16, 185, 129, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.3)';
+                }}
+              >
+                ✓ Aceptar
+              </button>
+              <button
+                onClick={async () => {
+                  toast.dismiss(t.id);
+                  try {
+                    const apiBase = window.location.origin;
+                    await fetch(`${apiBase}/api/agent/transfer/reject`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                      },
+                      body: JSON.stringify({
+                        chatJid: data.chatJid,
+                        sessionId: data.sessionId
+                      })
+                    });
+                    toast.error('❌ Transferencia rechazada');
+                  } catch (e) {
+                    toast.error('Error al rechazar');
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  borderRadius: '10px',
+                  padding: '0.875rem 1.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '0.875rem',
+                  fontWeight: '600',
+                  color: '#ffffff',
+                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 8px 20px rgba(239, 68, 68, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(239, 68, 68, 0.3)';
+                }}
+              >
+                ✕ Rechazar
+              </button>
+            </div>
           </div>
         </div>
       ),
       {
-        duration: 15000,
+        duration: 30000,
         position: 'top-right',
       }
     );
 
-    console.log('📩 Toast mostrado en la app');
+    console.log('📩 Toast moderno mostrado en la app');
   }, []);
 
   useEffect(() => {

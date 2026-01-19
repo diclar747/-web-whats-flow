@@ -206,6 +206,7 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
 
   const [userProfilePic, setUserProfilePic] = useState<string | null>(null);
   const [userPhoneNumber, setUserPhoneNumber] = useState<string | null>(null);
+  const [userFullPhoneNumber, setUserFullPhoneNumber] = useState<string | null>(null); // 📱 Número completo desde settings
   const [sessionValid, setSessionValid] = useState<boolean | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false); // Nuevo estado para evitar race conditions
 
@@ -228,6 +229,34 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
   const isAdmin = userRole === 'admin';
 
   // 🆕 Fetch All Active Sessions - Memoized to use in socket listeners
+  // 📱 Cargar perfil del usuario autenticado (teléfono completo desde settings)
+  const fetchUserProfile = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const response = await fetch(`${window.location.origin}/api/settings/profile`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Obtener teléfono completo desde settings.general.phone
+        const fullPhone = data.settings?.general?.phone || data.phone;
+        if (fullPhone) {
+          console.log('[DASHBOARD] 📱 Teléfono completo cargado desde settings:', fullPhone);
+          setUserFullPhoneNumber(fullPhone);
+        }
+      }
+    } catch (error) {
+      console.error('[DASHBOARD] Error cargando perfil de usuario:', error);
+    }
+  }, []);
+
   const fetchSessions = useCallback(async () => {
     try {
       const sid = activeSessionId || sessionId;
@@ -269,8 +298,9 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
   useEffect(() => {
     if (localStorage.getItem('token')) {
       fetchSessions();
+      fetchUserProfile(); // 📱 Cargar teléfono completo
     }
-  }, [fetchSessions]);
+  }, [fetchSessions, fetchUserProfile]);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
@@ -1421,7 +1451,7 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
         >
           <Box sx={{ px: 2, py: 1.5 }}>
             <Typography variant="subtitle2" sx={{ color: 'white' }}>{userName || 'Usuario'}</Typography>
-            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)' }}>{userPhoneNumber}</Typography>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)' }}>{userFullPhoneNumber || userPhoneNumber || 'Sin teléfono'}</Typography>
           </Box>
           <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)' }} />
           <MenuItem onClick={() => { handleMenuClose(); handleNavigation('/dashboard/settings'); }}>
