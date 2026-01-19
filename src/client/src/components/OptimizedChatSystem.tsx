@@ -105,7 +105,7 @@ const OptimizedChatSystem: React.FC<OptimizedChatSystemProps> = ({
   const messagesObserver = useRef<IntersectionObserver>();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3002';
+  const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
   const token = sessionStorage.getItem('token') || '';
 
   // ============== LOAD CHATS ==============

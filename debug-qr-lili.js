@@ -32,7 +32,7 @@ console.log('\n3️⃣ CONFIGURACION DE API:');
 const protocol = window.location.protocol;
 const host = window.location.host;
 const hostname = window.location.hostname;
-const apiBase = (hostname === 'localhost' || hostname === '127.0.0.1') ? 'http://localhost:3002' : '';
+const apiBase = (hostname === 'localhost' || hostname === '127.0.0.1') ? 'http://localhost:3000' : '';
 console.log('Protocol:', protocol);
 console.log('Host:', host);
 console.log('Hostname:', hostname);

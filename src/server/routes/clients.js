@@ -126,15 +126,81 @@ module.exports = function (app, pool) {
         try {
             const connection = await pool.getConnection();
             try {
-                await connection.execute('DELETE FROM users WHERE id = ?', [id]);
-                // TODO: Limpiar datos relacionados?
-                res.json({ success: true, message: 'Cliente eliminado' });
+                // Primero obtener el phone del usuario para limpiar datos relacionados
+                const [user] = await connection.execute('SELECT phone FROM users WHERE id = ?', [id]);
+
+                if (user.length === 0) {
+                    return res.status(404).json({ success: false, error: 'Cliente no encontrado' });
+                }
+
+                const userPhone = user[0].phone;
+
+                // Iniciar transacción para asegurar que todo se elimine o nada
+                await connection.beginTransaction();
+
+                try {
+                    // Función helper para eliminar con manejo de errores
+                    const safeDelete = async (table, condition, params) => {
+                        try {
+                            await connection.execute(`DELETE FROM ${table} WHERE ${condition}`, params);
+                        } catch (err) {
+                            if (err.code !== 'ER_NO_SUCH_TABLE') {
+                                throw err; // Re-lanzar si no es error de tabla no existente
+                            }
+                            console.log(`[ADMIN] Tabla ${table} no existe, omitiendo...`);
+                        }
+                    };
+
+                    // 1. Eliminar sesiones del usuario
+                    if (userPhone) {
+                        await safeDelete('user_sessions', 'phone = ?', [userPhone]);
+                    }
+
+                    // 2. Eliminar contactos relacionados
+                    await safeDelete('contacts', 'session_id = ?', [id]);
+
+                    // 3. Eliminar mensajes
+                    await safeDelete('messages', 'session_id = ?', [id]);
+
+                    // 4. Eliminar tableros kanban y sus contactos
+                    try {
+                        const [boards] = await connection.execute('SELECT id FROM kanban_boards WHERE session_id = ?', [id]);
+                        for (const board of boards) {
+                            await safeDelete('kanban_contacts', 'board_id = ?', [board.id]);
+                        }
+                        await safeDelete('kanban_boards', 'session_id = ?', [id]);
+                    } catch (err) {
+                        if (err.code !== 'ER_NO_SUCH_TABLE') throw err;
+                    }
+
+                    // 5. Eliminar campañas
+                    await safeDelete('campaigns', 'session_id = ?', [id]);
+
+                    // 6. Eliminar citas
+                    await safeDelete('appointments', 'session_id = ?', [id]);
+
+                    // 7. Eliminar grupos locales (si existe la tabla)
+                    await safeDelete('local_groups', 'session_id = ?', [id]);
+
+                    // 8. Finalmente eliminar el usuario
+                    await connection.execute('DELETE FROM users WHERE id = ?', [id]);
+
+                    // Commit de la transacción
+                    await connection.commit();
+
+                    console.log(`[ADMIN] ✅ Cliente ID ${id} eliminado correctamente con todos sus datos relacionados`);
+                    res.json({ success: true, message: 'Cliente y todos sus datos eliminados correctamente' });
+                } catch (error) {
+                    // Rollback en caso de error
+                    await connection.rollback();
+                    throw error;
+                }
             } finally {
                 connection.release();
             }
         } catch (error) {
-            console.error('Error deleting client:', error);
-            res.status(500).json({ success: false, error: 'Error eliminando cliente' });
+            console.error('[ADMIN] ❌ Error deleting client:', error);
+            res.status(500).json({ success: false, error: 'Error eliminando cliente: ' + error.message });
         }
     });
 };

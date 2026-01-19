@@ -61,6 +61,16 @@ interface WhatsAppSession {
   status: 'connecting' | 'connected' | 'disconnected' | 'error';
 }
 
+export interface SyncProgress {
+  status: 'syncing' | 'completed' | 'idle' | 'error';
+  progress: number;
+  message: string;
+  contacts?: number;
+  groups?: number;
+  messages?: number;
+  sessionId?: string; // 🔥 Added sessionId
+}
+
 export interface WhatsAppChat {
   id: string;
   name: string;
@@ -155,6 +165,9 @@ interface WhatsAppContextType {
   setMessages: React.Dispatch<React.SetStateAction<any[]>>;
   setChats: React.Dispatch<React.SetStateAction<WhatsAppChat[]>>;
   typingStatus: { [chatId: string]: string };
+  syncProgress: SyncProgress;
+  syncProgresses: Record<string, SyncProgress>; // 🔥 Map of sync progress by sessionId
+  getSyncProgress: (sessionId: string) => SyncProgress | undefined; // 🔥 Helper
 }
 
 const WhatsAppContext = createContext<WhatsAppContextType | undefined>(undefined);
@@ -205,6 +218,16 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   const [hasMoreChats, setHasMoreChats] = useState(true);
   const [isLoadingMoreChats, setIsLoadingMoreChats] = useState(false);
   const [transferRequest, setTransferRequest] = useState<any | null>(null);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress>({
+    status: 'idle',
+    progress: 0,
+    message: ''
+  });
+  const [syncProgresses, setSyncProgresses] = useState<Record<string, SyncProgress>>({});
+
+  const getSyncProgress = useCallback((targetSessionId: string) => {
+    return syncProgresses[targetSessionId];
+  }, [syncProgresses]);
 
   const { socket, isConnected: isSocketConnected } = useSocket();
 
@@ -1023,6 +1046,120 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     }
     socket.on('transfer-request-update', handleTransferUpdate);
 
+    // 🔄 SYNC PROGRESS LISTENERS
+    socket.on('sync-start', (data: any) => {
+      console.log('🔄 [WhatsAppContext] Sync started:', data);
+      const targetSessionId = data.sessionId || session?.sessionId;
+
+      const newProgress: SyncProgress = {
+        status: 'syncing',
+        progress: 0,
+        message: 'Iniciando sincronización...',
+        contacts: 0,
+        groups: 0,
+        messages: 0,
+        sessionId: targetSessionId
+      };
+
+      if (targetSessionId) {
+        setSyncProgresses(prev => ({
+          ...prev,
+          [targetSessionId]: newProgress
+        }));
+      }
+
+      // Update global if it matches current session
+      if (targetSessionId === session?.sessionId) {
+        setSyncProgress(newProgress);
+      }
+    });
+
+    socket.on('sync-progress', (data: any) => {
+      // console.log('🔄 [WhatsAppContext] Sync progress:', data);
+      const targetSessionId = data.sessionId || session?.sessionId;
+
+      if (targetSessionId) {
+        setSyncProgresses(prev => {
+          const prevProgress = prev[targetSessionId] || { status: 'idle', progress: 0, message: '' };
+          return {
+            ...prev,
+            [targetSessionId]: {
+              ...prevProgress,
+              status: 'syncing',
+              progress: data.progress || data.percentage || prevProgress.progress,
+              message: data.message || prevProgress.message,
+              contacts: data.contacts || prevProgress.contacts,
+              groups: data.groups || prevProgress.groups,
+              messages: data.messages || prevProgress.messages,
+              sessionId: targetSessionId
+            }
+          };
+        });
+      }
+
+      if (targetSessionId === session?.sessionId) {
+        setSyncProgress(prev => ({
+          ...prev,
+          status: 'syncing',
+          progress: data.progress || data.percentage || prev.progress,
+          message: data.message || prev.message,
+          contacts: data.contacts || prev.contacts,
+          groups: data.groups || prev.groups,
+          messages: data.messages || prev.messages
+        }));
+      }
+    });
+
+    const handleSyncCompletion = (data: any) => {
+      console.log('✅ [WhatsAppContext] Sync completed:', data);
+      const targetSessionId = data.sessionId || session?.sessionId;
+
+      const completedProgress: SyncProgress = {
+        status: 'completed',
+        progress: 100,
+        message: '¡Sincronización completada!',
+        contacts: data.contacts || data.stats?.contacts,
+        groups: data.groups || data.stats?.groups,
+        messages: (data.messages || data.stats?.messages) || (data.chats || data.stats?.chats),
+        sessionId: targetSessionId
+      };
+
+      if (targetSessionId) {
+        setSyncProgresses(prev => ({
+          ...prev,
+          [targetSessionId]: completedProgress
+        }));
+
+        // Clear after 5 seconds
+        setTimeout(() => {
+          setSyncProgresses(prev => ({
+            ...prev,
+            [targetSessionId]: { ...prev[targetSessionId], status: 'idle' }
+          }));
+        }, 5000);
+      }
+
+      if (targetSessionId === session?.sessionId) {
+        setSyncProgress(completedProgress);
+        // Clear after 5 seconds
+        setTimeout(() => {
+          setSyncProgress(prev => ({ ...prev, status: 'idle' }));
+        }, 5000);
+      }
+    };
+
+    socket.on('sync-complete', handleSyncCompletion);
+    socket.on('sync-completed', handleSyncCompletion);
+
+    socket.on('sync-error', (data: any) => {
+      console.error('❌ [WhatsAppContext] Sync error:', data);
+      setSyncProgress(prev => ({
+        ...prev,
+        status: 'error',
+        message: data.error || 'Error en la sincronización'
+      }));
+    });
+
 
 
     return () => {
@@ -1045,6 +1182,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         socket.off(`agent-${userId}-transfer-request`, handleTransferRequest);
       }
       socket.off('transfer-request-update', handleTransferUpdate);
+      socket.off('sync-start');
+      socket.off('sync-progress');
+      socket.off('sync-complete');
+      socket.off('sync-completed');
+      socket.off('sync-error');
     };
   }, [socket, session?.sessionId, isSocketConnected, loadChats, userId]);
   // Solo reconectar cuando cambia la sesión, NO cuando cambia el chat activo
@@ -1643,7 +1785,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     setTransferRequest,
     setMessages,
     setChats,
-    typingStatus: Object.fromEntries(typingStatus)
+    typingStatus: Object.fromEntries(typingStatus),
+    syncProgress,
+    syncProgresses,
+    getSyncProgress
   }), [
     session,
     chats,
@@ -1676,7 +1821,9 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     loadMessageReactions,
     markChatAsRead,
     markAllChatsAsRead,
-    typingStatus
+    typingStatus,
+    syncProgress,
+    syncProgresses
   ]);
 
   // Escuchar evento de recarga de chats asignados

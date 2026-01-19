@@ -91,6 +91,15 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
                 // ✅ Usar navigate en lugar de window.location para NO perder el sessionStorage
                 navigate('/dashboard');
             } else {
+                // ⛔ VERIFICAR SI EL USUARIO ESTÁ BLOQUEADO
+                if (data.isBlocked) {
+                    console.log('🚫 Usuario bloqueado, redirigiendo a AccountBlocked');
+                    navigate('/account-blocked', {
+                        state: { supportPhone: data.supportPhone || '595994854167' }
+                    });
+                    return;
+                }
+
                 setError(data.error || 'Error al iniciar sesión');
             }
         } catch (error) {

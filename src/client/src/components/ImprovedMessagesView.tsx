@@ -51,7 +51,7 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const observer = useRef<IntersectionObserver>();
 
-  const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3002';
+  const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:3000';
 
   // Load messages with pagination (cursor-based)
   const loadMessages = useCallback(async (isInitial: boolean = false, beforeTimestamp?: string) => {

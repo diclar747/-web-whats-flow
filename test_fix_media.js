@@ -9,7 +9,7 @@ const testDownload = async () => {
     
     const testUrl = 'https://www.whatsapp.com/favicon.ico'; // URL de prueba
     
-    const response = await axios.post('http://localhost:3003/api/media/download-cdn-url', {
+    const response = await axios.post('http://localhost:3000/api/media/download-cdn-url', {
       sessionId: 'test-session',
       mediaUrl: testUrl,
       mimeType: 'image/x-icon'

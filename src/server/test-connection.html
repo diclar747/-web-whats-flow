@@ -17,7 +17,7 @@
             try {
                 resultDiv.innerHTML = 'Intentando conexion API...';
                 
-                const response = await fetch('http://localhost:3002/api/create-session', {
+                const response = await fetch('http://localhost:3000/api/create-session', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -44,7 +44,7 @@
             
             try {
                 // Conectar a Socket.IO
-                const socket = io('http://localhost:3002', {
+                const socket = io('http://localhost:3000', {
                     withCredentials: true,
                     transports: ['websocket', 'polling']
                 });
