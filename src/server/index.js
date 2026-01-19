@@ -22502,6 +22502,223 @@ app.post('/api/agent/close-conversation', async (req, res) => {
     }
 });
 
+// 📱 Endpoints simplificados para agentes (wrappers con autenticación JWT)
+app.post('/api/agent/transfer/accept', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ success: false, error: 'Token no proporcionado' });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const { chatJid, sessionId } = req.body;
+
+        // Obtener datos del agente desde el token
+        const connection = await pool.getConnection();
+        try {
+            const [users] = await connection.execute(
+                'SELECT id, name FROM users WHERE id = ?',
+                [decoded.userId]
+            );
+
+            if (users.length === 0) {
+                return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+            }
+
+            const agent = users[0];
+
+            // Llamar al endpoint existente con los parámetros correctos
+            const acceptData = {
+                agentId: agent.id,
+                chatJid,
+                sessionId,
+                agentName: agent.name
+            };
+
+            // Recrear la lógica del endpoint accept-transfer
+            const allSessionIds = await getAllSessionIds(sessionId);
+            const placeholders = allSessionIds.map(() => '?').join(',');
+            const [assignments] = await connection.execute(
+                `SELECT * FROM chat_assignments
+                 WHERE user_id = ? AND chat_jid = ? AND session_id IN(${placeholders}) AND status IN ('pending', 'active')`,
+                [agent.id, chatJid, ...allSessionIds]
+            );
+
+            if (assignments.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No se encontró transferencia pendiente'
+                });
+            }
+
+            const assignment = assignments[0];
+            const targetSessionId = assignment.session_id;
+
+            if (assignment.status === 'active') {
+                return res.json({
+                    success: true,
+                    message: 'Chat aceptado exitosamente',
+                    alreadyActive: true
+                });
+            }
+
+            // Actualizar estado
+            await connection.execute(
+                `UPDATE chat_assignments 
+                 SET status = 'active', accepted_at = NOW()
+                 WHERE user_id = ? AND chat_jid = ? AND session_id = ?`,
+                [agent.id, chatJid, targetSessionId]
+            );
+
+            // Obtener nombre del contacto
+            const [chatInfo] = await connection.execute(
+                `SELECT COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as chat_name
+                 FROM (SELECT 1) as dummy
+                 LEFT JOIN contacts c ON c.jid = ? AND c.session_id = ?
+                 LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
+                 LIMIT 1`,
+                [chatJid, chatJid, targetSessionId, chatJid, targetSessionId]
+            );
+
+            const chatName = chatInfo[0]?.chat_name || chatJid.split('@')[0];
+
+            // Emitir eventos Socket.IO
+            io.to(`agent-${agent.id}`).emit(`agent-${agent.id}-transfer-accepted`, {
+                chatJid,
+                sessionId: targetSessionId,
+                status: 'active',
+                acceptedAt: new Date().toISOString()
+            });
+
+            // Notificar al admin
+            io.emit('transfer-response', {
+                type: 'accepted',
+                agentId: agent.id,
+                agentName: agent.name,
+                chatJid,
+                chatName,
+                message: `El agente ${agent.name} aceptó la conversación con ${chatName}`,
+                timestamp: new Date().toISOString()
+            });
+
+            console.log(`[TRANSFER-ACCEPT] ✅ ${agent.name} aceptó chat ${chatName}`);
+
+            res.json({
+                success: true,
+                message: 'Transferencia aceptada'
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[TRANSFER-ACCEPT] Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/agent/transfer/reject', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.split(' ')[1];
+        if (!token) {
+            return res.status(401).json({ success: false, error: 'Token no proporcionado' });
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const { chatJid, sessionId, reason } = req.body;
+
+        // Obtener datos del agente desde el token
+        const connection = await pool.getConnection();
+        try {
+            const [users] = await connection.execute(
+                'SELECT id, name FROM users WHERE id = ?',
+                [decoded.userId]
+            );
+
+            if (users.length === 0) {
+                return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+            }
+
+            const agent = users[0];
+
+            // Recrear lógica del endpoint reject-transfer
+            const allSessionIds = await getAllSessionIds(sessionId);
+            const placeholders = allSessionIds.map(() => '?').join(',');
+            const [assignments] = await connection.execute(
+                `SELECT * FROM chat_assignments
+                 WHERE user_id = ? AND chat_jid = ? AND session_id IN(${placeholders}) AND status = 'pending'`,
+                [agent.id, chatJid, ...allSessionIds]
+            );
+
+            if (assignments.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'No se encontró transferencia pendiente'
+                });
+            }
+
+            const targetSessionId = assignments[0].session_id;
+
+            // Marcar como rechazada
+            await connection.execute(
+                `UPDATE chat_assignments
+                 SET status = 'rejected', rejected_at = NOW(), notes = ?
+                WHERE user_id = ? AND chat_jid = ? AND session_id = ?`,
+                [reason || 'Rechazado por el agente', agent.id, chatJid, targetSessionId]
+            );
+
+            // Eliminar la asignación rechazada
+            await connection.execute(
+                `DELETE FROM chat_assignments
+                 WHERE user_id = ? AND chat_jid = ? AND session_id = ? AND status = 'rejected'`,
+                [agent.id, chatJid, targetSessionId]
+            );
+
+            // Obtener nombre del contacto
+            const [chatInfo] = await connection.execute(
+                `SELECT COALESCE(c.name, cg.name, SUBSTRING_INDEX(?, '@', 1)) as chat_name
+                 FROM (SELECT 1) as dummy
+                 LEFT JOIN contacts c ON c.jid = ? AND c.session_id = ?
+                 LEFT JOIN contact_groups cg ON cg.jid = ? AND cg.session_id = ?
+                 LIMIT 1`,
+                [chatJid, chatJid, targetSessionId, chatJid, targetSessionId]
+            );
+
+            const chatName = chatInfo[0]?.chat_name || chatJid.split('@')[0];
+
+            // Emitir eventos Socket.IO
+            io.to(`agent-${agent.id}`).emit(`agent-${agent.id}-transfer-rejected`, {
+                chatJid,
+                sessionId: targetSessionId,
+                rejectedAt: new Date().toISOString()
+            });
+
+            // Notificar al admin
+            io.emit('transfer-response', {
+                type: 'rejected',
+                agentId: agent.id,
+                agentName: agent.name,
+                chatJid,
+                chatName,
+                reason: reason || 'Sin razón especificada',
+                message: `El agente ${agent.name} rechazó la conversación con ${chatName}`,
+                timestamp: new Date().toISOString()
+            });
+
+            console.log(`[TRANSFER-REJECT] ✅ ${agent.name} rechazó chat ${chatName}`);
+
+            res.json({
+                success: true,
+                message: 'Transferencia rechazada'
+            });
+        } finally {
+            connection.release();
+        }
+    } catch (error) {
+        console.error('[TRANSFER-REJECT] Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Endpoint removed: Duplicate and broken implementation. Handled by multiagent-endpoints.js
 
 // Obtener historial de chats de un agente
@@ -23297,15 +23514,48 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
         const { sessionId } = req.params;
         const { startDate, endDate, status } = req.query;
 
-        const phoneNumber = await getUserPhoneNumber(sessionId);
-        if (!phoneNumber) {
-            return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
-        }
-
+        // 🔑 SOPORTE DUAL: Autenticación JWT O sessionId legacy
         const connection = await pool.getConnection();
         try {
-            // 🔧 FIX: Usar DATE_FORMAT y TIME_FORMAT para evitar conversiones de zona horaria
-            // 🔧 FIX: Buscar por sessionId O phoneNumber para compatibilidad con citas antiguas
+            let sessionIds = [];
+
+            // 1️⃣ Intentar obtener userId desde JWT token
+            const token = req.headers.authorization?.split(' ')[1];
+            if (token) {
+                try {
+                    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                    console.log('[APPOINTMENTS] 🔐 Usuario autenticado del token:', decoded.userId);
+
+                    // Obtener TODAS las sesiones del usuario
+                    const [userSessions] = await connection.execute(
+                        'SELECT session_id, phone FROM user_sessions WHERE user_id = ? AND is_active = 1',
+                        [decoded.userId]
+                    );
+
+                    if (userSessions.length > 0) {
+                        sessionIds = userSessions.map(s => s.session_id || s.phone);
+                        console.log('[APPOINTMENTS] 📱 Sesiones del usuario:', sessionIds);
+                    } else {
+                        console.log('[APPOINTMENTS] ⚠️ No se encontraron sesiones activas para el usuario');
+                    }
+                } catch (jwtError) {
+                    console.log('[APPOINTMENTS] ⚠️ Token JWT inválido, fallback a sessionId:', jwtError.message);
+                }
+            }
+
+            // Fallback: Si no hay sesiones desde JWT, usar el sessionId del parámetro
+            if (sessionIds.length === 0) {
+                const phoneNumber = await getUserPhoneNumber(sessionId);
+                if (phoneNumber) {
+                    sessionIds = [sessionId, phoneNumber];
+                    console.log('[APPOINTMENTS] 📞 Usando sessionId del parámetro:', sessionIds);
+                } else {
+                    return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
+                }
+            }
+
+            // 🔧 Construir query dinámica con IN clause
+            const placeholders = sessionIds.map(() => '?').join(',');
             let query = `SELECT
                 id, session_id, patient_name, patient_phone, doctor_name, company_name,
                 description,
@@ -23313,8 +23563,9 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
                 TIME_FORMAT(appointment_time, '%H:%i') as appointment_time,
                 status, reminder_sent, notes, reminder_time, notification_template, category_id,
                 created_at, updated_at
-                FROM appointments WHERE (session_id = ? OR session_id = ?)`;
-            const params = [sessionId, phoneNumber];
+                FROM appointments WHERE session_id IN (${placeholders})`;
+
+            const params = [...sessionIds];
 
             if (startDate && endDate) {
                 query += ` AND appointment_date BETWEEN ? AND ?`;
@@ -23330,7 +23581,7 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
 
             const [appointments] = await connection.execute(query, params);
 
-            console.log(`[APPOINTMENTS] ${appointments.length} citas encontradas para sesión ${sessionId}`);
+            console.log(`[APPOINTMENTS] ✅ ${appointments.length} citas encontradas para sesiones: ${sessionIds.join(', ')}`);
             res.json({ success: true, appointments });
         } finally {
             connection.release();
@@ -23340,6 +23591,7 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
 
 // Obtener una cita por ID
 app.get('/api/appointments/detail/:id', async (req, res) => {

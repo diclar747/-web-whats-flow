@@ -1617,6 +1617,23 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
                     <Grid item xs={12} md={6}>
                       <TextField
                         fullWidth
+                        label="Número de Teléfono"
+                        value={systemPreferences?.general?.phone || '+595'}
+                        variant="outlined"
+                        size="small"
+                        disabled
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <Phone fontSize="small" />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <TextField
+                        fullWidth
                         label="Contraseña"
                         type={showPassword ? 'text' : 'password'}
                         value="••••••••"
