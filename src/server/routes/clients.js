@@ -94,18 +94,22 @@ module.exports = function (app, pool) {
     // PUT /api/clients/:id - Editar cliente
     app.put('/api/clients/:id', authenticateToken, requireSuperAdmin, async (req, res) => {
         const { id } = req.params;
-        const { name, email, phone, status } = req.body;
+        const { name, email, phone } = req.body;
+
+        if (!name || !email || !phone) {
+            return res.status(400).json({ success: false, error: 'Todos los campos son obligatorios' });
+        }
 
         try {
             const connection = await pool.getConnection();
             try {
                 await connection.execute(`
                     UPDATE users 
-                    SET name = ?, email = ?, phone = ?, status = ?
+                    SET name = ?, email = ?, phone = ?, updated_at = NOW()
                     WHERE id = ?
-                `, [name, email, phone, status, id]);
+                `, [name, email, phone, id]);
 
-                res.json({ success: true, message: 'Cliente actualizado' });
+                res.json({ success: true, message: 'Cliente actualizado correctamente' });
             } finally {
                 connection.release();
             }

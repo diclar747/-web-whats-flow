@@ -21,8 +21,11 @@ import {
     FormControl,
     InputLabel,
     Select,
+    TextField,
+    Alert,
+    Snackbar,
 } from '@mui/material';
-import { MoreVert, Block, CheckCircle, Smartphone } from '@mui/icons-material';
+import { MoreVert, Block, CheckCircle, Smartphone, Search, Edit, Delete, PersonAdd } from '@mui/icons-material';
 import { getAPIBaseURL } from '../../utils/socketConfig';
 
 interface Client {
@@ -45,6 +48,8 @@ interface Plan {
 
 const ClientsManager: React.FC = () => {
     const [clients, setClients] = useState<Client[]>([]);
+    const [filteredClients, setFilteredClients] = useState<Client[]>([]);
+    const [searchTerm, setSearchTerm] = useState('');
     const [plans, setPlans] = useState<Plan[]>([]);
     const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -52,10 +57,34 @@ const ClientsManager: React.FC = () => {
     const [openPlanDialog, setOpenPlanDialog] = useState(false);
     const [selectedPlanId, setSelectedPlanId] = useState<number | ''>('');
 
+    const [openEditDialog, setOpenEditDialog] = useState(false);
+    const [editFormData, setEditFormData] = useState({
+        name: '',
+        email: '',
+        phone: ''
+    });
+
+    const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+
     useEffect(() => {
         fetchClients();
         fetchPlans();
     }, []);
+
+    useEffect(() => {
+        // Filtrar clientes cuando cambia el término de búsqueda
+        if (searchTerm.trim() === '') {
+            setFilteredClients(clients);
+        } else {
+            const filtered = clients.filter(client =>
+                client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                client.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                client.phone.includes(searchTerm)
+            );
+            setFilteredClients(filtered);
+        }
+    }, [searchTerm, clients]);
 
     const fetchClients = async () => {
         try {
@@ -66,6 +95,7 @@ const ClientsManager: React.FC = () => {
             const data = await response.json();
             if (data.success) {
                 setClients(data.clients);
+                setFilteredClients(data.clients);
             }
         } catch (error) {
             console.error('Error fetching clients:', error);
@@ -111,11 +141,13 @@ const ClientsManager: React.FC = () => {
             });
             const data = await response.json();
             if (data.success) {
+                showSnackbar(`Cliente ${selectedClient.is_blocked ? 'desbloqueado' : 'bloqueado'} exitosamente`, 'success');
                 fetchClients();
                 handleMenuClose();
             }
         } catch (error) {
             console.error('Error toggling block:', error);
+            showSnackbar('Error al cambiar estado del cliente', 'error');
         }
     };
 
@@ -133,21 +165,130 @@ const ClientsManager: React.FC = () => {
             });
             const data = await response.json();
             if (data.success) {
+                showSnackbar('Plan asignado exitosamente', 'success');
                 fetchClients();
                 setOpenPlanDialog(false);
             }
         } catch (error) {
             console.error('Error assigning plan:', error);
+            showSnackbar('Error al asignar plan', 'error');
         }
     };
 
     const openAssignPlanDialog = () => {
-        setAnchorEl(null); // Close menu but keep selectedClient
+        setAnchorEl(null);
         setOpenPlanDialog(true);
-    }
+    };
+
+    const openEditClientDialog = () => {
+        if (!selectedClient) return;
+        setEditFormData({
+            name: selectedClient.name,
+            email: selectedClient.email,
+            phone: selectedClient.phone
+        });
+        setAnchorEl(null);
+        setOpenEditDialog(true);
+    };
+
+    const handleEditClient = async () => {
+        if (!selectedClient) return;
+        if (!editFormData.name || !editFormData.email || !editFormData.phone) {
+            showSnackbar('Todos los campos son obligatorios', 'error');
+            return;
+        }
+
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${getAPIBaseURL()}/api/clients/${selectedClient.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(editFormData)
+            });
+            const data = await response.json();
+            if (data.success) {
+                showSnackbar('Cliente actualizado exitosamente', 'success');
+                fetchClients();
+                setOpenEditDialog(false);
+                setSelectedClient(null);
+            } else {
+                showSnackbar(data.error || 'Error al actualizar cliente', 'error');
+            }
+        } catch (error) {
+            console.error('Error editing client:', error);
+            showSnackbar('Error al actualizar cliente', 'error');
+        }
+    };
+
+    const openConfirmDeleteDialog = () => {
+        setAnchorEl(null);
+        setOpenDeleteDialog(true);
+    };
+
+    const handleDeleteClient = async () => {
+        if (!selectedClient) return;
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${getAPIBaseURL()}/api/clients/${selectedClient.id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            const data = await response.json();
+            if (data.success) {
+                showSnackbar('Cliente eliminado exitosamente', 'success');
+                fetchClients();
+                setOpenDeleteDialog(false);
+                setSelectedClient(null);
+            } else {
+                showSnackbar(data.error || 'Error al eliminar cliente', 'error');
+            }
+        } catch (error) {
+            console.error('Error deleting client:', error);
+            showSnackbar('Error al eliminar cliente', 'error');
+        }
+    };
+
+    const showSnackbar = (message: string, severity: 'success' | 'error') => {
+        setSnackbar({ open: true, message, severity });
+    };
+
+    const handleCloseSnackbar = () => {
+        setSnackbar({ ...snackbar, open: false });
+    };
 
     return (
         <Box>
+            {/* Barra de búsqueda */}
+            <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 2 }}>
+                <TextField
+                    fullWidth
+                    placeholder="Buscar clientes por nombre, email o teléfono..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    InputProps={{
+                        startAdornment: <Search sx={{ color: 'rgba(255,255,255,0.5)', mr: 1 }} />
+                    }}
+                    sx={{
+                        bgcolor: '#1a1a2e',
+                        borderRadius: 2,
+                        '& .MuiOutlinedInput-root': {
+                            color: 'white',
+                            '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                            '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.2)' },
+                            '&.Mui-focused fieldset': { borderColor: '#25D366' }
+                        }
+                    }}
+                />
+                <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', minWidth: 150, textAlign: 'right' }}>
+                    {filteredClients.length} de {clients.length} clientes
+                </Typography>
+            </Box>
+
             <TableContainer component={Paper} sx={{ bgcolor: '#1a1a2e', color: 'white' }}>
                 <Table>
                     <TableHead sx={{ bgcolor: '#16213e' }}>
@@ -161,51 +302,144 @@ const ClientsManager: React.FC = () => {
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {clients.map((client) => (
-                            <TableRow key={client.id} sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' } }}>
-                                <TableCell>
-                                    <Typography variant="subtitle2" sx={{ color: 'white' }}>{client.name}</Typography>
-                                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>{client.email}</Typography>
-                                </TableCell>
-                                <TableCell sx={{ color: 'white' }}>{client.phone}</TableCell>
-                                <TableCell>
-                                    {client.is_connected ? (
-                                        <Chip icon={<CheckCircle />} label="Conectado" color="success" size="small" />
-                                    ) : (
-                                        <Chip icon={<Smartphone />} label="Desconectado" color="default" size="small" sx={{ color: 'rgba(255,255,255,0.7)' }} />
-                                    )}
-                                </TableCell>
-                                <TableCell sx={{ color: 'white' }}>{client.plan_name || 'Sin Plan'}</TableCell>
-                                <TableCell>
-                                    {client.is_blocked ? (
-                                        <Chip label="Bloqueado" color="error" size="small" />
-                                    ) : (
-                                        <Chip label="Activo" color="primary" size="small" />
-                                    )}
-                                </TableCell>
-                                <TableCell>
-                                    <IconButton onClick={(e) => handleMenuClick(e, client)} sx={{ color: 'white' }}>
-                                        <MoreVert />
-                                    </IconButton>
+                        {filteredClients.length === 0 ? (
+                            <TableRow>
+                                <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'rgba(255,255,255,0.5)' }}>
+                                    {searchTerm ? 'No se encontraron clientes que coincidan con la búsqueda' : 'No hay clientes registrados'}
                                 </TableCell>
                             </TableRow>
-                        ))}
+                        ) : (
+                            filteredClients.map((client) => (
+                                <TableRow key={client.id} sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' } }}>
+                                    <TableCell>
+                                        <Typography variant="subtitle2" sx={{ color: 'white' }}>{client.name}</Typography>
+                                        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>{client.email}</Typography>
+                                    </TableCell>
+                                    <TableCell sx={{ color: 'white' }}>{client.phone}</TableCell>
+                                    <TableCell>
+                                        {client.is_connected ? (
+                                            <Chip icon={<CheckCircle />} label="Conectado" color="success" size="small" />
+                                        ) : (
+                                            <Chip icon={<Smartphone />} label="Desconectado" color="default" size="small" sx={{ color: 'rgba(255,255,255,0.7)' }} />
+                                        )}
+                                    </TableCell>
+                                    <TableCell sx={{ color: 'white' }}>{client.plan_name || 'Sin Plan'}</TableCell>
+                                    <TableCell>
+                                        {client.is_blocked ? (
+                                            <Chip label="Bloqueado" color="error" size="small" />
+                                        ) : (
+                                            <Chip label="Activo" color="primary" size="small" />
+                                        )}
+                                    </TableCell>
+                                    <TableCell>
+                                        <IconButton onClick={(e) => handleMenuClick(e, client)} sx={{ color: 'white' }}>
+                                            <MoreVert />
+                                        </IconButton>
+                                    </TableCell>
+                                </TableRow>
+                            ))
+                        )}
                     </TableBody>
                 </Table>
             </TableContainer>
 
+            {/* Menú de acciones */}
             <Menu
                 anchorEl={anchorEl}
                 open={Boolean(anchorEl)}
                 onClose={handleMenuClose}
+                PaperProps={{
+                    sx: { bgcolor: '#1a1a2e', color: 'white', border: '1px solid rgba(255,255,255,0.1)' }
+                }}
             >
-                <MenuItem onClick={openAssignPlanDialog}>Asignar Plan</MenuItem>
-                <MenuItem onClick={handleToggleBlock}>
-                    {selectedClient?.is_blocked ? 'Desbloquear Cliente' : 'Bloquear Cliente'}
+                <MenuItem onClick={openEditClientDialog}>
+                    <Edit sx={{ mr: 1, fontSize: 20 }} /> Editar Cliente
                 </MenuItem>
-                {/* Edit/Delete can be added here */}
+                <MenuItem onClick={openAssignPlanDialog}>
+                    <PersonAdd sx={{ mr: 1, fontSize: 20 }} /> Asignar Plan
+                </MenuItem>
+                <MenuItem onClick={handleToggleBlock}>
+                    <Block sx={{ mr: 1, fontSize: 20 }} /> {selectedClient?.is_blocked ? 'Desbloquear Cliente' : 'Bloquear Cliente'}
+                </MenuItem>
+                <MenuItem onClick={openConfirmDeleteDialog} sx={{ color: '#f44336' }}>
+                    <Delete sx={{ mr: 1, fontSize: 20 }} /> Eliminar Cliente
+                </MenuItem>
             </Menu>
 
+            {/* Diálogo de Editar Cliente */}
+            <Dialog
+                open={openEditDialog}
+                onClose={() => setOpenEditDialog(false)}
+                maxWidth="sm"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        bgcolor: '#1a1a2e',
+                        color: 'white',
+                        border: '1px solid rgba(255,255,255,0.1)'
+                    }
+                }}
+            >
+                <DialogTitle sx={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                    Editar Cliente
+                </DialogTitle>
+                <DialogContent sx={{ mt: 2 }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <TextField
+                            label="Nombre"
+                            fullWidth
+                            value={editFormData.name}
+                            onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                            sx={{
+                                '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.7)' },
+                                '& .MuiOutlinedInput-root': {
+                                    color: 'white',
+                                    '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                                    '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.2)' },
+                                    '&.Mui-focused fieldset': { borderColor: '#25D366' }
+                                }
+                            }}
+                        />
+                        <TextField
+                            label="Email"
+                            type="email"
+                            fullWidth
+                            value={editFormData.email}
+                            onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                            sx={{
+                                '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.7)' },
+                                '& .MuiOutlinedInput-root': {
+                                    color: 'white',
+                                    '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                                    '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.2)' },
+                                    '&.Mui-focused fieldset': { borderColor: '#25D366' }
+                                }
+                            }}
+                        />
+                        <TextField
+                            label="Teléfono"
+                            fullWidth
+                            value={editFormData.phone}
+                            onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                            sx={{
+                                '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.7)' },
+                                '& .MuiOutlinedInput-root': {
+                                    color: 'white',
+                                    '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                                    '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.2)' },
+                                    '&.Mui-focused fieldset': { borderColor: '#25D366' }
+                                }
+                            }}
+                        />
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <Button onClick={() => setOpenEditDialog(false)} sx={{ color: 'rgba(255,255,255,0.7)' }}>Cancelar</Button>
+                    <Button onClick={handleEditClient} variant="contained" sx={{ bgcolor: '#25D366', '&:hover': { bgcolor: '#1da851' } }}>Guardar</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Diálogo de Asignar Plan */}
             <Dialog
                 open={openPlanDialog}
                 onClose={() => setOpenPlanDialog(false)}
@@ -246,6 +480,47 @@ const ClientsManager: React.FC = () => {
                     <Button onClick={handleAssignPlan} variant="contained">Asignar</Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Diálogo de Confirmación de Eliminación */}
+            <Dialog
+                open={openDeleteDialog}
+                onClose={() => setOpenDeleteDialog(false)}
+                PaperProps={{
+                    sx: {
+                        bgcolor: '#1a1a2e',
+                        color: 'white',
+                        border: '1px solid rgba(255,0,0,0.3)'
+                    }
+                }}
+            >
+                <DialogTitle sx={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#f44336' }}>
+                    ⚠️ Confirmar Eliminación
+                </DialogTitle>
+                <DialogContent sx={{ mt: 2 }}>
+                    <Typography variant="body1" sx={{ mb: 2 }}>
+                        ¿Estás seguro de que deseas eliminar al cliente <strong>{selectedClient?.name}</strong>?
+                    </Typography>
+                    <Alert severity="warning" sx={{ bgcolor: 'rgba(255,152,0,0.1)', color: '#ff9800' }}>
+                        Esta acción no se puede deshacer. Se eliminarán todos los datos asociados al cliente.
+                    </Alert>
+                </DialogContent>
+                <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <Button onClick={() => setOpenDeleteDialog(false)} sx={{ color: 'rgba(255,255,255,0.7)' }}>Cancelar</Button>
+                    <Button onClick={handleDeleteClient} variant="contained" color="error">Eliminar Cliente</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Snackbar de notificaciones */}
+            <Snackbar
+                open={snackbar.open}
+                autoHideDuration={4000}
+                onClose={handleCloseSnackbar}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%' }}>
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
         </Box>
     );
 };
