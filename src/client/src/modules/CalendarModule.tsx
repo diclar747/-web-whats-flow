@@ -322,12 +322,12 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     loadTemplates();
   }, [loadCategories, loadTemplates]);
 
-  // ⚡ OPTIMIZACIÓN: Cargar appointments solo cuando cambia sessionId o se cargan categorías por primera vez
+  // ⚡ OPTIMIZACIÓN: Cargar appointments cuando cambia sessionId
   useEffect(() => {
-    if (sessionId && categories.length > 0) {
+    if (sessionId) {
       loadAppointments();
     }
-  }, [sessionId, categories.length]); // Cambiar de 'categories' a 'categories.length' para evitar recargas
+  }, [sessionId, categories.length]); // categories.length para recargar cuando haya nuevas categorías
 
   // Buscar contacto por teléfono
   const searchContactByPhone = async (phone: string) => {
@@ -362,14 +362,14 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
     console.log('[CALENDAR-SEARCH] sessionId:', sessionId);
     console.log('[CALENDAR-SEARCH] searchTerm:', searchTerm);
     console.log('[CALENDAR-SEARCH] searchTerm.length:', searchTerm?.length);
-    
+
     if (!sessionId) {
       console.error('[CALENDAR-SEARCH] ❌ sessionId no disponible');
       showError('Error: No se pudo obtener el ID de sesión. Recarga la página.', '❌ Error de sesión');
       setContactOptions([]);
       return;
     }
-    
+
     if (!searchTerm || searchTerm.length < 2) {
       console.log('[CALENDAR-SEARCH] ⚠️ Búsqueda requiere al menos 2 caracteres');
       setContactOptions([]);
@@ -381,16 +381,16 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
       const token = sessionStorage.getItem('whinsap_token') || localStorage.getItem('whinsap_token') || localStorage.getItem('token') || sessionStorage.getItem('token') || localStorage.getItem('agentToken') || sessionStorage.getItem('agentToken');
       console.log(`[CALENDAR-SEARCH] 🚀 Buscando contactos: "${searchTerm}" con sessionId: "${sessionId}"`);
       console.log('[CALENDAR-SEARCH] Token:', token ? 'Present' : 'Missing');
-      
+
       const url = `/api/contacts/search-by-name/${sessionId}/${encodeURIComponent(searchTerm)}`;
       console.log('[CALENDAR-SEARCH] URL:', url);
-      
+
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      
+
       console.log('[CALENDAR-SEARCH] Response status:', response.status);
       const data = await response.json();
       console.log('[CALENDAR-SEARCH] Response data:', data);
@@ -1058,7 +1058,7 @@ const CalendarModuleContent: React.FC<CalendarModuleProps> = ({ sessionId: propS
         <DialogContent>
           {!sessionId && (
             <Alert severity="warning" sx={{ mb: 2 }}>
-              ⚠️ Sesión no detectada. La búsqueda de contactos puede no funcionar. 
+              ⚠️ Sesión no detectada. La búsqueda de contactos puede no funcionar.
               SessionId: {sessionId || 'undefined'}
             </Alert>
           )}

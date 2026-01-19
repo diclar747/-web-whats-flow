@@ -565,22 +565,41 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
 
   const loadKanbanBoards = useCallback(async () => {
     try {
+      // 1. Cargar tableros
       const boardsResponse = await fetch(`${getAPIBaseURL()}/api/kanban/boards/${sessionId}`);
       const boardsData = await boardsResponse.json();
+
       if (boardsData.success && boardsData.boards) {
-        setKanbanBoards(boardsData.boards);
-      }
+        // Los tableros ya vienen con contacts array del backend
+        const boardsWithCounts = boardsData.boards.map((board: any) => ({
+          ...board,
+          contactCount: Array.isArray(board.contacts) ? board.contacts.length : 0
+        }));
 
-      const contactsResponse = await fetch(`${getAPIBaseURL()}/api/contacts/by-category/${sessionId}`);
-      const contactsData = await contactsResponse.json();
-      console.log('DEBUG: Received kanban contacts raw data:', contactsData);
+        console.log('[CAMPAIGNS] 📋 Tableros Kanban cargados:', boardsWithCounts.length);
+        boardsWithCounts.forEach((b: any) => {
+          console.log(`  - ${b.name}: ${b.contactCount} contactos`);
+        });
 
-      if (contactsData.success) {
-        // Handle both simple array or nested object structure depending on specific API response format
-        // The API returns an object where keys are board names and values are arrays of contacts
-        const contactsMap = contactsData.data?.contacts || contactsData.contacts || contactsData;
-        console.log('DEBUG: Processed contacts map:', contactsMap);
+        setKanbanBoards(boardsWithCounts);
+
+        // 2. Crear mapa de contactos por tablero para las campañas
+        const contactsMap: { [key: string]: Contact[] } = {};
+        boardsWithCounts.forEach((board: any) => {
+          if (board.contacts && Array.isArray(board.contacts)) {
+            contactsMap[board.name] = board.contacts.map((c: any) => ({
+              id: c.jid || c.id,
+              name: c.name || c.contactName,
+              phone: c.jid?.split('@')[0] || c.phone,
+              jid: c.jid
+            }));
+          }
+        });
+
         setKanbanContacts(contactsMap);
+        console.log('[CAMPAIGNS] 📞 Mapa de contactos creado:', Object.keys(contactsMap).length, 'tableros');
+      } else {
+        console.warn('[CAMPAIGNS] ⚠️ No se pudieron cargar tableros:', boardsData.error);
       }
     } catch (error) {
       console.error('Error cargando tableros Kanban:', error);

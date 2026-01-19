@@ -17330,8 +17330,8 @@ app.get('/api/kanban/boards/:sessionId', async (req, res) => {
                 await createDefaultKanbanBoards(pool, ownerUserId);
             }
 
-            // Consulta optimizada con timeout
-            const queryPromise = connection.execute(
+            // Consulta optimizada: Primero traer tableros
+            const [boards] = await connection.execute(
                 `SELECT
                     kb.id,
                     kb.session_id,
@@ -17340,34 +17340,54 @@ app.get('/api/kanban/boards/:sessionId', async (req, res) => {
                     kb.board_order,
                     kb.is_default,
                     kb.created_at,
-                    kb.updated_at,
-                    COUNT(kc.id) as user_count
+                    kb.updated_at
                 FROM kanban_boards kb
-                LEFT JOIN kanban_contacts kc ON kb.id = kc.board_id
                 WHERE kb.session_id = ?
-                GROUP BY kb.id
                 ORDER BY kb.board_order ASC, kb.created_at ASC
-                LIMIT 20`,  // Reducir límite para evitar sobrecarga de recursos
+                LIMIT 20`,
                 [ownerUserId]
             );
 
-            // Agregar timeout para evitar bloqueos
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Tiempo de consulta excedido')), 8000)
-            );
+            // Para cada tablero, agregar sus contactos
+            const boardsWithContacts = await Promise.all(
+                boards.map(async (board) => {
+                    const [contacts] = await connection.execute(
+                        `SELECT
+                            kc.id,
+                            kc.contact_jid as jid,
+                            c.name,
+                            c.avatar_url as avatar,
+                            kc.created_at as added_at
+                        FROM kanban_contacts kc
+                        LEFT JOIN contacts c ON c.jid = kc.contact_jid
+                        WHERE kc.board_id = ?
+                        LIMIT 5000`,
+                        [board.id]
+                    );
 
-            const [boards] = await Promise.race([queryPromise, timeoutPromise]);
+                    return {
+                        ...board,
+                        user_count: contacts.length,
+                        contacts: contacts
+                    };
+                })
+            );
 
             // Almacenar en caché
             kanbanCache.set(cacheKey, {
-                data: boards,
+                data: boardsWithContacts,
                 timestamp: Date.now()
+            });
+
+            console.log(`[KANBAN-BOARDS] ✅ ${boardsWithContacts.length} tableros cargados con contactos`);
+            boardsWithContacts.forEach(b => {
+                console.log(`  - ${b.name}: ${b.user_count} contactos`);
             });
 
             res.json({
                 success: true,
-                boards: boards,
-                total: boards.length,
+                boards: boardsWithContacts,
+                total: boardsWithContacts.length,
                 fromCache: false
             });
 
@@ -23526,36 +23546,41 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
                     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
                     console.log('[APPOINTMENTS] 🔐 Usuario autenticado del token:', decoded.userId);
 
-                    // Obtener TODAS las sesiones del usuario
-                    const [userSessions] = await connection.execute(
-                        'SELECT session_id, phone FROM user_sessions WHERE user_id = ? AND is_active = 1',
+                    // Obtener el usuario y su rol
+                    const [users] = await connection.execute(
+                        'SELECT phone, role FROM users WHERE id = ?',
                         [decoded.userId]
                     );
 
-                    if (userSessions.length > 0) {
-                        sessionIds = userSessions.map(s => s.session_id || s.phone);
-                        console.log('[APPOINTMENTS] 📱 Sesiones del usuario:', sessionIds);
+                    if (users.length > 0) {
+                        const user = users[0];
+                        const userId = decoded.userId;
+                        console.log('[APPOINTMENTS] 👤 Usuario:', userId, 'Rol:', user.role);
+
+                        // Si es admin o super_admin, mostrar TODAS las citas
+                        if (user.role === 'admin' || user.role === 'super_admin') {
+                            console.log('[APPOINTMENTS] 👑 Admin - todas las citas');
+                            sessionIds = null; // Flag para "todas"
+                        } else {
+                            // Usuario normal - solo sus citas (session_id = userId)
+                            sessionIds = [userId.toString()];
+                            console.log('[APPOINTMENTS] 📋 Usuario - citas del userId:', userId);
+                        }
                     } else {
-                        console.log('[APPOINTMENTS] ⚠️ No se encontraron sesiones activas para el usuario');
+                        console.log('[APPOINTMENTS] ⚠️ No se encontró el usuario');
                     }
                 } catch (jwtError) {
                     console.log('[APPOINTMENTS] ⚠️ Token JWT inválido, fallback a sessionId:', jwtError.message);
                 }
             }
 
-            // Fallback: Si no hay sesiones desde JWT, usar el sessionId del parámetro
-            if (sessionIds.length === 0) {
-                const phoneNumber = await getUserPhoneNumber(sessionId);
-                if (phoneNumber) {
-                    sessionIds = [sessionId, phoneNumber];
-                    console.log('[APPOINTMENTS] 📞 Usando sessionId del parámetro:', sessionIds);
-                } else {
-                    return res.status(404).json({ success: false, error: 'Sesión no encontrada' });
-                }
+            // Fallback: Si no hay sessionIds  y no es admin, usar sessionId del parámetro
+            if (sessionIds !== null && sessionIds.length === 0) {
+                sessionIds = [sessionId];
+                console.log('[APPOINTMENTS] 📞 Fallback - usando sessionId:', sessionId);
             }
 
-            // 🔧 Construir query dinámica con IN clause
-            const placeholders = sessionIds.map(() => '?').join(',');
+            // 🔧 Construir query
             let query = `SELECT
                 id, session_id, patient_name, patient_phone, doctor_name, company_name,
                 description,
@@ -23563,9 +23588,22 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
                 TIME_FORMAT(appointment_time, '%H:%i') as appointment_time,
                 status, reminder_sent, notes, reminder_time, notification_template, category_id,
                 created_at, updated_at
-                FROM appointments WHERE session_id IN (${placeholders})`;
+                FROM appointments`;
 
-            const params = [...sessionIds];
+            let params = [];
+
+            // WHERE clause: filtrar solo si no es admin
+            if (sessionIds !== null && sessionIds.length > 0) {
+                const placeholders = sessionIds.map(() => '?').join(',');
+                query += ` WHERE session_id IN (${placeholders})`;
+                params.push(...sessionIds);
+            } else if (sessionIds !== null) {
+                // No hay sessionIds y no es admin - no mostrar nada
+                query += ` WHERE 1=0`;
+            } else {
+                // sessionIds === null significa admin - mostrar todas
+                query += ` WHERE 1=1`;
+            }
 
             if (startDate && endDate) {
                 query += ` AND appointment_date BETWEEN ? AND ?`;
@@ -23581,7 +23619,8 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
 
             const [appointments] = await connection.execute(query, params);
 
-            console.log(`[APPOINTMENTS] ✅ ${appointments.length} citas encontradas para sesiones: ${sessionIds.join(', ')}`);
+            const idsLog = sessionIds === null ? 'todas (admin)' : sessionIds.join(', ');
+            console.log(`[APPOINTMENTS] ✅ ${appointments.length} citas encontradas - ${idsLog}`);
             res.json({ success: true, appointments });
         } finally {
             connection.release();
