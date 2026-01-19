@@ -6,6 +6,7 @@ import { getAPIBaseURL } from '../utils/socketConfig';
 import { SubscriptionGuard } from '../components/SubscriptionGuard';
 import ModernMessageMedia from '../components/ModernMessageMedia';
 import ModernMessageActions from '../components/ModernMessageActions';
+import SophisticatedProgressBar from '../components/SophisticatedProgressBar';
 import SessionTabs, { SessionTab } from '../components/SessionTabs';
 import {
   TextField,
@@ -100,7 +101,9 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
     replyMessage,
     setReplyMessage,
     markChatAsRead,
-    markAllChatsAsRead
+    markAllChatsAsRead,
+    syncProgress, // Keeping for backward compatibility or default
+    getSyncProgress // Using this for specific session
   } = useWhatsApp();
 
   const [newMessage, setNewMessage] = useState('');
@@ -117,6 +120,9 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
   // Estados para multi-canal
   const [sessions, setSessions] = useState<SessionTab[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>(sessionId);
+
+  // 🔥 Retrieve sync progress for the ACTIVE session
+  const activeSyncProgress = getSyncProgress(activeSessionId);
   const [loadingSessions, setLoadingSessions] = useState(false);
 
   const [isTyping, setIsTyping] = useState(false);
@@ -1091,12 +1097,25 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                       </ListItemAvatar>
                       <ListItemText
                         primary={chat.name || (chat as any).pushName || normalizePhoneNumber(chat.id)}
-                        secondary={chat.lastMessage}
-                        secondaryTypographyProps={{
-                          color: isDarkMode ? '#aebac1' : '#667781',
-                          noWrap: true,
-                          style: { textOverflow: 'ellipsis', overflow: 'hidden', width: '140px' }
-                        }}
+                        secondary={
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                            <Typography
+                              variant="body2"
+                              noWrap
+                              sx={{
+                                color: isDarkMode ? '#aebac1' : '#667781',
+                                textOverflow: 'ellipsis',
+                                overflow: 'hidden',
+                                width: '140px'
+                              }}
+                            >
+                              {chat.lastMessage}
+                            </Typography>
+                            {activeSyncProgress?.status === 'syncing' && (
+                              <SophisticatedProgressBar progress={activeSyncProgress.progress} compact />
+                            )}
+                          </Box>
+                        }
                       />
                       <ListItemText
                         secondary={new Date(chat.timestamp || 0).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

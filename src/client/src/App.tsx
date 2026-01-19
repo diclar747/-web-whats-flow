@@ -14,6 +14,7 @@ import Register from './pages/Register'; // 🆕 Registration page
 import ForgotPassword from './pages/ForgotPassword'; // 🆕 Password recovery
 import ResetPassword from './pages/ResetPassword'; // 🆕 Reset password
 import AccountActivation from './pages/AccountActivation'; // 🆕 Account activation
+import AccountBlocked from './pages/AccountBlocked'; // 🚫 Blocked account page
 import LandingPage from './components/LandingPageComplete'; // 🆕 Complete landing with services/pricing
 import AdminLogin from './pages/admin/AdminLogin';
 // import AdminDashboard from './pages/admin/AdminDashboard'; // Removed as per request
@@ -118,6 +119,9 @@ const AppContent: React.FC<{
         {/* 🆕 Ruta de restablecimiento de contraseña */}
         <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/activate/:token" element={<AccountActivation />} />
+
+        {/* 🚫 Ruta de cuenta bloqueada */}
+        <Route path="/account-blocked" element={<AccountBlocked />} />
 
         {/* Dashboard - Requiere sessionId para todos */}
         <Route path="/admin/agents" element={

@@ -131,6 +131,15 @@ export const setupFetchInterceptor = (): void => {
           if (data.requiresReauth) {
             console.error('[FETCH-INTERCEPTOR] 🚫 Sesión inválida:', data.error);
 
+            // ⛔ VERIFICAR SI EL USUARIO ESTÁ BLOQUEADO
+            if (data.isBlocked) {
+              console.log('[FETCH-INTERCEPTOR] 🚫 Usuario bloqueado, redirigiendo a AccountBlocked');
+              sessionStorage.clear();
+              // Usar window.location para forzar la navegación fuera del interceptor
+              window.location.href = `/account-blocked?supportPhone=${data.supportPhone || '595994854167'}`;
+              return response;
+            }
+
             // Limpiar sessionStorage
             sessionStorage.clear();
 

@@ -4304,6 +4304,7 @@ async function syncContactsOnly(sessionId, sock, userSessionId) {
             console.log(`[CONTACTS-SYNC] 📱 ${contactArray.length} contactos en el store`);
 
             io.to(`session-${sessionId}`).emit('sync-progress', {
+                sessionId,
                 message: 'Sincronizando contactos...',
                 progress: 50
             });
@@ -4349,6 +4350,7 @@ async function syncContactsOnly(sessionId, sock, userSessionId) {
             console.log(`[CONTACTS-SYNC] ✅ ${stats.contacts} contactos nuevos sincronizados con session_id=${ownerSessionId}, ${stats.errors} errores`);
 
             io.to(`session-${sessionId}`).emit('sync-complete', {
+                sessionId,
                 message: 'Contactos sincronizados',
                 contacts: stats.contacts
             });
@@ -4389,6 +4391,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
             // 1. Sincronizar CHATS desde el store de Baileys
             console.log(`[FULL-SYNC] 📱 Sincronizando chats...`);
             io.to(`session-${sessionId}`).emit('sync-progress', {
+                sessionId,
                 message: 'Descargando chats...',
                 progress: 10
             });
@@ -4463,6 +4466,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
             // 2. Sincronizar GRUPOS
             console.log(`[FULL-SYNC] 👥 Sincronizando grupos...`);
             io.to(`session-${sessionId}`).emit('sync-progress', {
+                sessionId,
                 message: 'Descargando grupos...',
                 progress: 40,
                 chats: stats.chats
@@ -4623,6 +4627,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
             // 3. Sincronizar CONTACTOS
             console.log(`[FULL-SYNC] 📞 Sincronizando contactos...`);
             io.to(`session-${sessionId}`).emit('sync-progress', {
+                sessionId,
                 message: 'Descargando contactos...',
                 progress: 70,
                 chats: stats.chats,
@@ -4708,6 +4713,7 @@ async function performFullSync(sessionId, sock, userSessionId) {
 
             // Emitir evento de finalización
             io.to(`session-${sessionId}`).emit('sync-complete', {
+                sessionId,
                 message: 'Sincronización completada',
                 stats: {
                     chats: stats.chats + stats.groups,
@@ -8013,6 +8019,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
             // Emitir inicio de sincronización
             io.to(`session-${sessionId}`).emit('sync-progress', {
+                sessionId,
                 message: `Sincronizando ${totalContacts} contactos...`,
                 progress: 10,
                 current: 0,
@@ -8082,6 +8089,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 if (processedCount % 50 === 0 || processedCount === totalContacts) {
                     const progressPercent = Math.floor((processedCount / totalContacts) * 90) + 10; // 10-100%
                     io.to(`session-${sessionId}`).emit('sync-progress', {
+                        sessionId,
                         message: `Sincronizando contactos: ${processedCount}/${totalContacts}`,
                         progress: progressPercent,
                         current: processedCount,
@@ -8093,6 +8101,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
             // Emitir evento de finalización
             io.to(`session-${sessionId}`).emit('sync-progress', {
+                sessionId,
                 message: `Sincronización completada: ${totalContacts} contactos`,
                 progress: 100,
                 current: totalContacts,
@@ -8178,6 +8187,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             // Emitir inicio de sincronización general
             const totalItems = (historySet.contacts?.length || 0) + (historySet.chats?.length || 0) + (historySet.messages?.length || 0);
             io.to(`session-${sessionId}`).emit('sync-progress', {
+                sessionId,
                 status: 'syncing',
                 current: 0,
                 total: totalItems,
@@ -8189,6 +8199,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             if (historySet.contacts && historySet.contacts.length > 0) {
                 console.log(`[${sessionId}] 👥 Guardando ${historySet.contacts.length} contactos del historial...`);
                 io.to(`session-${sessionId}`).emit('sync-progress', {
+                    sessionId,
                     status: 'syncing',
                     current: 0,
                     total: totalItems,
@@ -8208,6 +8219,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 console.log(`[${sessionId}] ✅ Contactos del historial guardados`);
 
                 io.to(`session-${sessionId}`).emit('sync-progress', {
+                    sessionId,
                     status: 'syncing',
                     current: historySet.contacts.length,
                     total: totalItems,
@@ -8437,6 +8449,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                 // Emitir inicio de sincronización
                 io.to(`session-${sessionId}`).emit('sync-progress', {
+                    sessionId,
                     status: 'syncing',
                     current: 0,
                     total: totalMessages,
@@ -8510,6 +8523,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             const percentage = Math.floor((savedCount / totalMessages) * 100);
                             console.log(`[${sessionId}] 📊 Procesados ${savedCount}/${totalMessages} mensajes históricos (${percentage}%)...`);
                             io.to(`session-${sessionId}`).emit('sync-progress', {
+                                sessionId,
                                 status: 'syncing',
                                 current: savedCount,
                                 total: totalMessages,
@@ -8526,6 +8540,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                 // Emitir finalización de sincronización
                 io.to(`session-${sessionId}`).emit('sync-progress', {
+                    sessionId,
                     status: 'completed',
                     current: savedCount,
                     total: totalMessages,
@@ -12785,6 +12800,25 @@ app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser
     try {
         const startTime = Date.now();
 
+        // 🔥 OBTENER ALIAS DE SESIÓN (ID hex y número de teléfono)
+        // Algunos mensajes antiguos guardan el ID hex en la columna 'phone'
+        const sessionAliases = [phoneNumber, sessionId];
+
+        // Buscar otros IDs en user_sessions para este número
+        const [sessionRows] = await pool.query(
+            'SELECT session_id FROM user_sessions WHERE phone = ? OR owner_phone_number = ?',
+            [phoneNumber, phoneNumber]
+        );
+        sessionRows.forEach(row => {
+            if (row.session_id && !sessionAliases.includes(row.session_id)) {
+                sessionAliases.push(row.session_id);
+            }
+        });
+
+        console.log(`[API-CHATS-OPTIMIZED] 🔎 Filtrando por phone IN: [${sessionAliases.join(', ')}]`);
+
+        const placeholders = sessionAliases.map(() => '?').join(', ');
+
         // 🔥 CONSULTA DIRECTA DESDE MESSAGES - TIEMPO REAL (SIN FILTRO DE TIEMPO)
         // Agrupa por chat_jid y obtiene el último mensaje de cada conversación
         const [chats] = await pool.query(`
@@ -12795,28 +12829,28 @@ app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser
                  FROM messages m2 
                  WHERE m2.chat_jid = m.chat_jid 
                    AND m2.session_id = ?
-                   AND m2.phone = ?
+                   AND m2.phone IN (${placeholders})
                  ORDER BY m2.timestamp DESC 
                  LIMIT 1) as last_message_content,
                 (SELECT m2.from_me 
                  FROM messages m2 
                  WHERE m2.chat_jid = m.chat_jid 
                    AND m2.session_id = ?
-                   AND m2.phone = ?
+                   AND m2.phone IN (${placeholders})
                  ORDER BY m2.timestamp DESC 
                  LIMIT 1) as last_message_from_me,
                 (SELECT m2.status 
                  FROM messages m2 
                  WHERE m2.chat_jid = m.chat_jid 
                    AND m2.session_id = ?
-                   AND m2.phone = ?
+                   AND m2.phone IN (${placeholders})
                  ORDER BY m2.timestamp DESC 
                  LIMIT 1) as last_message_status,
                 (SELECT m2.message_type 
                  FROM messages m2 
                  WHERE m2.chat_jid = m.chat_jid 
                    AND m2.session_id = ?
-                   AND m2.phone = ?
+                   AND m2.phone IN (${placeholders})
                  ORDER BY m2.timestamp DESC 
                  LIMIT 1) as last_message_type,
                 SUM(CASE WHEN NOT m.from_me AND NOT m.is_read THEN 1 ELSE 0 END) as unread_count,
@@ -12832,7 +12866,7 @@ app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser
                  LIMIT 1) as avatar_url
             FROM messages m
             WHERE m.session_id = ?
-              AND m.phone = ?
+              AND m.phone IN (${placeholders})
               AND m.chat_jid NOT LIKE '%@g.us'
               AND m.chat_jid NOT LIKE '%status@broadcast%'
               AND m.chat_jid NOT LIKE CONCAT(?, '@%')
@@ -12840,15 +12874,15 @@ app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser
             ORDER BY last_message_time DESC
             LIMIT ? OFFSET ?
         `, [
-            ownerSessionId, phoneNumber,  // last_message_content
-            ownerSessionId, phoneNumber,  // last_message_from_me
-            ownerSessionId, phoneNumber,  // last_message_status
-            ownerSessionId, phoneNumber,  // last_message_type
-            ownerSessionId,               // contact_name
-            ownerSessionId,               // avatar_url
-            ownerSessionId, phoneNumber,  // WHERE clause
-            phoneNumber,                  // Exclude own number
-            parsedLimit, parsedOffset     // LIMIT OFFSET
+            ownerSessionId, ...sessionAliases,  // last_message_content
+            ownerSessionId, ...sessionAliases,  // last_message_from_me
+            ownerSessionId, ...sessionAliases,  // last_message_status
+            ownerSessionId, ...sessionAliases,  // last_message_type
+            ownerSessionId,                    // contact_name
+            ownerSessionId,                    // avatar_url
+            ownerSessionId, ...sessionAliases,  // WHERE clause
+            phoneNumber,                       // Exclude own number
+            parsedLimit, parsedOffset          // LIMIT OFFSET
         ]);
 
         const queryTime = Date.now() - startTime;
@@ -13406,7 +13440,7 @@ async function getUserDbIdentifier(sessionId) {
             if (sessionId.match(/^\+?\d{10,15}$/)) {
                 const [phoneRows] = await connection.execute(
                     'SELECT id FROM users WHERE phone LIKE ? LIMIT 1',
-                    [`% ${sessionId.replace(/\+/g, '')}% `]
+                    [`%${sessionId.replace(/\+/g, '')}%`]
                 );
                 if (phoneRows.length > 0) {
                     dbIdentifier = String(phoneRows[0].id);
@@ -13770,7 +13804,7 @@ app.post('/api/contacts', authenticateToken, async (req, res) => {
 
         // Formatear JID
         const cleanPhone = phone.replace(/[^0-9]/g, '');
-        const jid = `${cleanPhone} @s.whatsapp.net`;
+        const jid = `${cleanPhone}@s.whatsapp.net`;
 
         // Intentar obtener sock para mejor resolución de nombre
         let sock = null;
@@ -16220,20 +16254,41 @@ app.post('/api/kanban/move-contact', authenticateToken, validateSessionBelongsTo
             console.log(`[KANBAN-MOVE] 📋 Moviendo contacto ${contactJid} - userIdForSession: ${userIdForSession}`);
 
             // PASO 1: Asegurar que el contacto existe en la tabla contacts (CON users.id correcto)
-            await connection.execute(
-                `INSERT INTO contacts (jid, session_id, name, avatar_url)
-                 VALUES (?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE
-                    name = COALESCE(VALUES(name), name),
-                    avatar_url = COALESCE(VALUES(avatar_url), avatar_url)`,
-                [
-                    contactJid,
-                    userIdForSession,  // ✅ Usar users.id, NO phone
-                    contactName || contactJid.split('@')[0],
-                    contactAvatar || null
-                ]
+            // 🔥 MEJORADO: Buscar primero para evitar duplicados por la columna 'phone'
+            const [existingContacts] = await connection.execute(
+                `SELECT id FROM contacts WHERE jid = ? AND session_id = ? LIMIT 1`,
+                [contactJid, userIdForSession]
             );
-            console.log(`[KANBAN-MOVE] ✅ Contacto ${contactJid} asegurado en tabla contacts con session_id=${userIdForSession}`);
+
+            if (existingContacts.length > 0) {
+                // Actualizar el existente
+                await connection.execute(
+                    `UPDATE contacts SET 
+                        name = COALESCE(?, name), 
+                        avatar_url = COALESCE(?, avatar_url),
+                        updated_at = NOW() 
+                     WHERE id = ?`,
+                    [
+                        contactName || contactJid.split('@')[0],
+                        contactAvatar || null,
+                        existingContacts[0].id
+                    ]
+                );
+                console.log(`[KANBAN-MOVE] ✅ Contacto ${contactJid} actualizado en tabla contacts (id: ${existingContacts[0].id})`);
+            } else {
+                // Insertar nuevo
+                await connection.execute(
+                    `INSERT INTO contacts (jid, session_id, name, avatar_url, created_at)
+                     VALUES (?, ?, ?, ?, NOW())`,
+                    [
+                        contactJid,
+                        userIdForSession,
+                        contactName || contactJid.split('@')[0],
+                        contactAvatar || null
+                    ]
+                );
+                console.log(`[KANBAN-MOVE] ✅ Contacto ${contactJid} creado en tabla contacts para session_id=${userIdForSession}`);
+            }
 
             // PASO 2: Eliminar el contacto de TODOS los tableros del usuario (para no duplicar)
             await connection.execute(
@@ -16516,6 +16571,14 @@ app.get('/api/kanban/search-all-contacts/:sessionId', authenticateToken, validat
 
             // Buscar en TODA la tabla contacts, no solo en kanban_contacts
             const searchTerm = `%${search.trim()}%`;
+            const sessionIds = [dbIdentifier];
+            if (sessionId && sessionId !== dbIdentifier) {
+                sessionIds.push(sessionId);
+            }
+
+            const placeholders = sessionIds.map(() => '?').join(', ');
+
+            // 🔥 MEJORADO: Usar subconsulta (latest) para evitar duplicados si hay múltiples filas del mismo JID
             const [contacts] = await connection.execute(`
                 SELECT
                     c.jid,
@@ -16534,13 +16597,17 @@ app.get('/api/kanban/search-all-contacts/:sessionId', authenticateToken, validat
                         WHEN kc.id IS NOT NULL THEN kb.name
                         ELSE NULL
                     END as current_board_name
-                FROM contacts c
+                FROM (
+                    SELECT jid, MAX(id) AS max_id
+                    FROM contacts
+                    WHERE session_id IN (${placeholders})
+                    AND jid LIKE "%@s.whatsapp.net"
+                    GROUP BY jid
+                ) latest
+                INNER JOIN contacts c ON c.id = latest.max_id
                 LEFT JOIN kanban_contacts kc ON c.jid = kc.contact_jid
                 LEFT JOIN kanban_boards kb ON kc.board_id = kb.id AND kb.session_id = c.session_id
-                WHERE c.session_id = ?
-                AND c.jid LIKE '%@s.whatsapp.net'
-                AND c.jid NOT LIKE '%@broadcast%' AND c.jid NOT LIKE 'status@%'
-                AND (
+                WHERE (
                     c.name LIKE ? OR
                     c.notify_name LIKE ? OR
                     c.jid LIKE ?
@@ -16553,7 +16620,7 @@ app.get('/api/kanban/search-all-contacts/:sessionId', authenticateToken, validat
                     END,
                     c.name ASC
                 LIMIT 100
-            `, [dbIdentifier, searchTerm, searchTerm, searchTerm]);
+            `, [...sessionIds, searchTerm, searchTerm, searchTerm]);
 
             console.log(`[KANBAN-SEARCH-ALL] ✅ ${contacts.length} contactos encontrados en toda la BD`);
 

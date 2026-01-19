@@ -11,7 +11,7 @@ const axios = require('axios');
 console.log('🚀 INICIANDO PRUEBA COMPLETA DEL SISTEMA');
 console.log('========================================\n');
 
-const SOCKET_URL = process.env.SOCKET_URL || 'http://localhost:3002';
+const SOCKET_URL = process.env.SOCKET_URL || 'http://localhost:3000';
 const TEST_SESSION_ID = 'full-test-' + Date.now();
 
 // Resultados de las pruebas

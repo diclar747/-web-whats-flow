@@ -152,7 +152,7 @@ function registerAuthEndpoints(app, pool) {
             try {
                 // Buscar usuario en tabla 'users' (email/password login)
                 const [users] = await connection.execute(
-                    `SELECT id, name as full_name, email, phone as phone_number, password, role, status, is_super_admin, email_verified
+                    `SELECT id, name as full_name, email, phone as phone_number, password, role, status, is_super_admin, email_verified, is_blocked
                      FROM users WHERE email = ?`,
                     [email]
                 );
@@ -179,7 +179,16 @@ function registerAuthEndpoints(app, pool) {
                     });
                 }
 
-
+                // ⛔ VERIFICAR SI EL USUARIO ESTÁ BLOQUEADO
+                if (user.is_blocked === 1 || user.is_blocked === true) {
+                    console.log(`[AUTH-DEBUG] ❌ Login bloqueado: Usuario bloqueado '${email}'`);
+                    return res.status(403).json({
+                        success: false,
+                        error: 'Tu cuenta ha sido suspendida',
+                        isBlocked: true,
+                        supportPhone: '595994854167'
+                    });
+                }
 
                 // Verificar contraseña
                 const isValid = await verifyPassword(password, user.password);
@@ -339,7 +348,7 @@ function registerAuthEndpoints(app, pool) {
                 }
 
                 const [users] = await connection.execute(
-                    `SELECT id, name as full_name, email, phone as phone_number, role, is_super_admin, is_admin, session
+                    `SELECT id, name as full_name, email, phone as phone_number, role, is_super_admin, is_admin, session, is_blocked
                      FROM users WHERE id = ?`,
                     [userId]
                 );
@@ -353,6 +362,18 @@ function registerAuthEndpoints(app, pool) {
                 }
 
                 const user = users[0];
+
+                // ⛔ VERIFICAR SI EL USUARIO ESTÁ BLOQUEADO
+                if (user.is_blocked === 1 || user.is_blocked === true) {
+                    console.log(`[AUTH-VERIFY] ❌ Usuario bloqueado: ${user.email}`);
+                    return res.status(403).json({
+                        success: false,
+                        error: 'Tu cuenta ha sido suspendida',
+                        isBlocked: true,
+                        supportPhone: '595994854167',
+                        requiresReauth: true
+                    });
+                }
 
                 // ✅ VERIFICAR CAMPO SESSION - Si es 0, la sesión fue cerrada
                 if (user.session === 0 || user.session === '0') {

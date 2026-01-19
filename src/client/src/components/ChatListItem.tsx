@@ -13,6 +13,8 @@ import {
 import { People, Image as ImageIcon, Videocam, Mic } from '@mui/icons-material';
 import { useDrag } from 'react-dnd';
 import { getAPIBaseURL } from '../utils/socketConfig';
+import { useWhatsApp } from '../context/WhatsAppContext';
+import SophisticatedProgressBar from './SophisticatedProgressBar';
 
 interface ChatListItemProps {
     chat: any;
@@ -35,6 +37,7 @@ export const ChatListItem: React.FC<ChatListItemProps> = ({
     sessionId,
     typingStatus
 }) => {
+    const { syncProgress } = useWhatsApp();
     const [{ isDragging }, drag] = useDrag(() => ({
         type: 'CHAT_ITEM',
         item: { chatJid: chat.id, chatName: chat.name },
@@ -142,29 +145,34 @@ export const ChatListItem: React.FC<ChatListItemProps> = ({
                         </Box>
                     }
                     secondary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            {chat.lastMessage?.includes('📷 Imagen') && <ImageIcon sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
-                            {chat.lastMessage?.includes('🎥 Video') && <Videocam sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
-                            {chat.lastMessage?.includes('🔊 Audio') && <Mic sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
-                            <Typography
-                                variant="body2"
-                                noWrap
-                                sx={{
-                                    color: typingStatus?.[chat.id] ? '#25d366' : colors.textSecondary,
-                                    fontWeight: (chat.unreadCount || typingStatus?.[chat.id]) ? 500 : 400,
-                                    fontStyle: typingStatus?.[chat.id] ? 'italic' : 'normal',
-                                    fontSize: '0.85rem',
-                                    display: 'flex',
-                                    alignItems: 'center'
-                                }}
-                            >
-                                {typingStatus?.[chat.id] || (
-                                    <>
-                                        {chat.lastMessageFromMe && <span style={{ color: colors.primary, fontWeight: 600, marginRight: '4px' }}>Tú:</span>}
-                                        {chat.lastMessage || 'Toca para chatear'}
-                                    </>
-                                )}
-                            </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                {chat.lastMessage?.includes('📷 Imagen') && <ImageIcon sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
+                                {chat.lastMessage?.includes('🎥 Video') && <Videocam sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
+                                {chat.lastMessage?.includes('🔊 Audio') && <Mic sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
+                                <Typography
+                                    variant="body2"
+                                    noWrap
+                                    sx={{
+                                        color: typingStatus?.[chat.id] ? '#25d366' : colors.textSecondary,
+                                        fontWeight: (chat.unreadCount || typingStatus?.[chat.id]) ? 500 : 400,
+                                        fontStyle: typingStatus?.[chat.id] ? 'italic' : 'normal',
+                                        fontSize: '0.85rem',
+                                        display: 'flex',
+                                        alignItems: 'center'
+                                    }}
+                                >
+                                    {typingStatus?.[chat.id] || (
+                                        <>
+                                            {chat.lastMessageFromMe && <span style={{ color: colors.primary, fontWeight: 600, marginRight: '4px' }}>Tú:</span>}
+                                            {chat.lastMessage || 'Toca para chatear'}
+                                        </>
+                                    )}
+                                </Typography>
+                            </Box>
+                            {syncProgress?.status === 'syncing' && (
+                                <SophisticatedProgressBar progress={syncProgress.progress} compact />
+                            )}
                         </Box>
                     }
                 />

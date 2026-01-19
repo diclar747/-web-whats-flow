@@ -252,7 +252,7 @@ export const initializeSocket = (sessionId?: string) => {
     socketUrl = `${protocol}//${host}`;
   } else {
     // For development with proxy, connect directly to the backend
-    socketUrl = 'http://localhost:3002';
+    socketUrl = 'http://localhost:3000';
   }
 
   // Import socket.io dynamically
@@ -404,7 +404,7 @@ const getAPIBaseUrl = () => {
     const host = window.location.host;
     return `${protocol}//${host}`;
   }
-  return 'http://localhost:3002'; // For development
+  return 'http://localhost:3000'; // For development
 };
 
 // For backward compatibility, also export the names
