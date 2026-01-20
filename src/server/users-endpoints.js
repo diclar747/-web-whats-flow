@@ -505,6 +505,10 @@ app.post('/api/chats/transfer-legacy-1', async (req, res) => {
 
 // ==================== ASIGNACIÓN DE CHATS ====================
 
+// [REMOVED] Duplicate endpoint /api/chats/assign
+// The authenticated version is in multiagent-endpoints.js (line 509)
+// Commented out on 2026-01-19 during system optimization
+/*
 // Asignar chat a agente
 app.post('/api/chats/assign', async (req, res) => {
     try {
@@ -546,6 +550,7 @@ app.post('/api/chats/assign', async (req, res) => {
         res.status(500).json({ success: false, error: 'Error asignando chat' });
     }
 });
+*/
 
 // Actualizar estado de conversación (Open/Pending/Closed)
 app.post('/api/chats/status', async (req, res) => {
