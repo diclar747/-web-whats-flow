@@ -1719,6 +1719,43 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
           </Tabs>
         )}
 
+        {/* 🔄 BARRA DE PROGRESO VERDE - Visible durante carga */}
+        {!chatListCollapsed && isLoading && (
+          <Box sx={{ width: '100%', px: 0 }}>
+            <Box sx={{
+              height: 3,
+              backgroundColor: colors.divider,
+              overflow: 'hidden'
+            }}>
+              <Box
+                sx={{
+                  height: '100%',
+                  width: '30%',
+                  backgroundColor: '#25D366', // WhatsApp green
+                  animation: 'loadingSlide 1.2s ease-in-out infinite',
+                  '@keyframes loadingSlide': {
+                    '0%': { marginLeft: '-30%' },
+                    '100%': { marginLeft: '100%' }
+                  }
+                }}
+              />
+            </Box>
+            <Typography
+              variant="caption"
+              sx={{
+                display: 'block',
+                textAlign: 'center',
+                color: '#25D366',
+                py: 0.5,
+                fontSize: '0.7rem',
+                fontWeight: 500
+              }}
+            >
+              ⏳ Cargando chats...
+            </Typography>
+          </Box>
+        )}
+
         {/* Lista de chats - Mostrar solo avatares si está colapsado */}
         {filterTab === 4 ? (
           <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
@@ -2011,6 +2048,12 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                       }
 
                       setDateFilter(filterDate);
+
+                      // 🔥 CARGAR MENSAJES DESDE EL SERVIDOR CON EL NUEVO FILTRO
+                      if (activeChat && loadMessages && filterDate) {
+                        console.log(`[DATE-FILTER] 📅 Cargando mensajes desde ${filterDate}...`);
+                        loadMessages(activeChat.id, filterDate);
+                      }
                     }}
                   >
                     <MenuItem value="">Sin filtro</MenuItem>
@@ -2030,8 +2073,15 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                   label="Fecha específica"
                   value={dateFilter}
                   onChange={(e) => {
-                    setDateFilter(e.target.value);
+                    const newDate = e.target.value;
+                    setDateFilter(newDate);
                     setQuickFilter(''); // Limpiar filtro rápido
+
+                    // 🔥 CARGAR MENSAJES DESDE EL SERVIDOR CON LA FECHA ESPECIFICA
+                    if (activeChat && loadMessages && newDate) {
+                      console.log(`[DATE-FILTER] 📅 Cargando mensajes desde fecha específica: ${newDate}...`);
+                      loadMessages(activeChat.id, newDate);
+                    }
                   }}
                   size="small"
                   sx={{ minWidth: 180 }}
@@ -2045,6 +2095,12 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                     onClick={() => {
                       setDateFilter('');
                       setQuickFilter('');
+
+                      // 🔥 RECARGAR MENSAJES CON FILTRO POR DEFECTO (24h)
+                      if (activeChat && loadMessages) {
+                        console.log(`[DATE-FILTER] 🔄 Limpiando filtro, recargando últimas 24h...`);
+                        loadMessages(activeChat.id, 'limit_24h');
+                      }
                     }}
                     variant="outlined"
                     size="small"

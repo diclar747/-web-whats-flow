@@ -19,6 +19,10 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const moment = require('moment');
 
+// Importar nuevos módulos de API REST
+const { registerWebhookEndpoints, triggerWebhook } = require('./webhook-endpoints');
+const { registerAPIRestExtendedEndpoints } = require('./api-rest-extended-endpoints');
+
 // Importar middleware de autenticación
 const { authenticateToken, authorizeRole } = require('./middleware/auth');
 const { validateSessionBelongsToUser } = require('./middleware/validateSession');
@@ -361,6 +365,9 @@ console.log('✅ Endpoints de Métricas del Sistema cargados');
 
 require('./push-notifications-endpoints')(app, poolProxy);
 console.log('✅ Endpoints de Push Notifications cargados');
+
+require('./sms-endpoints')(app, poolProxy);
+console.log('✅ Endpoints de SMS Premium cargados');
 
 
 
@@ -834,6 +841,7 @@ async function initializeDatabase() {
 
         console.log('[DB-INIT] Creating connection pool...');
         pool = mysql.createPool(dbConfig);
+        global.dbPool = pool; // Exponer pool globalmente para módulos de API
         console.log('[DB-INIT] Connection pool created. Attempting to get a connection from pool...');
 
         // Configurar zona horaria de Paraguay para todas las conexiones
@@ -1349,6 +1357,60 @@ async function createTables() {
         );
         console.log('[DB-TABLES] Table \'appointment_reminders_sent\' ensured.');
 
+        // Tabla de Campañas SMS
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS sms_campaigns ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'user_id INT NOT NULL,'
+            + 'name VARCHAR(255) NOT NULL,'
+            + 'message_template TEXT NOT NULL,'
+            + 'scheduled_at DATETIME NULL,'
+            + 'status ENUM(\'pending\', \'active\', \'completed\', \'cancelled\', \'failed\') DEFAULT \'pending\','
+            + 'total_recipients INT DEFAULT 0,'
+            + 'sent_count INT DEFAULT 0,'
+            + 'failed_count INT DEFAULT 0,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
+            + 'FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,'
+            + 'INDEX idx_user_id (user_id),'
+            + 'INDEX idx_status (status)'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        console.log('[DB-TABLES] Table \'sms_campaigns\' ensured.');
+
+        // Tabla de Historial de SMS
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS sms_history ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'campaign_id INT NULL,'
+            + 'user_id INT NOT NULL,'
+            + 'phone VARCHAR(20) NOT NULL,'
+            + 'message TEXT NOT NULL,'
+            + 'status ENUM(\'pending\', \'sent\', \'failed\') DEFAULT \'pending\','
+            + 'error_message TEXT,'
+            + 'sent_at DATETIME NULL,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'FOREIGN KEY (campaign_id) REFERENCES sms_campaigns(id) ON DELETE CASCADE,'
+            + 'FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,'
+            + 'INDEX idx_campaign_id (campaign_id),'
+            + 'INDEX idx_user_id (user_id),'
+            + 'INDEX idx_phone (phone),'
+            + 'INDEX idx_status (status)'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS sms_campaign_recipients ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'campaign_id INT NOT NULL,'
+            + 'phone VARCHAR(20) NOT NULL,'
+            + 'name VARCHAR(255),'
+            + 'status ENUM(\'pending\', \'sent\', \'failed\') DEFAULT \'pending\','
+            + 'error_message TEXT,'
+            + 'FOREIGN KEY (campaign_id) REFERENCES sms_campaigns(id) ON DELETE CASCADE'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        console.log('[DB-TABLES] Table \'sms_campaign_recipients\' ensured.');
+
         // Tabla unificada de Usuarios (Admins, Agentes, Staff)
         // NOTA: Se ha eliminado la definición duplicada que existía aquí. 
         // La definición correcta está más abajo, cerca de la línea 1007.
@@ -1374,7 +1436,8 @@ async function createTables() {
             { name: 'subscription_end_date', type: 'DATETIME', description: 'Fin suscripción' },
             { name: 'subscription_days', type: 'INT DEFAULT 0', description: 'Días suscripción' },
             { name: 'phone', type: 'VARCHAR(50)', description: 'Teléfono' },
-            { name: 'password', type: 'VARCHAR(255)', description: 'Password' }
+            { name: 'password', type: 'VARCHAR(255)', description: 'Password' },
+            { name: 'sms_balance', type: 'DECIMAL(10, 2) DEFAULT 0.00', description: 'Saldo para SMS' }
         ];
 
         for (const col of userColumns) {
@@ -1404,6 +1467,45 @@ async function createTables() {
             + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
         );
         console.log('[DB-TABLES] Table \'admin_users\' ensured.');
+
+        // Tabla para claves de API REST
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS api_keys ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'session_id VARCHAR(255) NOT NULL,'
+            + 'api_key VARCHAR(255) UNIQUE NOT NULL,'
+            + 'name VARCHAR(255),'
+            + 'description TEXT,'
+            + 'is_active BOOLEAN DEFAULT TRUE,'
+            + 'request_count INT DEFAULT 0,'
+            + 'last_used_at TIMESTAMP NULL,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
+            + 'INDEX idx_api_key (api_key),'
+            + 'INDEX idx_session_id (session_id)'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        console.log('[DB-TABLES] Table \'api_keys\' ensured.');
+
+        // Tabla para Webhooks de API REST
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS api_webhooks ('
+            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
+            + 'session_id VARCHAR(255) NOT NULL,'
+            + 'url VARCHAR(1024) NOT NULL,'
+            + 'events JSON,'
+            + 'name VARCHAR(255),'
+            + 'secret VARCHAR(255),'
+            + 'is_active BOOLEAN DEFAULT TRUE,'
+            + 'success_count INT DEFAULT 0,'
+            + 'failure_count INT DEFAULT 0,'
+            + 'last_triggered_at TIMESTAMP NULL,'
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
+            + 'INDEX idx_session_id (session_id)'
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+        console.log('[DB-TABLES] Table \'api_webhooks\' ensured.');
 
         // Insertar admin por defecto si no existe
         // Password: Cadc++**1978
@@ -2006,8 +2108,9 @@ async function getOrInsertContact(jid, name = null, notifyName = null, phoneNumb
         // Intentar obtener nombre más preciso si sock está disponible
         if (sock) {
             const bestNames = await getBestContactName(sock, jid, name, notifyName);
-            contactName = bestNames.name;
-            contactNotifyName = bestNames.notifyName;
+            // Ensure we never have undefined values - fall back to phone number
+            contactName = bestNames.name || jid.split('@')[0];
+            contactNotifyName = bestNames.notifyName || contactName || jid.split('@')[0];
 
             // IMPORTANTE: Si el nombre es solo el número de teléfono, forzamos la actualización con el nombre real
             if (contactName === jid.split('@')[0] && sock) {
@@ -2795,6 +2898,30 @@ async function saveMessageToDB(sessionId, msg) {
             params
         );
         console.log(`[DB-MSG] ✅ Message saved/updated: ${messageId}`);
+
+        // 🆕 DISPARAR WEBHOOK (si es mensaje recibido)
+        if (!from_me) {
+            triggerWebhook(pool, ownerSessionId, 'message.received', {
+                id: messageId,
+                from: chat_jid,
+                sender: sender_jid,
+                text: text_content,
+                type: message_type,
+                timestamp: ts,
+                sender_name: senderName,
+                is_group: chat_jid.includes('@g.us')
+            }).catch(err => console.error('[WEBHOOK-ERR] Received:', err.message));
+        } else {
+            // También disparar para mensajes enviados (si el usuario quiere trackeo)
+            triggerWebhook(pool, ownerSessionId, 'message.sent', {
+                id: messageId,
+                to: chat_jid,
+                text: text_content,
+                type: message_type,
+                timestamp: ts,
+                agent_name: agent_name || 'Admin'
+            }).catch(err => console.error('[WEBHOOK-ERR] Sent:', err.message));
+        }
 
         // 3. ACTUALIZAR TABLA CHATS (CRÍTICO PARA QUE APAREZCA EN LA LISTA)
         // Como desactivamos la sync inicial, es vital crear/actualizar el chat aquí
@@ -11335,7 +11462,7 @@ app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionB
             let dateCondition = '';
             let queryParams = [chatJid]; // Solo chatJid en posición fija
 
-            if (dateFilter === 'today') {
+            if (dateFilter === 'today' || dateFilter === 'limit_24h') {
                 // Solo mensajes de las últimas 24 horas
                 dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)';
                 console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de las últimas 24 HORAS');
@@ -11344,14 +11471,15 @@ app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionB
                 dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
                 console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de los ÚLTIMOS 7 DÍAS');
             } else if (dateFilter === 'month') {
-                // Mensajes del mes actual
-                dateCondition = 'AND MONTH(m.timestamp) = MONTH(CURDATE()) AND YEAR(m.timestamp) = YEAR(CURDATE())';
-                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes del MES');
+                // Mensajes del último mes (30 días)
+                dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes del ÚLTIMO MES');
             } else if (dateFilter && dateFilter !== 'all') {
-                // Fecha específica en formato YYYY-MM-DD
-                dateCondition = 'AND DATE(m.timestamp) = ?';
-                queryParams.push(dateFilter);
-                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de fecha específica:', dateFilter);
+                // 🔥 RANGO DE FECHAS: Desde la fecha especificada hasta HOY
+                // Formato esperado: YYYY-MM-DD (ej: 2026-01-05)
+                dateCondition = 'AND m.timestamp >= ?';
+                queryParams.push(dateFilter + ' 00:00:00');
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes DESDE:', dateFilter, 'hasta hoy');
             } else {
                 // 'all' o sin filtro - cargar todos (solo si se solicita explícitamente)
                 console.log('[AGENT-MESSAGES] 📅 Cargando TODOS los mensajes');
@@ -22099,6 +22227,9 @@ VALUES(?, ?, ?, ?, 'pending', ?)`,
     }
 });
 
+// [DEPRECATED] This endpoint has been replaced by /api/chats/transfer in multiagent-endpoints.js
+// Commented out on 2026-01-19 during system optimization
+/*
 // Endpoint simplificado para transferir chat
 app.post('/api/chats/transfer-deprecated', async (req, res) => {
     const { sessionId, chatJid, toAgentId, fromAgentId } = req.body;
@@ -22280,6 +22411,7 @@ app.post('/api/chats/transfer-deprecated', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+*/
 
 // Aceptar transferencia de chat
 app.post('/api/agent/accept-transfer', async (req, res) => {
@@ -25787,6 +25919,12 @@ console.log('🔥 [INDEX.JS] Llamando a registerAPIRestEndpoints...');
 registerAPIRestEndpoints(app, pool, sessions);
 console.log('🔥 [INDEX.JS] registerAPIRestEndpoints ejecutado');
 
+// ============= NUEVOS ENDPOINTS DE API REST (WEBHOOKS Y MODULOS) =============
+console.log('🔥 [INDEX.JS] Registrando webhooks y módulos extendidos de API REST...');
+registerWebhookEndpoints(app, pool, sessions);
+registerAPIRestExtendedEndpoints(app, pool, sessions);
+console.log('🔥 [INDEX.JS] Nuevos módulos de API REST registrados');
+
 // ============= ENDPOINTS DE AUTENTICACIÓN =============
 const { registerAuthEndpoints } = require('./auth-endpoints');
 console.log('🔐 [INDEX.JS] Registrando endpoints de autenticación...');
@@ -26034,38 +26172,8 @@ app.post('/api/contacts/force-name-update/:sessionId', async (req, res) => {
     }
 });
 
-// Endpoint para forzar actualización de nombres de contactos que solo tienen número
-app.post('/api/contacts/force-name-update/:sessionId', async (req, res) => {
-    const { sessionId } = req.params;
-
-    // Responder inmediatamente para evitar timeouts
-    res.json({
-        success: true,
-        message: 'Solicitud recibida, actualización en proceso',
-        processing: true
-    });
-
-    // Procesar en segundo plano para evitar timeouts
-    process.nextTick(async () => {
-        try {
-            const session = sessions.get(sessionId);
-            if (!session || !session.sock || !session.isConnected) {
-                console.log(`[${sessionId}] ❌ Sesión no disponible para actualización de nombres`);
-                return;
-            }
-
-            console.log(`[${sessionId}] 🔄 Iniciando actualización forzada de nombres de contactos en segundo plano...`);
-
-            // Usar la función específica que creamos
-            const updatedCount = await forceUpdateAllNumberOnlyContacts(sessionId);
-
-            console.log(`[${sessionId}] ✅ Actualización completada: ${updatedCount} contactos actualizados`);
-
-        } catch (error) {
-            console.error(`[${sessionId}] ❌ Error en actualización forzada de nombres:`, error);
-        }
-    });
-});
+// [REMOVED] Duplicate endpoint /api/contacts/force-name-update/:sessionId
+// Original at line 26006 handles this functionality
 
 process.on('SIGTERM', cleanup);
 process.on('uncaughtException', async (err) => {

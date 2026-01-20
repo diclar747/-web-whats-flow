@@ -997,6 +997,46 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
                     </Typography>
                   </Box>
 
+                  {/* 🔄 Barra de progreso de carga de chats */}
+                  {(isLoading || activeSyncProgress?.status === 'syncing') && (
+                    <Box sx={{ width: '100%', px: 0 }}>
+                      <Box sx={{
+                        height: 3,
+                        backgroundColor: isDarkMode ? '#2a3942' : '#e0e0e0',
+                        overflow: 'hidden'
+                      }}>
+                        <Box
+                          sx={{
+                            height: '100%',
+                            width: activeSyncProgress?.status === 'syncing'
+                              ? `${activeSyncProgress.progress}%`
+                              : '100%',
+                            backgroundColor: '#25D366', // WhatsApp green
+                            animation: activeSyncProgress?.status === 'syncing'
+                              ? 'none'
+                              : 'loadingPulse 1.5s ease-in-out infinite',
+                            '@keyframes loadingPulse': {
+                              '0%': { transform: 'translateX(-100%)' },
+                              '100%': { transform: 'translateX(100%)' }
+                            }
+                          }}
+                        />
+                      </Box>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: 'block',
+                          textAlign: 'center',
+                          color: '#25D366',
+                          py: 0.5,
+                          fontSize: '0.7rem'
+                        }}
+                      >
+                        {activeSyncProgress?.message || 'Cargando chats...'}
+                      </Typography>
+                    </Box>
+                  )}
+
                   {filteredChats.map(chat => (
                     <ListItem
                       key={chat.id}

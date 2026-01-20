@@ -72,7 +72,8 @@ import {
   Schedule,
   CheckCircle,
   AccountBalance as ManagementIcon,
-  Notifications as PushIcon
+  Notifications as PushIcon,
+  Sms as SmsIcon
 } from '@mui/icons-material';
 
 // Componente de llamada entrante (cargado inmediatamente por ser crítico)
@@ -98,6 +99,7 @@ const AgentsManagementModule = lazy(() => import('../modules/AgentsManagementMod
 const KanbanContactsModule = lazy(() => import('../modules/KanbanContactsModule'));
 const AgentPermissionsManager = lazy(() => import('../components/AgentPermissionsManager'));
 const WhatsAppStatusModule = lazy(() => import('../modules/WhatsAppStatusModule'));
+const SMSPremiumModule = lazy(() => import('../modules/SMSPremiumModule'));
 const WhatsAppConnectionModule = lazy(() => import('../modules/WhatsAppConnectionModule'));
 const ManagementModule = lazy(() => import('../modules/ManagementModule'));
 const PushNotificationsModule = lazy(() => import('../modules/PushNotificationsModule'));
@@ -442,6 +444,13 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
       icon: <ManagementIcon />,
       path: '/dashboard/management',
       color: '#3f51b5'
+    },
+    {
+      id: 'sms',
+      label: 'SMS Premium',
+      icon: <SmsIcon />,
+      path: '/dashboard/sms',
+      color: '#ff5722'
     },
     {
       id: 'push',
@@ -1617,6 +1626,11 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                     <Route path="/connection/*" element={
                       <Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}><CircularProgress /></Box>}>
                         <WhatsAppConnectionModule sessionId={sessionId} />
+                      </Suspense>
+                    } />
+                    <Route path="/sms/*" element={
+                      <Suspense fallback={<ModuleLoadingFallback />}>
+                        <SMSPremiumModule sessionId={sessionId} />
                       </Suspense>
                     } />
                     <Route path="/push/*" element={
