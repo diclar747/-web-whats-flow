@@ -57,7 +57,8 @@ import {
     FilterList as FilterListIcon,
 
     Search as SearchIcon,
-    AccessTime as AccessTimeIcon
+    AccessTime as AccessTimeIcon,
+    Visibility as ViewIcon
 } from '@mui/icons-material';
 import { getAPIBaseURL } from '../utils/api';
 import EmojiPicker from 'emoji-picker-react';
@@ -793,6 +794,26 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
         }
     };
 
+    const handleResendCampaign = async (campaignId: number) => {
+        try {
+            setLoading(true);
+            const response = await fetch(`${getAPIBaseURL()}/api/sms/campaigns/${campaignId}/resend`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+            if (data.success) {
+                setSuccess('Campaña duplicada como pendiente. Ahora puedes iniciar el envío.');
+                loadCampaigns(userId!);
+            } else {
+                setError(data.error || 'Error al reanudar campaña');
+            }
+        } catch (err) {
+            setError('Error de conexión al reanudar campaña');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Filter campaigns
     const filteredCampaigns = campaigns.filter(campaign => {
         if (filterStatus !== 'all' && campaign.status !== filterStatus) return false;
@@ -1224,6 +1245,16 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                                                             </IconButton>
                                                                         </Tooltip>
                                                                     )}
+                                                                    <Tooltip title={campaign.message_template}>
+                                                                        <IconButton size="small" sx={{ color: '#94a3b8' }}>
+                                                                            <ViewIcon fontSize="small" />
+                                                                        </IconButton>
+                                                                    </Tooltip>
+                                                                    <Tooltip title="Reenviar">
+                                                                        <IconButton size="small" sx={{ color: '#a855f7' }} onClick={() => handleResendCampaign(campaign.id)}>
+                                                                            <RefreshIcon fontSize="small" />
+                                                                        </IconButton>
+                                                                    </Tooltip>
                                                                     <Tooltip title="Editar">
                                                                         <IconButton size="small" sx={{ color: '#3b82f6' }} onClick={() => handleEditCampaign(campaign)}>
                                                                             <HistoryIcon fontSize="small" />
@@ -1423,6 +1454,33 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                     </IconButton>
                                 </Tooltip>
                             )}
+
+                            <Tooltip title={camp.message_template}>
+                                <IconButton
+                                    size="small"
+                                    sx={{
+                                        color: '#94a3b8',
+                                        bgcolor: 'rgba(255, 255, 255, 0.05)',
+                                        '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.1)' }
+                                    }}
+                                >
+                                    <ViewIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+
+                            <Tooltip title="Reenviar">
+                                <IconButton
+                                    size="small"
+                                    sx={{
+                                        color: '#a855f7',
+                                        bgcolor: 'rgba(168, 85, 247, 0.1)',
+                                        '&:hover': { bgcolor: 'rgba(168, 85, 247, 0.2)' }
+                                    }}
+                                    onClick={() => handleResendCampaign(camp.id)}
+                                >
+                                    <RefreshIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
 
                             <Tooltip title="Editar">
                                 <IconButton

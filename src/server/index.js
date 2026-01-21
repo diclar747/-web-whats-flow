@@ -6910,7 +6910,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         break;
 
                     case DisconnectReason.restartRequired:
-                        // WhatsApp requiere reinicio
+                        // WhatsApp requiere reinicio (VERSIÓN ORIGINAL - CAUSA LOOPS INFINITOS)
                         console.log(`[${sessionId}] Reinicio requerido por WhatsApp`);
                         sessions.delete(sessionId);
                         if (userPhoneNumber) {
@@ -9096,19 +9096,19 @@ app.post('/api/whatsapp/qr-code', async (req, res) => {
             ownerIdentifier = rawIdentifier || `session-${Date.now()}`;
         }
 
-        // 🛡️ ANTI-BLOCK: Verificar si se puede generar QR
-        const tempSessionId = crypto.randomBytes(8).toString('hex');
-        const canGenerate = antiBlock.canGenerateQR(tempSessionId);
+        // 🛡️ ANTI-BLOCK: DESACTIVADO TEMPORALMENTE PARA DEBUG
+        // const tempSessionId = crypto.randomBytes(8).toString('hex');
+        // const canGenerate = antiBlock.canGenerateQR(tempSessionId);
 
-        if (!canGenerate.allowed) {
-            console.log(`[QR-ENDPOINT] 🚫 ${canGenerate.reason}`);
-            return res.status(429).json({
-                success: false,
-                message: canGenerate.reason,
-                waitTime: Math.ceil(canGenerate.waitTime / 1000), // en segundos
-                retryAfter: new Date(Date.now() + canGenerate.waitTime).toISOString()
-            });
-        }
+        // if (!canGenerate.allowed) {
+        //     console.log(`[QR-ENDPOINT] 🚫 ${canGenerate.reason}`);
+        //     return res.status(429).json({
+        //         success: false,
+        //         message: canGenerate.reason,
+        //         waitTime: Math.ceil(canGenerate.waitTime / 1000), // en segundos
+        //         retryAfter: new Date(Date.now() + canGenerate.waitTime).toISOString()
+        //     });
+        // }
 
         // VALIDAR CAPACIDAD DEL PLAN ANTES DE CONTINUAR
         const capacity = await ensurePlanCapacity(ownerIdentifier);
@@ -9156,8 +9156,8 @@ app.post('/api/whatsapp/qr-code', async (req, res) => {
             errorCorrectionLevel: 'H'
         });
 
-        // 🛡️ ANTI-BLOCK: Registrar QR generado
-        antiBlock.registerQRGenerated(sessionId);
+        // 🛡️ ANTI-BLOCK: DESACTIVADO TEMPORALMENTE
+        // antiBlock.registerQRGenerated(sessionId);
 
         res.json({
             success: true,

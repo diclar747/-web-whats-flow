@@ -274,6 +274,8 @@ module.exports = function (app, db) {
 
             const {
                 name,
+                public_title,
+                logo_url,
                 description,
                 categoryId,
                 redirectUrl,
@@ -290,13 +292,15 @@ module.exports = function (app, db) {
 
             const [result] = await db.query(
                 `INSERT INTO push_subscription_urls 
-                (user_id, category_id, url_code, name, description, redirect_url, welcome_message, max_subscribers, expires_at) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                (user_id, category_id, url_code, name, public_title, logo_url, description, redirect_url, welcome_message, max_subscribers, expires_at) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     userId,
                     categoryId || null,
                     urlCode,
                     name.trim(),
+                    public_title || null,
+                    logo_url || null,
                     description || null,
                     redirectUrl || null,
                     welcomeMessage || null,
@@ -337,6 +341,8 @@ module.exports = function (app, db) {
 
             const {
                 name,
+                public_title,
+                logo_url,
                 description,
                 categoryId,
                 isActive,
@@ -348,11 +354,13 @@ module.exports = function (app, db) {
 
             const [result] = await db.query(
                 `UPDATE push_subscription_urls 
-                SET name = ?, description = ?, category_id = ?, is_active = ?, 
+                SET name = ?, public_title = ?, logo_url = ?, description = ?, category_id = ?, is_active = ?, 
                     redirect_url = ?, welcome_message = ?, max_subscribers = ?, expires_at = ?
                 WHERE id = ? AND user_id = ?`,
                 [
                     name,
+                    public_title,
+                    logo_url,
                     description,
                     categoryId,
                     isActive,
@@ -628,7 +636,7 @@ module.exports = function (app, db) {
         try {
             const { code } = req.params;
             const [rows] = await db.query(
-                `SELECT u.name, u.description, u.redirect_url, u.is_active, u.expires_at,
+                `SELECT u.name, u.public_title, u.logo_url, u.description, u.redirect_url, u.is_active, u.expires_at,
                         u.user_id,
                         (SELECT name FROM push_categories WHERE id = u.category_id) as category_name
                  FROM push_subscription_urls u
@@ -1258,14 +1266,13 @@ module.exports = function (app, db) {
                     console.log(`[PUSH] Found userId ${userId} from urlCode`);
                 } else {
                     console.warn(`[PUSH] urlCode ${req.query.urlCode} not found`);
+                    return res.status(404).json({ error: 'Código de enlace no válido o no encontrado' });
                 }
             }
 
-            // Fallback for global key or if still not found
             if (!userId) {
                 console.warn(`[PUSH] No userId found for VAPID key request`);
-                // Return a global key or just 401 if we want strict per-user keys
-                return res.status(401).json({ error: 'Se requiere identificación de usuario o código de URL' });
+                return res.status(401).json({ error: 'Se requiere identificación de usuario o código de URL válido' });
             }
 
             const keys = await getVapidKeys(userId);
@@ -1273,7 +1280,7 @@ module.exports = function (app, db) {
             res.json({ publicKey: keys.publicKey });
         } catch (error) {
             console.error('[PUSH] VAPID key error:', error);
-            res.status(500).json({ error: error.message });
+            res.status(500).json({ error: error.message || 'Error interno al obtener llaves VAPID' });
         }
     });
 
