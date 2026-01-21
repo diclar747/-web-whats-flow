@@ -134,6 +134,10 @@ function registerAuthEndpoints(app, pool) {
             console.log('[AUTH-FIX] 🔧 Auto-corrigiendo email claudio@cnid.om.py -> claudio@cnid.com.py');
             email = 'claudio@cnid.com.py';
         }
+        if (email === 'domingo@cnid.om.py') {
+            console.log('[AUTH-FIX] 🔧 Auto-corrigiendo email domingo@cnid.om.py -> domingo@cnid.com.py');
+            email = 'domingo@cnid.com.py';
+        }
 
         try {
             if (!email || !password) {

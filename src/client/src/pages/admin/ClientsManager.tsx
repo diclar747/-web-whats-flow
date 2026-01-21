@@ -25,7 +25,7 @@ import {
     Alert,
     Snackbar,
 } from '@mui/material';
-import { MoreVert, Block, CheckCircle, Smartphone, Search, Edit, Delete, PersonAdd, Message } from '@mui/icons-material';
+import { MoreVert, Block, CheckCircle, Smartphone, Search, Edit, Delete, PersonAdd, Message, Lock, Visibility, VisibilityOff } from '@mui/icons-material';
 import { getAPIBaseURL } from '../../utils/socketConfig';
 
 interface Client {
@@ -58,10 +58,12 @@ const ClientsManager: React.FC = () => {
     const [selectedPlanId, setSelectedPlanId] = useState<number | ''>('');
 
     const [openEditDialog, setOpenEditDialog] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     const [editFormData, setEditFormData] = useState({
         name: '',
         email: '',
-        phone: ''
+        phone: '',
+        password: ''
     });
 
     const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
@@ -193,10 +195,12 @@ const ClientsManager: React.FC = () => {
         setEditFormData({
             name: selectedClient.name,
             email: selectedClient.email,
-            phone: selectedClient.phone
+            phone: selectedClient.phone,
+            password: ''
         });
         setAnchorEl(null);
         setOpenEditDialog(true);
+        setShowPassword(false);
     };
 
     const handleEditClient = async () => {
@@ -471,6 +475,35 @@ const ClientsManager: React.FC = () => {
                                 }
                             }}
                         />
+                        <FormControl variant="outlined" fullWidth>
+                            <TextField
+                                label="Nueva Contraseña (Opcional)"
+                                type={showPassword ? 'text' : 'password'}
+                                fullWidth
+                                value={editFormData.password}
+                                onChange={(e) => setEditFormData({ ...editFormData, password: e.target.value })}
+                                sx={{
+                                    '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.7)' },
+                                    '& .MuiOutlinedInput-root': {
+                                        color: 'white',
+                                        '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                                        '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.2)' },
+                                        '&.Mui-focused fieldset': { borderColor: '#25D366' }
+                                    }
+                                }}
+                                InputProps={{
+                                    endAdornment: (
+                                        <IconButton
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            edge="end"
+                                            sx={{ color: 'rgba(255,255,255,0.7)' }}
+                                        >
+                                            {showPassword ? <VisibilityOff /> : <Visibility />}
+                                        </IconButton>
+                                    )
+                                }}
+                            />
+                        </FormControl>
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.1)' }}>

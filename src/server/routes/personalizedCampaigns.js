@@ -142,8 +142,8 @@ router.post('/create', upload.single('archivo'), async (req, res) => {
     await pool.execute(
       `INSERT INTO campaigns (
         id, session_id, name, type, status, message_text, 
-        message_media_url, contacts, progress_total, progress_sent, progress_failed
-      ) VALUES (?, ?, ?, 'personalized', ?, ?, ?, ?, ?, 0, 0)`,
+        message_media_url, contacts, progress_total, progress_sent, progress_failed, created_at
+      ) VALUES (?, ?, ?, 'personalized', ?, ?, ?, ?, ?, 0, 0, NOW())`,
       [
         campaignId,
         sessionId,
@@ -213,6 +213,10 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
       interval_min_seconds: 60,
       interval_max_seconds: 120
     };
+
+    // Resolver userId para socket
+    const { resolveToUserId } = require('../helpers/sessionIdResolver');
+    const userId = await resolveToUserId(sessionId);
 
     const now = new Date();
     const currentDate = now.toISOString().split('T')[0]; // YYYY-MM-DD
@@ -388,6 +392,25 @@ router.post('/check-scheduled/:sessionId', async (req, res) => {
         );
 
         console.log(`[CAMPAIGN-DB] Campaña ${campaign.nombre} actualizada: ${enviados} enviados, ${errores} errores, ${pendientes} pendientes`);
+
+        // Emitir evento de progreso por Socket.IO
+        try {
+          const io = req.app.get('io');
+          if (io && userId) {
+            const totalContactos = campaign.contactos.length;
+            const percentage = totalContactos > 0 ? Math.round(((enviados + errores) / totalContactos) * 100) : 0;
+
+            io.to(`sms_${userId}`).emit('sms_progress', {
+              campaignId: campaign.id,
+              progress: percentage,
+              sent: enviados,
+              failed: errores,
+              total: totalContactos
+            });
+          }
+        } catch (socketError) {
+          console.error('Error emitiendo socket en check-scheduled:', socketError);
+        }
       }
     }
 
@@ -711,6 +734,14 @@ router.post('/send-now/:campaignId', async (req, res) => {
       });
     }
 
+    // Resolver userId para socket
+    const { resolveToUserId } = require('../helpers/sessionIdResolver');
+    const userId = await resolveToUserId(sessionId);
+
+    if (!userId) {
+      console.warn('No se pudo resolver userId para sessionId:', sessionId);
+    }
+
     const whatsappClient = sessionData.sock;
     let enviados = 0;
     let errores = 0;
@@ -800,6 +831,25 @@ router.post('/send-now/:campaignId', async (req, res) => {
           console.error('[CAMPAIGN-MSG] Error guardando mensaje:', dbError);
         }
 
+        // Emitir evento de progreso por Socket.IO
+        try {
+          const io = req.app.get('io');
+          if (io && userId) {
+            const totalContactos = contactos.length;
+            const percentage = totalContactos > 0 ? Math.round(((enviados + errores) / totalContactos) * 100) : 0;
+
+            io.to(`sms_${userId}`).emit('sms_progress', {
+              campaignId: campaign.id,
+              progress: percentage,
+              sent: enviados,
+              failed: errores,
+              total: totalContactos
+            });
+          }
+        } catch (socketError) {
+          console.error('Error emitiendo socket:', socketError);
+        }
+
         // Esperar tiempo aleatorio entre mensajes según configuración (seguridad anti-ban)
         const minDelay = (config.interval_min_seconds || 60) * 1000;
         const maxDelay = (config.interval_max_seconds || 120) * 1000;
@@ -808,49 +858,49 @@ router.post('/send-now/:campaignId', async (req, res) => {
         console.log(`⏱️  Esperando ${Math.floor(randomDelay / 1000)} segundos antes del próximo envío...`);
         await new Promise(resolve => setTimeout(resolve, randomDelay));
 
-      } catch (error) {
-        console.error(`❌ Error enviando a ${contact.numero}:`, error);
-        contact.estado = 'error';
-        contact.errorMessage = error.message;
-        errores++;
-      }
+    } catch (error) {
+      console.error(`❌ Error enviando a ${contact.numero}:`, error);
+      contact.estado = 'error';
+      contact.errorMessage = error.message;
+      errores++;
     }
+  }
 
     const pendientes = contactos.filter(c => c.estado === 'pendiente').length;
-    const newStatus = pendientes === 0 ? 'completed' : 'active';
+  const newStatus = pendientes === 0 ? 'completed' : 'active';
 
-    // Actualizar campaña en base de datos
-    await pool.execute(
-      `UPDATE campaigns 
+  // Actualizar campaña en base de datos
+  await pool.execute(
+    `UPDATE campaigns 
        SET contacts = ?, 
            progress_sent = ?, 
            progress_failed = ?,
            status = ?,
            updated_at = NOW()
        WHERE id = ?`,
-      [
-        JSON.stringify(contactos),
-        enviados,
-        errores,
-        newStatus,
-        campaignId
-      ]
-    );
-
-    console.log(`✅ Campaña finalizada: ${enviados} enviados, ${errores} errores, ${pendientes} pendientes`);
-
-    res.json({
-      success: true,
+    [
+      JSON.stringify(contactos),
       enviados,
       errores,
-      pendientes,
-      estado: newStatus === 'completed' ? 'completada' : 'enviando'
-    });
+      newStatus,
+      campaignId
+    ]
+  );
 
-  } catch (error) {
-    console.error('Error enviando campaña:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
+  console.log(`✅ Campaña finalizada: ${enviados} enviados, ${errores} errores, ${pendientes} pendientes`);
+
+  res.json({
+    success: true,
+    enviados,
+    errores,
+    pendientes,
+    estado: newStatus === 'completed' ? 'completada' : 'enviando'
+  });
+
+} catch (error) {
+  console.error('Error enviando campaña:', error);
+  res.status(500).json({ success: false, error: error.message });
+}
 });
 
 // POST - Pausar campaña

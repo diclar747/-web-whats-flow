@@ -5,7 +5,7 @@ const express = require('express');
 const compression = require('compression');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, downloadMediaMessage } = require('baileys');
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, downloadMediaMessage, Browsers } = require('baileys');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
@@ -5646,7 +5646,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             auth: state,
             printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
-            browser: ['Winsap', 'Chrome', '131.0.0'],
+            browser: ['Ubuntu', 'Chrome', '20.0.04'], // Hardcoded for stability
             syncFullHistory: syncHistory,
             shouldSyncHistoryMessage: (msg) => {
                 return syncHistory;
@@ -5656,20 +5656,31 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 return { conversation: 'Message not available' };
             },
             keepAliveIntervalMs: 30000,
-            connectTimeoutMs: 60000,
-            defaultQueryTimeoutMs: 60000,
+            connectTimeoutMs: 90000,
+            defaultQueryTimeoutMs: 90000,
             emitOwnEvents: true,
             markOnlineOnConnect: true,
             retryRequestDelayMs: 250,
             maxMsgRetryCount: 5,
+            connectPaused: false,
+            captureRejections: false,
             shouldIgnoreJid: jid => {
                 if (!jid) return true;
-                // ✅ PERMITIR grupos y contactos, solo validar JID básico
                 return false;
             },
             linkPreviewImageThumbnailWidth: 192,
             maxCachedMessages: 100,
             msgRetryCount: 3,
+            patchMessageBeforeSending: (message) => {
+                const symbolKeys = Object.getOwnPropertySymbols(message);
+                for (const key of symbolKeys) {
+                    if (message[key]?.options?.httpAgent ||
+                        message[key]?.options?.httpsAgent) {
+                        delete message[key];
+                    }
+                }
+                return message;
+            },
             ...customStore
         });
 
@@ -5681,13 +5692,25 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             createdAt: Date.now(),
             messages: [],
             chats: [],
-            userId: null,  // ← Almacenar el user.id de la BD
-            phoneNumber: null  // ← Almacenar el teléfono WhatsApp
+            userId: null,
+            phoneNumber: null
         };
 
         // Manejar actualizaciones de conexión (compatible con Baileys via adaptador)
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
+
+            // 🔍 LOG DEBUG CONEXIÓN
+            if (connection === 'close') {
+                const reason = lastDisconnect?.error?.output?.statusCode || lastDisconnect?.error?.message;
+                const loggedOut = lastDisconnect?.error?.output?.statusCode === DisconnectReason.loggedOut;
+                console.log(`[${sessionId}] ❌ Conexión cerrada. Razón: ${reason}, LoggedOut: ${loggedOut}`);
+                if (lastDisconnect?.error) {
+                    console.error(`[${sessionId}] Detalle error desconexión:`, lastDisconnect.error);
+                }
+            } else if (connection === 'connecting') {
+                console.log(`[${sessionId}] ⏳ Conectando...`);
+            }
 
             if (qr) {
                 sessionInfo.qr = qr;

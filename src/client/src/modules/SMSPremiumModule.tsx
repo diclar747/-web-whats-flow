@@ -58,8 +58,15 @@ import {
 
     Search as SearchIcon,
     AccessTime as AccessTimeIcon,
-    Visibility as ViewIcon
+    Visibility as ViewIcon,
+    AddCircle as AddIcon,
+    FileDownload as ExportIcon,
+    PictureAsPdf as PdfIcon,
+    TableView as ExcelIcon
 } from '@mui/icons-material';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import { getAPIBaseURL } from '../utils/api';
 import EmojiPicker from 'emoji-picker-react';
 import SophisticatedProgressBar from '../components/SophisticatedProgressBar';
@@ -118,6 +125,7 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
 
     // Campaign filters
     const [filterStatus, setFilterStatus] = useState<string>('all');
+    const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
     const [filterDate, setFilterDate] = useState<string>('');
     const [filterSearch, setFilterSearch] = useState<string>('');
 
@@ -142,6 +150,11 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
     const [campaignToEdit, setCampaignToEdit] = useState<SMSCampaign | null>(null);
     const [editTemplate, setEditTemplate] = useState('');
     const [editName, setEditName] = useState('');
+
+    // Insufficient Balance Dialog
+    const [showBalanceDialog, setShowBalanceDialog] = useState(false);
+    const [balanceInfo, setBalanceInfo] = useState({ current: 0, required: 0 });
+
 
     // Direct send progress tracking
     const [directSendProgress, setDirectSendProgress] = useState<{ total: number, sent: number, failed: number } | null>(null);
@@ -332,21 +345,131 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
 
 
     // Normalizar números de teléfono al formato 595XXXXXXXXX
+    // Normalizar números de teléfono al formato 595XXXXXXXXX
     const normalizePhoneNumber = (phone: string): string => {
-        // Remover espacios, guiones y otros caracteres no numéricos
-        let cleaned = phone.replace(/[\s\-\(\)]/g, '');
+        // 1. Remover TODO lo que no sea número (espacios, guiones, paréntesis, +, etc.)
+        let cleaned = phone.replace(/\D/g, '');
 
-        // Si empieza con 0, removerlo
+        // 2. Si empieza con 0, removerlo (ej: 0985 -> 985)
         if (cleaned.startsWith('0')) {
             cleaned = cleaned.substring(1);
         }
 
-        // Si no empieza con 595, agregarlo
+        // 3. Garantizar prefijo 595
+        // Si no empieza con 595, agregarlo (ej: 985... -> 595985...)
         if (!cleaned.startsWith('595')) {
             cleaned = '595' + cleaned;
         }
 
+        // 4. Validación extra (opcional): verificar longitud mínima razonable?
+        // Por ahora confiamos en la lógica simple solicitada.
+
         return cleaned;
+    };
+
+    // GLOBAL EXPORT FUNCTIONS
+    const exportGlobalExcel = () => {
+        const wb = XLSX.utils.book_new();
+        const data = campaigns.map(c => ({
+            ID: c.id,
+            Nombre: c.name,
+            Mensaje: c.message_template,
+            Total: c.total_recipients,
+            Enviados: c.sent_count,
+            Fallidos: c.failed_count,
+            Estado: c.status,
+            Fecha: new Date(c.created_at).toLocaleString()
+        }));
+        const ws = XLSX.utils.json_to_sheet(data);
+        XLSX.utils.book_append_sheet(wb, ws, "Historial Campañas");
+        XLSX.writeFile(wb, `historial_sms_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    };
+
+    const exportGlobalPDF = () => {
+        const doc = new jsPDF();
+        doc.text("Historial de Campañas SMS", 14, 20);
+
+        const tableData = campaigns.map(c => [
+            c.id, c.name, c.sent_count + '/' + c.total_recipients, c.status, new Date(c.created_at).toLocaleDateString()
+        ]);
+
+        autoTable(doc, {
+            head: [['ID', 'Nombre', 'Progreso', 'Estado', 'Fecha']],
+            body: tableData,
+            startY: 25,
+        });
+
+        doc.save(`historial_sms_${new Date().toISOString().slice(0, 10)}.pdf`);
+    };
+
+    // PER-CAMPAIGN EXPORT FUNCTIONS
+    const fetchCampaignRecipients = async (campaignId: number) => {
+        try {
+            const response = await fetch(`${getAPIBaseURL()}/api/sms/campaigns/${campaignId}/recipients`);
+            const data = await response.json();
+            return data.success ? data.recipients : [];
+        } catch (err) {
+            console.error('Error fetching recipients:', err);
+            return [];
+        }
+    };
+
+    const exportCampaignExcel = async (campaign: SMSCampaign) => {
+        const recipients = await fetchCampaignRecipients(campaign.id);
+        const wb = XLSX.utils.book_new();
+
+        // Summary
+        const summaryData = [{
+            ID: campaign.id,
+            Nombre: campaign.name,
+            Mensaje: campaign.message_template,
+            Total: campaign.total_recipients,
+            Enviados: campaign.sent_count,
+            Fallidos: campaign.failed_count,
+            Estado: campaign.status,
+            Fecha: new Date(campaign.created_at).toLocaleString()
+        }];
+        const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+        XLSX.utils.book_append_sheet(wb, wsSummary, "Resumen");
+
+        // Details
+        const detailsData = recipients.map((r: any) => ({
+            Telefono: r.phone,
+            Nombre: r.name,
+            Estado: r.status,
+            Error: r.error_message || '',
+            FechaEnvio: r.sent_at ? new Date(r.sent_at).toLocaleString() : ''
+        }));
+        const wsDetails = XLSX.utils.json_to_sheet(detailsData);
+        XLSX.utils.book_append_sheet(wb, wsDetails, "Destinatarios");
+
+        XLSX.writeFile(wb, `campana_${campaign.id}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    };
+
+    const exportCampaignPDF = async (campaign: SMSCampaign) => {
+        const recipients = await fetchCampaignRecipients(campaign.id);
+        const doc = new jsPDF();
+
+        doc.setFontSize(16);
+        doc.text(`Reporte de Campaña: ${campaign.name}`, 14, 20);
+
+        doc.setFontSize(10);
+        doc.text(`ID: ${campaign.id}`, 14, 30);
+        doc.text(`Fecha: ${new Date(campaign.created_at).toLocaleString()}`, 14, 35);
+        doc.text(`Total: ${campaign.total_recipients} | Enviados: ${campaign.sent_count} | Fallidos: ${campaign.failed_count}`, 14, 40);
+        doc.text(`Mensaje: ${campaign.message_template.substring(0, 50)}...`, 14, 45);
+
+        const tableData = recipients.map((r: any) => [
+            r.phone, r.name, r.status, r.sent_at ? new Date(r.sent_at).toLocaleTimeString() : ''
+        ]);
+
+        autoTable(doc, {
+            head: [['Teléfono', 'Nombre', 'Estado', 'Hora Envío']],
+            body: tableData,
+            startY: 50,
+        });
+
+        doc.save(`campana_${campaign.id}_${new Date().toISOString().slice(0, 10)}.pdf`);
     };
 
 
@@ -385,14 +508,15 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
             const response = await fetch(`${getAPIBaseURL()}/api/sms/campaigns/${uid}`);
             const data = await response.json();
             if (data.success) {
-                setCampaigns(data.campaigns);
+                // Sort by ID descending (newest first)
+                setCampaigns(data.campaigns.sort((a: SMSCampaign, b: SMSCampaign) => b.id - a.id));
             }
         } catch (err) {
             console.error('Error loading campaigns:', err);
         }
     };
 
-    const handleSendSms = async () => {
+    const handleSendSms = async (autoStart = true) => {
         if (!message.trim()) {
             setError('Escribe un mensaje');
             return;
@@ -476,7 +600,8 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
             console.log(`[SMS-SEND] 💰 Saldo actual: ${userBalance} SMS, Necesarios: ${totalRecipients} SMS`);
 
             if (userBalance < totalRecipients) {
-                setError(`No tiene saldo suficiente. Tiene ${userBalance} SMS, necesita ${totalRecipients} SMS`);
+                setBalanceInfo({ current: userBalance, required: totalRecipients });
+                setShowBalanceDialog(true);
                 setSending(false);
                 return;
             }
@@ -512,15 +637,16 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
 
             const data = await response.json();
             if (data.success) {
-                setSuccess('Envío iniciado. La barra de progreso mostrará el avance en tiempo real.');
+                setSuccess(autoStart ? 'Envío iniciado. La barra de progreso mostrará el avance en tiempo real.' : 'Campaña creada exitosamente. Puedes iniciarla desde la lista.');
                 setMessage('');
                 setRecipients('');
                 setDirectSendName('');
                 setSelectedKanbanContacts([]);
+                setIsCreateDialogOpen(false);
 
-                // AUTO-START: Iniciar el envío inmediatamente
+                // AUTO-START: Iniciar el envío si está habilitado
                 const campaignId = data.campaignId;
-                if (campaignId) {
+                if (campaignId && autoStart) {
                     console.log(`[SMS-AUTOSTART] 🚀 Iniciando automáticamente campaña ${campaignId}...`);
 
                     // Inicializar progreso visual inmediatamente
@@ -613,7 +739,8 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
             console.log(`[SMS-SCHEDULE] 💰 Saldo actual: ${userBalance} SMS, Necesarios: ${totalRecipients} SMS`);
 
             if (userBalance < totalRecipients) {
-                setError(`No tiene saldo suficiente. Tiene ${userBalance} SMS, necesita ${totalRecipients} SMS`);
+                setBalanceInfo({ current: userBalance, required: totalRecipients });
+                setShowBalanceDialog(true);
                 setSending(false);
                 return;
             }
@@ -1099,6 +1226,22 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                                 <Typography variant="h6" sx={{ fontWeight: 700, color: '#f1f5f9' }}>Gestión de Campañas y Envíos</Typography>
                                 <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                                    <Button
+                                        variant="contained"
+                                        color="primary"
+                                        startIcon={<AddIcon />}
+                                        onClick={() => setIsCreateDialogOpen(true)}
+                                        sx={{
+                                            borderRadius: 2,
+                                            textTransform: 'none',
+                                            fontWeight: 700,
+                                            px: 3,
+                                            backgroundImage: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                                            display: { xs: 'none', sm: 'flex' }
+                                        }}
+                                    >
+                                        Crear Campaña
+                                    </Button>
                                     <TextField
                                         size="small"
                                         placeholder="Buscar campaña..."
@@ -1139,6 +1282,16 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                         <MenuItem value="completed">Completadas</MenuItem>
                                         <MenuItem value="failed">Fallidas</MenuItem>
                                     </Select>
+                                    <Tooltip title="Exportar Excel Global">
+                                        <IconButton onClick={exportGlobalExcel} size="small" sx={{ bgcolor: '#10b981', color: 'white', '&:hover': { bgcolor: '#059669' } }}>
+                                            <ExcelIcon />
+                                        </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Exportar PDF Global">
+                                        <IconButton onClick={exportGlobalPDF} size="small" sx={{ bgcolor: '#ef4444', color: 'white', '&:hover': { bgcolor: '#dc2626' } }}>
+                                            <PdfIcon />
+                                        </IconButton>
+                                    </Tooltip>
                                 </Box>
                             </Box>
 
@@ -1265,6 +1418,16 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                                                             <DeleteIcon fontSize="small" />
                                                                         </IconButton>
                                                                     </Tooltip>
+                                                                    <Tooltip title="Exportar Excel">
+                                                                        <IconButton size="small" sx={{ color: '#10b981' }} onClick={() => exportCampaignExcel(campaign)}>
+                                                                            <ExcelIcon fontSize="small" />
+                                                                        </IconButton>
+                                                                    </Tooltip>
+                                                                    <Tooltip title="Exportar PDF">
+                                                                        <IconButton size="small" sx={{ color: '#ef4444' }} onClick={() => exportCampaignPDF(campaign)}>
+                                                                            <PdfIcon fontSize="small" />
+                                                                        </IconButton>
+                                                                    </Tooltip>
                                                                 </Stack>
                                                             </TableCell>
                                                         </TableRow>
@@ -1287,10 +1450,63 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                 sx={{
                                     color: '#94a3b8',
                                     borderTop: '1px solid rgba(255,255,255,0.05)',
-                                    '& .MuiTablePagination-selectIcon': { color: '#94a3b8' },
                                     '& .MuiTablePagination-actions': { color: '#94a3b8' }
                                 }}
                             />
+
+                            {/* Dialog de Saldo Insuficiente */}
+                            <Dialog
+                                open={showBalanceDialog}
+                                onClose={() => setShowBalanceDialog(false)}
+                                PaperProps={{
+                                    sx: {
+                                        borderRadius: 4,
+                                        bgcolor: '#1e293b',
+                                        color: '#f1f5f9',
+                                        border: '1px solid #ef4444',
+                                        boxShadow: '0 0 20px rgba(239, 68, 68, 0.2)'
+                                    }
+                                }}
+                            >
+                                <DialogTitle sx={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <WalletIcon /> Saldo Insuficiente
+                                </DialogTitle>
+                                <DialogContent>
+                                    <DialogContentText sx={{ color: '#cbd5e1' }}>
+                                        No tienes suficiente saldo para realizar este envío.
+                                    </DialogContentText>
+                                    <Box sx={{ mt: 2, p: 2, bgcolor: 'rgba(239, 68, 68, 0.1)', borderRadius: 2, border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                                        <Typography variant="body1" sx={{ fontWeight: 700, color: '#f1f5f9' }}>
+                                            Saldo Actual: <span style={{ color: '#ef4444' }}>{balanceInfo.current} SMS</span>
+                                        </Typography>
+                                        <Typography variant="body1" sx={{ fontWeight: 700, color: '#f1f5f9' }}>
+                                            Requerido: <span style={{ color: '#f59e0b' }}>{balanceInfo.required} SMS</span>
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ mt: 1, color: '#94a3b8' }}>
+                                            Te faltan {balanceInfo.required - balanceInfo.current} SMS para completar esta campaña.
+                                        </Typography>
+                                    </Box>
+                                </DialogContent>
+                                <DialogActions>
+                                    <Button
+                                        onClick={() => setShowBalanceDialog(false)}
+                                        variant="outlined"
+                                        color="error"
+                                        sx={{ borderRadius: 2, textTransform: 'none' }}
+                                    >
+                                        Entendido
+                                    </Button>
+                                    <Button
+                                        onClick={() => window.open('https://wa.me/595985768793', '_blank')}
+                                        variant="contained"
+                                        color="success"
+                                        startIcon={<WalletIcon />}
+                                        sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700 }}
+                                    >
+                                        Recargar Saldo
+                                    </Button>
+                                </DialogActions>
+                            </Dialog>
                         </CardContent>
                     </Card>
                 </Grid>
@@ -1671,7 +1887,7 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                 size="large"
                                 startIcon={sending ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
                                 disabled={sending}
-                                onClick={handleSendSms}
+                                onClick={() => handleSendSms()}
                                 sx={{
                                     borderRadius: 3,
                                     py: 2,
@@ -1684,7 +1900,7 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                         boxShadow: '0 12px 20px rgba(37, 99, 235, 0.4)',
                                         transform: 'translateY(-1px)'
                                     },
-                                    mb: directSendProgress ? 2 : 0
+                                    mb: directSendProgress !== null ? 2 : 0
                                 }}
                             >
                                 {sending ? 'Iniciando Envío...' : 'Ejecutar Envío Directo'}
@@ -1700,7 +1916,7 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                             )}
                         </CardContent>
                     </Card>
-                </Grid >
+                </Grid>
 
                 <Grid item xs={12} md={5}>
                     <Card elevation={3} sx={{ borderRadius: 4, bgcolor: '#0f172a', color: '#f1f5f9', height: '100%', minHeight: 600 }}>
@@ -1726,8 +1942,8 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                         </CardContent>
                     </Card>
                 </Grid>
-            </Grid >
-        </Box >
+            </Grid>
+        </Box>
     );
 
     const renderCampaigns = () => (
@@ -1897,48 +2113,30 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                         label={`${Math.floor(stats.balance)} SMS disponibles`}
                         sx={{ bgcolor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.2)', fontWeight: 600 }}
                     />
+                    <Button
+                        variant="contained"
+                        color="success"
+                        startIcon={<AddIcon />}
+                        onClick={() => setIsCreateDialogOpen(true)}
+                        sx={{
+                            ml: 'auto',
+                            borderRadius: 3,
+                            fontWeight: 700,
+                            textTransform: 'none',
+                            px: 4,
+                            py: 1,
+                            boxShadow: '0 4px 14px rgba(34, 197, 94, 0.3)',
+                            backgroundImage: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                            '&:hover': { transform: 'scale(1.05)', boxShadow: '0 6px 20px rgba(34, 197, 94, 0.4)' }
+                        }}
+                    >
+                        Crear Campaña
+                    </Button>
                 </Box>
             </Paper>
 
             <Box sx={{ px: 2, mb: 1 }}>
-                <Paper
-                    elevation={3}
-                    sx={{
-                        borderRadius: 4,
-                        bgcolor: '#0f172a',
-                        color: '#f1f5f9',
-                        border: '1px solid rgba(255,255,255,0.05)',
-                        overflow: 'hidden'
-                    }}
-                >
-                    <Tabs
-                        value={tab}
-                        onChange={(_, v) => setTab(v)}
-                        sx={{
-                            '& .MuiTab-root': {
-                                fontWeight: 600,
-                                textTransform: 'none',
-                                color: '#94a3b8',
-                                py: 2,
-                                px: 3,
-                                transition: 'all 0.2s'
-                            },
-                            '& .Mui-selected': {
-                                color: '#60a5fa !important',
-                                bgcolor: 'rgba(96, 165, 250, 0.08)'
-                            },
-                            '& .MuiTabs-indicator': {
-                                height: 3,
-                                bgcolor: '#60a5fa',
-                                borderRadius: '3px 3px 0 0'
-                            }
-                        }}
-                    >
-                        <Tab label="Dashboard" />
-                        <Tab label="Envío Directo" />
-                        <Tab label="Campañas" />
-                    </Tabs>
-                </Paper>
+                {/* Navigation Bar Removed as requested */}
             </Box>
 
             {error && <Alert severity="error" sx={{ m: 2, borderRadius: 3 }}>{error}</Alert>}
@@ -1956,6 +2154,159 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                 </>
             )}
 
+            {/* Diálogo de Creación de Campaña */}
+            <Dialog
+                open={isCreateDialogOpen}
+                onClose={() => setIsCreateDialogOpen(false)}
+                maxWidth="md"
+                fullWidth
+                PaperProps={{
+                    sx: {
+                        borderRadius: 4,
+                        bgcolor: '#0f172a',
+                        color: '#f1f5f9',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        overflow: 'hidden'
+                    }
+                }}
+            >
+                <DialogTitle sx={{ p: 4, pb: 2, display: 'flex', alignItems: 'center', gap: 1.5, borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <AddIcon sx={{ color: '#3b82f6', fontSize: 32 }} />
+                    <Box>
+                        <Typography variant="h5" fontWeight="800">Nueva Campaña de SMS</Typography>
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Configura los detalles de tu envío masivo</Typography>
+                    </Box>
+                </DialogTitle>
+                <DialogContent sx={{ p: 4 }}>
+                    <Grid container spacing={4}>
+                        <Grid item xs={12} md={7}>
+                            <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 700, color: '#f1f5f9' }}>Información del Mensaje</Typography>
+                            <TextField
+                                fullWidth
+                                label="Nombre del Envío (opcional)"
+                                placeholder="Ej: Campaña de Verano"
+                                value={directSendName}
+                                onChange={(e) => setDirectSendName(e.target.value)}
+                                sx={{ mb: 3, ...textFieldStyle }}
+                            />
+                            <Box sx={{ position: 'relative' }}>
+                                <TextField
+                                    fullWidth
+                                    multiline
+                                    rows={5}
+                                    label="Contenido del Mensaje"
+                                    value={message}
+                                    onChange={(e) => {
+                                        const text = e.target.value;
+                                        if (text.length <= 160) setMessage(text);
+                                    }}
+                                    placeholder="¡Hola! {nombre}..."
+                                    sx={{ mb: 1, ...textFieldStyle }}
+                                />
+                                <Box sx={{ mt: 0.5, mb: 2, px: 0.5 }}>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                                        <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem' }}>Caracteres utilizados</Typography>
+                                        <Typography variant="caption" sx={{
+                                            color: message.length > 152 ? '#ef4444' : message.length > 128 ? '#f59e0b' : '#22c55e',
+                                            fontWeight: 700,
+                                            transition: 'color 0.3s'
+                                        }}>
+                                            {message.length} / 160
+                                        </Typography>
+                                    </Box>
+                                    <LinearProgress
+                                        variant="determinate"
+                                        value={Math.min((message.length / 160) * 100, 100)}
+                                        sx={{
+                                            height: 4,
+                                            borderRadius: 2,
+                                            bgcolor: 'rgba(255,255,255,0.05)',
+                                            '& .MuiLinearProgress-bar': {
+                                                bgcolor: message.length > 152 ? '#ef4444' : message.length > 128 ? '#f59e0b' : '#22c55e',
+                                                borderRadius: 2,
+                                                transition: 'background-color 0.3s'
+                                            }
+                                        }}
+                                    />
+                                </Box>
+                                <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                                    <Button size="small" variant="outlined" startIcon={<EmojiIcon />} onClick={() => setShowEmojiPicker(!showEmojiPicker)} sx={{ color: '#f1f5f9', borderColor: 'rgba(255,255,255,0.1)', borderRadius: 2, textTransform: 'none' }}>Emoji</Button>
+                                    <Button size="small" variant="outlined" startIcon={<LinkIcon />} onClick={() => setMessage(prev => (prev + ' http://').slice(0, 160))} sx={{ color: '#f1f5f9', borderColor: 'rgba(255,255,255,0.1)', borderRadius: 2, textTransform: 'none' }}>URL</Button>
+                                    <Button size="small" variant="outlined" startIcon={<PersonIcon />} onClick={() => setMessage(prev => (prev + '{nombre}').slice(0, 160))} sx={{ color: '#f1f5f9', borderColor: 'rgba(255,255,255,0.1)', borderRadius: 2, textTransform: 'none' }}>Nombre</Button>
+                                </Box>
+                                {showEmojiPicker && (
+                                    <Box sx={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 1100, mb: 1 }}>
+                                        <EmojiPicker onEmojiClick={(ed) => { setMessage(p => (p + ed.emoji).slice(0, 160)); setShowEmojiPicker(false); }} theme={"dark" as any} width={300} height={350} />
+                                    </Box>
+                                )}
+                            </Box>
+                        </Grid>
+                        <Grid item xs={12} md={5}>
+                            <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 700, color: '#f1f5f9' }}>Destinatarios</Typography>
+                            <TextField
+                                fullWidth
+                                multiline
+                                rows={4}
+                                placeholder={"595985768793,Nombre"}
+                                value={recipients}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    const lineCount = val.split('\n').length;
+                                    if (lineCount <= 2500) {
+                                        setRecipients(val);
+                                    }
+                                }}
+                                label="Manuales (Celular,Nombre)"
+                                helperText={
+                                    (() => {
+                                        const count = recipients === '' ? 0 : recipients.split('\n').length;
+                                        if (count >= 2500) return "⚠️ Límite de 2500 contactos alcanzado";
+                                        return `Cargados: ${count} / 2500 | Restantes: ${2500 - count}`;
+                                    })()
+                                }
+                                sx={{ mb: 3, ...textFieldStyle }}
+                            />
+
+                            <Typography variant="caption" sx={{ color: '#94a3b8', mb: 1, display: 'block' }}>Seleccionar desde Kanban (Tablero)</Typography>
+                            <Autocomplete
+                                options={kanbanBoards}
+                                getOptionLabel={(o) => o.name}
+                                onChange={(_, v) => { setSelectedBoardId(v ? v.id : ''); if (v) loadBoardContacts(v.id); }}
+                                renderInput={(p) => <TextField {...p} label="Tablero" size="small" sx={{ ...textFieldStyle, mb: 2 }} />}
+                            />
+                            <Autocomplete
+                                multiple
+                                options={kanbanContacts}
+                                getOptionLabel={(o) => `${o.name} (${o.phone})`}
+                                value={selectedKanbanContacts}
+                                onChange={(_, v) => setSelectedKanbanContacts(v)}
+                                renderInput={(p) => <TextField {...p} label="Contactos" size="small" sx={textFieldStyle} />}
+                                disabled={!selectedBoardId}
+                            />
+                        </Grid>
+                    </Grid>
+                </DialogContent>
+                <DialogActions sx={{ p: 4, pt: 0, gap: 2 }}>
+                    <Button onClick={() => setIsCreateDialogOpen(false)} sx={{ color: '#94a3b8', fontWeight: 700 }}>Cancelar</Button>
+                    <Button
+                        onClick={() => handleSendSms(false)}
+                        variant="contained"
+                        disabled={sending}
+                        sx={{
+                            borderRadius: 3,
+                            px: 5,
+                            py: 1.5,
+                            fontWeight: 800,
+                            backgroundImage: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                            boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)'
+                        }}
+                    >
+                        {sending ? <CircularProgress size={20} color="inherit" /> : 'Crear Campaña'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Confirmación Borrar */}
             <Dialog
                 open={showDeleteDialog}
                 onClose={() => setShowDeleteDialog(false)}
