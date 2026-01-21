@@ -116,20 +116,31 @@ const PublicSubscriptionPage: React.FC = () => {
                             top: -40,
                             left: '50%',
                             transform: 'translateX(-50%)',
-                            bgcolor: '#3b82f6',
-                            p: 2,
+                            bgcolor: urlData?.logo_url ? 'white' : '#3b82f6',
+                            p: urlData?.logo_url ? 0 : 2,
+                            width: 80,
+                            height: 80,
                             borderRadius: '50%',
-                            boxShadow: '0 10px 20px -5px rgba(59, 130, 246, 0.5)',
-                            color: 'white'
+                            boxShadow: '0 10px 20px -5px rgba(0, 0, 0, 0.5)',
+                            color: 'white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            border: urlData?.logo_url ? '4px solid rgba(255, 255, 255, 0.2)' : 'none'
                         }}>
-                            <NotificationsActive fontSize="large" />
+                            {urlData?.logo_url ? (
+                                <Box component="img" src={urlData.logo_url} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                                <NotificationsActive fontSize="large" />
+                            )}
                         </Box>
 
                         <CardContent sx={{ pt: 6, pb: 4, textAlign: 'center' }}>
                             {status === 'idle' && (
                                 <>
-                                    <Typography variant="h5" fontWeight="900" color="white" gutterBottom>
-                                        ¿Quieres recibir notificaciones?
+                                    <Typography variant="h5" fontWeight="900" color="white" gutterBottom sx={{ mt: 1 }}>
+                                        {urlData?.public_title || '¿Quieres recibir notificaciones?'}
                                     </Typography>
                                     <Typography variant="body1" sx={{ color: '#94a3b8', mb: 4 }}>
                                         {urlData?.description || `${urlData?.name || 'Whinsap'} desea enviarte avisos importantes directamente a tu navegador.`}

@@ -85,7 +85,14 @@ const PushNotificationsModule: React.FC = () => {
 
     // Forms
     const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '#3b82f6' });
-    const [urlForm, setUrlForm] = useState({ name: '', categoryId: null as number | null, redirectUrl: '' });
+    const [urlForm, setUrlForm] = useState({
+        name: '',
+        public_title: '',
+        description: '',
+        logo_url: '',
+        categoryId: null as number | null,
+        redirectUrl: ''
+    });
     const [campaignForm, setCampaignForm] = useState({
         name: '', title: '', description: '', imageUrl: '', actionUrl: '',
         targetAll: true, targetCategoryIds: [] as number[], sendImmediately: true
@@ -251,7 +258,7 @@ const PushNotificationsModule: React.FC = () => {
             }
             setUrlDialog(false);
             setEditingId(null);
-            setUrlForm({ name: '', categoryId: null, redirectUrl: '' });
+            setUrlForm({ name: '', public_title: '', description: '', logo_url: '', categoryId: null, redirectUrl: '' });
             loadUrls();
         } catch (error: any) {
             setSnackbar({ open: true, message: error.response?.data?.error || 'Error en el servidor', severity: 'error' });
@@ -262,6 +269,9 @@ const PushNotificationsModule: React.FC = () => {
         setEditingId(u.id);
         setUrlForm({
             name: u.name,
+            public_title: u.public_title || '',
+            description: u.description || '',
+            logo_url: u.logo_url || '',
             categoryId: u.category_id,
             redirectUrl: u.redirect_url || ''
         });
@@ -452,7 +462,7 @@ const PushNotificationsModule: React.FC = () => {
                                             startIcon={<Add />}
                                             onClick={() => {
                                                 setEditingId(null);
-                                                setUrlForm({ name: '', categoryId: null, redirectUrl: '' });
+                                                setUrlForm({ name: '', public_title: '', description: '', logo_url: '', categoryId: null, redirectUrl: '' });
                                                 setUrlDialog(true);
                                             }}
                                             sx={{ borderRadius: 3, px: 3, fontWeight: 700 }}
@@ -1106,9 +1116,35 @@ const PushNotificationsModule: React.FC = () => {
                         sx={{ mb: 3 }}
                         variant="filled"
                         placeholder="Ej: Campaña Facebook Agosto"
+                        helperText="Para identificar este enlace internamente"
+                    />
+                    <TextField
+                        fullWidth label="Título Público (Lo que el usuario ve) *"
+                        value={urlForm.public_title}
+                        onChange={e => setUrlForm({ ...urlForm, public_title: e.target.value })}
+                        sx={{ mb: 3 }}
+                        variant="filled"
+                        placeholder="Ej: Suscríbete a las ofertas de Mi Empresa"
+                    />
+                    <TextField
+                        fullWidth label="Descripción de Suscripción"
+                        value={urlForm.description}
+                        onChange={e => setUrlForm({ ...urlForm, description: e.target.value })}
+                        sx={{ mb: 3 }}
+                        multiline rows={2}
+                        variant="filled"
+                        placeholder="Ej: Recibe cupones exclusivos y noticias cada semana."
+                    />
+                    <TextField
+                        fullWidth label="URL del Logo o Imagen de Empresa"
+                        value={urlForm.logo_url}
+                        onChange={e => setUrlForm({ ...urlForm, logo_url: e.target.value })}
+                        sx={{ mb: 3 }}
+                        variant="filled"
+                        placeholder="https://tuempresa.com/logo.png"
                     />
                     <FormControl fullWidth sx={{ mb: 3 }} variant="filled">
-                        <InputLabel>Asignar Automáticamente a:</InputLabel>
+                        <InputLabel>Asignar Automáticamente a Segmento:</InputLabel>
                         <Select
                             value={urlForm.categoryId || ''}
                             onChange={(e: any) => setUrlForm({ ...urlForm, categoryId: e.target.value })}
@@ -1120,14 +1156,14 @@ const PushNotificationsModule: React.FC = () => {
                         </Select>
                     </FormControl>
                     <TextField
-                        fullWidth label="URL de Redirección Final"
+                        fullWidth label="URL de Redirección Final (Opcional)"
                         value={urlForm.redirectUrl}
                         onChange={e => setUrlForm({ ...urlForm, redirectUrl: e.target.value })}
                         sx={{ mb: 1 }}
                         variant="filled"
                         placeholder="https://tupagina.com/gracias"
+                        helperText="Después de suscribirse, el usuario será enviado aquí."
                     />
-                    <Typography variant="caption" color="text.disabled">Después de suscribirse, el usuario será enviado aquí.</Typography>
                 </DialogContent>
                 <DialogActions sx={{ p: 3 }}>
                     <Button onClick={() => setUrlDialog(false)} sx={{ fontWeight: 700 }}>Cancelar</Button>

@@ -386,6 +386,65 @@ module.exports = function (app, pool) {
         }
     });
 
+    // Resend Campaign (Create a new pending campaign from an existing one)
+    app.post('/api/sms/campaigns/:id/resend', async (req, res) => {
+        const connection = await pool.getConnection();
+        try {
+            const { id } = req.params;
+
+            await connection.beginTransaction();
+
+            // 1. Get original campaign
+            const [campaigns] = await connection.execute('SELECT * FROM sms_campaigns WHERE id = ?', [id]);
+            if (!campaigns.length) {
+                await connection.rollback();
+                return res.status(404).json({ success: false, error: 'Campaña no encontrada' });
+            }
+            const original = campaigns[0];
+
+            // 2. Create new campaign
+            const [result] = await connection.execute(
+                'INSERT INTO sms_campaigns (user_id, name, message_template, status, total_recipients, sent_count, failed_count, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [
+                    original.user_id,
+                    `Reenvío: ${original.name}`,
+                    original.message_template,
+                    'pending',
+                    original.total_recipients,
+                    0,
+                    0,
+                    original.category || 'Reenvío'
+                ]
+            );
+
+            const newCampaignId = result.insertId;
+
+            // 3. Duplicate recipients
+            const [recipients] = await connection.execute('SELECT phone, name FROM sms_campaign_recipients WHERE campaign_id = ?', [id]);
+            for (const rec of recipients) {
+                await connection.execute(
+                    'INSERT INTO sms_campaign_recipients (campaign_id, phone, name, status) VALUES (?, ?, ?, ?)',
+                    [newCampaignId, rec.phone, rec.name, 'pending']
+                );
+            }
+
+            await connection.commit();
+
+            res.json({
+                success: true,
+                message: 'Campaña duplicada como pendiente. Puedes iniciar el envío desde el panel.',
+                campaignId: newCampaignId
+            });
+
+        } catch (error) {
+            await connection.rollback();
+            console.error('[SMS-RESEND] Error:', error.message);
+            res.status(500).json({ success: false, error: 'Error al reanudar campaña: ' + error.message });
+        } finally {
+            connection.release();
+        }
+    });
+
     // Pause Campaign
     app.post('/api/sms/campaigns/:id/pause', async (req, res) => {
         try {
