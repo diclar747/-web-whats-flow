@@ -5,7 +5,7 @@ const express = require('express');
 const compression = require('compression');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, downloadMediaMessage } = require('baileys');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
@@ -28,6 +28,9 @@ const { authenticateToken, authorizeRole } = require('./middleware/auth');
 const { validateSessionBelongsToUser } = require('./middleware/validateSession');
 const { initializePlanMiddleware, checkActivePlan } = require('./middleware/checkActivePlan');
 const { validateUniqueSession, createUniqueSession, destroySession } = require('./middleware/sessionValidator');
+
+// Sistema Anti-Bloqueo
+const antiBlock = require('./anti-block-protection');
 const { generalLimiter, authLimiter, apiMessageLimiter, webhookLimiter, qrLimiter } = require('./middleware/rateLimiter');
 const { sendPlanActivationMessage } = require('./utils/subscriptionNotification');
 const { sendPlanApprovalEmail } = require('./utils/subscriptionEmail');
@@ -448,20 +451,26 @@ app.use((req, res, next) => {
 // Mapa para almacenar sesiones activas de WhatsApp
 const sessions = new Map();
 global.sessions = sessions; // ✅ Hacer sessions accesible globalmente
+
+// 🔑 Mapa global para códigos QR (accesible por API REST)
+const qrCodes = {};
+app.set('qrCodes', qrCodes);
 let lastQRSession = null;
 const QR_EXPIRY_TIME = 2 * 60 * 1000; // 2 minutos
 
 // Sistema de throttle para generación de QR (evita generar muchos QR seguidos)
 const qrThrottleMap = new Map(); // sessionId -> último timestamp de QR emitido
-const QR_THROTTLE_TIME = 40 * 60 * 1000; // 40 minutos - evitar regenerar QR constantemente
+const QR_THROTTLE_TIME = 30 * 1000; // 30 segundos - evitar saturación de sockets
 
 // Mapa auxiliar para asociar las sesiones creadas con el número dueño de la suscripción
 // Esto permite aplicar límites de plan por cantidad de líneas conectadas
 const sessionOwnerMap = new Map();
+app.set('sessionOwnerMap', sessionOwnerMap);
 
 // Mapa para almacenar el email del usuario autenticado que creó cada sesión
 // Esto permite vincular WhatsApp sessions con user accounts
 const sessionUserEmailMap = new Map();
+app.set('sessionUserEmailMap', sessionUserEmailMap);
 
 // Mapa para almacenar preferencias de sincronización por sesión
 const sessionSyncPreferences = new Map();
@@ -3063,11 +3072,13 @@ async function saveMessageToDB(sessionId, msg) {
                 status: status
             };
 
-            const roomById = `session-${sessionId}`;
-            const roomByPhone = `session-${phoneNumber}`;
-            console.log(`[${sessionId}] 📡 Emitiendo a salas: ${roomById} y ${roomByPhone}`);
-            io.to(roomById).emit('message', payload);
-            io.to(roomByPhone).emit('message', payload);
+            // 🔥 NUEVO: Obtener TODOS los sessionIds asociados para una emisión masiva (phone, ids hex, userId, etc)
+            const allSessionIds = await getAllSessionIds(sessionId);
+            console.log(`[${sessionId}] 📡 Emitiendo a salas: ${allSessionIds.map(id => `session-${id}`).join(', ')}`);
+
+            for (const sid of allSessionIds) {
+                io.to(`session-${sid}`).emit('message', payload);
+            }
 
             // Emitir también a agentes asignados a este chat
             try {
@@ -3102,8 +3113,10 @@ async function saveMessageToDB(sessionId, msg) {
                     name: senderName || chat_jid.split('@')[0],
                     profilePicUrl: senderAvatar
                 };
-                io.to(roomById).emit('chat-update', updatePayload);
-                io.to(roomByPhone).emit('chat-update', updatePayload);
+                // Emitir chat-update a todas las salas asociadas
+                for (const sid of allSessionIds) {
+                    io.to(`session-${sid}`).emit('chat-update', updatePayload);
+                }
 
                 // También a agentes asignados
                 try {
@@ -5607,6 +5620,14 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         console.log(`[${sessionId}] 📁 Carpeta de autenticación creada: ${AUTH_DIR}`);
     } else {
         console.log(`[${sessionId}] 📁 Usando carpeta existente: ${AUTH_DIR}`);
+        // Si forzamos nueva sesión, borrar credenciales para asegurar nuevo QR
+        if (forceNew) {
+            const credsFile = path.join(AUTH_DIR, 'creds.json');
+            if (fs.existsSync(credsFile)) {
+                fs.unlinkSync(credsFile);
+                console.log(`[${sessionId}] 🗑️  Credenciales antiguas eliminadas para forzar nuevo QR`);
+            }
+        }
     }
 
     try {
@@ -5625,7 +5646,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             auth: state,
             printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
-            browser: ['Winsap', 'Chrome', '120.0.0'],
+            browser: ['Winsap', 'Chrome', '131.0.0'],
             syncFullHistory: syncHistory,
             shouldSyncHistoryMessage: (msg) => {
                 return syncHistory;
@@ -5681,7 +5702,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 const timeSinceLastQR = Date.now() - lastQRTime;
 
                 if (timeSinceLastQR < QR_THROTTLE_TIME) {
-                    console.log(`[${sessionId}] ⏸️  QR generado pero no emitido (throttle activo - ${Math.round((QR_THROTTLE_TIME - timeSinceLastQR) / 1000)}s restantes)`);
+                    console.log(`[${sessionId}] ⏸️  QR emitido pero throttled para socket`);
+                    // Solo actualizamos el mapa global para que la API REST pueda obtenerlo
+                    QRCode.toDataURL(qr, { width: 300, margin: 1 }).then(url => {
+                        qrCodes[sessionId] = url;
+                    }).catch(() => { });
                     return;
                 }
 
@@ -5708,6 +5733,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     // Emitir a sala de sesión específica (para clientes unidos a la sala)
                     io.to(`session-${sessionId}`).emit('qr-code', qrData);
 
+                    // 🔑 Guardar en el mapa global para la API REST
+                    qrCodes[sessionId] = qrDataUrl;
+
                     console.log(`[${sessionId}] 📱 QR emitido (próximo QR en ${QR_THROTTLE_TIME / 1000}s)`);
                     console.log(`[${sessionId}] Clientes conectados: ${io.engine.clientsCount}`);
                 }).catch(err => {
@@ -5723,6 +5751,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 qrThrottleMap.delete(sessionId);
 
                 console.log(`[${sessionId}] ¡WhatsApp conectado exitosamente!`);
+
+                // 🛡️ ANTI-BLOCK: Registrar conexión exitosa (resetea intentos fallidos)
+                antiBlock.handleSuccessfulConnection(sessionId);
 
                 // ✅ ACTIVAR is_active en la BD inmediatamente al conectar
                 if (pool) {
@@ -5807,22 +5838,59 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                     [userPhoneNumber]
                                 );
 
-                                // Si no se encuentra, buscar por ownerIdentifier (puede ser email)
+                                // Si no se encuentra, buscar por ownerIdentifier (puede ser email o ID)
                                 if (userRows.length === 0) {
                                     const ownerIdent = sessionOwnerMap.get(sessionId);
-                                    if (ownerIdent && ownerIdent.includes('@')) {
-                                        console.log(`[${sessionId}] 🔍 No se encontró usuario por phone, buscando por email: ${ownerIdent}`);
-                                        [userRows] = await userConn.execute(
-                                            'SELECT id, email FROM users WHERE email = ? LIMIT 1',
-                                            [ownerIdent]
-                                        );
+                                    if (ownerIdent) {
+                                        if (ownerIdent.toString().includes('@')) {
+                                            console.log(`[${sessionId}] 🔍 No se encontró usuario por phone, buscando por email: ${ownerIdent}`);
+                                            [userRows] = await userConn.execute(
+                                                'SELECT id, email FROM users WHERE email = ? LIMIT 1',
+                                                [ownerIdent]
+                                            );
+                                            // Si se encuentra el usuario por email, actualizar su phone
+                                            if (userRows.length > 0) {
+                                                console.log(`[${sessionId}] ✅ Usuario encontrado por email: ${ownerIdent}, actualizando phone a ${userPhoneNumber}`);
+                                                await userConn.execute(
+                                                    'UPDATE users SET phone = ? WHERE id = ?',
+                                                    [userPhoneNumber, userRows[0].id]
+                                                );
+                                            }
+                                        } else {
+                                            // Asumir que es un User ID
+                                            console.log(`[${sessionId}] 🔍 Buscando usuario por ID directo: ${ownerIdent}`);
+                                            [userRows] = await userConn.execute(
+                                                'SELECT id, email FROM users WHERE id = ? LIMIT 1',
+                                                [ownerIdent]
+                                            );
+                                            // Si se encuentra, actualizar phone si es necesario
+                                            if (userRows.length > 0) {
+                                                console.log(`[${sessionId}] ✅ Usuario encontrado por ID: ${ownerIdent}, actualizando phone a ${userPhoneNumber}`);
+                                                await userConn.execute(
+                                                    'UPDATE users SET phone = ? WHERE id = ?',
+                                                    [userPhoneNumber, userRows[0].id]
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
 
-                                        // Si se encuentra el usuario por email, actualizar su phone
-                                        if (userRows.length > 0) {
-                                            console.log(`[${sessionId}] ✅ Usuario encontrado por email: ${ownerIdent}, actualizando phone a ${userPhoneNumber}`);
+                                // 🛡️ FALLBACK FINAL: ¿Es el sessionId un ID de usuario válido?
+                                // Esto arregla la conexión desde el Dashboard que usa userId como sessionId
+                                if (userRows.length === 0 && !isNaN(sessionId)) {
+                                    console.log(`[${sessionId}] 🛡️ Analizando si sessionId es un ID de usuario directo...`);
+                                    const [fallbackRows] = await userConn.execute(
+                                        'SELECT id, email FROM users WHERE id = ? LIMIT 1',
+                                        [sessionId]
+                                    );
+                                    if (fallbackRows.length > 0) {
+                                        userRows = fallbackRows;
+                                        console.log(`[${sessionId}] ✅ RECUPERADO: El sessionId ${sessionId} es un Usuario válido (Dashboard Connection)`);
+                                        // Asegurar que el usuario tenga el teléfono actualizado si ya lo tenemos
+                                        if (userPhoneNumber) {
                                             await userConn.execute(
                                                 'UPDATE users SET phone = ? WHERE id = ?',
-                                                [userPhoneNumber, userRows[0].id]
+                                                [userPhoneNumber, sessionId]
                                             );
                                         }
                                     }
@@ -5975,7 +6043,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 // NO registrar en users - users es solo para agentes
                                 // Login QR solo va a user_sessions
                                 /* const [existingUser] = await pool.query('SELECT id, auto_sync FROM users WHERE phone = ?', [userPhoneNumber]);
- 
+         
                                 if (existingUser.length === 0) {
                                     await pool.query(
                                         `INSERT INTO users (name, email, password, phone, role, status, auto_sync, subscription_status, subscription_plan, subscription_days)
@@ -6294,16 +6362,16 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     status: 'disconnected',
                     reason: reason || 'unknown'
                 });
- 
+         
                 if (reason === DisconnectReason.loggedOut) {
                     console.log(`[${sessionId}] 🚫 Logout detectado desde dispositivo móvil. Forzando cierre de sesión de agentes.`);
- 
+         
                     io.to(`session-${sessionId}`).emit('agent-force-logout', {
                         sessionId,
                         reason: 'logged_out_from_device',
                         timestamp: Date.now()
                     });
- 
+         
                     io.emit(`session-logged-out-${sessionId}`, {
                         sessionId,
                         reason: 'logged_out_from_device'
@@ -6851,13 +6919,44 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         setTimeout(() => createSession(sessionId, true), 2000);
                         break;
 
-                    default:
-                        // Otros casos, intentar reconectar
-                        console.log(`[${sessionId}] Desconexión desconocida (código: ${statusCode}), intentando reconectar...`);
+                    case 515:
+                        // 🛡️ ERROR 515: Servidor bloqueado por WhatsApp
+                        console.log(`[${sessionId}] ⚠️  ERROR 515: WhatsApp bloqueó la conexión`);
+                        sessions.delete(sessionId);
                         if (userPhoneNumber) {
                             await deactivateUserSession(userPhoneNumber);
                         }
-                        setTimeout(() => createSession(sessionId, true), 3000);
+
+                        // Activar sistema anti-bloqueo
+                        const blockInfo = antiBlock.handle515Error(sessionId);
+                        console.log(`[${sessionId}] 🛡️ Sistema anti-bloqueo activado. Backoff: ${blockInfo.backoffMinutes} minutos`);
+
+                        // NO RECONECTAR - El anti-bloqueo impedirá futuros intentos
+                        io.emit(`connection-${sessionId}`, {
+                            status: 'blocked',
+                            reason: 'WhatsApp bloqueó el servidor. Espera antes de reintentar.',
+                            retryAfter: blockInfo.backoffMinutes
+                        });
+                        break;
+
+                    default:
+                        // Otros casos - Verificar con anti-block antes de reconectar
+                        console.log(`[${sessionId}] Desconexión desconocida (código: ${statusCode}), verificando si se puede reconectar...`);
+
+                        // 🛡️ Verificar si podemos reconectar
+                        const canReconnect = antiBlock.canGenerateQR(sessionId);
+
+                        if (userPhoneNumber) {
+                            await deactivateUserSession(userPhoneNumber);
+                        }
+
+                        if (canReconnect.allowed) {
+                            console.log(`[${sessionId}] ✅ Reconexión permitida`);
+                            setTimeout(() => createSession(sessionId, true), 3000);
+                        } else {
+                            console.log(`[${sessionId}] 🚫 Reconexión bloqueada: ${canReconnect.reason}`);
+                            sessions.delete(sessionId);
+                        }
                         break;
                 }
             }
@@ -6911,17 +7010,17 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     const lid = msg.key.participant;
                     const pushName = msg.pushName;
                     const verifiedName = msg.verifiedBizName;
- 
+         
                     // Intentar obtener número real desde el mensaje
                     let realPhone = null;
                     if (msg.participant) {
                         realPhone = msg.participant.split('@')[0];
                     }
- 
+         
                     // Guardar mapeo
                     await saveLidMapping(lid, msg.participant, realPhone, pushName || verifiedName, pushName, phoneNumber);
                     console.log(`[LID-CAPTURE] Capturado LID de mensaje: ${lid} -> ${pushName || realPhone || 'sin info'}`);
- 
+         
                     // Si tenemos el número real, actualizar la tabla de miembros del grupo
                     if (realPhone && msg.participant) {
                         console.log(`[LID-UPDATE] Actualizando miembro de grupo para LID ${lid} con número ${realPhone}`);
@@ -8997,6 +9096,20 @@ app.post('/api/whatsapp/qr-code', async (req, res) => {
             ownerIdentifier = rawIdentifier || `session-${Date.now()}`;
         }
 
+        // 🛡️ ANTI-BLOCK: Verificar si se puede generar QR
+        const tempSessionId = crypto.randomBytes(8).toString('hex');
+        const canGenerate = antiBlock.canGenerateQR(tempSessionId);
+
+        if (!canGenerate.allowed) {
+            console.log(`[QR-ENDPOINT] 🚫 ${canGenerate.reason}`);
+            return res.status(429).json({
+                success: false,
+                message: canGenerate.reason,
+                waitTime: Math.ceil(canGenerate.waitTime / 1000), // en segundos
+                retryAfter: new Date(Date.now() + canGenerate.waitTime).toISOString()
+            });
+        }
+
         // VALIDAR CAPACIDAD DEL PLAN ANTES DE CONTINUAR
         const capacity = await ensurePlanCapacity(ownerIdentifier);
         if (!capacity.allowed) {
@@ -9043,6 +9156,9 @@ app.post('/api/whatsapp/qr-code', async (req, res) => {
             errorCorrectionLevel: 'H'
         });
 
+        // 🛡️ ANTI-BLOCK: Registrar QR generado
+        antiBlock.registerQRGenerated(sessionId);
+
         res.json({
             success: true,
             sessionId,
@@ -9052,6 +9168,21 @@ app.post('/api/whatsapp/qr-code', async (req, res) => {
     } catch (err) {
         console.error('[QR-ENDPOINT] Error:', err);
         res.status(500).json({ success: false, message: err.message || 'Error desconocido' });
+    }
+});
+
+// GET /api/whatsapp/anti-block/stats - Obtener estadísticas del sistema anti-bloqueo
+app.get('/api/whatsapp/anti-block/stats', (req, res) => {
+    try {
+        const stats = antiBlock.getStats();
+        res.json({
+            success: true,
+            ...stats,
+            serverTime: new Date().toISOString()
+        });
+    } catch (err) {
+        console.error('[ANTI-BLOCK-STATS] Error:', err);
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 
@@ -25902,9 +26033,12 @@ app.post('/api/update-contact-names/:sessionId', async (req, res) => {
 
 // Endpoints de gestión de API Keys (generar, listar, eliminar)
 const apiRestKeysRouter = require('./routes/api-rest');
-// Pasar sessions al router
+// Pasar sessions y funciones al router
 app.use((req, res, next) => {
     req.sessions = sessions;
+    req.createSession = createSession;
+    req.ensurePlanCapacity = ensurePlanCapacity;
+    req.getMaxChannelsForOwner = getMaxChannelsForOwner;
     next();
 });
 app.use('/api/rest', apiRestKeysRouter);

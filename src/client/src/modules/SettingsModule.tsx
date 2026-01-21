@@ -389,6 +389,7 @@ interface BillingInfo {
 const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) => {
   const location = useLocation();
   const socket = useSocket();
+  const userId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
   const [selectedTab, setSelectedTab] = useState(0);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<UserAccount[]>([]);
@@ -2100,7 +2101,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ sessionId, onLogout }) 
       {/* Tab 6: API REST */}
       {/* Tab 5: API REST - ajustado de índice 6 a 5 */}
       {selectedTab === 3 && (
-        <APIRestSettings sessionId={sessionId} />
+        <APIRestSettings userId={userId || ''} />
       )}
 
       {/* Tab 6: Panel de Administrador (solo para admins y super admins) */}

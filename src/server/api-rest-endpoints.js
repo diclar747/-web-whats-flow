@@ -81,13 +81,13 @@ async function checkPlanLimit(sessionId, pool) {
     if (!activePool) return { success: false, status: 500, error: 'Base de datos no disponible' };
 
     try {
-        // Obtener plan del usuario desde user_sessions
+        // Obtener plan del usuario desde users (master) o user_sessions
         const [users] = await activePool.execute(
-            `SELECT us.*, p.max_messages_per_month
-             FROM user_sessions us
-             LEFT JOIN plans p ON us.plan_id = p.id
-             WHERE us.phone_number = ? OR us.session_id = ?`,
-            [sessionId, sessionId]
+            `SELECT u.id, p.max_messages_per_month, u.messages_sent_this_month
+             FROM users u
+             LEFT JOIN plans p ON u.plan_id = p.id
+             WHERE u.id = ?`,
+            [sessionId]
         );
 
         if (users.length === 0) {
@@ -125,12 +125,12 @@ async function decrementPlanCounter(sessionId, pool) {
     if (!activePool) return;
 
     try {
-        console.log(`[API-REST] Descontando 1 mensaje del plan de ${sessionId}`);
+        console.log(`[API-REST] Descontando 1 mensaje del plan del Usuario ID ${sessionId}`);
         await activePool.execute(
-            'UPDATE user_sessions SET messages_sent_this_month = messages_sent_this_month + 1, messages_api = messages_api + 1 WHERE phone_number = ? OR session_id = ?',
-            [sessionId, sessionId]
+            'UPDATE users SET messages_sent_this_month = messages_sent_this_month + 1 WHERE id = ?',
+            [sessionId]
         );
-        console.log(`[API-REST] ✅ Mensaje descontado del plan`);
+        console.log(`[API-REST] ✅ Mensaje descontado del plan del usuario`);
     } catch (error) {
         console.error('[API-REST] Error descontando del plan:', error);
     }
@@ -155,7 +155,7 @@ function registerAPIRestEndpoints(app, pool, sessions) {
             return res.status(auth.status).json({ success: false, error: auth.error });
         }
 
-        const sessionId = auth.apiKeyData.session_id;
+        const userId = auth.apiKeyData.session_id;
         const { to, message } = req.body;
 
         // Validar parámetros
@@ -163,8 +163,8 @@ function registerAPIRestEndpoints(app, pool, sessions) {
             return res.status(400).json({ success: false, error: 'Faltan parámetros: to, message' });
         }
 
-        // Verificar límite del plan
-        const planCheck = await checkPlanLimit(sessionId, pool);
+        // Verificar límite del plan (por userId)
+        const planCheck = await checkPlanLimit(userId, pool);
         if (!planCheck.success) {
             return res.status(planCheck.status).json({
                 success: false,
@@ -175,10 +175,17 @@ function registerAPIRestEndpoints(app, pool, sessions) {
             });
         }
 
-        // Obtener sesión de WhatsApp
-        const session = sessions.get(sessionId);
-        if (!session || !session.sock) {
-            return res.status(400).json({ success: false, error: 'Sesión de WhatsApp no conectada' });
+        // Obtener sesión de WhatsApp (cualquiera del usuario que esté conectada)
+        let session = null;
+        for (const [sid, s] of sessions.entries()) {
+            if (s.isConnected && s.sock && s.sock.user && String(s.userId) === String(userId)) {
+                session = s;
+                break;
+            }
+        }
+
+        if (!session) {
+            return res.status(400).json({ success: false, error: 'No tienes ninguna sesión de WhatsApp conectada para este usuario' });
         }
 
         try {
@@ -189,7 +196,7 @@ function registerAPIRestEndpoints(app, pool, sessions) {
             const sentMsg = await session.sock.sendMessage(jid, { text: message });
 
             // Descontar del plan
-            await decrementPlanCounter(sessionId, pool);
+            await decrementPlanCounter(userId, pool);
 
             console.log(`[API-REST] ✅ Mensaje de texto enviado a ${to}`);
 
