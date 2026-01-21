@@ -1,5 +1,6 @@
 const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
+const { hashPassword } = require('../auth-utils');
 
 module.exports = function (app, pool) {
     const { requireSuperAdmin } = require('../auth-utils');
@@ -127,11 +128,29 @@ module.exports = function (app, pool) {
         try {
             const connection = await pool.getConnection();
             try {
-                await connection.execute(`
-                    UPDATE users 
-                    SET name = ?, email = ?, phone = ?, updated_at = NOW()
-                    WHERE id = ?
-                `, [name, email, phone, id]);
+                let query = 'UPDATE users SET name = ?, email = ?, phone = ?, updated_at = NOW()';
+                const params = [name, email, phone];
+
+                console.log('[DEBUG-CLIENTS] Actualizando cliente ID:', id);
+                console.log('[DEBUG-CLIENTS] Body:', JSON.stringify(req.body));
+
+                if (req.body.password && req.body.password.trim() !== '') {
+                    console.log('[DEBUG-CLIENTS] Se detectó cambio de contraseña. Encriptando...');
+                    const hashedPassword = await hashPassword(req.body.password);
+                    query += ', password = ?';
+                    params.push(hashedPassword);
+                } else {
+                    console.log('[DEBUG-CLIENTS] NO se envió contraseña nueva o está vacía.');
+                }
+
+                query += ' WHERE id = ?';
+                params.push(id);
+
+                console.log('[DEBUG-CLIENTS] Query:', query);
+                console.log('[DEBUG-CLIENTS] Params:', params);
+
+                const [result] = await connection.execute(query, params); // Destructure result for info
+                console.log('[DEBUG-CLIENTS] Rows affected:', result.affectedRows);
 
                 res.json({ success: true, message: 'Cliente actualizado correctamente' });
             } finally {

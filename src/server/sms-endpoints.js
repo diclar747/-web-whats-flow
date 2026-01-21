@@ -300,6 +300,19 @@ module.exports = function (app, pool) {
         }
     });
 
+    // Endpoint para obtener destinatarios de una campaña (para exportación)
+    app.get('/api/sms/campaigns/:id/recipients', async (req, res) => {
+        try {
+            const [rows] = await pool.execute(
+                'SELECT phone, name, status, sent_at, error_message FROM sms_campaign_recipients WHERE campaign_id = ?',
+                [req.params.id]
+            );
+            res.json({ success: true, recipients: rows });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
     // NEW: Endpoint para programar campañas
     app.post('/api/sms/schedule', async (req, res) => {
         const connection = await pool.getConnection();

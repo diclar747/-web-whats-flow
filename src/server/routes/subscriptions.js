@@ -750,6 +750,7 @@ router.post('/activate', checkAdmin, async (req, res) => {
       const endDate = customEndDate ? new Date(customEndDate) : new Date(startDate.getTime() + subscriptionDays * 24 * 60 * 60 * 1000);
 
       // PRIMERO: Intentar activar en user_sessions (para usuarios que se conectan con QR)
+      let sessionUpdated = false;
       if (phone) {
         const [sessions] = await connection.query('SELECT * FROM user_sessions WHERE phone = ?', [phone]);
 
@@ -766,8 +767,7 @@ router.post('/activate', checkAdmin, async (req, res) => {
             `, [finalPlanName, startDate, endDate, subscriptionDays, phone]);
 
           console.log('[ACTIVATE] Plan activado en user_sessions para:', phone);
-
-          await connection.commit();
+          sessionUpdated = true;
 
           // 🎉 Enviar mensaje de bienvenida al cliente utilizando la utilidad centralizada
           console.log('[ACTIVATE] 📨 Enviando mensaje de bienvenida a:', phone);
@@ -793,11 +793,7 @@ router.post('/activate', checkAdmin, async (req, res) => {
             console.warn('[ACTIVATE] No se pudo enviar email:', e.message);
           }
 
-          return res.json({
-            success: true,
-            message: 'Suscripción activada exitosamente en user_sessions',
-            subscription: { phone, plan: finalPlanName, startDate, endDate, days: subscriptionDays }
-          });
+
         }
       }
 
@@ -808,13 +804,17 @@ router.post('/activate', checkAdmin, async (req, res) => {
       const [users] = await connection.query(userQuery, userParams);
 
       if (users.length === 0) {
-        await connection.rollback();
-        console.log('[ACTIVATE] Usuario no encontrado en users ni en user_sessions:', phone || userId);
-        return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+        if (!sessionUpdated) {
+          await connection.rollback();
+          console.log('[ACTIVATE] Usuario no encontrado en users ni en user_sessions:', phone || userId);
+          return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+        }
       }
 
-      const targetUserId = users[0].id;
-      await connection.query(`
+      let targetUserId = null;
+      if (users.length > 0) {
+        targetUserId = users[0].id;
+        await connection.query(`
         UPDATE users SET
       subscription_plan = ?,
         subscription_status = 'active',
@@ -824,14 +824,15 @@ router.post('/activate', checkAdmin, async (req, res) => {
           WHERE id = ?
             `, [finalPlanName, startDate, endDate, subscriptionDays, targetUserId]);
 
-      console.log('[ACTIVATE] Plan activado en users para userId:', targetUserId);
+        console.log('[ACTIVATE] Plan activado en users para userId:', targetUserId);
 
-      const adminId = req.user?.id || null;
-      await connection.query(`
+        const adminId = req.user?.id || null;
+        await connection.query(`
         INSERT INTO subscription_history
         (user_id, plan_name, start_date, end_date, days, price, status, activated_by)
       VALUES(?, ?, ?, ?, ?, ?, 'active', ?)
         `, [targetUserId, finalPlanName, startDate, endDate, subscriptionDays, plan.price, adminId]);
+      }
       await connection.commit();
 
       // 🎉 Enviar mensaje de bienvenida al cliente utilizando la utilidad centralizada
