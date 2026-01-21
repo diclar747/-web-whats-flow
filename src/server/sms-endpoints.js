@@ -30,90 +30,196 @@ module.exports = function (app, pool) {
         }
     });
 
-    // Enviar SMS
+    // Enviar SMS (Ahora solo crea la campaña en estado PENDIENTE)
     app.post('/api/sms/send', async (req, res) => {
         const connection = await pool.getConnection();
         try {
-            const { userId, messages, token } = req.body; // messages: [{ mensaje, telefono, identificador }]
+            const { userId, messages, campaignName } = req.body;
 
-            if (!userId || !messages || !messages.length || !token) {
-                return res.status(400).json({ success: false, error: 'Faltan datos requeridos (userId, messages, token)' });
+            if (!userId || !messages || !messages.length) {
+                return res.status(400).json({ success: false, error: 'Faltan datos requeridos (userId, messages)' });
             }
 
-            // Verificar saldo (cantidad de SMS disponibles)
-            const [user] = await connection.execute('SELECT sms_balance FROM users WHERE id = ?', [userId]);
-            if (!user.length) {
-                return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
-            }
+            await connection.beginTransaction();
 
-            const currentBalance = parseInt(user[0].sms_balance) || 0;
-            const requiredSms = messages.length;
-
-            if (currentBalance < requiredSms) {
-                return res.status(403).json({
-                    success: false,
-                    error: `Saldo insuficiente. Tiene ${currentBalance} SMS, necesita ${requiredSms} SMS`,
-                    balance: currentBalance,
-                    required: requiredSms
-                });
-            }
-
-            // Enviar a Mayten
-            const response = await axios.post('https://mayten.cloud/api/Mensajes/Texto', {
-                origen: 'SMS_CORTO',
-                mensajes: messages
-            }, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-
-            // Descontar saldo (1 SMS por mensaje)
-            await connection.execute(
-                'UPDATE users SET sms_balance = sms_balance - ? WHERE id = ?',
-                [messages.length, userId]
-            );
-
-            // Registrar en historial
-            for (const msg of messages) {
-                await connection.execute(
-                    'INSERT INTO sms_history (user_id, phone, message, status, sent_at) VALUES (?, ?, ?, ?, NOW())',
-                    [userId, msg.telefono, msg.mensaje, 'sent']
-                );
-            }
-
-            // Crear un registro de campaña para este envío directo
-            await connection.execute(
+            // Crear la campaña en estado 'pending' (para ser activada manualmente)
+            const [campaignResult] = await connection.execute(
                 'INSERT INTO sms_campaigns (user_id, name, message_template, status, total_recipients, sent_count, category) VALUES (?, ?, ?, ?, ?, ?, ?)',
                 [
                     userId,
-                    req.body.campaignName || `Envío Directo ${new Date().toLocaleString()}`,
+                    campaignName || `Envío Directo ${new Date().toLocaleString()}`,
                     messages[0].mensaje,
-                    'completed',
+                    'pending',
                     messages.length,
-                    messages.length,
+                    0,
                     'Envío Directo'
                 ]
             );
 
+            const campaignId = campaignResult.insertId;
+
+            // Registrar destinatarios
+            for (const msg of messages) {
+                await connection.execute(
+                    'INSERT INTO sms_campaign_recipients (campaign_id, phone, name, status) VALUES (?, ?, ?, ?)',
+                    [campaignId, msg.telefono, msg.mensaje.split(',')[1] || '', 'pending']
+                );
+            }
+
+            await connection.commit();
+
             res.json({
                 success: true,
-                data: response.data,
-                newBalance: currentBalance - messages.length
+                message: 'Campaña guardada como pendiente. Puedes iniciar el envío desde el panel.',
+                campaignId
             });
 
         } catch (error) {
+            await connection.rollback();
             console.error('[SMS-SEND] Error:', error.message);
-            res.status(500).json({
-                success: false,
-                error: 'Error al enviar SMS',
-                details: error.response?.data || error.message
-            });
+            res.status(500).json({ success: false, error: 'Error al guardar envío directo' });
         } finally {
             connection.release();
         }
     });
+
+    // Endpoint para INICIAR el envío de una campaña (Directo o Programado)
+    app.post('/api/sms/campaigns/:id/start', async (req, res) => {
+        const { id } = req.params;
+        const { userId, token } = req.body;
+
+        if (!userId || !token) {
+            return res.status(400).json({ success: false, error: 'userId y token son requeridos' });
+        }
+
+        try {
+            // Iniciar proceso en segundo plano para no bloquear
+            processSmsCampaign(id, userId, token, pool, global.io);
+
+            res.json({ success: true, message: 'Envío iniciado en segundo plano' });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    async function processSmsCampaign(campaignId, userId, token, pool, io) {
+        let connection;
+        try {
+            connection = await pool.getConnection();
+
+            // 1. Obtener datos de la campaña
+            const [campaigns] = await connection.execute('SELECT * FROM sms_campaigns WHERE id = ?', [campaignId]);
+            if (!campaigns.length) return;
+            const campaign = campaigns[0];
+
+            // 2. Marcar como activa
+            await connection.execute('UPDATE sms_campaigns SET status = "active", paused = 0 WHERE id = ?', [campaignId]);
+
+            // 3. Obtener destinatarios pendientes
+            const [recipients] = await connection.execute(
+                'SELECT * FROM sms_campaign_recipients WHERE campaign_id = ? AND status = "pending"',
+                [campaignId]
+            );
+
+            if (recipients.length === 0) {
+                await connection.execute('UPDATE sms_campaigns SET status = "completed" WHERE id = ?', [campaignId]);
+                return;
+            }
+
+            console.log(`[SMS-PROCESS] 🚀 Iniciando envío campaña ${campaignId}: ${recipients.length} mensajes`);
+
+            let sentCount = campaign.sent_count || 0;
+            let failedCount = campaign.failed_count || 0;
+            const total = campaign.total_recipients;
+
+            for (let i = 0; i < recipients.length; i++) {
+                const rec = recipients[i];
+
+                // Verificar si se pausó la campaña entre envíos
+                const [statusCheck] = await pool.execute('SELECT paused, status FROM sms_campaigns WHERE id = ?', [campaignId]);
+                if (statusCheck[0].paused || statusCheck[0].status === 'paused') {
+                    console.log(`[SMS-PROCESS] ⏸️ Campaña ${campaignId} pausada`);
+                    return;
+                }
+
+                try {
+                    // Enviar a Mayten (individualmente para progreso real)
+                    await axios.post('https://mayten.cloud/api/Mensajes/Texto', {
+                        origen: 'SMS_CORTO',
+                        mensajes: [{
+                            mensaje: campaign.message_template.replace(/{nombre}/g, rec.name || ''),
+                            telefono: rec.phone.replace(/\D/g, ''),
+                            identificador: `camp_${campaignId}_${rec.id}`
+                        }]
+                    }, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+
+                    // Descontar saldo y registrar
+                    await pool.execute('UPDATE users SET sms_balance = sms_balance - 1 WHERE id = ?', [userId]);
+                    await pool.execute('UPDATE sms_campaign_recipients SET status = "sent" WHERE id = ?', [rec.id]);
+                    await pool.execute(
+                        'INSERT INTO sms_history (user_id, phone, message, status, sent_at, campaign_id) VALUES (?, ?, ?, ?, NOW(), ?)',
+                        [userId, rec.phone, campaign.message_template, 'sent', campaignId]
+                    );
+
+                    sentCount++;
+                } catch (err) {
+                    console.error(`[SMS-PROCESS] ❌ Error enviando a ${rec.phone}:`, err.message);
+                    await pool.execute('UPDATE sms_campaign_recipients SET status = "failed", error_message = ? WHERE id = ?', [err.message, rec.id]);
+                    failedCount++;
+                }
+
+                // Actualizar progreso en la campaña
+                await pool.execute(
+                    'UPDATE sms_campaigns SET sent_count = ?, failed_count = ? WHERE id = ?',
+                    [sentCount, failedCount, campaignId]
+                );
+
+                // Emitir progreso vía Socket.IO
+                if (io) {
+                    const progress = Math.round(((sentCount + failedCount) / total) * 100);
+                    const progressData = {
+                        campaignId: parseInt(campaignId),
+                        progress,
+                        sent: sentCount,
+                        failed: failedCount,
+                        total
+                    };
+
+                    io.emit('sms_progress', progressData);
+                    io.to(`sms_${userId}`).emit('sms_progress', progressData);
+
+                    // Si es envío directo, emitir evento específico para la UI de envío directo
+                    if (campaign.category === 'Envío Directo') {
+                        io.emit('direct_send_progress', {
+                            total,
+                            sent: sentCount,
+                            failed: failedCount
+                        });
+                        io.to(`sms_${userId}`).emit('direct_send_progress', {
+                            total,
+                            sent: sentCount,
+                            failed: failedCount
+                        });
+                    }
+                }
+
+                // Pequeño delay de 1 segundo para no saturar y permitir ver progreso real
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            // Marcar como completada
+            await pool.execute('UPDATE sms_campaigns SET status = "completed" WHERE id = ?', [campaignId]);
+            console.log(`[SMS-PROCESS] ✅ Campaña ${campaignId} finalizada: ${sentCount} sent, ${failedCount} failed`);
+
+        } catch (error) {
+            console.error(`[SMS-PROCESS] ❌ Error fatal en campaña ${campaignId}:`, error.message);
+            await pool.execute('UPDATE sms_campaigns SET status = "failed" WHERE id = ?', [campaignId]);
+        } finally {
+            if (connection) connection.release();
+        }
+    }
 
     // Obtener estadísticas de SMS
     app.get('/api/sms/stats/:userId', async (req, res) => {
@@ -259,6 +365,24 @@ module.exports = function (app, pool) {
             res.status(500).json({ success: false, error: error.message });
         } finally {
             connection.release();
+        }
+    });
+
+    // UPDATE Campaign (Edit)
+    app.put('/api/sms/campaigns/:id', async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { name, template } = req.body;
+
+            await pool.execute(
+                'UPDATE sms_campaigns SET name = ?, message_template = ?, updated_at = NOW() WHERE id = ?',
+                [name, template, id]
+            );
+
+            res.json({ success: true, message: 'Campaña actualizada exitosamente' });
+        } catch (error) {
+            console.error('[SMS-UPDATE-CAMPAIGN] Error:', error.message);
+            res.status(500).json({ success: false, error: error.message });
         }
     });
 

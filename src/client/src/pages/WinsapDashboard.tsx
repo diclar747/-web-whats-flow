@@ -166,22 +166,28 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ Guardar sessionId en localStorage para que SocketContext pueda acceder
+  // 🆕 Multi-Session State
+  const [allSessions, setAllSessions] = useState<any[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string>(sessionId);
+  const [activeTab, setActiveTab] = useState(0);
+
+  // ✅ Guardar activeSessionId en storage y notificar al SocketContext
   useEffect(() => {
-    if (sessionId) {
-      localStorage.setItem('whinsap_session', sessionId);
-      sessionStorage.setItem('whinsap_session', sessionId);
-      console.log('[DASHBOARD] 💾 SessionId guardado para Socket.IO:', sessionId);
-      console.log('[DASHBOARD-DEBUG] 🔍 SessionId completo:', {
-        sessionId,
-        length: sessionId.length,
-        type: typeof sessionId,
-        timestamp: new Date().toISOString()
-      });
-    } else {
-      console.warn('[DASHBOARD-DEBUG] ⚠️ SessionId es NULL o undefined!');
+    if (activeSessionId) {
+      localStorage.setItem('whinsap_session', activeSessionId);
+      sessionStorage.setItem('whinsap_session', activeSessionId);
+
+      // PERSISTENCIA: También guardar en whinsap_active_session por si acaso algún modulo lo usa
+      localStorage.setItem('whinsap_active_session', activeSessionId);
+
+      console.log('[DASHBOARD] 💾 activeSessionId guardado:', activeSessionId);
+
+      // 🔥 NOTIFICAR AL SOCKET: Disparar evento para que el socket se conecte/suscriba
+      window.dispatchEvent(new CustomEvent('whinsap-session-established', {
+        detail: { sessionId: activeSessionId }
+      }));
     }
-  }, [sessionId]);
+  }, [activeSessionId]);
   const { chats } = useWhatsApp();
   const { toggleTheme, isDarkMode } = useTheme();
   const { hasModuleAccess, userRole: permUserRole } = usePermissions();
@@ -212,10 +218,6 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
   const [sessionValid, setSessionValid] = useState<boolean | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false); // Nuevo estado para evitar race conditions
 
-  // 🆕 Multi-Session State
-  const [allSessions, setAllSessions] = useState<any[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string>(sessionId);
-  const [activeTab, setActiveTab] = useState(0);
 
   // Sync activeSessionId with prop change if needed (optional)
   useEffect(() => {
@@ -285,8 +287,10 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
           const index = sortedSessions.findIndex(s => s.sessionId === activeSessionId);
           if (index !== -1) {
             setActiveTab(index);
-          } else if (!activeSessionId) {
-            // Default only if no active session is set
+          } else {
+            // 🔧 FIX: If activeSessionId is not in the sessions list (e.g., it's a userId "1" instead of phoneNumber),
+            // default to the first session. This fixes the chat loading issue.
+            console.log(`[DASHBOARD] ⚠️ activeSessionId "${activeSessionId}" not found in sessions, defaulting to first session: ${sortedSessions[0].sessionId}`);
             setActiveSessionId(sortedSessions[0].sessionId);
             setActiveTab(0);
           }
@@ -310,9 +314,6 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
       const newSessionId = allSessions[newValue].sessionId;
       console.log('🔄 Switching active session to:', newSessionId);
       setActiveSessionId(newSessionId);
-
-      // Update storage for persistence
-      localStorage.setItem('whinsap_active_session', newSessionId);
     }
   };
 

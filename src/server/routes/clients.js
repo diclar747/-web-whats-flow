@@ -72,6 +72,30 @@ module.exports = function (app, pool) {
         }
     });
 
+    // POST /api/clients/:id/assign-sms - Asignar saldo SMS
+    app.post('/api/clients/:id/assign-sms', authenticateToken, requireSuperAdmin, async (req, res) => {
+        const { id } = req.params;
+        const { amount } = req.body;
+
+        if (amount === undefined || amount === null) {
+            return res.status(400).json({ success: false, error: 'La cantidad es obligatoria' });
+        }
+
+        try {
+            const connection = await pool.getConnection();
+            try {
+                // Sumamos a la cantidad actual (recarga)
+                await connection.execute('UPDATE users SET sms_balance = sms_balance + ? WHERE id = ?', [amount, id]);
+                res.json({ success: true, message: `Saldo de ${amount} SMS asignado correctamente` });
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error assigning SMS balance:', error);
+            res.status(500).json({ success: false, error: 'Error asignando saldo SMS' });
+        }
+    });
+
     // POST /api/clients/:id/block - Bloquear/Desbloquear
     app.post('/api/clients/:id/block', authenticateToken, requireSuperAdmin, async (req, res) => {
         const { id } = req.params;

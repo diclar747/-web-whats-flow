@@ -29,7 +29,13 @@ import {
     Select,
     MenuItem,
     TablePagination,
-    ButtonGroup
+    ButtonGroup,
+    LinearProgress,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    DialogContentText
 } from '@mui/material';
 import {
     Sms as SmsIcon,
@@ -48,14 +54,19 @@ import {
     Delete as DeleteIcon,
     Pause as PauseIcon,
     PlayArrow as PlayArrowIcon,
-    FilterList as FilterListIcon
+    FilterList as FilterListIcon,
+
+    Search as SearchIcon,
+    AccessTime as AccessTimeIcon
 } from '@mui/icons-material';
 import { getAPIBaseURL } from '../utils/api';
 import EmojiPicker from 'emoji-picker-react';
+import SophisticatedProgressBar from '../components/SophisticatedProgressBar';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, Legend, ResponsiveContainer,
     PieChart, Pie, Cell, BarChart, Bar
 } from 'recharts';
+import { io, Socket } from 'socket.io-client';
 
 interface SMSStats {
     sent: number;
@@ -107,11 +118,32 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
     // Campaign filters
     const [filterStatus, setFilterStatus] = useState<string>('all');
     const [filterDate, setFilterDate] = useState<string>('');
+    const [filterSearch, setFilterSearch] = useState<string>('');
+
+    // Pagination
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(15);
 
     // Charts data
     const [chartData, setChartData] = useState<any>(null);
     const [chartPeriod, setChartPeriod] = useState<'week' | 'month' | 'year'>('week');
     const [loadingCharts, setLoadingCharts] = useState(false);
+
+    // Real-time campaign progress
+    const [campaignProgress, setCampaignProgress] = useState<{ [key: string]: number }>({});
+
+    // Delete confirmation dialog
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [campaignToDelete, setCampaignToDelete] = useState<number | null>(null);
+
+    // Edit campaign states
+    const [showEditDialog, setShowEditDialog] = useState(false);
+    const [campaignToEdit, setCampaignToEdit] = useState<SMSCampaign | null>(null);
+    const [editTemplate, setEditTemplate] = useState('');
+    const [editName, setEditName] = useState('');
+
+    // Direct send progress tracking
+    const [directSendProgress, setDirectSendProgress] = useState<{ total: number, sent: number, failed: number } | null>(null);
 
     useEffect(() => {
         loadInitialData();
@@ -237,6 +269,67 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
         }
     };
 
+
+    useEffect(() => {
+        if (!userId) return;
+
+        console.log('[SMS-SOCKET] Initializing socket connection...');
+        const socket = io(getAPIBaseURL());
+
+        socket.on('connect', () => {
+            console.log('[SMS-SOCKET] ✅ Connected to server');
+            socket.emit('join', `sms_${userId}`);
+        });
+
+        socket.on('sms_progress', (data: { campaignId: number, progress: number, sent: number, failed: number, total: number }) => {
+            console.log('[SMS-SOCKET] 📊 Campaign Progress:', data);
+
+            // Actualizar el estado de progreso para la barra suave
+            setCampaignProgress(prev => ({
+                ...prev,
+                [data.campaignId]: data.progress
+            }));
+
+            // Actualizar la lista de campañas para que los números X/Y se vean en tiempo real
+            setCampaigns(prev => prev.map(c => {
+                if (c.id === data.campaignId) {
+                    return {
+                        ...c,
+                        sent_count: data.sent,
+                        failed_count: data.failed,
+                        total_recipients: data.total
+                    };
+                }
+                return c;
+            }));
+        });
+
+        socket.on('direct_send_progress', (data: { total: number, sent: number, failed: number }) => {
+            console.log('[SMS-SOCKET] 🚀 Direct Send Progress:', data);
+            setDirectSendProgress(data);
+
+            if (data.sent + data.failed === data.total) {
+                console.log('[SMS-SOCKET] ✨ Direct send completed');
+                // Refresh data after a short delay
+                setTimeout(() => {
+                    setDirectSendProgress(null);
+                    loadStats(userId);
+                    loadCampaigns(userId);
+                }, 4000);
+            }
+        });
+
+        socket.on('disconnect', () => {
+            console.log('[SMS-SOCKET] ❌ Disconnected');
+        });
+
+        return () => {
+            console.log('[SMS-SOCKET] Cleaning up socket connection');
+            socket.disconnect();
+        };
+    }, [userId]);
+
+
     // Normalizar números de teléfono al formato 595XXXXXXXXX
     const normalizePhoneNumber = (phone: string): string => {
         // Remover espacios, guiones y otros caracteres no numéricos
@@ -266,10 +359,12 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
             const data = await response.json();
             if (data.success && data.data.token) {
                 setToken(data.data.token);
+                return data.data.token;
             }
         } catch (err) {
             console.error('Error generating token:', err);
         }
+        return null;
     };
 
     const loadStats = async (uid: number) => {
@@ -303,6 +398,18 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
         }
         if (!recipients.trim() && selectedKanbanContacts.length === 0) {
             setError('Agrega al menos un destinatario');
+            return;
+        }
+
+        // Ensure token exists
+        let currentToken = token;
+        if (!currentToken) {
+            console.log('[SMS-SEND] Token not found, generating new one...');
+            currentToken = await generateSmsToken();
+        }
+
+        if (!currentToken) {
+            setError('Error de autenticación: No se pudo obtener el token de envío.');
             return;
         }
 
@@ -343,6 +450,12 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
 
             if (totalRecipients === 0) {
                 setError('No se encontraron números válidos para enviar');
+                setSending(false);
+                return;
+            }
+
+            if (totalRecipients > 2500) {
+                setError(`Límite excedido. El máximo es de 2500 destinatarios por envío. Intentas enviar a ${totalRecipients}.`);
                 setSending(false);
                 return;
             }
@@ -390,7 +503,7 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                 body: JSON.stringify({
                     userId,
                     messages,
-                    token,
+                    token: currentToken,
                     campaignName: directSendName,
                     category: 'Envío Directo'
                 })
@@ -398,14 +511,36 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
 
             const data = await response.json();
             if (data.success) {
-                setSuccess(`SMS enviado exitosamente a ${totalRecipients} destinatarios`);
+                setSuccess('Envío iniciado. La barra de progreso mostrará el avance en tiempo real.');
                 setMessage('');
                 setRecipients('');
+                setDirectSendName('');
                 setSelectedKanbanContacts([]);
+
+                // AUTO-START: Iniciar el envío inmediatamente
+                const campaignId = data.campaignId;
+                if (campaignId) {
+                    console.log(`[SMS-AUTOSTART] 🚀 Iniciando automáticamente campaña ${campaignId}...`);
+
+                    // Inicializar progreso visual inmediatamente
+                    setDirectSendProgress({
+                        total: totalRecipients,
+                        sent: 0,
+                        failed: 0
+                    });
+
+                    // Llamar al endpoint de start (en segundo plano)
+                    fetch(`${getAPIBaseURL()}/api/sms/campaigns/${campaignId}/start`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId, token: currentToken })
+                    }).catch(err => console.error('[SMS-AUTOSTART] Error starting campaign:', err));
+                }
+
                 loadStats(userId!);
                 loadCampaigns(userId!);
             } else {
-                setError(data.error || 'Error al enviar SMS');
+                setError(data.error || 'Error al guardar envío');
             }
         } catch (err: any) {
             console.error('[SMS-SEND] ❌ Error:', err);
@@ -499,6 +634,11 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                 identificador: `camp_${userId}_${Date.now()}_${idx}`
             }));
 
+            // Convertir a UTC para guardar en BD
+            // scheduledDate viene del input datetime-local (hora local)
+            // new Date() lo interpreta como local y toISOString() lo pasa a UTC correctamente
+            const utcString = new Date(scheduledDate).toISOString().slice(0, 19).replace('T', ' ');
+
             const response = await fetch(`${getAPIBaseURL()}/api/sms/schedule`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -507,7 +647,7 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                     campaignName,
                     message,
                     recipients: recipientList,
-                    scheduledAt: scheduledDate,
+                    scheduledAt: utcString, // Enviar UTC
                     token
                 })
             });
@@ -533,10 +673,16 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
     };
 
     // Campaign management functions
-    const handleDeleteCampaign = async (campaignId: number) => {
-        if (!window.confirm('¿Estás seguro de eliminar esta campaña?')) return;
+    const confirmDeleteCampaign = (campaignId: number) => {
+        setCampaignToDelete(campaignId);
+        setShowDeleteDialog(true);
+    };
+
+    const handleDeleteCampaign = async () => {
+        if (campaignToDelete === null) return;
 
         try {
+            const campaignId = campaignToDelete;
             const response = await fetch(`${getAPIBaseURL()}/api/sms/campaigns/${campaignId}`, {
                 method: 'DELETE'
             });
@@ -550,6 +696,9 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
             }
         } catch (err) {
             setError('Error de conexión al eliminar campaña');
+        } finally {
+            setShowDeleteDialog(false);
+            setCampaignToDelete(null);
         }
     };
 
@@ -585,12 +734,82 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
         }
     };
 
+    const handleStartCampaign = async (campaignId: number) => {
+        if (!userId) return;
+
+        try {
+            setLoading(true);
+            // Primero renovar token
+            await generateSmsToken();
+
+            const response = await fetch(`${getAPIBaseURL()}/api/sms/campaigns/${campaignId}/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, token: token })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                setSuccess('Iniciando transmisión en tiempo real...');
+                // La UI se actualizará vía Sockets
+                loadCampaigns(userId);
+            } else {
+                setError(data.error || 'Error al iniciar envío');
+            }
+        } catch (err) {
+            setError('Error de conexión al iniciar envío');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleEditCampaign = (camp: SMSCampaign) => {
+        setCampaignToEdit(camp);
+        setEditName(camp.name);
+        setEditTemplate(camp.message_template);
+        setShowEditDialog(true);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!campaignToEdit || !userId) return;
+
+        try {
+            const response = await fetch(`${getAPIBaseURL()}/api/sms/campaigns/${campaignToEdit.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: editName, template: editTemplate })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                setSuccess('Campaña actualizada');
+                loadCampaigns(userId);
+                setShowEditDialog(false);
+            } else {
+                setError(data.error || 'Error al actualizar');
+            }
+        } catch (err) {
+            setError('Error de conexión al actualizar');
+        }
+    };
+
     // Filter campaigns
     const filteredCampaigns = campaigns.filter(campaign => {
         if (filterStatus !== 'all' && campaign.status !== filterStatus) return false;
         if (filterDate && !campaign.created_at.startsWith(filterDate)) return false;
+        if (filterSearch && !campaign.name.toLowerCase().includes(filterSearch.toLowerCase()) &&
+            !campaign.message_template.toLowerCase().includes(filterSearch.toLowerCase())) return false;
         return true;
     });
+
+    const handlePageChange = (event: unknown, newPage: number) => {
+        setPage(newPage);
+    };
+
+    const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        setRowsPerPage(parseInt(event.target.value, 10));
+        setPage(0);
+    };
 
     const renderDashboard = () => (
         <Box sx={{ p: 3 }}>
@@ -860,6 +1079,26 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                 <Typography variant="h6" sx={{ fontWeight: 700, color: '#f1f5f9' }}>Gestión de Campañas y Envíos</Typography>
                                 <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                                     <TextField
+                                        size="small"
+                                        placeholder="Buscar campaña..."
+                                        value={filterSearch}
+                                        onChange={(e) => {
+                                            setFilterSearch(e.target.value);
+                                            setPage(0);
+                                        }}
+                                        InputProps={{
+                                            startAdornment: (
+                                                <InputAdornment position="start">
+                                                    <SearchIcon sx={{ color: '#94a3b8', fontSize: 20 }} />
+                                                </InputAdornment>
+                                            ),
+                                        }}
+                                        sx={{
+                                            minWidth: 200,
+                                            ...textFieldStyle
+                                        }}
+                                    />
+                                    <TextField
                                         type="date"
                                         label="Filtrar por fecha"
                                         value={filterDate}
@@ -888,8 +1127,7 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                         <TableRow>
                                             <TableCell sx={{ fontWeight: 700, color: '#f1f5f9', borderBottom: '1px solid #334155' }}>Campaña</TableCell>
                                             <TableCell sx={{ fontWeight: 700, color: '#f1f5f9', borderBottom: '1px solid #334155' }}>Estado</TableCell>
-                                            <TableCell sx={{ fontWeight: 700, color: '#f1f5f9', borderBottom: '1px solid #334155' }}>Categoría</TableCell>
-                                            <TableCell sx={{ fontWeight: 700, color: '#f1f5f9', borderBottom: '1px solid #334155' }} align="center">Destinatarios</TableCell>
+                                            <TableCell sx={{ fontWeight: 700, color: '#f1f5f9', borderBottom: '1px solid #334155' }}>Progreso</TableCell>
                                             <TableCell sx={{ fontWeight: 700, color: '#f1f5f9', borderBottom: '1px solid #334155' }} align="center">Enviados</TableCell>
                                             <TableCell sx={{ fontWeight: 700, color: '#f1f5f9', borderBottom: '1px solid #334155' }} align="center">Fallidos</TableCell>
                                             <TableCell sx={{ fontWeight: 700, color: '#f1f5f9', borderBottom: '1px solid #334155' }}>Fecha</TableCell>
@@ -899,7 +1137,7 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                     <TableBody>
                                         {filteredCampaigns.length === 0 ? (
                                             <TableRow>
-                                                <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
+                                                <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
                                                     <Box sx={{ opacity: 0.5 }}>
                                                         <HistoryIcon sx={{ fontSize: 40, mb: 1 }} />
                                                         <Typography>No se encontraron campañas o envíos</Typography>
@@ -907,65 +1145,121 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                                 </TableCell>
                                             </TableRow>
                                         ) : (
-                                            filteredCampaigns.map(campaign => (
-                                                <TableRow key={campaign.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                                                    <TableCell sx={{ fontWeight: 600 }}>{campaign.name}</TableCell>
-                                                    <TableCell>
-                                                        <Chip
-                                                            label={campaign.status}
-                                                            size="small"
-                                                            sx={{
-                                                                fontWeight: 600,
-                                                                bgcolor: campaign.status === 'completed' ? '#edfdf1' :
-                                                                    campaign.status === 'active' ? '#eef3ff' :
-                                                                        campaign.status === 'failed' ? '#fff1f0' : '#f5f5f5',
-                                                                color: campaign.status === 'completed' ? '#2e7d32' :
-                                                                    campaign.status === 'active' ? '#1976d2' :
-                                                                        campaign.status === 'failed' ? '#d32f2f' : '#616161'
-                                                            }}
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Chip
-                                                            label={(campaign as any).category || 'Campaña'}
-                                                            variant="outlined"
-                                                            size="small"
-                                                            sx={{ borderRadius: 1.5 }}
-                                                        />
-                                                    </TableCell>
-                                                    <TableCell align="center">{campaign.total_recipients}</TableCell>
-                                                    <TableCell align="center" sx={{ color: '#2e7d32', fontWeight: 600 }}>{campaign.sent_count}</TableCell>
-                                                    <TableCell align="center" sx={{ color: '#d32f2f', fontWeight: 600 }}>{campaign.failed_count || 0}</TableCell>
-                                                    <TableCell>{new Date(campaign.created_at).toLocaleDateString()}</TableCell>
-                                                    <TableCell align="center">
-                                                        <ButtonGroup variant="text" size="small">
-                                                            {campaign.status === 'active' && !(campaign as any).paused && (
-                                                                <Tooltip title="Pausar">
-                                                                    <IconButton color="primary" onClick={() => handlePauseCampaign(campaign.id)}>
-                                                                        <PauseIcon fontSize="small" />
-                                                                    </IconButton>
-                                                                </Tooltip>
-                                                            )}
-                                                            {(campaign as any).paused && (
-                                                                <Tooltip title="Reanudar">
-                                                                    <IconButton color="success" onClick={() => handleResumeCampaign(campaign.id)}>
-                                                                        <PlayArrowIcon fontSize="small" />
-                                                                    </IconButton>
-                                                                </Tooltip>
-                                                            )}
-                                                            <Tooltip title="Eliminar">
-                                                                <IconButton color="error" onClick={() => handleDeleteCampaign(campaign.id)}>
-                                                                    <DeleteIcon fontSize="small" />
-                                                                </IconButton>
-                                                            </Tooltip>
-                                                        </ButtonGroup>
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))
+                                            filteredCampaigns
+                                                .slice()
+                                                .reverse()
+                                                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                                                .map(campaign => {
+                                                    const progress = campaign.total_recipients > 0
+                                                        ? Math.round((campaign.sent_count / campaign.total_recipients) * 100)
+                                                        : 0;
+                                                    const campaignProgressValue = campaignProgress[campaign.id] !== undefined
+                                                        ? campaignProgress[campaign.id]
+                                                        : progress;
+
+                                                    return (
+                                                        <TableRow key={campaign.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 }, '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
+                                                            <TableCell sx={{ fontWeight: 600, color: '#f1f5f9' }}>{campaign.name}</TableCell>
+                                                            <TableCell>
+                                                                <Chip
+                                                                    label={campaign.status === 'pending' ? 'PENDIENTE' : campaign.status.toUpperCase()}
+                                                                    size="small"
+                                                                    sx={{
+                                                                        fontWeight: 800,
+                                                                        fontSize: '0.65rem',
+                                                                        bgcolor: campaign.status === 'pending' ? 'rgba(245, 158, 11, 0.1)' :
+                                                                            campaign.status === 'completed' ? 'rgba(34, 197, 94, 0.1)' :
+                                                                                campaign.status === 'active' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255,255,255,0.05)',
+                                                                        color: campaign.status === 'pending' ? '#f59e0b' :
+                                                                            campaign.status === 'completed' ? '#22c55e' :
+                                                                                campaign.status === 'active' ? '#3b82f6' : '#94a3b8',
+                                                                        border: '1px solid currentColor'
+                                                                    }}
+                                                                />
+                                                            </TableCell>
+                                                            <TableCell sx={{ minWidth: 120 }}>
+                                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                    <LinearProgress
+                                                                        variant="determinate"
+                                                                        value={campaign.status === 'completed' ? 100 : campaignProgressValue}
+                                                                        sx={{
+                                                                            flexGrow: 1,
+                                                                            height: 6,
+                                                                            borderRadius: 3,
+                                                                            bgcolor: 'rgba(255, 255, 255, 0.05)',
+                                                                            '& .MuiLinearProgress-bar': {
+                                                                                borderRadius: 3,
+                                                                                bgcolor: '#22c55e',
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                    <Typography variant="caption" sx={{ fontWeight: 700, minWidth: 35 }}>
+                                                                        {campaign.status === 'completed' ? '100%' : `${campaignProgressValue}%`}
+                                                                    </Typography>
+                                                                </Box>
+                                                            </TableCell>
+                                                            <TableCell align="center" sx={{ color: '#22c55e', fontWeight: 700 }}>{campaign.sent_count}</TableCell>
+                                                            <TableCell align="center" sx={{ color: '#f44336', fontWeight: 700 }}>{campaign.failed_count || 0}</TableCell>
+                                                            <TableCell sx={{ color: '#94a3b8' }}>{new Date(campaign.created_at).toLocaleDateString()}</TableCell>
+                                                            <TableCell align="center">
+                                                                <Stack direction="row" spacing={0.5} justifyContent="center">
+                                                                    {campaign.status === 'pending' && (
+                                                                        <Tooltip title="Enviar">
+                                                                            <IconButton size="small" sx={{ color: '#22c55e' }} onClick={() => handleStartCampaign(campaign.id)}>
+                                                                                <PlayArrowIcon fontSize="small" />
+                                                                            </IconButton>
+                                                                        </Tooltip>
+                                                                    )}
+                                                                    {(campaign.status === 'active' || campaign.status === 'sending') && (
+                                                                        <Tooltip title="Pausar">
+                                                                            <IconButton size="small" sx={{ color: '#f59e0b' }} onClick={() => handlePauseCampaign(campaign.id)}>
+                                                                                <PauseIcon fontSize="small" />
+                                                                            </IconButton>
+                                                                        </Tooltip>
+                                                                    )}
+                                                                    {campaign.status === 'paused' && (
+                                                                        <Tooltip title="Reanudar">
+                                                                            <IconButton size="small" sx={{ color: '#22c55e' }} onClick={() => handleResumeCampaign(campaign.id)}>
+                                                                                <PlayArrowIcon fontSize="small" />
+                                                                            </IconButton>
+                                                                        </Tooltip>
+                                                                    )}
+                                                                    <Tooltip title="Editar">
+                                                                        <IconButton size="small" sx={{ color: '#3b82f6' }} onClick={() => handleEditCampaign(campaign)}>
+                                                                            <HistoryIcon fontSize="small" />
+                                                                        </IconButton>
+                                                                    </Tooltip>
+                                                                    <Tooltip title="Eliminar">
+                                                                        <IconButton size="small" sx={{ color: '#f44336' }} onClick={() => confirmDeleteCampaign(campaign.id)}>
+                                                                            <DeleteIcon fontSize="small" />
+                                                                        </IconButton>
+                                                                    </Tooltip>
+                                                                </Stack>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })
                                         )}
                                     </TableBody>
                                 </Table>
                             </TableContainer>
+
+                            <TablePagination
+                                component="div"
+                                count={filteredCampaigns.length}
+                                page={page}
+                                onPageChange={handlePageChange}
+                                rowsPerPage={rowsPerPage}
+                                onRowsPerPageChange={handleRowsPerPageChange}
+                                rowsPerPageOptions={[5, 10, 15, 25, 50]}
+                                labelRowsPerPage="Filas por página:"
+                                sx={{
+                                    color: '#94a3b8',
+                                    borderTop: '1px solid rgba(255,255,255,0.05)',
+                                    '& .MuiTablePagination-selectIcon': { color: '#94a3b8' },
+                                    '& .MuiTablePagination-actions': { color: '#94a3b8' }
+                                }}
+                            />
                         </CardContent>
                     </Card>
                 </Grid>
@@ -973,14 +1267,205 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
         </Box>
     );
 
+    const getStatusColor = (status: string) => {
+        switch (status) {
+            case 'completed': return 'success';
+            case 'active': return 'primary';
+            case 'paused': return 'warning';
+            case 'pending': return 'default';
+            case 'failed': return 'error';
+            default: return 'default';
+        }
+    };
+
+    const textFieldStyle = {
+        '& .MuiInputBase-root': { bgcolor: '#1e293b', color: '#fff', borderRadius: 2 },
+        '& .MuiInputLabel-root': { color: '#94a3b8' },
+        '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.1)' },
+        '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
+        '& .Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#3b82f6' }
+    };
+
+    const renderCampaignCard = (camp: SMSCampaign) => {
+        const progress = camp.total_recipients > 0
+            ? Math.round((camp.sent_count / camp.total_recipients) * 100)
+            : 0;
+
+        const campaignProgressValue = campaignProgress[camp.id] !== undefined
+            ? campaignProgress[camp.id]
+            : progress;
+
+        return (
+            <Card
+                key={camp.id}
+                sx={{
+                    mb: 2,
+                    bgcolor: '#1e293b',
+                    color: '#f1f5f9',
+                    borderRadius: 3,
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    transition: 'all 0.3s',
+                    '&:hover': {
+                        boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
+                        transform: 'translateY(-2px)'
+                    }
+                }}
+            >
+                <CardContent sx={{ p: 2.5 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 1.5 }}>
+                        <Typography variant="subtitle1" fontWeight="700" noWrap sx={{ maxWidth: '70%' }}>
+                            {camp.name || 'Sin nombre'}
+                        </Typography>
+                        <Chip
+                            icon={camp.status === 'pending' ? <AccessTimeIcon style={{ fontSize: 16 }} /> : undefined}
+                            label={camp.status === 'pending' ? 'PROGRAMADO' : camp.status.toUpperCase()}
+                            size="small"
+                            color={getStatusColor(camp.status) as any}
+                            sx={{
+                                fontWeight: 900,
+                                fontSize: '0.65rem',
+                                bgcolor: camp.status === 'pending' ? 'rgba(59, 130, 246, 0.1)' : undefined,
+                                color: camp.status === 'pending' ? '#3b82f6' : undefined,
+                                border: camp.status === 'pending' ? '1px solid rgba(59, 130, 246, 0.3)' : undefined,
+                                pl: camp.status === 'pending' ? 0.5 : 0
+                            }}
+                        />
+                    </Box>
+
+                    <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                        {camp.message_template}
+                    </Typography>
+
+                    {(camp.status === 'active' || camp.status === 'sending' || camp.status === 'completed' || camp.status === 'paused') && (
+                        <Box sx={{ mb: 2 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1, alignItems: 'center' }}>
+                                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600 }}>
+                                    Progreso: {camp.sent_count}/{camp.total_recipients}
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: camp.status === 'completed' ? '#4caf50' : '#60a5fa', fontWeight: 900, fontSize: '0.8rem' }}>
+                                    {camp.status === 'completed' ? '100%' : `${campaignProgressValue}%`}
+                                </Typography>
+                            </Box>
+                            <LinearProgress
+                                variant="determinate"
+                                value={camp.status === 'completed' ? 100 : campaignProgressValue}
+                                sx={{
+                                    height: 8,
+                                    borderRadius: 4,
+                                    bgcolor: 'rgba(255, 255, 255, 0.05)',
+                                    '& .MuiLinearProgress-bar': {
+                                        borderRadius: 4,
+                                        bgcolor: '#22c55e',
+                                        backgroundImage: 'linear-gradient(90deg, #22c55e 0%, #4ade80 100%)',
+                                        boxShadow: '0 0 10px rgba(34, 197, 94, 0.3)'
+                                    }
+                                }}
+                            />
+                        </Box>
+                    )}
+
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
+                        <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.7rem' }}>
+                            {new Date(camp.scheduled_at || camp.created_at).toLocaleString()}
+                        </Typography>
+
+                        <Stack direction="row" spacing={1} alignItems="center">
+                            {camp.status === 'pending' && !camp.scheduled_at && (
+                                <Button
+                                    size="small"
+                                    variant="contained"
+                                    color="success"
+                                    startIcon={<PlayArrowIcon />}
+                                    onClick={() => handleStartCampaign(camp.id)}
+                                    sx={{
+                                        borderRadius: 2,
+                                        textTransform: 'none',
+                                        fontWeight: 800,
+                                        px: 2,
+                                        py: 0.5,
+                                        fontSize: '0.75rem',
+                                        bgcolor: '#22c55e',
+                                        '&:hover': { bgcolor: '#16a34a' }
+                                    }}
+                                >
+                                    ENVIAR
+                                </Button>
+                            )}
+
+                            {(camp.status === 'active' || camp.status === 'sending') && (
+                                <Tooltip title="Pausar">
+                                    <IconButton
+                                        size="small"
+                                        sx={{
+                                            color: '#f59e0b',
+                                            bgcolor: 'rgba(245, 158, 11, 0.1)',
+                                            '&:hover': { bgcolor: 'rgba(245, 158, 11, 0.2)' }
+                                        }}
+                                        onClick={() => handlePauseCampaign(camp.id)}
+                                    >
+                                        <PauseIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+
+                            {camp.status === 'paused' && (
+                                <Tooltip title="Reanudar">
+                                    <IconButton
+                                        size="small"
+                                        sx={{
+                                            color: '#22c55e',
+                                            bgcolor: 'rgba(34, 197, 94, 0.1)',
+                                            '&:hover': { bgcolor: 'rgba(34, 197, 94, 0.2)' }
+                                        }}
+                                        onClick={() => handleResumeCampaign(camp.id)}
+                                    >
+                                        <PlayArrowIcon fontSize="small" />
+                                    </IconButton>
+                                </Tooltip>
+                            )}
+
+                            <Tooltip title="Editar">
+                                <IconButton
+                                    size="small"
+                                    sx={{
+                                        color: '#60a5fa',
+                                        bgcolor: 'rgba(96, 165, 250, 0.1)',
+                                        '&:hover': { bgcolor: 'rgba(96, 165, 250, 0.2)' }
+                                    }}
+                                    onClick={() => handleEditCampaign(camp)}
+                                >
+                                    <HistoryIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+
+                            <Tooltip title="Eliminar">
+                                <IconButton
+                                    size="small"
+                                    sx={{
+                                        color: '#f44336',
+                                        bgcolor: 'rgba(244, 67, 54, 0.1)',
+                                        '&:hover': { bgcolor: 'rgba(244, 67, 54, 0.2)' }
+                                    }}
+                                    onClick={() => confirmDeleteCampaign(camp.id)}
+                                >
+                                    <DeleteIcon fontSize="small" />
+                                </IconButton>
+                            </Tooltip>
+                        </Stack>
+                    </Box>
+                </CardContent>
+            </Card>
+        );
+    };
+
     const renderSender = () => (
         <Box sx={{ p: 3 }}>
             <Grid container spacing={3}>
-                <Grid item xs={12} md={8}>
+                <Grid item xs={12} md={7}>
                     <Card elevation={3} sx={{ borderRadius: 4, bgcolor: '#0f172a', color: '#f1f5f9' }}>
-                        <CardContent sx={{ p: 3 }}>
-                            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', fontWeight: 600 }}>
-                                <MessageIcon sx={{ mr: 1, color: '#60a5fa' }} /> Redactar Mensaje
+                        <CardContent sx={{ p: 4 }}>
+                            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', fontWeight: 600, mb: 3 }}>
+                                <MessageIcon sx={{ mr: 1, color: '#60a5fa' }} /> Redactar Mensaje Directo
                             </Typography>
 
                             <TextField
@@ -989,266 +1474,114 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                 placeholder="Ej: Promoción Enero 2026"
                                 value={directSendName}
                                 onChange={(e) => setDirectSendName(e.target.value)}
-                                sx={{ mb: 2 }}
+                                sx={{ mb: 3, ...textFieldStyle }}
                                 helperText="Identifica este envío para verlo en los reportes"
                             />
 
-                            <TextField
-                                fullWidth
-                                multiline
-                                rows={4}
-                                label="Tu mensaje SMS"
-                                placeholder="Hola {nombre}, este es un mensaje SMS..."
-                                value={message}
-                                onChange={(e) => {
-                                    const text = e.target.value;
-                                    if (text.length <= 160) {
-                                        setMessage(text);
-                                    }
-                                }}
-                                inputProps={{ maxLength: 160 }}
-                                sx={{ mb: 2 }}
-                                helperText={`${message.length}/160 caracteres${message.length >= 160 ? ' - Límite alcanzado' : ''}`}
-                                error={message.length >= 160}
-                            />
-
-                            <Box sx={{ mb: 3, display: 'flex', gap: 1, position: 'relative' }}>
-                                <Button
-                                    size="small"
-                                    variant="outlined"
-                                    startIcon={<EmojiIcon />}
-                                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                                    sx={{ color: '#94a3b8', borderColor: '#475569' }}
-                                >
-                                    Emoji
-                                </Button>
+                            <Box sx={{ position: 'relative' }}>
+                                <TextField
+                                    fullWidth
+                                    multiline
+                                    rows={5}
+                                    label="Tu mensaje SMS"
+                                    value={message}
+                                    onChange={(e) => {
+                                        const text = e.target.value;
+                                        if (text.length <= 160) {
+                                            setMessage(text);
+                                        }
+                                    }}
+                                    placeholder="¡Hola! {nombre} ¿como estas?"
+                                    sx={{ mb: 1, ...textFieldStyle }}
+                                    helperText={`${message.length}/160 caracteres`}
+                                    error={message.length >= 160}
+                                />
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            startIcon={<EmojiIcon />}
+                                            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                            sx={{
+                                                color: '#f1f5f9',
+                                                borderColor: 'rgba(255,255,255,0.1)',
+                                                borderRadius: 2,
+                                                textTransform: 'none',
+                                                bgcolor: 'rgba(255,255,255,0.03)',
+                                                '&:hover': { bgcolor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.2)' }
+                                            }}
+                                        >
+                                            Emoji
+                                        </Button>
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            startIcon={<LinkIcon />}
+                                            onClick={() => setMessage(prev => (prev + ' http://').slice(0, 160))}
+                                            sx={{
+                                                color: '#f1f5f9',
+                                                borderColor: 'rgba(255,255,255,0.1)',
+                                                borderRadius: 2,
+                                                textTransform: 'none',
+                                                bgcolor: 'rgba(255,255,255,0.03)',
+                                                '&:hover': { bgcolor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.2)' }
+                                            }}
+                                        >
+                                            URL
+                                        </Button>
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            startIcon={<PersonIcon />}
+                                            onClick={() => setMessage(prev => (prev + '{nombre}').slice(0, 160))}
+                                            sx={{
+                                                color: '#f1f5f9',
+                                                borderColor: 'rgba(255,255,255,0.1)',
+                                                borderRadius: 2,
+                                                textTransform: 'none',
+                                                bgcolor: 'rgba(255,255,255,0.03)',
+                                                '&:hover': { bgcolor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.2)' }
+                                            }}
+                                        >
+                                            Nombre
+                                        </Button>
+                                    </Box>
+                                </Box>
                                 {showEmojiPicker && (
-                                    <Box sx={{
-                                        position: 'absolute',
-                                        top: '100%',
-                                        left: 0,
-                                        zIndex: 1000,
-                                        mt: 1
-                                    }}>
+                                    <Box sx={{ position: 'absolute', bottom: '100%', left: 0, zIndex: 1000, mb: 1 }}>
                                         <EmojiPicker
                                             onEmojiClick={(emojiData) => {
-                                                setMessage(msg => msg + emojiData.emoji);
+                                                setMessage(prev => (prev + emojiData.emoji).slice(0, 160));
                                                 setShowEmojiPicker(false);
                                             }}
+                                            theme={"dark" as any}
                                             width={350}
                                             height={400}
                                         />
                                     </Box>
                                 )}
-                                <Button size="small" variant="outlined" startIcon={<LinkIcon />} onClick={() => setMessage(msg => msg + ' https://')} sx={{ color: '#94a3b8', borderColor: '#475569' }}>URL</Button>
-                                <Button size="small" variant="outlined" startIcon={<PersonIcon />} onClick={() => setMessage(msg => msg + '{nombre}')} sx={{ color: '#94a3b8', borderColor: '#475569' }}>Nombre</Button>
                             </Box>
 
-                            <Divider sx={{ my: 3, borderColor: '#475569' }} />
+                            <Divider sx={{ my: 3, borderColor: 'rgba(255,255,255,0.05)' }} />
 
-                            <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', color: '#f1f5f9' }}>
-                                <PlaylistAddIcon sx={{ mr: 1, color: '#60a5fa' }} /> Destinatarios Manuales
+                            <Typography variant="subtitle2" sx={{ mb: 2, display: 'flex', alignItems: 'center', fontWeight: 600, color: '#f1f5f9' }}>
+                                <GroupAddIcon sx={{ mr: 1, fontSize: 20, color: '#60a5fa' }} /> Destinatarios Manuales
                             </Typography>
-                            <TextField
-                                fullWidth
-                                multiline
-                                rows={3}
-                                label="Formato: número,nombre (una por línea)"
-                                placeholder="595994854167,Claudio\n595981123456,Jose"
-                                value={recipients}
-                                onChange={(e) => setRecipients(e.target.value)}
-                                sx={{
-                                    mb: 2,
-                                    '& .MuiInputBase-root': { bgcolor: '#1e293b', color: '#fff' },
-                                    '& .MuiInputLabel-root': { color: '#94a3b8' },
-                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' }
-                                }}
-                            />
-
-                            <Divider sx={{ my: 2, borderColor: '#475569' }} />
-
-                            <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', color: '#f1f5f9' }}>
-                                <GroupAddIcon sx={{ mr: 1, color: '#60a5fa' }} /> Seleccionar de Kanban
-                            </Typography>
-
-                            {boardsError && (
-                                <Alert
-                                    severity="warning"
-                                    sx={{ mb: 2, bgcolor: '#422006', color: '#fbbf24', borderColor: '#78350f' }}
-                                    action={
-                                        <Button color="inherit" size="small" onClick={loadKanbanBoards}>
-                                            <RefreshIcon sx={{ mr: 0.5 }} fontSize="small" />
-                                            Reintentar
-                                        </Button>
-                                    }
-                                >
-                                    {boardsError}
-                                </Alert>
-                            )}
-
-                            <Grid container spacing={2} sx={{ mb: 2 }}>
-                                <Grid item xs={12} md={6}>
-                                    <Autocomplete
-                                        options={kanbanBoards}
-                                        getOptionLabel={(option) => option.name}
-                                        value={kanbanBoards.find(b => b.id === selectedBoardId) || null}
-                                        loading={loadingBoards}
-                                        onChange={(_, newValue) => {
-                                            setSelectedBoardId(newValue ? newValue.id : '');
-                                            setSelectedKanbanContacts([]);
-                                            if (newValue) loadBoardContacts(newValue.id);
-                                        }}
-                                        renderInput={(params) => (
-                                            <TextField
-                                                {...params}
-                                                label="Seleccionar Tablero"
-                                                size="small"
-                                                sx={{
-                                                    '& .MuiInputBase-root': { bgcolor: '#1e293b', color: '#fff' },
-                                                    '& .MuiInputLabel-root': { color: '#94a3b8' },
-                                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' }
-                                                }}
-                                                InputProps={{
-                                                    ...params.InputProps,
-                                                    endAdornment: (
-                                                        <>
-                                                            {loadingBoards ? <CircularProgress color="inherit" size={20} /> : null}
-                                                            {params.InputProps.endAdornment}
-                                                        </>
-                                                    ),
-                                                }}
-                                            />
-                                        )}
-                                    />
-                                </Grid>
-                                <Grid item xs={12} md={6}>
-                                    <Autocomplete
-                                        multiple
-                                        options={kanbanContacts}
-                                        getOptionLabel={(option) => option.name || option.jid}
-                                        value={selectedKanbanContacts}
-                                        loading={loadingContacts}
-                                        onChange={(_, newValue) => setSelectedKanbanContacts(newValue)}
-                                        renderInput={(params) => (
-                                            <TextField
-                                                {...params}
-                                                label={selectedBoardId ? "Seleccionar Contactos" : "Primero selecciona un tablero"}
-                                                size="small"
-                                                sx={{
-                                                    '& .MuiInputBase-root': { bgcolor: '#1e293b', color: '#fff' },
-                                                    '& .MuiInputLabel-root': { color: '#94a3b8' },
-                                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' }
-                                                }}
-                                                InputProps={{
-                                                    ...params.InputProps,
-                                                    endAdornment: (
-                                                        <>
-                                                            {loadingContacts ? <CircularProgress color="inherit" size={20} /> : null}
-                                                            {params.InputProps.endAdornment}
-                                                        </>
-                                                    ),
-                                                }}
-                                            />
-                                        )}
-                                        disabled={!selectedBoardId}
-                                        noOptionsText={selectedBoardId ? "No hay contactos en este tablero" : "Selecciona un tablero primero"}
-                                    />
-                                </Grid>
-                            </Grid>
-
-                            <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                                <Button
-                                    variant="contained"
-                                    color="primary"
-                                    size="large"
-                                    startIcon={sending ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
-                                    disabled={sending}
-                                    onClick={handleSendSms}
-                                    sx={{ borderRadius: 2, px: 4 }}
-                                >
-                                    {sending ? 'Enviando...' : 'Enviar Ahora'}
-                                </Button>
-                            </Box>
-                        </CardContent>
-                    </Card>
-                </Grid>
-
-                <Grid item xs={12} md={4}>
-                    <Card elevation={3} sx={{ borderRadius: 4, bgcolor: '#0f172a', color: '#f1f5f9' }}>
-                        <CardContent sx={{ p: 3 }}>
-                            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', fontWeight: 600, color: '#f1f5f9' }}>
-                                <WalletIcon sx={{ mr: 1, color: '#4caf50' }} /> Información de Saldo
-                            </Typography>
-                            <Box sx={{ textAlign: 'center', py: 2 }}>
-                                <Typography variant="h3" sx={{ color: '#4caf50', fontWeight: 700 }}>{stats.balance} SMS</Typography>
-                                <Typography variant="body2" sx={{ color: '#94a3b8' }}>Cantidad de SMS disponibles</Typography>
-                                {stats.balance < 1 && (
-                                    <Alert severity="warning" sx={{ mt: 2 }}>
-                                        Saldo bajo. Recarga pronto.
-                                    </Alert>
-                                )}
-                            </Box>
-                        </CardContent>
-                    </Card>
-                </Grid>
-            </Grid>
-        </Box>
-    );
-
-    const renderCampaigns = () => (
-        <Box sx={{ p: 3 }}>
-            <Grid container spacing={3}>
-                <Grid item xs={12} md={7}>
-                    <Card elevation={3} sx={{ borderRadius: 4, bgcolor: '#0f172a', color: '#f1f5f9' }}>
-                        <CardContent sx={{ p: 3 }}>
-                            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', fontWeight: 600 }}>
-                                <ScheduleIcon sx={{ mr: 1, color: '#9333ea' }} /> Nueva Campaña Programada
-                            </Typography>
-                            <TextField
-                                fullWidth
-                                label="Nombre de la Campaña"
-                                value={campaignName}
-                                onChange={(e) => setCampaignName(e.target.value)}
-                                sx={{
-                                    mb: 2,
-                                    '& .MuiInputBase-root': { bgcolor: '#1e293b', color: '#fff' },
-                                    '& .MuiInputLabel-root': { color: '#94a3b8' },
-                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' }
-                                }}
-                            />
                             <TextField
                                 fullWidth
                                 multiline
                                 rows={4}
-                                label="Mensaje de la Campaña"
-                                placeholder="Hola {nombre}, este es un mensaje programado..."
-                                value={message}
-                                onChange={(e) => setMessage(e.target.value)}
-                                sx={{
-                                    mb: 2,
-                                    '& .MuiInputBase-root': { bgcolor: '#1e293b', color: '#fff' },
-                                    '& .MuiInputLabel-root': { color: '#94a3b8' },
-                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' }
-                                }}
-                                helperText="Usa {nombre} para personalizar"
-                            />
-                            <TextField
-                                fullWidth
-                                type="datetime-local"
-                                label="Fecha y Hora de Envío"
-                                InputLabelProps={{ shrink: true }}
-                                value={scheduledDate}
-                                onChange={(e) => setScheduledDate(e.target.value)}
-                                sx={{
-                                    mb: 3,
-                                    '& .MuiInputBase-root': { bgcolor: '#1e293b', color: '#fff' },
-                                    '& .MuiInputLabel-root': { color: '#94a3b8' },
-                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' }
-                                }}
+                                placeholder={"Ejemplo:\n595985768793,Claudio\n595994854167,Carlos\n595994854167,Liliana"}
+                                value={recipients}
+                                onChange={(e) => setRecipients(e.target.value)}
+                                sx={{ mb: 4, ...textFieldStyle }}
                             />
 
-                            <Typography variant="subtitle2" gutterBottom sx={{ color: '#f1f5f9' }}>Destinatarios (Selecciona de Kanban)</Typography>
-                            <Grid container spacing={2} sx={{ mb: 2 }}>
+                            <Typography variant="subtitle2" sx={{ mb: 2, display: 'flex', alignItems: 'center', fontWeight: 600, color: '#f1f5f9' }}>
+                                <PlaylistAddIcon sx={{ mr: 1, fontSize: 20, color: '#a855f7' }} /> Seleccionar de Kanban
+                            </Typography>
+                            <Grid container spacing={2} sx={{ mb: 4 }}>
                                 <Grid item xs={12} md={6}>
                                     <Autocomplete
                                         options={kanbanBoards}
@@ -1257,7 +1590,7 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                             setSelectedBoardId(newValue ? newValue.id : '');
                                             if (newValue) loadBoardContacts(newValue.id);
                                         }}
-                                        renderInput={(params) => <TextField {...params} label="Tablero Kanban" size="small" sx={{ '& .MuiInputBase-root': { bgcolor: '#1e293b', color: '#fff' }, '& .MuiInputLabel-root': { color: '#94a3b8' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' } }} />}
+                                        renderInput={(params) => <TextField {...params} label="Tablero" size="small" sx={textFieldStyle} />}
                                     />
                                 </Grid>
                                 <Grid item xs={12} md={6}>
@@ -1267,7 +1600,150 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                         getOptionLabel={(option) => `${option.name} (${option.phone})`}
                                         value={selectedKanbanContacts}
                                         onChange={(_, newValue) => setSelectedKanbanContacts(newValue)}
-                                        renderInput={(params) => <TextField {...params} label="Contactos" size="small" sx={{ '& .MuiInputBase-root': { bgcolor: '#1e293b', color: '#fff' }, '& .MuiInputLabel-root': { color: '#94a3b8' }, '& .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' } }} />}
+                                        renderInput={(params) => <TextField {...params} label="Contactos" size="small" sx={textFieldStyle} />}
+                                        disabled={!selectedBoardId}
+                                    />
+                                </Grid>
+                            </Grid>
+
+                            <Button
+                                fullWidth
+                                variant="contained"
+                                color="primary"
+                                size="large"
+                                startIcon={sending ? <CircularProgress size={20} color="inherit" /> : <SendIcon />}
+                                disabled={sending}
+                                onClick={handleSendSms}
+                                sx={{
+                                    borderRadius: 3,
+                                    py: 2,
+                                    fontSize: '1.1rem',
+                                    fontWeight: 700,
+                                    textTransform: 'none',
+                                    boxShadow: '0 8px 16px rgba(37, 99, 235, 0.3)',
+                                    backgroundImage: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                                    '&:hover': {
+                                        boxShadow: '0 12px 20px rgba(37, 99, 235, 0.4)',
+                                        transform: 'translateY(-1px)'
+                                    },
+                                    mb: directSendProgress ? 2 : 0
+                                }}
+                            >
+                                {sending ? 'Iniciando Envío...' : 'Ejecutar Envío Directo'}
+                            </Button>
+
+                            {directSendProgress && (
+                                <Box sx={{ mt: 3 }}>
+                                    <SophisticatedProgressBar
+                                        progress={Math.round(((directSendProgress.sent + directSendProgress.failed) / directSendProgress.total) * 100)}
+                                        message={`Enviando: ${directSendProgress.sent}/${directSendProgress.total} Enviados | ${directSendProgress.failed} Fallidos`}
+                                    />
+                                </Box>
+                            )}
+                        </CardContent>
+                    </Card>
+                </Grid >
+
+                <Grid item xs={12} md={5}>
+                    <Card elevation={3} sx={{ borderRadius: 4, bgcolor: '#0f172a', color: '#f1f5f9', height: '100%', minHeight: 600 }}>
+                        <CardContent sx={{ p: 3 }}>
+                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', mb: 3 }}>
+                                <HistoryIcon sx={{ mr: 1, color: '#f59e0b' }} /> Estado de Envíos Directos
+                            </Typography>
+
+                            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                {campaigns.length === 0 ? (
+                                    <Box sx={{ textAlign: 'center', py: 10, opacity: 0.5 }}>
+                                        <HistoryIcon sx={{ fontSize: 64, mb: 2 }} />
+                                        <Typography variant="h6">Sin envíos registrados</Typography>
+                                        <Typography variant="body2">Tus envíos aparecerán aquí</Typography>
+                                    </Box>
+                                ) : (
+                                    campaigns
+                                        .slice().reverse()
+                                        .slice(0, 15)
+                                        .map((campaign) => renderCampaignCard(campaign))
+                                )}
+                            </Box>
+                        </CardContent>
+                    </Card>
+                </Grid>
+            </Grid >
+        </Box >
+    );
+
+    const renderCampaigns = () => (
+        <Box sx={{ p: 3 }}>
+            <Grid container spacing={3}>
+                <Grid item xs={12} md={7}>
+                    <Card elevation={3} sx={{ borderRadius: 4, bgcolor: '#0f172a', color: '#f1f5f9' }}>
+                        <CardContent sx={{ p: 3 }}>
+                            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', fontWeight: 600 }}>
+                                <ScheduleIcon sx={{ mr: 1, color: '#a855f7' }} /> Nueva Campaña Programada
+                            </Typography>
+                            <TextField
+                                fullWidth
+                                label="Nombre de la Campaña"
+                                value={campaignName}
+                                onChange={(e) => setCampaignName(e.target.value)}
+                                sx={{ mb: 2, ...textFieldStyle }}
+                            />
+                            <TextField
+                                fullWidth
+                                multiline
+                                rows={4}
+                                label="Mensaje de la Campaña"
+                                placeholder="¡Hola! {nombre} ¿cómo estás?"
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                sx={{ mb: 2, ...textFieldStyle }}
+                                helperText="Usa {nombre} para personalizar"
+                            />
+                            <TextField
+                                fullWidth
+                                type="datetime-local"
+                                label="Fecha y Hora de Envío"
+                                InputLabelProps={{ shrink: true }}
+                                value={scheduledDate}
+                                onChange={(e) => setScheduledDate(e.target.value)}
+                                sx={{ mb: 3, ...textFieldStyle }}
+                            />
+
+                            <Typography variant="subtitle2" sx={{ mb: 2, display: 'flex', alignItems: 'center', fontWeight: 600, color: '#f1f5f9' }}>
+                                <GroupAddIcon sx={{ mr: 1, fontSize: 20, color: '#60a5fa' }} /> Destinatarios Manuales (Opcional)
+                            </Typography>
+                            <TextField
+                                fullWidth
+                                multiline
+                                rows={4}
+                                placeholder={"Ejemplo:\n595985768793,Claudio\n595994854167,Carlos\n595994854167,Liliana"}
+                                value={recipients}
+                                onChange={(e) => setRecipients(e.target.value)}
+                                sx={{ mb: 3, ...textFieldStyle }}
+                                helperText="Puedes combinar Kanban con números manuales"
+                            />
+
+                            <Typography variant="subtitle2" gutterBottom sx={{ color: '#f1f5f9', fontWeight: 600 }}>Destinatarios (Kanban)</Typography>
+                            <Grid container spacing={2} sx={{ mb: 3 }}>
+                                <Grid item xs={12} md={6}>
+                                    <Autocomplete
+                                        options={kanbanBoards}
+                                        getOptionLabel={(option) => option.name}
+                                        onChange={(_, newValue) => {
+                                            setSelectedBoardId(newValue ? newValue.id : '');
+                                            if (newValue) loadBoardContacts(newValue.id);
+                                        }}
+                                        renderInput={(params) => <TextField {...params} label="Tablero" size="small" sx={textFieldStyle} />}
+                                    />
+                                </Grid>
+                                <Grid item xs={12} md={6}>
+                                    <Autocomplete
+                                        multiple
+                                        options={kanbanContacts}
+                                        getOptionLabel={(option) => `${option.name} (${option.phone})`}
+                                        value={selectedKanbanContacts}
+                                        onChange={(_, newValue) => setSelectedKanbanContacts(newValue)}
+                                        renderInput={(params) => <TextField {...params} label="Contactos" size="small" sx={textFieldStyle} />}
                                         disabled={!selectedBoardId}
                                     />
                                 </Grid>
@@ -1281,6 +1757,13 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                                 startIcon={<ScheduleIcon />}
                                 onClick={handleScheduleCampaign}
                                 disabled={sending}
+                                sx={{
+                                    borderRadius: 3,
+                                    py: 1.5,
+                                    fontWeight: 700,
+                                    textTransform: 'none',
+                                    backgroundImage: 'linear-gradient(135deg, #a855f7 0%, #9333ea 100%)'
+                                }}
                             >
                                 Programar Ahora
                             </Button>
@@ -1291,21 +1774,16 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                 <Grid item xs={12} md={5}>
                     <Card elevation={3} sx={{ borderRadius: 4, bgcolor: '#0f172a', color: '#f1f5f9' }}>
                         <CardContent sx={{ p: 3 }}>
-                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>Estado de Campañas</Typography>
-                            <Box sx={{ mt: 2 }}>
-                                {campaigns.map(camp => (
-                                    <Box key={camp.id} sx={{ mb: 2, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2, bgcolor: 'action.hover' }}>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                                            <Typography fontWeight="bold">{camp.name}</Typography>
-                                            <Chip label={camp.status} size="small" color={camp.status === 'completed' ? 'success' : 'primary'} />
-                                        </Box>
-                                        <Typography variant="body2" color="text.secondary" noWrap>{camp.message_template}</Typography>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                                            <Typography variant="caption" color="text.secondary">{new Date(camp.scheduled_at || camp.created_at).toLocaleString()}</Typography>
-                                            <Typography variant="caption" color="text.secondary">{camp.sent_count}/{camp.total_recipients}</Typography>
-                                        </Box>
+                            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 3 }}>Estado de Campañas</Typography>
+                            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                {campaigns.length === 0 ? (
+                                    <Box sx={{ textAlign: 'center', py: 4, opacity: 0.5 }}>
+                                        <HistoryIcon sx={{ fontSize: 48, mb: 1 }} />
+                                        <Typography>No hay campañas creadas</Typography>
                                     </Box>
-                                ))}
+                                ) : (
+                                    campaigns.slice().reverse().map(camp => renderCampaignCard(camp))
+                                )}
                             </Box>
                         </CardContent>
                     </Card>
@@ -1316,47 +1794,97 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
 
     return (
         <Box sx={{ flexGrow: 1, height: '100%', overflow: 'auto' }}>
-            <Box sx={{
-                p: 3,
-                background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
-                color: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-            }}>
-                <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Avatar sx={{ mr: 2, width: 56, height: 56, bgcolor: 'rgba(255,255,255,0.2)' }}>
-                        <SmsIcon sx={{ fontSize: 32 }} />
-                    </Avatar>
+            <Paper sx={{ p: 3, mb: 3, mx: 3, mt: 3, borderRadius: 4, bgcolor: '#0f172a', color: '#f1f5f9', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box>
-                        <Typography variant="h4" fontWeight="700">SMS Premium</Typography>
-                        <Typography variant="body2" sx={{ opacity: 0.9 }}>Interfaz moderna de envío de mensajes de texto</Typography>
+                        <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', fontWeight: 800 }}>
+                            <SmsIcon sx={{ mr: 1.5, fontSize: 32, color: '#3b82f6' }} />
+                            📱 SMS Premium
+                        </Typography>
+                        <Typography variant="body1" sx={{ color: '#94a3b8' }}>
+                            Envía mensajes de texto masivos a tus contactos
+                        </Typography>
                     </Box>
+                    <IconButton
+                        onClick={() => loadInitialData()}
+                        title="Recargar"
+                        sx={{
+                            bgcolor: 'rgba(59, 130, 246, 0.1)',
+                            color: '#3b82f6',
+                            '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.2)' }
+                        }}
+                    >
+                        <RefreshIcon />
+                    </IconButton>
                 </Box>
-                <IconButton onClick={() => loadInitialData()} title="Recargar" sx={{ color: 'white', bgcolor: 'rgba(255,255,255,0.2)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>
-                    <RefreshIcon />
-                </IconButton>
+
+                <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                    <Chip
+                        icon={<SmsIcon style={{ color: '#3b82f6' }} />}
+                        label={`${campaigns.length} campañas`}
+                        sx={{ bgcolor: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', border: '1px solid rgba(59, 130, 246, 0.2)', fontWeight: 600 }}
+                    />
+                    <Chip
+                        icon={<HistoryIcon style={{ color: '#10b981' }} />}
+                        label={`${campaigns.filter(c => c.status === 'completed').length} completadas`}
+                        sx={{ bgcolor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.2)', fontWeight: 600 }}
+                    />
+                    <Chip
+                        icon={<SendIcon style={{ color: '#06b6d4' }} />}
+                        label={`${stats.sent} SMS enviados`}
+                        sx={{ bgcolor: 'rgba(6, 182, 212, 0.1)', color: '#06b6d4', border: '1px solid rgba(6, 182, 212, 0.2)', fontWeight: 600 }}
+                    />
+                    <Chip
+                        icon={<WalletIcon style={{ color: '#f59e0b' }} />}
+                        label={`${Math.floor(stats.balance)} SMS disponibles`}
+                        sx={{ bgcolor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.2)', fontWeight: 600 }}
+                    />
+                </Box>
+            </Paper>
+
+            <Box sx={{ px: 2, mb: 1 }}>
+                <Paper
+                    elevation={3}
+                    sx={{
+                        borderRadius: 4,
+                        bgcolor: '#0f172a',
+                        color: '#f1f5f9',
+                        border: '1px solid rgba(255,255,255,0.05)',
+                        overflow: 'hidden'
+                    }}
+                >
+                    <Tabs
+                        value={tab}
+                        onChange={(_, v) => setTab(v)}
+                        sx={{
+                            '& .MuiTab-root': {
+                                fontWeight: 600,
+                                textTransform: 'none',
+                                color: '#94a3b8',
+                                py: 2,
+                                px: 3,
+                                transition: 'all 0.2s'
+                            },
+                            '& .Mui-selected': {
+                                color: '#60a5fa !important',
+                                bgcolor: 'rgba(96, 165, 250, 0.08)'
+                            },
+                            '& .MuiTabs-indicator': {
+                                height: 3,
+                                bgcolor: '#60a5fa',
+                                borderRadius: '3px 3px 0 0'
+                            }
+                        }}
+                    >
+                        <Tab label="Dashboard" />
+                        <Tab label="Envío Directo" />
+                        <Tab label="Campañas" />
+                    </Tabs>
+                </Paper>
             </Box>
 
-            <Tabs
-                value={tab}
-                onChange={(_, v) => setTab(v)}
-                sx={{
-                    px: 2,
-                    borderBottom: '1px solid',
-                    borderColor: 'divider',
-                    bgcolor: 'background.paper',
-                    '& .MuiTab-root': { fontWeight: 600 },
-                    '& .Mui-selected': { color: '#4f46e5' }
-                }}
-            >
-                <Tab label="Dashboard" />
-                <Tab label="Envío Directo" />
-                <Tab label="Campañas" />
-            </Tabs>
-
-            {error && <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>}
-            {success && <Alert severity="success" sx={{ m: 2 }}>{success}</Alert>}
+            {error && <Alert severity="error" sx={{ m: 2, borderRadius: 3 }}>{error}</Alert>}
+            {success && <Alert severity="success" sx={{ m: 2, borderRadius: 3 }}>{success}</Alert>}
 
             {loading && !sending ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
@@ -1369,6 +1897,86 @@ const SMSPremiumModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                     {tab === 2 && renderCampaigns()}
                 </>
             )}
+
+            <Dialog
+                open={showDeleteDialog}
+                onClose={() => setShowDeleteDialog(false)}
+                PaperProps={{
+                    sx: {
+                        borderRadius: 3,
+                        bgcolor: '#1e293b',
+                        color: '#f1f5f9',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.5)'
+                    }
+                }}
+            >
+                <DialogTitle sx={{ pb: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <DeleteIcon color="error" />
+                        <Typography variant="h6" fontWeight="700">Confirmar Eliminación</Typography>
+                    </Box>
+                </DialogTitle>
+                <Divider sx={{ borderColor: 'rgba(255,255,255,0.1)' }} />
+                <DialogContent sx={{ pt: 3 }}>
+                    <DialogContentText sx={{ color: '#94a3b8' }}>
+                        ¿Estás seguro de que deseas eliminar esta campaña?
+                        <br />
+                        <Box component="span" sx={{ color: '#f87171', fontWeight: 600, mt: 1, display: 'block' }}>
+                            Esta acción no se puede deshacer.
+                        </Box>
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions sx={{ p: 3, pt: 0 }}>
+                    <Button onClick={() => setShowDeleteDialog(false)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+                    <Button
+                        onClick={handleDeleteCampaign}
+                        variant="contained"
+                        color="error"
+                        sx={{ borderRadius: 2, px: 3 }}
+                    >
+                        Eliminar permanentemente
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Dialogo de Edición */}
+            <Dialog
+                open={showEditDialog}
+                onClose={() => setShowEditDialog(false)}
+                PaperProps={{ sx: { bgcolor: '#0f172a', color: '#f1f5f9', borderRadius: 4, minWidth: 400 } }}
+            >
+                <DialogTitle sx={{ fontWeight: 700 }}>Editar Campaña</DialogTitle>
+                <DialogContent>
+                    <TextField
+                        fullWidth
+                        label="Nombre"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        sx={{ mt: 2, mb: 3, ...textFieldStyle }}
+                    />
+                    <TextField
+                        fullWidth
+                        multiline
+                        rows={4}
+                        label="Plantilla de Mensaje"
+                        value={editTemplate}
+                        onChange={(e) => setEditTemplate(e.target.value)}
+                        sx={{ ...textFieldStyle }}
+                        helperText={`${editTemplate.length}/160 caracteres`}
+                    />
+                </DialogContent>
+                <DialogActions sx={{ p: 3 }}>
+                    <Button onClick={() => setShowEditDialog(false)} sx={{ color: '#94a3b8' }}>Cancelar</Button>
+                    <Button
+                        onClick={handleSaveEdit}
+                        variant="contained"
+                        color="primary"
+                        sx={{ borderRadius: 2, px: 3, backgroundImage: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' }}
+                    >
+                        Guardar Cambios
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };

@@ -478,14 +478,16 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
     // Si la sesión cambió, forzar recarga con filtro de 24 horas para velocidad inmediata
     if (loadChats && sessionId) {
-      // 🔒 SECURITY: Only skip loading if sessionId is a pure numeric User ID AND not in allSessions
-      // This allows loading chats for valid session IDs (even short ones) that are in allSessions
-      const isValidSession = allSessions && allSessions.length > 0
-        ? allSessions.some(s => s.sessionId === sessionId)
-        : sessionId.length >= 1 || !isNaN(Number(sessionId)); // Permitir IDs numéricos cortos
+      // 🔧 FIX: More permissive validation - allow loading if:
+      // 1. sessionId is in allSessions list, OR
+      // 2. sessionId looks like a phone number (10+ digits), OR
+      // 3. allSessions is empty (still loading) and sessionId is truthy
+      const isInAllSessions = allSessions && allSessions.length > 0 && allSessions.some(s => s.sessionId === sessionId);
+      const looksLikePhoneNumber = /^\d{10,15}$/.test(sessionId);
+      const isValidSession = isInAllSessions || looksLikePhoneNumber || (allSessions.length === 0 && sessionId.length > 0);
 
       if (!isValidSession) {
-        console.warn(`[WhatsAppWebChat] 🚫 Skipping loadChats for invalid sessionId '${sessionId}'. Not in allSessions.`);
+        console.warn(`[WhatsAppWebChat] 🚫 Skipping loadChats for invalid sessionId '${sessionId}'. Not in allSessions and doesn't look like a phone number.`);
         return;
       }
 

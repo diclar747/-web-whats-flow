@@ -14,7 +14,7 @@ const dbConfig = {
 // Middleware de autenticación por API Key
 const authenticateAPIKey = async (req, res, next) => {
   const apiKey = req.headers['x-api-key'] || req.query.api_key;
-  
+
   if (!apiKey) {
     return res.status(401).json({
       success: false,
@@ -38,8 +38,8 @@ const authenticateAPIKey = async (req, res, next) => {
     }
 
     req.apiKeyData = keys[0];
-    req.sessionId = keys[0].session_id;
-    
+    req.userId = keys[0].session_id; // Vinculado a user_id en la BD
+
     // Actualizar último uso
     const conn = await mysql.createConnection(dbConfig);
     await conn.query(
@@ -47,7 +47,7 @@ const authenticateAPIKey = async (req, res, next) => {
       [keys[0].id]
     );
     await conn.end();
-    
+
     next();
   } catch (error) {
     console.error('Error authenticating API key:', error);
@@ -97,9 +97,9 @@ router.post('/keys/generate', async (req, res) => {
 });
 
 // Listar API Keys
-router.get('/keys/:sessionId', async (req, res) => {
+router.get('/keys/:userId', async (req, res) => {
   try {
-    const { sessionId } = req.params;
+    const { userId } = req.params;
     const connection = await mysql.createConnection(dbConfig);
 
     const [keys] = await connection.query(
@@ -107,7 +107,7 @@ router.get('/keys/:sessionId', async (req, res) => {
        FROM api_keys 
        WHERE session_id = ?
        ORDER BY created_at DESC`,
-      [sessionId]
+      [userId]
     );
 
     await connection.end();
@@ -153,33 +153,34 @@ router.delete('/keys/:keyId', async (req, res) => {
 
 // ============== ENDPOINTS DE LA API REST ==============
 
-// Helper para encontrar sesión activa de WhatsApp
-const findActiveSession = (sessions, sessionId) => {
+// Helper para encontrar sesión activa de WhatsApp vinculada al usuario
+const findActiveSession = (sessions, userId) => {
   if (!sessions) return null;
-  
-  console.log(`[API-REST] Buscando sesión activa para: ${sessionId}`);
-  console.log(`[API-REST] Sesiones disponibles: ${Array.from(sessions.keys()).join(', ')}`);
-  
-  // Primero intenta con el sessionId directo
-  if (sessions.has(sessionId)) {
-    const sessionInfo = sessions.get(sessionId);
-    console.log(`[API-REST] ✅ Sesión encontrada directamente: ${sessionId}, conectada: ${sessionInfo.isConnected}`);
-    if (sessionInfo.sock) {
-      return { sock: sessionInfo.sock, foundSessionId: sessionId };
-    }
-  }
-  
-  // Busca cualquier sesión activa conectada
+
+  console.log(`[API-REST] Buscando sesión activa para el Usuario ID: ${userId}`);
+
+  // Buscar cualquier sesión activa conectada que pertenezca a este userId
   for (const [sid, sessionInfo] of sessions.entries()) {
-    console.log(`[API-REST] Verificando sesión: ${sid}, conectada: ${sessionInfo.isConnected}`);
-    // Verifica si está conectada y tiene socket
-    if (sessionInfo.isConnected && sessionInfo.sock && sessionInfo.sock.user) {
-      console.log(`[API-REST] ✅ Sesión activa encontrada: ${sid}`);
+    // Verificamos si la sesión está conectada y si el userId coincide
+    // Note: sessionInfo.userId se guarda como número o string en index.js
+    const sessionUserId = String(sessionInfo.userId || '');
+    const targetUserId = String(userId || '');
+
+    if (sessionInfo.isConnected && sessionInfo.sock && sessionInfo.sock.user && sessionUserId === targetUserId) {
+      console.log(`[API-REST] ✅ Sesión activa encontrada para usuario ${userId}: ${sid}`);
       return { sock: sessionInfo.sock, foundSessionId: sid };
     }
   }
-  
-  console.log(`[API-REST] ❌ No se encontró ninguna sesión activa`);
+
+  // Fallback: Si no coincide el userId, pero el sid es el userId (escenario de migración o key legacy)
+  if (sessions.has(userId)) {
+    const sessionInfo = sessions.get(userId);
+    if (sessionInfo.isConnected && sessionInfo.sock) {
+      return { sock: sessionInfo.sock, foundSessionId: userId };
+    }
+  }
+
+  console.log(`[API-REST] ❌ No se encontró ninguna sesión activa vinculada al usuario ${userId}`);
   return null;
 };
 
@@ -187,7 +188,7 @@ const findActiveSession = (sessions, sessionId) => {
 router.post('/send/text', authenticateAPIKey, async (req, res) => {
   try {
     const { to, message } = req.body;
-    const { sessionId } = req;
+    const { userId } = req;
 
     if (!to || !message) {
       return res.status(400).json({
@@ -196,10 +197,10 @@ router.post('/send/text', authenticateAPIKey, async (req, res) => {
       });
     }
 
-    console.log(`[API-REST] Intentando enviar mensaje a ${to} desde sesión ${sessionId}`);
+    console.log(`[API-REST] Intentando enviar mensaje a ${to} desde Usuario ID ${userId}`);
     const sessions = req.sessions;
-    const activeSession = findActiveSession(sessions, sessionId);
-    
+    const activeSession = findActiveSession(sessions, userId);
+
     if (!activeSession) {
       return res.status(404).json({
         success: false,
@@ -209,7 +210,7 @@ router.post('/send/text', authenticateAPIKey, async (req, res) => {
     }
 
     const { sock } = activeSession;
-    
+
     if (!sock.user) {
       return res.status(400).json({
         success: false,
@@ -219,7 +220,7 @@ router.post('/send/text', authenticateAPIKey, async (req, res) => {
     }
 
     const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
-    
+
     await sock.sendMessage(jid, { text: message });
 
     res.json({
@@ -241,7 +242,7 @@ router.post('/send/text', authenticateAPIKey, async (req, res) => {
 router.post('/send/image', authenticateAPIKey, async (req, res) => {
   try {
     const { to, image, caption } = req.body;
-    const { sessionId } = req;
+    const { userId } = req;
 
     if (!to || !image) {
       return res.status(400).json({
@@ -251,8 +252,8 @@ router.post('/send/image', authenticateAPIKey, async (req, res) => {
     }
 
     const sessions = req.sessions;
-    const activeSession = findActiveSession(sessions, sessionId);
-    
+    const activeSession = findActiveSession(sessions, userId);
+
     if (!activeSession || !activeSession.sock.user) {
       return res.status(404).json({
         success: false,
@@ -262,8 +263,8 @@ router.post('/send/image', authenticateAPIKey, async (req, res) => {
 
     const { sock } = activeSession;
     const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
-    
-    await sock.sendMessage(jid, { 
+
+    await sock.sendMessage(jid, {
       image: { url: image },
       caption: caption || ''
     });
@@ -286,7 +287,7 @@ router.post('/send/image', authenticateAPIKey, async (req, res) => {
 router.post('/send/document', authenticateAPIKey, async (req, res) => {
   try {
     const { to, document, filename, mimetype, caption } = req.body;
-    const { sessionId } = req;
+    const { userId } = req;
 
     if (!to || !document || !filename) {
       return res.status(400).json({
@@ -296,8 +297,8 @@ router.post('/send/document', authenticateAPIKey, async (req, res) => {
     }
 
     const sessions = req.sessions;
-    const activeSession = findActiveSession(sessions, sessionId);
-    
+    const activeSession = findActiveSession(sessions, userId);
+
     if (!activeSession || !activeSession.sock.user) {
       return res.status(404).json({
         success: false,
@@ -307,8 +308,8 @@ router.post('/send/document', authenticateAPIKey, async (req, res) => {
 
     const { sock } = activeSession;
     const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
-    
-    await sock.sendMessage(jid, { 
+
+    await sock.sendMessage(jid, {
       document: { url: document },
       fileName: filename,
       mimetype: mimetype || 'application/pdf',
@@ -344,7 +345,7 @@ router.post('/send/audio', authenticateAPIKey, async (req, res) => {
 
     const sessions = req.sessions;
     const activeSession = findActiveSession(sessions, sessionId);
-    
+
     if (!activeSession) {
       return res.status(404).json({
         success: false,
@@ -355,8 +356,8 @@ router.post('/send/audio', authenticateAPIKey, async (req, res) => {
 
     const { sock } = activeSession;
     const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
-    
-    await sock.sendMessage(jid, { 
+
+    await sock.sendMessage(jid, {
       audio: { url: audio },
       ptt: ptt || false
     });
@@ -390,7 +391,7 @@ router.post('/send/video', authenticateAPIKey, async (req, res) => {
 
     const sessions = req.sessions;
     const activeSession = findActiveSession(sessions, sessionId);
-    
+
     if (!activeSession) {
       return res.status(404).json({
         success: false,
@@ -401,8 +402,8 @@ router.post('/send/video', authenticateAPIKey, async (req, res) => {
 
     const { sock } = activeSession;
     const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
-    
-    await sock.sendMessage(jid, { 
+
+    await sock.sendMessage(jid, {
       video: { url: video },
       caption: caption || ''
     });
@@ -428,7 +429,7 @@ router.get('/messages/:sessionId', authenticateAPIKey, async (req, res) => {
     const { limit = 50, offset = 0, chat } = req.query;
 
     const connection = await mysql.createConnection(dbConfig);
-    
+
     let query = `
       SELECT * FROM messages 
       WHERE session_id = ?
@@ -556,7 +557,7 @@ router.get('/status/:sessionId', authenticateAPIKey, async (req, res) => {
   try {
     const { sessionId } = req.params;
     const sessions = req.sessions;
-    
+
     const activeSession = findActiveSession(sessions, sessionId);
 
     if (!activeSession) {
@@ -569,7 +570,7 @@ router.get('/status/:sessionId', authenticateAPIKey, async (req, res) => {
     }
 
     const { sock, foundSessionId } = activeSession;
-    
+
     res.json({
       success: true,
       connected: true,
@@ -583,6 +584,185 @@ router.get('/status/:sessionId', authenticateAPIKey, async (req, res) => {
       success: false,
       error: error.message
     });
+  }
+});
+
+// Endpoint para conectar WhatsApp mediante API Key (Vista HTML interactiva)
+router.get('/connect', async (req, res) => {
+  const apiKey = req.query.api_key;
+  let sessionId = req.query.session_id;
+
+  if (!apiKey) {
+    return res.status(401).send(`
+      <div style="font-family: sans-serif; text-align: center; margin-top: 50px; background: #0f1419; color: white;">
+        <h1 style="color: #e74c3c;">API Key requerida</h1>
+        <p>Por favor, incluye el parametro <code>?api_key=TU_KEY</code> en la URL.</p>
+      </div>
+    `);
+  }
+
+  try {
+    const connection = await mysql.createConnection(dbConfig);
+    const [keys] = await connection.query(
+      'SELECT id, session_id FROM api_keys WHERE api_key = ? AND is_active = TRUE',
+      [apiKey]
+    );
+    await connection.end();
+
+    if (keys.length === 0) {
+      return res.status(401).send(`
+        <div style="font-family: sans-serif; text-align: center; margin-top: 50px; background: #0f1419; color: white;">
+          <h1 style="color: #e74c3c;">API Key invalida</h1>
+          <p>La API Key proporcionada no es valida o esta inactiva.</p>
+        </div>
+      `);
+    }
+
+    const userId = keys[0].session_id; // Vinculado al id de usuario
+
+    // Si no hay sessionId en la URL, generar uno nuevo y redirigir
+    if (!sessionId) {
+      sessionId = crypto.randomBytes(8).toString('hex');
+      return res.redirect(`/api/rest/connect?api_key=${apiKey}&session_id=${sessionId}`);
+    }
+
+    const sessions = req.sessions;
+    const sessionOwnerMap = req.app.get('sessionOwnerMap');
+    const qrCodes = req.app.get('qrCodes') || {};
+    const session = sessions.get(sessionId);
+
+    // 1. Si ya está conectado, mostrar éxito
+    if (session && session.isConnected && session.sock && session.sock.user) {
+      return res.send(`
+        <html>
+        <body style="font-family: sans-serif; text-align: center; margin-top: 50px; background: #0f1419; color: white;">
+          <h1 style="color: #25d366;">¡WhatsApp Conectado!</h1>
+          <p>La sesion <strong>${sessionId}</strong> ya esta vinculada con exito.</p>
+          <p>Puedes cerrar esta ventana y empezar a usar la API.</p>
+          <button onclick="window.close()" style="background: #25d366; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">Cerrar</button>
+        </body>
+        </html>
+      `);
+    }
+
+    // 2. Vincular este sessionId temporal con el userId
+    if (sessionOwnerMap) {
+      sessionOwnerMap.set(sessionId, userId);
+    }
+
+    // 3. Asegurar que la sesión existe
+    if (!session) {
+      console.log(`[API-REST] Creando sesion temporal para vinculacion: ${sessionId} (User: ${userId})`);
+      req.createSession(sessionId, true, false); // forceNew=true para asegurar limpieza
+    }
+
+    const qrDataUrl = qrCodes[sessionId];
+
+    // 4. Renderizar vista interactiva con Socket.IO
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Conectar WhatsApp - WhatsFlow API</title>
+        <script src="/socket.io/socket.io.js"></script>
+        <style>
+          body { font-family: 'Segoe UI', sans-serif; background: #0f1419; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+          .card { background: #1a2332; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 400px; width: 90%; }
+          .qr-container { background: white; padding: 15px; border-radius: 10px; display: inline-block; margin: 20px 0; min-width: 250px; min-height: 250px; }
+          .qr-image { width: 250px; height: 250px; display: block; }
+          h1 { margin: 0 0 10px 0; color: #58a6ff; font-size: 24px; }
+          p { color: #8b949e; line-height: 1.5; font-size: 14px; }
+          .status { margin-top: 20px; font-weight: bold; color: #25d366; display: flex; align-items: center; justify-content: center; gap: 10px; }
+          .loader { border: 3px solid #f3f3f3; border-top: 3px solid #25d366; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+          .footer { margin-top: 30px; font-size: 11px; color: #444; }
+          .btn-retry { display: block; margin-top: 15px; color: #58a6ff; text-decoration: none; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="card" id="main-card">
+          <h1>Vincular WhatsApp</h1>
+          <p>Abre WhatsApp en tu telefono > Menu/Configuracion > Dispositivos vinculados > Vincular dispositivo</p>
+          
+          <div class="qr-container" id="qr-box">
+            ${qrDataUrl ? `<img src="${qrDataUrl}" id="qr-img" class="qr-image" />` : `
+              <div style="width: 250px; height: 250px; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #000;">
+                <div class="loader"></div>
+                <p style="margin-top: 10px; font-size: 12px;">Generando codigo QR...</p>
+              </div>
+            `}
+          </div>
+          
+          <div class="status" id="status-text">
+            <div class="loader"></div>
+            <span>Esperando escaneo...</span>
+          </div>
+
+          <div class="footer">
+            ID Sesion: ${sessionId}<br>
+            API Key: ${apiKey.substring(0, 10)}...<br>
+            <a href="?api_key=${apiKey}" class="btn-retry">¿Problemas? Generar nuevo ID</a>
+          </div>
+        </div>
+
+        <script>
+          const socket = io();
+          const sessionId = '${sessionId}';
+
+          socket.on('connect', () => {
+             console.log('Conectado al servidor de eventos');
+             socket.emit('join-session', sessionId);
+          });
+
+          // Escuchar nuevos QRs en tiempo real
+          socket.on('qr-code', (data) => {
+            if (data.sessionId === sessionId) {
+              updateQR(data.qrDataUrl);
+            }
+          });
+
+          // Listener específico de Baileys
+          socket.on('qr-' + sessionId, (data) => {
+             updateQR(data.qrDataUrl);
+          });
+
+          function updateQR(url) {
+            const qrBox = document.getElementById('qr-box');
+            qrBox.innerHTML = '<img src="' + url + '" class="qr-image" id="qr-img" />';
+          }
+
+          // Escuchar conexión exitosa
+          socket.on('whatsapp-connected', (data) => {
+            if (data.sessionId === sessionId) {
+              document.getElementById('main-card').innerHTML = \`
+                <h1 style="color: #25d366;">¡Exito!</h1>
+                <div style="font-size: 60px; margin: 20px;">✅</div>
+                <p>Tu WhatsApp se ha vinculado correctamente.</p>
+                <p style="font-size: 18px; color: white;">Numero: <strong>\${data.phoneNumber}</strong></p>
+                <div style="margin-top: 30px;">
+                  <button onclick="window.close()" style="background: #25d366; color: white; border: none; padding: 12px 25px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 16px;">Comenzar a usar</button>
+                </div>
+              \`;
+            }
+          });
+
+          // Manejar desconexiones del socket
+          socket.on('disconnect', () => {
+             document.getElementById('status-text').innerHTML = '<span style="color: #e74c3c;">Desconectado del servidor. Reintentando...</span>';
+          });
+          
+          socket.on('reconnect', () => {
+             document.getElementById('status-text').innerHTML = '<div class="loader"></div><span>Esperando escaneo...</span>';
+             socket.emit('join-session', sessionId);
+          });
+        </script>
+      </body>
+      </html>
+    `);
+
+  } catch (error) {
+    console.error('Error in /connect:', error);
+    res.status(500).send('Error interno en la vinculacion');
   }
 });
 

@@ -25,7 +25,7 @@ import {
     Alert,
     Snackbar,
 } from '@mui/material';
-import { MoreVert, Block, CheckCircle, Smartphone, Search, Edit, Delete, PersonAdd } from '@mui/icons-material';
+import { MoreVert, Block, CheckCircle, Smartphone, Search, Edit, Delete, PersonAdd, Message } from '@mui/icons-material';
 import { getAPIBaseURL } from '../../utils/socketConfig';
 
 interface Client {
@@ -65,6 +65,8 @@ const ClientsManager: React.FC = () => {
     });
 
     const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+    const [openSmsDialog, setOpenSmsDialog] = useState(false);
+    const [smsAmount, setSmsAmount] = useState<number | ''>('');
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
     useEffect(() => {
@@ -180,6 +182,12 @@ const ClientsManager: React.FC = () => {
         setOpenPlanDialog(true);
     };
 
+    const openAssignSmsDialog = () => {
+        setAnchorEl(null);
+        setSmsAmount('');
+        setOpenSmsDialog(true);
+    };
+
     const openEditClientDialog = () => {
         if (!selectedClient) return;
         setEditFormData({
@@ -250,6 +258,35 @@ const ClientsManager: React.FC = () => {
         } catch (error) {
             console.error('Error deleting client:', error);
             showSnackbar('Error al eliminar cliente', 'error');
+        }
+    };
+
+    const handleAssignSms = async () => {
+        if (!selectedClient || smsAmount === '' || Number(smsAmount) <= 0) {
+            showSnackbar('Ingrese una cantidad válida', 'error');
+            return;
+        }
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${getAPIBaseURL()}/api/clients/${selectedClient.id}/assign-sms`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ amount: Number(smsAmount) })
+            });
+            const data = await response.json();
+            if (data.success) {
+                showSnackbar(`Se han asignado ${smsAmount} SMS exitosamente`, 'success');
+                fetchClients();
+                setOpenSmsDialog(false);
+            } else {
+                showSnackbar(data.error || 'Error al asignar saldo', 'error');
+            }
+        } catch (error) {
+            console.error('Error assigning SMS:', error);
+            showSnackbar('Error al conectar con el servidor', 'error');
         }
     };
 
@@ -357,6 +394,9 @@ const ClientsManager: React.FC = () => {
                 </MenuItem>
                 <MenuItem onClick={openAssignPlanDialog}>
                     <PersonAdd sx={{ mr: 1, fontSize: 20 }} /> Asignar Plan
+                </MenuItem>
+                <MenuItem onClick={openAssignSmsDialog}>
+                    <Message sx={{ mr: 1, fontSize: 20 }} /> Asignar Saldo SMS
                 </MenuItem>
                 <MenuItem onClick={handleToggleBlock}>
                     <Block sx={{ mr: 1, fontSize: 20 }} /> {selectedClient?.is_blocked ? 'Desbloquear Cliente' : 'Bloquear Cliente'}
@@ -478,6 +518,49 @@ const ClientsManager: React.FC = () => {
                 <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                     <Button onClick={() => setOpenPlanDialog(false)} sx={{ color: 'rgba(255,255,255,0.7)' }}>Cancelar</Button>
                     <Button onClick={handleAssignPlan} variant="contained">Asignar</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Diálogo de Asignar Saldo SMS */}
+            <Dialog
+                open={openSmsDialog}
+                onClose={() => setOpenSmsDialog(false)}
+                PaperProps={{
+                    sx: {
+                        bgcolor: '#1a1a2e',
+                        color: 'white',
+                        border: '1px solid rgba(255,255,255,0.1)'
+                    }
+                }}
+            >
+                <DialogTitle sx={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                    Asignar Saldo SMS a {selectedClient?.name}
+                </DialogTitle>
+                <DialogContent sx={{ minWidth: 300, mt: 2 }}>
+                    <Typography variant="body2" sx={{ mb: 2, color: 'rgba(255,255,255,0.7)' }}>
+                        Ingrese la cantidad de mensajes SMS a recargar al usuario.
+                    </Typography>
+                    <TextField
+                        fullWidth
+                        type="number"
+                        label="Cantidad de SMS"
+                        value={smsAmount}
+                        onChange={(e) => setSmsAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                        sx={{
+                            mt: 1,
+                            '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.7)' },
+                            '& .MuiOutlinedInput-root': {
+                                color: 'white',
+                                '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                                '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.2)' },
+                                '&.Mui-focused fieldset': { borderColor: '#25D366' }
+                            }
+                        }}
+                    />
+                </DialogContent>
+                <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <Button onClick={() => setOpenSmsDialog(false)} sx={{ color: 'rgba(255,255,255,0.7)' }}>Cancelar</Button>
+                    <Button onClick={handleAssignSms} variant="contained" sx={{ bgcolor: '#25D366', '&:hover': { bgcolor: '#1da851' } }}>Asignar Saldo</Button>
                 </DialogActions>
             </Dialog>
 

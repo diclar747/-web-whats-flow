@@ -48,7 +48,7 @@ import {
 } from '@mui/icons-material';
 
 interface APIRestSettingsProps {
-  sessionId: string;
+  userId: string;
 }
 
 interface APIKey {
@@ -62,7 +62,7 @@ interface APIKey {
   request_count: number;
 }
 
-const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
+const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
   const [selectedTab, setSelectedTab] = useState(0);
   const [apiKeys, setApiKeys] = useState<APIKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,8 +112,8 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
   const [whatsappStatus, setWhatsappStatus] = useState<any>(null);
   const [statusLoading, setStatusLoading] = useState(true);
 
-  // 🧹 Sanitizar sessionId (eliminar sufijos :1, etc)
-  const cleanSessionId = sessionId?.split(':')[0] || sessionId;
+  // 🧹 Limpiar userId
+  const cleanUserId = userId?.toString();
 
   useEffect(() => {
     loadAPIKeys();
@@ -122,7 +122,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
     // Verificar estado cada 10 segundos
     const interval = setInterval(checkWhatsAppStatus, 10000);
     return () => clearInterval(interval);
-  }, [sessionId, cleanSessionId]);
+  }, [userId, cleanUserId]);
 
   const checkWhatsAppStatus = async () => {
     try {
@@ -146,7 +146,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
   const loadAPIKeys = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${getAPIBaseURL()}/api/rest/keys/${cleanSessionId}`);
+      const response = await fetch(`${getAPIBaseURL()}/api/rest/keys/${cleanUserId}`);
       const data = await response.json();
 
       if (data.success) {
@@ -170,7 +170,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          sessionId: cleanSessionId,
+          sessionId: cleanUserId, // Usamos userId en la BD (columna session_id)
           name: newKeyName,
           description: newKeyDescription
         })
@@ -333,7 +333,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ sessionId }) => {
           }
           break;
         case 'status':
-          endpoint = `/api/rest/status/${cleanSessionId}`;
+          endpoint = `/api/rest/status/${cleanUserId}`;
           break;
       }
 
@@ -822,6 +822,7 @@ if __name__ == '__main__':
                           <TableCell sx={{ color: '#8b949e', borderBottom: '1px solid #30363d' }}>Solicitudes</TableCell>
                           <TableCell sx={{ color: '#8b949e', borderBottom: '1px solid #30363d' }}>Creada</TableCell>
                           <TableCell sx={{ color: '#8b949e', borderBottom: '1px solid #30363d' }}>Último Uso</TableCell>
+                          <TableCell sx={{ color: '#8b949e', borderBottom: '1px solid #30363d' }}>Conectar</TableCell>
                           <TableCell sx={{ color: '#8b949e', borderBottom: '1px solid #30363d' }}>Acciones</TableCell>
                         </TableRow>
                       </TableHead>
@@ -887,6 +888,22 @@ if __name__ == '__main__':
                               </Typography>
                             </TableCell>
                             <TableCell sx={{ borderBottom: '1px solid #30363d' }}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<PlayArrow />}
+                                onClick={() => window.open(`${getAPIBaseURL()}/api/rest/connect?api_key=${key.api_key}`, '_blank')}
+                                sx={{
+                                  color: '#25d366',
+                                  borderColor: '#25d366',
+                                  fontSize: '11px',
+                                  '&:hover': { borderColor: '#1da851', bgcolor: 'rgba(37, 211, 102, 0.1)' }
+                                }}
+                              >
+                                Conectar QR
+                              </Button>
+                            </TableCell>
+                            <TableCell sx={{ borderBottom: '1px solid #30363d' }}>
                               <Tooltip title="Desactivar">
                                 <IconButton
                                   size="small"
@@ -937,6 +954,35 @@ if __name__ == '__main__':
                 <Divider sx={{ my: 3, borderColor: '#30363d' }} />
 
                 <Typography variant="h6" gutterBottom>📡 Endpoints Disponibles</Typography>
+
+                {/* 🆕 Conexión Masiva / API */}
+                <Accordion sx={{ bgcolor: '#161b22', color: '#e3e8ef', mb: 1, border: '1px solid #25d366' }}>
+                  <AccordionSummary expandIcon={<ExpandMore sx={{ color: '#8b949e' }} />}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Chip label="GET" size="small" sx={{ bgcolor: '#2188ff', color: '#fff' }} />
+                      <Typography variant="body1" sx={{ fontWeight: 600, color: '#25d366' }}>
+                        /api/rest/connect
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#8b949e' }}>
+                        - Generar conexión mediante QR (Vista Navegador)
+                      </Typography>
+                    </Box>
+                  </AccordionSummary>
+                  <AccordionDetails sx={{ bgcolor: '#0d1117' }}>
+                    <Typography variant="body2" paragraph sx={{ color: '#e3e8ef' }}>
+                      Este endpoint permite abrir una interfaz web para escanear el código QR y vincular una nueva línea de WhatsApp utilizando directamente una API Key.
+                    </Typography>
+                    <Typography variant="subtitle2" gutterBottom>URL de Conexión:</Typography>
+                    <Box sx={{ bgcolor: '#161b22', p: 2, borderRadius: 2, mb: 2, border: '1px solid #30363d' }}>
+                      <code style={{ fontSize: '12px', color: '#79c0ff', wordBreak: 'break-all' }}>
+                        {`${getAPIBaseURL()}/api/rest/connect?api_key=wf_tu_api_key`}
+                      </code>
+                    </Box>
+                    <Typography variant="body2" paragraph sx={{ color: '#8b949e', fontSize: '12px' }}>
+                      <strong>Nota:</strong> Esta URL se puede abrir en cualquier navegador o enviarla a un cliente para que realice la vinculación por su cuenta. El sistema verificará automáticamente los límites de tu plan.
+                    </Typography>
+                  </AccordionDetails>
+                </Accordion>
 
                 {/* Enviar Mensaje de Texto */}
                 <Accordion sx={{ bgcolor: '#161b22', color: '#e3e8ef', mb: 1 }}>
