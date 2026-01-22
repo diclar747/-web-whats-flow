@@ -5632,6 +5632,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
     try {
         const { version } = await fetchLatestBaileysVersion();
+        console.log(`[BAILEYS-DEBUG] Using version: ${JSON.stringify(version)}`);
         const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
         console.log(`[${sessionId}] 🔐 Auth state cargado desde: ${AUTH_DIR}`);
 
@@ -5646,12 +5647,12 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             auth: state,
             printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
-            browser: ['Ubuntu', 'Chrome', '20.0.04'], // Hardcoded for stability
-            syncFullHistory: syncHistory,
+            browser: Browsers.ubuntu('Chrome'),
+            syncFullHistory: false, // FORCE DISABLED for stability
             shouldSyncHistoryMessage: (msg) => {
-                return syncHistory;
+                return false; // FORCE DISABLED
             },
-            fireInitQueries: syncHistory,
+            fireInitQueries: false, // FORCE DISABLED
             getMessage: async (key) => {
                 return { conversation: 'Message not available' };
             },
@@ -5659,10 +5660,32 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             connectTimeoutMs: 90000,
             defaultQueryTimeoutMs: 90000,
             emitOwnEvents: true,
-            markOnlineOnConnect: true,
+            markOnlineOnConnect: false, // Start offline to reduce load
             retryRequestDelayMs: 250,
             maxMsgRetryCount: 5,
             connectPaused: false,
+            // 🛠️ PATCH PARA ERROR 515 / STREAM ERROR
+            patchMessageBeforeSending: (message) => {
+                const requiresPatch = !!(
+                    message.buttonsMessage ||
+                    message.templateMessage ||
+                    message.listMessage
+                );
+                if (requiresPatch) {
+                    message = {
+                        viewOnceMessage: {
+                            message: {
+                                messageContextInfo: {
+                                    deviceListMetadataVersion: 2,
+                                    deviceListMetadata: {},
+                                },
+                                ...message,
+                            },
+                        },
+                    };
+                }
+                return message;
+            },
             captureRejections: false,
             shouldIgnoreJid: jid => {
                 if (!jid) return true;
@@ -5698,6 +5721,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
         // Manejar actualizaciones de conexión (compatible con Baileys via adaptador)
         sock.ev.on('connection.update', async (update) => {
+            console.log(`[${sessionId}] 📡 DEBUG: Raw connection update:`, JSON.stringify(update, (key, value) => {
+                if (key === 'qr') return 'QR_CODE_DATA'; // Evitar spam de QR raw
+                return value;
+            }));
             const { connection, lastDisconnect, qr } = update;
 
             // 🔍 LOG DEBUG CONEXIÓN
