@@ -263,7 +263,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     return false;
   };
 
-  const loadChats = useCallback(async (sessionId: string, dateFilter: string = 'limit_24h', offset: number = 0, append: boolean = false): Promise<void> => {
+  const loadChats = useCallback(async (sessionId: string, dateFilter: string = 'week', offset: number = 0, append: boolean = false): Promise<void> => {
     // 🛡️ SEGURIDAD: No intentar cargar chats si no hay token (tras logout o sesión expirada)
     const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     if (!token) {

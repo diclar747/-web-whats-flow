@@ -86,7 +86,7 @@ const AnalyticsModule: React.FC<AnalyticsModuleProps> = ({ sessionId }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [startDate, setStartDate] = useState<Dayjs>(dayjs().subtract(30, 'days'));
+  const [startDate, setStartDate] = useState<Dayjs>(dayjs().subtract(7, 'days'));
   const [endDate, setEndDate] = useState<Dayjs>(dayjs());
 
   // Data states
