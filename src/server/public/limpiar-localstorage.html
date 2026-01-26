@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Limpiar Caché Local - WhatsFlow</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 50px;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 40px;
+            max-width: 500px;
+            margin: 20px;
+        }
+        h1 {
+            margin-bottom: 20px;
+            font-size: 2.5em;
+        }
+        .button {
+            background: #4CAF50;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+            border-radius: 25px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        .button:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        .info {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .warning {
+            background: #ff9800;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+            border: 2px solid #fff;
+        }
+        .success {
+            background: #4CAF50;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            display: none;
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧹 Limpiar Caché Local</h1>
+        
+        <div class="warning">
+            ⚠️ Esta acción borrará todos los datos locales del navegador
+        </div>
+
+        <p>Presiona el botón para eliminar todas las sesiones almacenadas localmente:</p>
+        
+        <button class="button" onclick="limpiarTodo()">Limpiar Caché Local</button>
+        <button class="button" onclick="recargarPagina()" style="background: #2196F3;">Recargar Página</button>
+
+        <div class="info">
+            <strong>¿Qué se eliminará?</strong><br>
+            • Sesiones locales (localStorage)<br>
+            • Sesiones temporales (sessionStorage)<br>
+            • Cookies del sitio<br>
+            • Caché del navegador<br>
+            • Estado de las aplicaciones
+        </div>
+
+        <div id="mensaje" class="success">
+            ✨ ¡Caché local limpiado exitosamente!<br>
+            Ahora puedes intentar escanear el código QR nuevamente.
+        </div>
+
+        <div class="info">
+            💡 <strong>Consejo:</strong> Después de limpiar el caché, puedes cerrar y abrir nuevamente el navegador para mejor resultado.
+        </div>
+    </div>
+
+    <script>
+        function limpiarTodo() {
+            try {
+                // 1. Limpiar localStorage
+                localStorage.clear();
+                
+                // 2. Limpiar sessionStorage  
+                sessionStorage.clear();
+                
+                // 3. Limpiar cookies actuales
+                document.cookie.split(";").forEach(function(cookie) {
+                    var nombre = cookie.split("=")[0].trim();
+                    document.cookie = nombre + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+                });
+                
+                // 4. Limpiar caché si está disponible
+                if ('caches' in window) {
+                    caches.keys().then(function(cacheNames) {
+                        return Promise.all(
+                            cacheNames.map(function(cacheName) {
+                                return caches.delete(cacheName);
+                            })
+                        );
+                    });
+                }
+                
+                // 5. Limpiar service workers
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                        for(let registration of registrations) {
+                            registration.unregister();
+                        }
+                    });
+                }
+                
+                // Mostrar mensaje de éxito
+                document.getElementById('mensaje').style.display = 'block';
+                
+                // Desplazar al mensaje
+                document.getElementById('mensaje').scrollIntoView({ 
+                    behavior: 'smooth' 
+                });
+                
+                // Enviar señal al servidor de que se limpió el caché
+                fetch('/api/cache-cleared', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        timestamp: new Date().toISOString(),
+                        cliente: 'limpiar-localstorage.html'
+                    })
+                }).catch(error => console.log('Notificación enviada (ignorando error en desarrollo)'));
+                
+            } catch (error) {
+                alert('Error al limpiar el caché: ' + error.message);
+            }
+        }
+
+        function recargarPagina() {
+            window.location.reload();
+        }
+
+        // Información adicional al cargar
+        console.log('🧹 Limpieza de caché local disponible');
+        console.log('📍 Página: /limpiar-localstorage.html');
+        console.log('🕒 Hora actual:', new Date().toLocaleString());
+        
+        // Verificar si hay datos almacenados
+        if (localStorage.length > 0 || sessionStorage.length > 0) {
+            console.log('📊 Se detectaron datos locales:', {
+                localStorage: localStorage.length,
+                sessionStorage: sessionStorage.length
+            });
+        } else {
+            console.log('✅ No hay datos locales almacenados');
+        }
+    </script>
+</body>
+</html>

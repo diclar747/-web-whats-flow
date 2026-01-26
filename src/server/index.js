@@ -5,7 +5,7 @@ const express = require('express');
 const compression = require('compression');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, downloadMediaMessage, Browsers } = require('baileys');
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, downloadMediaMessage, Browsers } = require('@whiskeysockets/baileys');
 const QRCode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
@@ -5646,24 +5646,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             auth: state,
             printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
-            browser: ['Ubuntu', 'Chrome', '20.0.04'], // Hardcoded for stability
+            browser: Browsers.ubuntu('Chrome'), // Standard config for maximum compatibility
             syncFullHistory: syncHistory,
-            shouldSyncHistoryMessage: (msg) => {
-                return syncHistory;
-            },
-            fireInitQueries: syncHistory,
-            getMessage: async (key) => {
-                return { conversation: 'Message not available' };
-            },
-            keepAliveIntervalMs: 30000,
-            connectTimeoutMs: 90000,
-            defaultQueryTimeoutMs: 90000,
-            emitOwnEvents: true,
-            markOnlineOnConnect: true,
-            retryRequestDelayMs: 250,
-            maxMsgRetryCount: 5,
-            connectPaused: false,
-            captureRejections: false,
             shouldIgnoreJid: jid => {
                 if (!jid) return true;
                 return false;
@@ -5671,16 +5655,6 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             linkPreviewImageThumbnailWidth: 192,
             maxCachedMessages: 100,
             msgRetryCount: 3,
-            patchMessageBeforeSending: (message) => {
-                const symbolKeys = Object.getOwnPropertySymbols(message);
-                for (const key of symbolKeys) {
-                    if (message[key]?.options?.httpAgent ||
-                        message[key]?.options?.httpsAgent) {
-                        delete message[key];
-                    }
-                }
-                return message;
-            },
             ...customStore
         });
 
