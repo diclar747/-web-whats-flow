@@ -347,8 +347,7 @@ console.log('✅ Rutas de Planes cargadas');
 require('./routes/planRequests')(app, poolProxy);
 console.log('✅ Rutas de Solicitudes de Planes cargadas');
 
-require('./routes/clients')(app, poolProxy);
-console.log('✅ Rutas de Clientes cargadas');
+
 
 require('./analytics-endpoints')(app, poolProxy);
 console.log('✅ Analytics endpoints cargados');
@@ -361,6 +360,9 @@ console.log('✅ Endpoints de Métricas del Sistema cargados');
 
 require('./push-notifications-endpoints')(app, poolProxy);
 console.log('✅ Endpoints de Push Notifications cargados');
+
+require('./sms-endpoints')(app, poolProxy);
+console.log('✅ Endpoints de SMS Premium cargados');
 
 
 
@@ -441,6 +443,10 @@ app.use((req, res, next) => {
 // Mapa para almacenar sesiones activas de WhatsApp
 const sessions = new Map();
 global.sessions = sessions; // ✅ Hacer sessions accesible globalmente
+
+// Initializar rutas que dependen de sessions
+require('./routes/clients')(app, poolProxy, sessions);
+console.log('✅ Rutas de Clientes cargadas (init post-sessions)');
 let lastQRSession = null;
 const QR_EXPIRY_TIME = 2 * 60 * 1000; // 2 minutos
 
@@ -451,6 +457,8 @@ const QR_THROTTLE_TIME = 40 * 60 * 1000; // 40 minutos - evitar regenerar QR con
 // Mapa auxiliar para asociar las sesiones creadas con el número dueño de la suscripción
 // Esto permite aplicar límites de plan por cantidad de líneas conectadas
 const sessionOwnerMap = new Map();
+// Mapa para almacenar los códigos QR actuales para la API REST
+const qrCodes = {};
 
 // Mapa para almacenar el email del usuario autenticado que creó cada sesión
 // Esto permite vincular WhatsApp sessions con user accounts
@@ -5561,6 +5569,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     margin: 1,
                     errorCorrectionLevel: 'H'
                 }).then(qrDataUrl => {
+                    // Actualizar mapa global de QR codes
+                    qrCodes[sessionId] = qrDataUrl;
+
                     const qrData = {
                         qrDataUrl,
                         sessionId,
@@ -5585,6 +5596,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             if (connection === 'open') {
                 sessionInfo.isConnected = true;
                 sessionInfo.qr = null;
+                if (qrCodes[sessionId]) delete qrCodes[sessionId];
 
                 // Limpiar throttle de QR al conectarse exitosamente
                 qrThrottleMap.delete(sessionId);
@@ -12521,7 +12533,7 @@ app.use('/status-media', express.static(path.join(__dirname, 'public/status-medi
 }));
 
 // ✅ Servir archivos estáticos del frontend React CON cache inteligente
-app.use(express.static(path.join(__dirname, 'public'), {
+app.use(express.static(path.join(__dirname, '../../public'), {
     maxAge: '1d',
     etag: false,
     setHeaders: (res, filepath) => {
@@ -12785,7 +12797,20 @@ app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser
     try {
         const startTime = Date.now();
 
-        // 🔥 CONSULTA DIRECTA DESDE MESSAGES - TIEMPO REAL (SIN FILTRO DE TIEMPO)
+        // Construir filtro de fecha
+        let dateCondition = '';
+        if (dateFilter === 'limit_24h' || dateFilter === 'today') {
+            dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)';
+            console.log('[API-CHATS-OPTIMIZED] 📅 Filtrando por últimas 24 HORAS');
+        } else if (dateFilter === 'week') {
+            dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
+            console.log('[API-CHATS-OPTIMIZED] 📅 Filtrando por últimos 7 DÍAS');
+        } else if (dateFilter === 'month') {
+            dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
+            console.log('[API-CHATS-OPTIMIZED] 📅 Filtrando por últimos 30 DÍAS');
+        }
+
+        // 🔥 CONSULTA DIRECTA DESDE MESSAGES - TIEMPO REAL
         // Agrupa por chat_jid y obtiene el último mensaje de cada conversación
         const [chats] = await pool.query(`
             SELECT 
@@ -12836,6 +12861,7 @@ app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser
               AND m.chat_jid NOT LIKE '%@g.us'
               AND m.chat_jid NOT LIKE '%status@broadcast%'
               AND m.chat_jid NOT LIKE CONCAT(?, '@%')
+              ${dateCondition}
             GROUP BY m.chat_jid
             ORDER BY last_message_time DESC
             LIMIT ? OFFSET ?
@@ -13183,21 +13209,68 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
         // 🔧 CORRECCIÓN: Definir los parámetros finales en el orden exacto de los "?" en la query
         const finalQueryParams = [];
 
-        // 1. El primer "?" está en el JOIN de contacts (línea 13225)
-        finalQueryParams.push(userId);
+        // 1. Los "?" en los JOINs (ahora 3 JOINs)
+        finalQueryParams.push(userId); // contacts c
+        finalQueryParams.push(userId); // contact_groups cg
+        finalQueryParams.push(userId); // contacts c_sender
 
         // 2. Los siguientes "?" están en el sessionFilter
         finalQueryParams.push(...queryParams);
 
-        // 🔧 SIMPLIFICADO: Consulta directa sin JOINs para evitar duplicados
-        let query = `SELECT 
+        // Construir la cláusula WHERE dinámica para filtros
+        let filterClause = " AND m.chat_jid NOT LIKE '%@g.us' AND m.chat_jid != 'status@broadcast'";
+        let filterParams = [];
+
+        if (chatJid) {
+            const searchVal = `%${chatJid}%`;
+            filterClause += ' AND (m.chat_jid LIKE ? OR m.text_content LIKE ? OR m.sender_name LIKE ? OR m.sender_jid LIKE ?)';
+            filterParams.push(searchVal, searchVal, searchVal, searchVal);
+        }
+        if (startDate) {
+            filterClause += ' AND m.timestamp >= ?';
+            filterParams.push(new Date(startDate).toISOString().slice(0, 19).replace('T', ' '));
+        }
+        if (endDate) {
+            filterClause += ' AND m.timestamp <= ?';
+            filterParams.push(new Date(endDate).toISOString().slice(0, 19).replace('T', ' '));
+        }
+        if (direction === 'sent') {
+            filterClause += ' AND m.from_me = TRUE';
+        } else if (direction === 'received') {
+            filterClause += ' AND m.from_me = FALSE';
+        }
+
+        if (filterStatus && filterStatus !== 'all') {
+            filterClause += ' AND m.status = ?';
+            filterParams.push(filterStatus);
+        }
+
+        const fullWhereClause = `WHERE ${sessionFilter} ${filterClause}`;
+
+        // 1. Obtener el conteo total CORRECTO con los mismos filtros
+        const [totalRows] = await connection.execute(
+            `SELECT COUNT(*) as total FROM messages m ${fullWhereClause}`,
+            [...queryParams, ...filterParams]
+        );
+        const totalMessages = totalRows && totalRows[0] ? totalRows[0].total : 0;
+
+        // 2. Construir query principal
+        let mainQuery = `SELECT 
             m.id,
             m.session_id,
             m.chat_jid,
-            MAX(COALESCE(c.notify_name, c.name, SUBSTRING_INDEX(m.chat_jid, '@', 1))) as chat_name,
-            MAX(c.avatar_url) as chat_avatar,
+            CASE 
+                WHEN m.chat_jid = 'status@broadcast' THEN MAX(COALESCE(m.sender_name, c_sender.notify_name, c_sender.name, SUBSTRING_INDEX(m.sender_jid, '@', 1), 'Estado'))
+                WHEN m.chat_jid LIKE '%@g.us' THEN MAX(COALESCE(cg.name, SUBSTRING_INDEX(m.chat_jid, '@', 1)))
+                ELSE MAX(COALESCE(c.notify_name, c.name, SUBSTRING_INDEX(m.chat_jid, '@', 1)))
+            END as chat_name,
+            CASE 
+                WHEN m.chat_jid = 'status@broadcast' THEN MAX(c_sender.avatar_url)
+                WHEN m.chat_jid LIKE '%@g.us' THEN MAX(cg.avatar_url)
+                ELSE MAX(c.avatar_url)
+            END as chat_avatar,
             m.sender_jid,
-            SUBSTRING_INDEX(m.sender_jid, '@', 1) as sender_name,
+            m.sender_name as db_sender_name,
             m.from_me,
             m.agent_id,
             m.agent_name,
@@ -13209,45 +13282,20 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
             m.status
         FROM messages m
         LEFT JOIN contacts c ON m.chat_jid = c.jid AND (c.session_id = m.session_id OR c.session_id = ?)
-        WHERE ${sessionFilter}
-        AND m.chat_jid LIKE '%@s.whatsapp.net'`;
+        LEFT JOIN contact_groups cg ON m.chat_jid = cg.jid AND (cg.session_id = m.session_id OR cg.session_id = ?)
+        LEFT JOIN contacts c_sender ON m.sender_jid = c_sender.jid AND (c_sender.session_id = m.session_id OR c_sender.session_id = ?)
+        ${fullWhereClause}
+        GROUP BY m.id 
+        ORDER BY m.timestamp DESC
+        LIMIT ? OFFSET ?`;
 
-        if (chatJid) {
-            const fullChatJid = chatJid.includes('@') ? chatJid : `${chatJid}@s.whatsapp.net`;
-            query += ' AND m.chat_jid = ?';
-            finalQueryParams.push(fullChatJid);
-        }
-        if (startDate) {
-            query += ' AND m.timestamp >= ?';
-            finalQueryParams.push(new Date(startDate).toISOString().slice(0, 19).replace('T', ' '));
-        }
-        if (endDate) {
-            query += ' AND m.timestamp <= ?';
-            finalQueryParams.push(new Date(endDate).toISOString().slice(0, 19).replace('T', ' '));
-        }
-        if (direction === 'sent') {
-            query += ' AND m.from_me = TRUE';
-        } else if (direction === 'received') {
-            query += ' AND m.from_me = FALSE';
-        }
+        const mainQueryParams = [
+            userId, userId, userId, // parágrafos para los JOINs
+            ...queryParams, ...filterParams, // filtros de sesión y búsqueda
+            parseInt(limit, 10), parseInt(offset, 10) // paginación
+        ];
 
-        if (filterStatus && filterStatus !== 'all') {
-            query += ' AND m.status = ?';
-            finalQueryParams.push(filterStatus);
-        }
-
-        query += ' GROUP BY m.id ORDER BY m.timestamp DESC';
-
-        // Crear query de conteo reemplazando el SELECT
-        const countQuery = query.replace(/SELECT[\s\S]+?FROM/, 'SELECT COUNT(DISTINCT m.id) as total FROM');
-        const [totalRows] = await connection.execute(countQuery, finalQueryParams);
-        const totalMessages = totalRows && totalRows[0] ? totalRows[0].total : 0;
-
-        query += ' LIMIT ? OFFSET ?';
-        finalQueryParams.push(parseInt(limit, 10));
-        finalQueryParams.push(parseInt(offset, 10));
-
-        const [messagesFromDB] = await connection.execute(query, finalQueryParams);
+        const [messagesFromDB] = await connection.execute(mainQuery, mainQueryParams);
 
         const historyMessages = messagesFromDB.map(msg => ({
             id: msg.id,
@@ -13259,7 +13307,7 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
             contactAvatar: msg.chat_avatar || null,
             avatarUrl: msg.chat_avatar || null,
             senderJid: msg.sender_jid,
-            senderName: msg.sender_name || (msg.from_me ? 'Yo' : msg.sender_jid?.split('@')[0]),
+            senderName: msg.db_sender_name || msg.sender_name || (msg.from_me ? 'Yo' : msg.sender_jid?.split('@')[0]),
             fromMe: !!msg.from_me,
             message: msg.text_content,
             text: msg.text_content,
@@ -25664,9 +25712,15 @@ app.post('/api/update-contact-names/:sessionId', async (req, res) => {
 
 // Endpoints de gestión de API Keys (generar, listar, eliminar)
 const apiRestKeysRouter = require('./routes/api-rest');
-// Pasar sessions al router
+
+// Exponer mapas globales a la app para que las rutas puedan accederlos
+app.set('sessionOwnerMap', sessionOwnerMap);
+app.set('qrCodes', qrCodes);
+
+// Middleware para pasar sessions y createSession al router
 app.use((req, res, next) => {
     req.sessions = sessions;
+    req.createSession = createSession; // Necesario para la ruta de conexión /api/rest/connect
     next();
 });
 app.use('/api/rest', apiRestKeysRouter);
@@ -26787,9 +26841,9 @@ server.listen(PORT, '0.0.0.0', async () => {
         // 🔥 RESTAURACIÓN AUTOMÁTICA DESACTIVADA
         // Las sesiones solo se cargan cuando el usuario se conecta manualmente
         // Esto evita que sesiones viejas/inválidas se carguen y desconecten constantemente
-        console.log(`\n⚠️ Restauración automática desactivada - Las sesiones se cargarán bajo demanda\n`);
+        console.log(`\n✅ Restauración automática activada - Cargando sesiones guardadas...\n`);
 
-        /*
+
         for (const dirName of authDirs) {
             const authPath = path.join(BASE_AUTH_DIR, dirName);
             const credsPath = path.join(authPath, 'creds.json');
@@ -26814,12 +26868,12 @@ server.listen(PORT, '0.0.0.0', async () => {
                 }
             }
         }
-        */
+
 
         if (restoredCount > 0) {
             console.log(`\n✅ ${restoredCount} sesión(es) restaurada(s) automáticamente`);
         } else {
-            console.log(`\n📝 No hay sesiones guardadas para restaurar (restauración automática desactivada)`);
+            console.log(`\n📝 No hay sesiones guardadas para restaurar`);
         }
 
         // 🔥 BUSCAR userId PARA SESIONES RESTAURADAS

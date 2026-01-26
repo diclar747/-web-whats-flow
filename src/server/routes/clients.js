@@ -2,7 +2,7 @@ const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
 const { hashPassword } = require('../auth-utils');
 
-module.exports = function (app, pool) {
+module.exports = function (app, pool, sessions) {
     const { requireSuperAdmin } = require('../auth-utils');
 
     // GET /api/clients - Listar todos los clientes (usuarios que no son super admin)
@@ -85,9 +85,62 @@ module.exports = function (app, pool) {
         try {
             const connection = await pool.getConnection();
             try {
-                // Sumamos a la cantidad actual (recarga)
-                await connection.execute('UPDATE users SET sms_balance = sms_balance + ? WHERE id = ?', [amount, id]);
-                res.json({ success: true, message: `Saldo de ${amount} SMS asignado correctamente` });
+                // 1. Obtener datos del usuario primero (para notificar y verificar)
+                const [users] = await connection.execute('SELECT phone, name FROM users WHERE id = ?', [id]);
+                if (users.length === 0) {
+                    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+                }
+                const user = users[0];
+
+                // 2. Actualizar saldo (Usando COALESCE para evitar problemas con NULL)
+                await connection.execute('UPDATE users SET sms_balance = COALESCE(sms_balance, 0) + ? WHERE id = ?', [amount, id]);
+
+                // 3. Notificar vía WhatsApp si tiene sesión activa
+                let notificationSent = false;
+                if (sessions && user.phone) {
+                    // Buscar sesión activa por teléfono
+                    // Iterar sobre las sesiones para encontrar la que coincide con el teléfono
+                    let activeSessionId = null;
+                    let activeSock = null;
+
+                    for (const [sessId, sessInfo] of sessions.entries()) {
+                        // Verificar si el teléfono coincide (limpiando caracteres)
+                        // A veces el phone en DB es '595981...' y en user_sessions session_id podría ser diferente,
+                        // pero idealmente buscamos por el número asociado.
+                        // La forma más segura es ver si la sesión está mapeada a este usuario.
+                        // Simplificación: Asumimos que session_id o el phone coinciden.
+
+                        // Mejor aproximación: Usar la utilidad que busca sesión por numero si existiera, 
+                        // pero aquí iteramos simple.
+                        if (sessInfo.sock && sessInfo.sock.user) {
+                            const jid = sessInfo.sock.user.id || '';
+                            const userPhone = jid.split(':')[0];
+                            if (userPhone === user.phone) {
+                                activeSessionId = sessId;
+                                activeSock = sessInfo.sock;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (activeSock) {
+                        try {
+                            const userJid = `${user.phone}@s.whatsapp.net`;
+                            await activeSock.sendMessage(userJid, {
+                                text: `📱 *Recarga de SMS Exitosa*\n\nHola *${user.name || 'Cliente'}*, se han acreditado *${amount}* SMS a tu cuenta.\n\nSaldo actual disponible en el panel.`
+                            });
+                            console.log(`[Assign SMS] ✅ Notificación enviada a ${user.phone}`);
+                            notificationSent = true;
+                        } catch (msgErr) {
+                            console.error(`[Assign SMS] ⚠️ Error enviando notificación a ${user.phone}:`, msgErr.message);
+                        }
+                    }
+                }
+
+                res.json({
+                    success: true,
+                    message: `Saldo de ${amount} SMS asignado correctamente.${notificationSent ? ' Notificación enviada.' : ''}`
+                });
             } finally {
                 connection.release();
             }

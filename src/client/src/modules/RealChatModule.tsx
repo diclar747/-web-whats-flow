@@ -115,7 +115,7 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'error'>('checking');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<'all' | 'unread' | 'groups' | 'contacts'>('all');
-  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all' | 'limit_24h'>('limit_24h');
+  const [dateFilter, setDateFilter] = useState<'today' | 'yesterday' | 'week' | 'month' | 'all' | 'limit_24h'>('week');
 
   // Estados para multi-canal
   const [sessions, setSessions] = useState<SessionTab[]>([]);

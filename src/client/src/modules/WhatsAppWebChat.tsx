@@ -491,9 +491,9 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         return;
       }
 
-      console.log(`[WhatsAppWebChat] 🚀 Loading INITIAL chats (24h limit) for ${sessionId}...`);
-      // Pasar 'limit_24h' como filtro inicial
-      loadChats(sessionId, 'limit_24h').catch(err => console.error('[WhatsAppWebChat] Error loading initial chats:', err));
+      console.log(`[WhatsAppWebChat] 🚀 Loading INITIAL chats (week limit) for ${sessionId}...`);
+      // Pasar 'week' como filtro inicial
+      loadChats(sessionId, 'week').catch(err => console.error('[WhatsAppWebChat] Error loading initial chats:', err));
     }
   }, [sessionId, loadChats, setActiveChat, allSessions]);
 
@@ -1776,7 +1776,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                 console.log('📜 [SCROLL] Llegó al fondo, cargando más chats...');
                 if (loadChats) {
                   // Usar chats.length como offset, mantener filtro de 24h
-                  loadChats(sessionId, 'limit_24h', chats.length, true);
+                  loadChats(sessionId, 'week', chats.length, true);
                 }
               }
             }}
@@ -2100,8 +2100,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
                       // 🔥 RECARGAR MENSAJES CON FILTRO POR DEFECTO (24h)
                       if (activeChat && loadMessages) {
-                        console.log(`[DATE-FILTER] 🔄 Limpiando filtro, recargando últimas 24h...`);
-                        loadMessages(activeChat.id, 'limit_24h');
+                        console.log(`[DATE-FILTER] 🔄 Limpiando filtro, recargando última semana...`);
+                        loadMessages(activeChat.id, 'week');
                       }
                     }}
                     variant="outlined"

@@ -394,14 +394,23 @@ const HistoryModule: React.FC<HistoryModuleProps> = ({ sessionId }) => {
             const senderJid = msg.senderJid || msg.sender_jid || chatJid;
             const isFromMe = msg.fromMe || msg.from_me || false;
 
-            // ✅ CORRECCIÓN: Siempre usar la información del CHAT (la contraparte) para el nombre y avatar principal
-            // Esto asegura que en mensajes enviados se vea el DESTINATARIO, y en recibidos el REMITENTE (si es 1:1)
-            const displayName = msg.chatName || msg.chat_name || chatJid.split('@')[0] || 'Desconocido';
+            const isStatus = chatJid.toLowerCase().includes('status@broadcast');
 
-            const displayPhone = chatJid.split('@')[0] || 'unknown';
+            let displayName = msg.chatName || msg.chat_name;
+            if (isStatus) {
+              if (!displayName || displayName === 'status' || displayName === 'status@broadcast') {
+                displayName = msg.senderName || msg.sender_name || 'Estado';
+              }
+            } else if (!displayName) {
+              displayName = chatJid.split('@')[0] || 'Desconocido';
+            }
+
+            const displayPhone = isStatus ? 'Estado de WhatsApp' : (chatJid.split('@')[0] || 'Desconocido');
 
             // Siempre mostrar el avatar del contacto/chat con el que se habla
-            const displayAvatar = msg.contactAvatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chatJid}`;
+            // Para estados, usamos el avatar del remitente (senderJid)
+            const avatarJid = isStatus ? senderJid : chatJid;
+            const displayAvatar = msg.contactAvatar || msg.chat_avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${avatarJid}`;
 
             // Determinar el estado del mensaje
             let messageStatus = 'pending';
