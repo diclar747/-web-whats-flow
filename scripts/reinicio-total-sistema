@@ -1,0 +1,83 @@
+#!/bin/bash
+
+echo "🚨 REINICIO TOTAL DEL SISTEMA WHATSFLOW"
+echo "========================================="
+echo "Este script limpiará ABSOLUTAMENTE TODO:"
+echo "- Base de datos completa"
+echo "- Memoria del servidor"
+echo "- Caché del sistema"
+echo "- Sesiones en memoria"
+echo "- Conexiones activas"
+echo ""
+
+# 1. DETENER EL SERVIDOR COMPLETAMENTE
+echo "⏹️  Deteniendo servidor..."
+pm2 stop whatsflow-server --force
+pm2 delete whatsflow-server 2>/dev/null || true
+sleep 2
+
+# 2. LIMPIAR BASE DE DATOS COMPLETAMENTE
+echo "🗑️  Limpiando base de datos..."
+mysql -u root -e "
+USE whatsflow;
+-- Truncar todas las tablas de sesiones
+TRUNCATE TABLE user_sessions;
+TRUNCATE TABLE whatsapp_sessions;
+TRUNCATE TABLE sessions;
+TRUNCATE TABLE user_sessions_history;
+-- Reiniciar contadores
+ALTER TABLE user_sessions AUTO_INCREMENT = 1;
+ALTER TABLE whatsapp_sessions AUTO_INCREMENT = 1;
+-- Verificar estado
+SELECT 'user_sessions' as tabla, COUNT(*) as registros FROM user_sessions
+UNION SELECT 'whatsapp_sessions' as tabla, COUNT(*) as registros FROM whatsapp_sessions;
+"
+
+# 3. LIMPIAR ARCHIVOS TEMPORALES
+echo "🧽 Limpiando archivos temporales..."
+rm -rf src/server/sessions/* 2>/dev/null || true
+rm -rf src/server/temp/* 2>/dev/null || true
+rm -rf src/server/cache/* 2>/dev/null || true
+rm -rf tmp/* 2>/dev/null || true
+
+# 4. LIMPIAR MEMORIA DEL SISTEMA
+echo "🧠 Liberando memoria del sistema..."
+sync && echo 3 | tee /proc/sys/vm/drop_caches >/dev/null 2>&1 || true
+sudo killall node || true
+
+# 5. MATAR PROCESOS WHATSAPP
+echo "☠️  Terminando procesos WhatsApp..."
+sudo killall -9 node || true
+sudo killall -9 whatsapp-web || true
+sudo killall -9 chrome || true
+sleep 1
+
+# 6. LIMPIAR PUERTOS Y CONEXIONES
+echo "🔌 Limpiando conexiones activas..."
+sudo netstat -tulpn | grep :3000 | awk '{print $7}' | cut -d'/' -f1 | sudo xargs kill -9 2>/dev/null || true
+sudo ss -tulpn | grep :3000 | awk '{print $7}' | cut -d',' -f2 | xargs kill -9 2>/dev/null || true
+
+# 7. VERIFICAR QUE NO HAYA PROCESOS
+echo "🔍 Verificando procesos..."
+ps aux | grep -E "(node|whatsapp|session)" | grep -v grep | awk '{print $2}' | xargs kill -9 2>/dev/null || true
+
+# 8. INICIAR SERVIDOR FRESH
+echo "🚀 Iniciando servidor nuevo..."
+pm2 start src/server/index.js --name whatsflow-server --env production
+pm2 save
+
+# 9. VERIFICAR ESTADO
+echo "✅ Estado final:"
+pm2 status whatsflow-server
+
+echo ""
+echo "🎉 ¡REINICIO TOTAL COMPLETADO!"
+echo "Ahora prueba:"
+echo "1. Abrir el navegador en incógnito"
+echo "2. Ir a la página principal"
+echo "3. Intentar escanear el código QR"
+echo ""
+echo "Si aún no funciona:"
+echo "- Prueba con otro navegador"
+echo "- Reinicia el teléfono"
+echo "- Verifica tu conexión a internet"

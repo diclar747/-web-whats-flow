@@ -3,7 +3,7 @@
  * Permite enviar mensajes sin necesidad de tener el dashboard abierto
  */
 
-const { makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = require('baileys');
+const { makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const path = require('path');
 
