@@ -12810,75 +12810,87 @@ app.get('/api/chats/:sessionId', authenticateToken, validateSessionBelongsToUser
             console.log('[API-CHATS-OPTIMIZED] 📅 Filtrando por últimos 30 DÍAS');
         }
 
-        // 🔥 CONSULTA DIRECTA DESDE MESSAGES - TIEMPO REAL
-        // Agrupa por chat_jid y obtiene el último mensaje de cada conversación
+        const params = [
+            ownerSessionId,  // JOIN last
+            ownerSessionId,  // JOIN unread
+            ownerSessionId,  // JOIN contacts
+            ownerSessionId,  // JOIN contact_groups
+            ownerSessionId,  // WHERE m
+            phoneNumber || '', // NOT LIKE CONCAT - Avoid undefined
+            parsedLimit, parsedOffset
+        ];
+
+        console.error('[DEBUG-CHATS] Ejecutando consulta con params:', JSON.stringify(params));
+        console.error('[DEBUG-CHATS] dateCondition:', dateCondition);
+
+        // 🔥 CONSULTA DIRECTA DESDE MESSAGES - OPTIMIZADA CON JOINS
         const [chats] = await pool.query(`
             SELECT 
-                m.chat_jid as id,
-                MAX(m.timestamp) as last_message_time,
-                (SELECT m2.text_content 
-                 FROM messages m2 
-                 WHERE m2.chat_jid = m.chat_jid 
-                   AND m2.session_id = ?
-                   AND m2.phone = ?
-                 ORDER BY m2.timestamp DESC 
-                 LIMIT 1) as last_message_content,
-                (SELECT m2.from_me 
-                 FROM messages m2 
-                 WHERE m2.chat_jid = m.chat_jid 
-                   AND m2.session_id = ?
-                   AND m2.phone = ?
-                 ORDER BY m2.timestamp DESC 
-                 LIMIT 1) as last_message_from_me,
-                (SELECT m2.status 
-                 FROM messages m2 
-                 WHERE m2.chat_jid = m.chat_jid 
-                   AND m2.session_id = ?
-                   AND m2.phone = ?
-                 ORDER BY m2.timestamp DESC 
-                 LIMIT 1) as last_message_status,
-                (SELECT m2.message_type 
-                 FROM messages m2 
-                 WHERE m2.chat_jid = m.chat_jid 
-                   AND m2.session_id = ?
-                   AND m2.phone = ?
-                 ORDER BY m2.timestamp DESC 
-                 LIMIT 1) as last_message_type,
-                SUM(CASE WHEN NOT m.from_me AND NOT m.is_read THEN 1 ELSE 0 END) as unread_count,
-                (SELECT c.name 
-                 FROM contacts c 
-                 WHERE c.jid = m.chat_jid 
-                   AND c.session_id = ?
-                 LIMIT 1) as contact_name,
-                (SELECT c.avatar_url 
-                 FROM contacts c 
-                 WHERE c.jid = m.chat_jid 
-                   AND c.session_id = ?
-                 LIMIT 1) as avatar_url
+                m.chat_jid                                  AS id,
+                m.timestamp                                 AS last_message_time,
+                m.text_content                              AS last_message_content,
+                m.message_type                              AS last_message_type,
+                m.from_me                                   AS last_message_from_me,
+                m.status                                    AS last_message_status,
+
+                -- Conteo de no leídos (SIN filtro de fecha)
+                COALESCE(unread.unread_count, 0)            AS unread_count,
+
+                COALESCE(c.name, cg.name, m.chat_jid)       AS contact_name, -- Fallback al nombre de grupo o ID
+                COALESCE(c.avatar_url, cg.avatar_url)        AS avatar_url
+
             FROM messages m
-            WHERE m.session_id = ?
-              AND m.phone = ?
-              AND m.chat_jid NOT LIKE '%@g.us'
-              AND m.chat_jid NOT LIKE '%status@broadcast%'
-              AND m.chat_jid NOT LIKE CONCAT(?, '@%')
-              ${dateCondition}
-            GROUP BY m.chat_jid
-            ORDER BY last_message_time DESC
+
+            -- 🔹 Último mensaje por chat
+            JOIN (
+                SELECT chat_jid, MAX(timestamp) AS max_time
+                FROM messages 
+                WHERE session_id = ?
+                GROUP BY chat_jid
+            ) last
+              ON last.chat_jid = m.chat_jid
+             AND last.max_time = m.timestamp
+
+            -- 🔹 Conteo de no leídos (sin filtro de fecha)
+            LEFT JOIN (
+                SELECT chat_jid, COUNT(*) AS unread_count
+                FROM messages
+                WHERE session_id = ? 
+                  AND from_me = 0 
+                  AND is_read = 0
+                GROUP BY chat_jid
+            ) unread
+              ON unread.chat_jid = m.chat_jid
+
+            -- 🔹 Contactos (Individuales)
+            LEFT JOIN contacts c
+              ON c.jid = m.chat_jid
+             AND c.session_id = ?
+
+            -- 🔹 Grupos
+            LEFT JOIN contact_groups cg
+              ON cg.jid = m.chat_jid
+             AND cg.session_id = ?
+
+            WHERE 
+                m.session_id = ? 
+            
+            -- AND m.chat_jid NOT LIKE '%@g.us' -- PERMITIR GRUPOS
+            AND m.chat_jid NOT LIKE '%status@broadcast%'
+            AND m.chat_jid NOT LIKE CONCAT(?, '@%')
+            ${dateCondition}
+
+            ORDER BY m.timestamp DESC
             LIMIT ? OFFSET ?
-        `, [
-            ownerSessionId, phoneNumber,  // last_message_content
-            ownerSessionId, phoneNumber,  // last_message_from_me
-            ownerSessionId, phoneNumber,  // last_message_status
-            ownerSessionId, phoneNumber,  // last_message_type
-            ownerSessionId,               // contact_name
-            ownerSessionId,               // avatar_url
-            ownerSessionId, phoneNumber,  // WHERE clause
-            phoneNumber,                  // Exclude own number
-            parsedLimit, parsedOffset     // LIMIT OFFSET
-        ]);
+        `, params);
+
+        console.log(`[DEBUG-CHATS] Resultados encontrados: ${chats.length}`);
+        if (chats.length > 0) {
+            console.log('[DEBUG-CHATS] Primeros 3 JIDs:', chats.slice(0, 3).map(c => c.id));
+        }
 
         const queryTime = Date.now() - startTime;
-        console.log(`[API-CHATS-OPTIMIZED] ✅ ${chats.length} chats cargados en ${queryTime}ms (DIRECTO DESDE MESSAGES)`);
+        console.log(`[API-CHATS-OPTIMIZED] ✅ ${chats.length} chats cargados en ${queryTime}ms`);
 
         // Mapear al formato esperado por el frontend
         const formattedChats = chats.map(chat => {
@@ -13147,7 +13159,18 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
                 }
             }
 
-            console.log(`[API - HISTORY] 📋 Session IDs del usuario ${userId}: [${validSessionIds.join(', ')}]`);
+            console.log(`[API - HISTORY] 📋 Session IDs iniciales del usuario ${userId}: [${validSessionIds.join(', ')}]`);
+
+            // 🔥 NUEVO: Si se solicita un sessionId específico, resolver su dueño e incluirlo
+            if (sessionId) {
+                const requestedOwnerId = await getOwnerSessionId(sessionId);
+                if (requestedOwnerId && !validSessionIds.includes(String(requestedOwnerId))) {
+                    validSessionIds.push(String(requestedOwnerId));
+                    console.log(`[API - HISTORY] ➕ Incluyendo dueño ${requestedOwnerId} para sesión solicitada: ${sessionId}`);
+                }
+            }
+
+            console.log(`[API - HISTORY] 📋 Session IDs finales: [${validSessionIds.join(', ')}]`);
             console.log(`[API - HISTORY] 📋 Phone Numbers del usuario ${userId}: [${validPhoneNumbers.join(', ')}]`);
         }
 
@@ -15771,6 +15794,20 @@ app.get('/api/avatar/:sessionId/:jid', async (req, res) => {
 
             if (contactRows.length > 0 && contactRows[0].avatar_url) {
                 const avatarUrl = contactRows[0].avatar_url;
+                if (avatarUrl.includes('pps.whatsapp.net') || avatarUrl.includes('mmg.whatsapp.net')) {
+                    return res.redirect(`/api/proxy/avatar?url=${encodeURIComponent(avatarUrl)}`);
+                }
+                return res.redirect(avatarUrl);
+            }
+
+            // Fallback 2: Buscar en contact_groups
+            const [groupRows] = await connection.execute(
+                'SELECT avatar_url FROM contact_groups WHERE jid = ? AND avatar_url IS NOT NULL LIMIT 1',
+                [jid]
+            );
+
+            if (groupRows.length > 0 && groupRows[0].avatar_url) {
+                const avatarUrl = groupRows[0].avatar_url;
                 if (avatarUrl.includes('pps.whatsapp.net') || avatarUrl.includes('mmg.whatsapp.net')) {
                     return res.redirect(`/api/proxy/avatar?url=${encodeURIComponent(avatarUrl)}`);
                 }
@@ -27024,14 +27061,19 @@ server.listen(PORT, '0.0.0.0', async () => {
 
     // ============= SERVICIO DE RECORDATORIOS AUTOMÁTICOS =============
     // Iniciar servicio de recordatorios para citas
+    console.log('[STARTUP] 🔍 Checking pool for Reminder Service. Pool defined?', !!pool);
     if (pool) {
         try {
+            console.log('[STARTUP] 🚀 Loading calendar-reminders module...');
             const { startReminderService } = require('./calendar-reminders');
+            console.log('[STARTUP] 🚀 Starting Reminder Service...');
             startReminderService(pool, sessions);
             console.log('✅ Servicio de recordatorios automáticos iniciado');
         } catch (error) {
             console.error('❌ Error iniciando servicio de recordatorios:', error);
         }
+    } else {
+        console.error('[STARTUP] ❌ POOL NOT DEFINED - Skipping Reminder Service');
     }
 
     // ============= SCHEDULER DE CAMPAÑAS PROGRAMADAS =============

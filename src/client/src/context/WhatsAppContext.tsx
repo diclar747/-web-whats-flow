@@ -308,14 +308,15 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         // para evitar "flicker" o datos mezclados entre canales
         if (session?.sessionId !== sessionId) {
           console.log(`[WhatsAppContext] 🔀 Detectado cambio de sesión: ${session?.sessionId || 'ninguna'} -> ${sessionId}`);
-          setChats([]);
+          // Solo limpiar si realmente estamos cambiando de ID de sesión
+          // pero manteniendo chats en memoria para un cambio suave
           setMessages([]);
-          // También refrescar el objeto session para que los sockets filtren correctamente
+          setActiveChat(null); // 🔥 CRÍTICO: Limpiar chat activo al cambiar de sesión
           setSession(prev => ({
             sessionId: sessionId,
-            isConnected: true, // Asumimos conectado si estamos intentando cargar chats
+            isConnected: true,
             status: 'connected',
-            phoneNumber: sessionId.length >= 10 ? sessionId : (prev?.phoneNumber || ''), // Intentar inferir phone si es largo
+            phoneNumber: sessionId.length >= 10 ? sessionId : (prev?.phoneNumber || ''),
             lastActivity: new Date().toISOString()
           }));
         }
@@ -425,15 +426,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           });
           console.log(`[WhatsAppContext] ➕ Chats añadidos: ${filteredChats.length}`);
         } else {
-          // 🔥 CRÍTICO: LIMPIAR COMPLETAMENTE los chats viejos antes de cargar nuevos
-          console.log('[WhatsAppContext] 🧹 LIMPIANDO chats antiguos del estado...');
-          setChats([]); // Limpiar primero
-
-          // Usar setTimeout para asegurar que React procese la limpieza
-          setTimeout(() => {
-            setChats(filteredChats);
-            console.log('[WhatsAppContext] ✅ Chats reemplazados (inicio):', filteredChats.length);
-          }, 0);
+          // 🔥 OPTIMIZADO: NO limpiar chats viejos para evitar flickering
+          // El usuario verá los antiguos hasta que lleguen los nuevos del filtro actual
+          setChats(filteredChats);
+          console.log('[WhatsAppContext] ✅ Chats actualizados:', filteredChats.length);
         }
 
         const pagination = (data as any).pagination;
@@ -1049,7 +1045,9 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     // 🔄 SYNC PROGRESS LISTENERS
     socket.on('sync-start', (data: any) => {
       console.log('🔄 [WhatsAppContext] Sync started:', data);
-      const targetSessionId = data.sessionId || session?.sessionId;
+      const targetSessionId = data.sessionId;
+      const currentSessionId = session?.sessionId;
+      const currentPhone = session?.phoneNumber;
 
       const newProgress: SyncProgress = {
         status: 'syncing',
@@ -1068,15 +1066,20 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         }));
       }
 
-      // Update global if it matches current session
-      if (targetSessionId === session?.sessionId) {
+      // Update global if it matches current session (either by ID or Phone)
+      const isMatch = targetSessionId === currentSessionId ||
+        (targetSessionId && currentPhone && targetSessionId.includes(currentPhone.replace(/\D/g, ''))) ||
+        (currentSessionId && targetSessionId && currentSessionId.includes(targetSessionId));
+
+      if (isMatch) {
         setSyncProgress(newProgress);
       }
     });
 
     socket.on('sync-progress', (data: any) => {
-      // console.log('🔄 [WhatsAppContext] Sync progress:', data);
-      const targetSessionId = data.sessionId || session?.sessionId;
+      const targetSessionId = data.sessionId;
+      const currentSessionId = session?.sessionId;
+      const currentPhone = session?.phoneNumber;
 
       if (targetSessionId) {
         setSyncProgresses(prev => {
@@ -1097,7 +1100,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         });
       }
 
-      if (targetSessionId === session?.sessionId) {
+      const isMatch = targetSessionId === currentSessionId ||
+        (targetSessionId && currentPhone && targetSessionId.includes(currentPhone.replace(/\D/g, ''))) ||
+        (currentSessionId && targetSessionId && currentSessionId.includes(targetSessionId));
+
+      if (isMatch) {
         setSyncProgress(prev => ({
           ...prev,
           status: 'syncing',
@@ -1283,7 +1290,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       // Siempre consultar la BD PRIMERO con el filtro de fecha
       // Ahora por defecto carga mensajes de los últimos 7 días
       if (!append) {
-        setMessages([]);
+        // Solo limpiar mensajes si el chat cambió para evitar flickering en refresco
+        const isDifferentChat = messages.length > 0 && (messages[0].chatJid !== chatId && messages[0].to !== chatId && messages[0].from !== chatId);
+        if (isDifferentChat || messages.length === 0) {
+          setMessages([]);
+        }
         setIsLoading(true);
       }
 

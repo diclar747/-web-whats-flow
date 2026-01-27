@@ -229,25 +229,19 @@ const RealChatModuleContent: React.FC<RealChatModuleProps> = ({ sessionId }) => 
 
   // Recargar chats cuando cambia la sesión activa o el filtro de fecha
   useEffect(() => {
-    if (activeSessionId) {
-      console.log('[MULTI-CANAL] 🔄 Cambiando a sesión:', activeSessionId, 'Filtro:', dateFilter);
-      loadChats(activeSessionId, dateFilter);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSessionId, dateFilter]); // Removido loadChats para evitar loop infinito
+    // Determinar qué sessionId usar (preferir activeSessionId si está disponible)
+    const sidToLoad = activeSessionId || sessionId;
 
-  useEffect(() => {
-    // Este efecto carga si cambia sessionId prop (raro si usamos activeSessionId, pero mantenemos compatibilidad)
-    if (sessionId && sessionId !== activeSessionId) {
-      if (sessionId.length < 5 && !isNaN(Number(sessionId))) {
-        console.warn(`[RealChatModule] 🚫 Skipping loadChats for User ID '${sessionId}' to prevent channel mixing.`);
+    if (sidToLoad) {
+      if (sidToLoad.length < 5 && !isNaN(Number(sidToLoad))) {
+        console.warn(`[RealChatModule] 🚫 Omitiendo loadChats para ID de usuario '${sidToLoad}' para evitar mezcla de canales.`);
         return;
       }
-      console.log('RealChatModule: Cargando chats para sessionId prop:', sessionId);
-      loadChats(sessionId, dateFilter);
+      console.log('[RealChatModule] 🔄 Cargando chats para sesión:', sidToLoad, 'Filtro:', dateFilter);
+      loadChats(sidToLoad, dateFilter);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, dateFilter, activeSessionId]); // Removido loadChats para evitar loop infinito
+  }, [activeSessionId, sessionId, dateFilter]); // Removido loadChats para evitar loop infinito
 
   // Ordenar chats por último mensaje
   const sortChatsByLastMessage = (chatsToSort: any[]) => {
