@@ -478,6 +478,10 @@ router.get('/chats/:sessionId', authenticateAPIKey, async (req, res) => {
       dateFilterSQL = 'AND DATE(timestamp) = CURDATE()';
     } else if (dateFilter === 'limit_24h') {
       dateFilterSQL = 'AND timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)';
+    } else if (dateFilter === 'week') {
+      dateFilterSQL = 'AND timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)';
+    } else if (dateFilter === 'month') {
+      dateFilterSQL = 'AND timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
     }
 
     console.log(`[API-CHATS] 🔍 SQL Filter: "${dateFilterSQL || 'SIN FILTRO'}"`);

@@ -1501,9 +1501,17 @@ module.exports = function (app, pool) {
 
                 const params = [ownerSessionId, phoneNumber, chatJid];
 
-                // Filtro por fecha (hoy)
+                // Filtro por fecha
                 if (dateFilter === 'today') {
                     query += ` AND DATE(m.timestamp) = CURDATE()`;
+                } else if (dateFilter === 'yesterday') {
+                    query += ` AND m.timestamp >= DATE_SUB(CURDATE(), INTERVAL 1 DAY)`;
+                } else if (dateFilter === 'week') {
+                    query += ` AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)`;
+                } else if (dateFilter === 'month') {
+                    query += ` AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)`;
+                } else if (dateFilter === 'limit_24h') {
+                    query += ` AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 24 HOUR)`;
                 }
 
                 // Paginación por cursor (mensajes anteriores a...)

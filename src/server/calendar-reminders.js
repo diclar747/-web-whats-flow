@@ -238,10 +238,14 @@ async function checkAndSendReminders(pool, sessions) {
 
         const connection = await pool.getConnection();
         try {
+            // 0. Asegurar zona horaria correcta (evitar race condition en pool connections nuevas)
+            await connection.query("SET time_zone = '-03:00'");
+
             // Buscar citas que necesitan recordatorio
             // - Estado: scheduled o confirmed
             // - reminder_sent = FALSE
             // - La hora del recordatorio ya pasó
+            console.log(`[REMINDERS] ⚡ Ejecutando query... (Params: reminder_sent=FALSE, status=scheduled/confirmed)`);
             const [appointments] = await connection.execute(`
                 SELECT *,
                 TIMESTAMPDIFF(MINUTE, NOW(), CONCAT(appointment_date, ' ', appointment_time)) as minutes_until
@@ -253,6 +257,8 @@ async function checkAndSendReminders(pool, sessions) {
                 ORDER BY appointment_date, appointment_time
                 LIMIT 50
             `);
+            console.log(`[REMINDERS] ⚡ Query ok. Result type: ${typeof appointments}, Length: ${appointments ? appointments.length : 'null'}`);
+
 
             if (appointments.length > 0) {
                 console.log(`[REMINDERS] ✅ Encontradas ${appointments.length} citas para enviar recordatorio:`);
@@ -264,8 +270,9 @@ async function checkAndSendReminders(pool, sessions) {
                     console.log(`    ⏰ Faltan ${apt.minutes_until} minutos | Recordatorio: ${apt.reminder_time} min antes`);
                 });
             } else {
-                // Silencioso - no mostrar cuando no hay citas
-                // console.log(`[REMINDERS] ℹ️  No hay citas pendientes de recordatorio en este momento`);
+                console.log(`[REMINDERS] ℹ️  No hay citas pendientes (Total detectadas: ${appointments.length})`);
+                const [timeResult] = await connection.execute('SELECT NOW() as db_time, @@time_zone as tz');
+                console.log(`[REMINDERS] 🕒 Hora DB: ${timeResult[0].db_time} | TZ: ${timeResult[0].tz}`);
             }
 
             let sentCount = 0;

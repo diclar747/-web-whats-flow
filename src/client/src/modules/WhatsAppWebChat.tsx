@@ -99,6 +99,8 @@ import EmojiPicker, { Theme } from 'emoji-picker-react';
 import KanbanSelectorModal from '../components/KanbanSelectorModal';
 import CustomSnackbar from '../components/CustomSnackbar';
 import StatusList from '../components/StatusList';
+import HorizontalStatusList from '../components/HorizontalStatusList';
+import SophisticatedProgressBar from '../components/SophisticatedProgressBar';
 
 interface WhatsAppWebChatProps {
   sessionId: string;
@@ -136,7 +138,9 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
     hasMoreChats,
     isLoadingMoreChats,
     transferRequest,
-    setTransferRequest
+    setTransferRequest,
+    syncProgress,
+    syncProgresses
   } = useWhatsApp();
 
   // Estados
@@ -242,7 +246,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       });
 
       // Recargar chats para actualizar estado "closed"
-      if (loadChats && sessionId) loadChats(sessionId, 'limit_24h', 0, false);
+      if (loadChats && sessionId) loadChats(sessionId, 'all', 0, false);
     };
 
     socket.on('chat-closed-by-agent', handleChatClosed);
@@ -269,7 +273,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       if (data.success) {
         setSnackbar({ open: true, message: 'Transferencia aceptada ✅', severity: 'success' });
         setTransferRequest(null);
-        if (loadChats) loadChats(sessionId, 'limit_24h', 0, false); // Refresh chats
+        if (loadChats) loadChats(sessionId, 'all', 0, false); // Refresh chats
         // Opcional: Cambiar al chat recién aceptado
         // setActiveChat({ id: transferRequest.chatJid, ... }); 
       } else {
@@ -493,7 +497,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
       console.log(`[WhatsAppWebChat] 🚀 Loading INITIAL chats (week limit) for ${sessionId}...`);
       // Pasar 'week' como filtro inicial
-      loadChats(sessionId, 'week').catch(err => console.error('[WhatsAppWebChat] Error loading initial chats:', err));
+      loadChats(sessionId, 'all').catch(err => console.error('[WhatsAppWebChat] Error loading initial chats:', err));
     }
   }, [sessionId, loadChats, setActiveChat, allSessions]);
 
@@ -820,7 +824,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         // Update ref immediately to prevent loops
         loadedSessionRef.current = sessionId;
 
-        loadChats(sessionId, 'limit_24h', 0, false).catch(err => {
+        loadChats(sessionId, 'all', 0, false).catch(err => {
           console.error('[WhatsAppWebChat] Error loading chats:', err);
         });
       } else {
@@ -1356,15 +1360,21 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         return false;
       }
 
-      // 🟢 MANEJO DE ESTADOS (STATUS)
-      const isStatus = chat.id === 'status@broadcast' || chat.id.includes('status@broadcast') || chat.name === 'status';
+      // 🟢 DEFINICIONES ESTRICTAS
+      const isStatus = chat.id.includes('status@broadcast') ||
+        chat.id.includes('@broadcast') ||
+        chat.name?.toLowerCase() === 'status' ||
+        chat.name?.toLowerCase() === 'estados';
 
-      // Si estamos en la pestaña Estados (4), SOLO mostrar estados
-      if (filterTab === 4) {
+      const isGroup = chat.id.includes('@g.us');
+      const isIndividual = !isGroup && !isStatus;
+
+      // Si estamos en la pestaña Estados (5), SOLO mostrar estados
+      if (filterTab === 5) {
         return isStatus;
       }
 
-      // Si NO estamos en la pestaña Estados, ocultar siempre los estados
+      // Para cualquier otra pestaña, ocultar SIEMPRE los estados
       if (isStatus) {
         return false;
       }
@@ -1375,28 +1385,30 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
       // 🟢 FILTRADO POR PESTAÑAS
       if (filterTab === 0) {
-        // Todas: SOLO chats individuales (1 a 1), NO grupos ni estados
-        return !chat.isGroup && !isStatus;
+        // Todas: SOLO chats individuales (tal como pidió el usuario), NO grupos ni estados
+        return isIndividual;
       }
       if (filterTab === 1) {
-        // Recibidos: Chats individuales (NO grupos) donde el último msj no fui yo
-        return !chat.isGroup && !isStatus && chat.lastMessageFromMe === false;
+        // Recibidos: Individuales donde el último mensaje no fui yo
+        return isIndividual && chat.lastMessageFromMe === false;
       }
       if (filterTab === 2) {
-        // Enviados: Chats individuales (NO grupos) donde el último msj fui yo
-        return !chat.isGroup && !isStatus && chat.lastMessageFromMe === true;
+        // Enviados: Individuales donde el último mensaje fui yo
+        return isIndividual && chat.lastMessageFromMe === true;
       }
       if (filterTab === 3) {
-        // Sin Leer: Chats con mensajes pendientes (Mixto: Grupos o Chats, pero NO estados)
-        return !isStatus && chat.unreadCount && chat.unreadCount > 0;
+        // Sin Leer: Individuales o Grupos con mensajes pendientes (pero NO estados)
+        return chat.unreadCount && chat.unreadCount > 0;
       }
-      // NOTA: filterTab === 4 es ahora ESTADOS, no Grupos.
-
+      if (filterTab === 4) {
+        // Grupos: SOLO grupos reales, NO estados
+        return isGroup;
+      }
 
       return true;
     });
 
-    const groupCount = chats.filter(c => c.isGroup).length;
+    const groupCount = chats.filter(c => c.id.includes('@g.us')).length;
     console.log(`[PERFORMANCE] 🔍 Filtro: Tab ${filterTab}, Total: ${chats.length}, Filtrados: ${filtered.length}, Grupos ocultos: ${groupCount}`);
 
     // Guardar en caché por 30 segundos
@@ -1412,19 +1424,22 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
   // 🚀 Estadísticas de chats (con grupos)
   const chatStats = useMemo(() => {
-    const isStatus = (c: any) => c.id === 'status@broadcast' || c.id.includes('status@broadcast') || c.name === 'status';
+    // Definiciones estrictas igual que arriba para consistencia absoluta
+    const isStatusCheck = (c: any) => c.id.includes('status@broadcast') || c.id.includes('@broadcast') || c.name?.toLowerCase() === 'status' || c.name?.toLowerCase() === 'estados';
+    const isGroupCheck = (c: any) => c.id.includes('@g.us');
+    const isIndividualCheck = (c: any) => !isGroupCheck(c) && !isStatusCheck(c);
 
     return {
-      // Total: Solo chats individuales (1 a 1), NO grupos ni estados
-      total: chats.filter(c => !c.isGroup && !isStatus(c)).length,
-      // Grupos: Sólo grupos (No estados)
-      groups: chats.filter(c => c.isGroup && !isStatus(c)).length,
-      // Recibidos: Chats individuales (No grupos) donde el último no es mío
-      received: chats.filter(c => !c.isGroup && !isStatus(c) && c.lastMessageFromMe === false).length,
-      // Enviados: Chats individuales (No grupos) donde el último SÍ es mío
-      sent: chats.filter(c => !c.isGroup && !isStatus(c) && c.lastMessageFromMe === true).length,
-      // Pendientes: Cualquier chat con contador > 0
-      pending: chats.filter(c => c.unreadCount && c.unreadCount > 0).length
+      // Total de la pestaña "Todas": Sólo individuales
+      total: chats.filter(c => isIndividualCheck(c)).length,
+      // Grupos reales
+      groups: chats.filter(c => isGroupCheck(c) && !isStatusCheck(c)).length,
+      // Recibidos individuales
+      received: chats.filter(c => isIndividualCheck(c) && c.lastMessageFromMe === false).length,
+      // Enviados individuales
+      sent: chats.filter(c => isIndividualCheck(c) && c.lastMessageFromMe === true).length,
+      // Pendientes (Individuales o Grupos)
+      pending: chats.filter(c => c.unreadCount && c.unreadCount > 0 && !isStatusCheck(c)).length
     };
   }, [chats]);
 
@@ -1623,6 +1638,11 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
           </Box>
         )}
 
+        {/* 🆕 LISTA DE ESTADOS HORIZONTAL - Estilo WhatsApp/Instagram */}
+        {!chatListCollapsed && (
+          <HorizontalStatusList sessionId={sessionId} colors={colors} />
+        )}
+
         {/* Buscador - Ocultar si está colapsado */}
         {!chatListCollapsed && (
           <Box sx={{ p: 2, bgcolor: colors.sidebar }}>
@@ -1715,9 +1735,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
             <Tab label={`Recibidos (${chatStats.received})`} icon={<CallReceived style={{ width: 18, height: 18 }} />} iconPosition="start" />
             <Tab label={`Enviados (${chatStats.sent})`} icon={<CallMade style={{ width: 18, height: 18 }} />} iconPosition="start" />
             <Tab label={`Sin leer (${chatStats.pending})`} icon={<MarkEmailUnread style={{ width: 18, height: 18 }} />} iconPosition="start" />
-            {/* ❌ GRUPOS OCULTOS - Solo chats individuales de últimos 7 días */}
-            {/* <Tab label={`Grupos (${chatStats.groups})`} icon={<Group style={{ width: 18, height: 18 }} />} iconPosition="start" /> */}
-            <Tab label="Estados" icon={<DonutLarge style={{ width: 18, height: 18 }} />} iconPosition="start" />
+            <Tab label={`Grupos (${chatStats.groups})`} icon={<Group style={{ width: 18, height: 18 }} />} iconPosition="start" />
           </Tabs>
         )}
 
@@ -1759,12 +1777,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         )}
 
         {/* Lista de chats - Mostrar solo avatares si está colapsado */}
-        {filterTab === 4 ? (
-          <Box sx={{ flex: 1, overflow: 'auto', p: 0 }}>
+        {filterTab === 5 ? (
+          <Box sx={{ flex: 1, overflow: 'auto', p: 0 }} data-tab="estados">
             <StatusList sessionId={sessionId} />
           </Box>
         ) : (
           <List
+            data-tab={filterTab === 4 ? "grupos" : "otro"}
             sx={{ flex: 1, overflow: 'auto', p: 0 }}
             onScroll={(e) => {
               const target = e.currentTarget;
@@ -1775,8 +1794,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
               ) {
                 console.log('📜 [SCROLL] Llegó al fondo, cargando más chats...');
                 if (loadChats) {
-                  // Usar chats.length como offset, mantener filtro de 24h
-                  loadChats(sessionId, 'week', chats.length, true);
+                  // Usar chats.length como offset, ampliar a filtro de 1 mes
+                  loadChats(sessionId, 'all', chats.length, true);
                 }
               }
             }}
@@ -1793,7 +1812,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                   setActiveChat?.(c);
                   // Cargar el historial del chat seleccionado
                   if (loadMessages) {
-                    await loadMessages(c.id, 'limit_24h');
+                    await loadMessages(c.id, 'all');
                   }
                   // Marcar como leído si corresponde
                   if (c.unreadCount && c.unreadCount > 0 && markChatAsRead) {
@@ -1806,11 +1825,19 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
               />
             ))}
 
-            {/* Mensaje informativo sobre filtro de 24h */}
+            {/* Mensaje informativo sobre filtro de 7 días y sincronización global */}
             {!isLoadingMoreChats && filteredChats.length > 0 && (
               <Box sx={{ p: 2, textAlign: 'center', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                {syncProgress?.status === 'syncing' && (
+                  <Box sx={{ mb: 2 }}>
+                    <SophisticatedProgressBar
+                      progress={syncProgress.progress}
+                      message={syncProgress.message || 'Sincronizando...'}
+                    />
+                  </Box>
+                )}
                 <Typography variant="caption" sx={{ color: colors.textTertiary, display: 'block', mb: 0.5 }}>
-                  📅 Mostrando chats de las últimas 24 horas
+                  🗓️ Mostrando chats del último mes
                 </Typography>
                 <Typography variant="caption" sx={{ color: colors.textSecondary, fontSize: '0.7rem' }}>
                   Usa los filtros arriba para ver chats más antiguos
@@ -2101,7 +2128,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                       // 🔥 RECARGAR MENSAJES CON FILTRO POR DEFECTO (24h)
                       if (activeChat && loadMessages) {
                         console.log(`[DATE-FILTER] 🔄 Limpiando filtro, recargando última semana...`);
-                        loadMessages(activeChat.id, 'week');
+                        loadMessages(activeChat.id, 'all');
                       }
                     }}
                     variant="outlined"
