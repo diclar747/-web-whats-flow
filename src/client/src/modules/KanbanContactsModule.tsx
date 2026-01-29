@@ -530,8 +530,12 @@ const KanbanContactsModule: React.FC<KanbanContactsModuleProps> = ({ sessionId }
 
     try {
       setSearchingGlobal(true);
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
       const response = await fetch(
-        `${getAPIBaseURL()}/api/kanban/search-all-contacts/${sessionId}?search=${encodeURIComponent(query)}`
+        `${getAPIBaseURL()}/api/kanban/search-all-contacts/${sessionId}?search=${encodeURIComponent(query)}`,
+        {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        }
       );
       const data = await response.json();
 

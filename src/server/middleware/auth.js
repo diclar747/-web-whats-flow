@@ -1,5 +1,6 @@
 const { validateUniqueSession } = require('./sessionValidator');
 const { validateDeviceFingerprint } = require('../utils/deviceFingerprint');
+const sessionResolver = require('../utils/sessionResolver');
 
 // Middleware para proteger rutas que requieren autenticación
 const authenticateToken = (req, res, next) => {
@@ -77,25 +78,16 @@ const authenticateToken = (req, res, next) => {
 
             // 🔒 VALIDACIÓN DE DEPENDENCIA DE SESIÓN (Solo para Agentes)
             if (user.role === 'agent') {
-                // Obtener el mapa de sesiones activas desde la app
-                const sessions = req.app.get('sessions');
-                if (sessions) {
-                    const adminSessionId = user.session_id || user.phone; // Asumiendo que session_id es el teléfono del admin
-                    // Verificar si la sesión del admin está activa (conectada)
-                    // Nota: sessions es un Map donde la key es el sessionId y el valor es el objeto de sesión
-                    // Necesitamos verificar si existe Y si está conectado
-                    const adminSession = sessions.get(adminSessionId);
+                const adminSessionId = user.session_id || user.phone;
+                const adminSession = sessionResolver.resolve(adminSessionId);
 
-                    // Si no hay sesión activa del admin, denegar acceso
-                    // EXCEPCIÓN: Si el sistema está en modo "sin conexión requerida" (opcional, por ahora estricto)
-                    if (!adminSession || !adminSession.sock) {
-                        console.warn(`⚠️ Agente ${user.email} intentó acceder pero Admin ${adminSessionId} no está conectado.`);
-                        return res.status(403).json({
-                            success: false,
-                            error: 'La sesión del Administrador no está activa. No se pueden realizar acciones.',
-                            code: 'ADMIN_SESSION_INACTIVE'
-                        });
-                    }
+                if (!adminSession || !adminSession.sock) {
+                    console.warn(`⚠️ Agente ${user.email} intentó acceder pero Admin ${adminSessionId} no está conectado.`);
+                    return res.status(403).json({
+                        success: false,
+                        error: 'La sesión del Administrador no está activa. No se pueden realizar acciones.',
+                        code: 'ADMIN_SESSION_INACTIVE'
+                    });
                 }
             }
 
