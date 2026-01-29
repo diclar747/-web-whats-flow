@@ -131,8 +131,8 @@ async function getOrCreateWhatsAppSocket(sessionId) {
             auth: state,
             logger: pino({ level: 'silent' }),
             printQRInTerminal: false,
-            // Usar browser estándar de Baileys
-            browser: Browsers.ubuntu('Winsap'),
+            // 🔧 Browser identificado como Winsap CRM (aparece en el teléfono)
+            browser: ['Winsap CRM', 'Chrome', '120.0.0'],
             // Timeouts optimizados
             connectTimeoutMs: 45000, // 45 segundos
             defaultQueryTimeoutMs: 30000, // 30 segundos (antes 0 = infinito)

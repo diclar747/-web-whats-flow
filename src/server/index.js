@@ -5035,8 +5035,8 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             auth: state,
             printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
-            // 🔧 Browser identificado como Winsap
-            browser: Browsers.ubuntu('Winsap'),
+            // 🔧 Browser identificado como Winsap CRM (aparece en el teléfono)
+            browser: ['Winsap CRM', 'Chrome', '120.0.0'],
             // 🔧 OPTIMIZACIÓN: Desactivar sync por defecto para ahorrar memoria
             // Solo sincronizar si el usuario lo solicita explícitamente
             syncFullHistory: false, // Siempre false para ahorrar memoria (antes: syncHistory)
