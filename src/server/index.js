@@ -27,6 +27,8 @@ const { validateUniqueSession, createUniqueSession, destroySession } = require('
 const { generalLimiter, authLimiter, apiMessageLimiter, webhookLimiter, qrLimiter } = require('./middleware/rateLimiter');
 const { sendPlanActivationMessage } = require('./utils/subscriptionNotification');
 const { sendPlanApprovalEmail } = require('./utils/subscriptionEmail');
+const { initializeDatabase: initializeSchema } = require('./db/dbSetup');
+const sessionResolver = require('./utils/sessionResolver');
 
 // Importar sistema de logging para debug de sesiones (desactivado temporalmente)
 // const sessionLogger = require('./sessionLogger');
@@ -442,7 +444,12 @@ app.use((req, res, next) => {
 
 // Mapa para almacenar sesiones activas de WhatsApp
 const sessions = new Map();
+global.sessions = sessions;
+sessionResolver.setSessionsMap(sessions);
 global.sessions = sessions; // ✅ Hacer sessions accesible globalmente
+
+// Nota: messageRateLimiter y sendMessageWithRateLimit se definen más abajo
+// y se hacen accesibles globalmente después de su declaración
 
 // Initializar rutas que dependen de sessions
 require('./routes/clients')(app, poolProxy, sessions);
@@ -457,6 +464,16 @@ const QR_THROTTLE_TIME = 40 * 60 * 1000; // 40 minutos - evitar regenerar QR con
 // Mapa auxiliar para asociar las sesiones creadas con el número dueño de la suscripción
 // Esto permite aplicar límites de plan por cantidad de líneas conectadas
 const sessionOwnerMap = new Map();
+sessionResolver.setOwnerMap(sessionOwnerMap);
+
+// Local caches for performance
+const planCache = new Map(); // name -> planData
+const userPlanCache = {
+    data: new Map(), // phone/email -> { planName, status }
+    lastUpdate: new Map() // timestamps
+};
+const PLAN_CACHE_TTL = 60000; // 1 minute
+
 // Mapa para almacenar los códigos QR actuales para la API REST
 const qrCodes = {};
 
@@ -484,6 +501,411 @@ setInterval(() => {
     }
 }, 60000); // Limpiar cada minuto
 
+// ==================== SISTEMA DE RECONEXIÓN CON BACKOFF EXPONENCIAL ====================
+// Evita reconexiones agresivas que pueden causar bloqueos de WhatsApp
+const reconnectionState = new Map(); // sessionId -> { attempts, lastAttempt, nextAllowedTime }
+const RECONNECTION_CONFIG = {
+    baseDelay: 30000,        // 30 segundos inicial
+    maxDelay: 600000,        // 10 minutos máximo
+    maxAttempts: 10,         // Máximo intentos antes de pausar
+    jitterFactor: 0.3,       // 30% de variación aleatoria
+    cooldownAfterMax: 1800000 // 30 minutos de pausa después de max intentos
+};
+
+// Cola de reconexiones para evitar sobrecarga
+const reconnectionQueue = [];
+let isProcessingQueue = false;
+const MAX_CONCURRENT_RECONNECTIONS = 2; // Máximo 2 reconexiones simultáneas
+let activeReconnections = 0;
+
+/**
+ * Calcula el delay con backoff exponencial y jitter
+ */
+function calculateBackoffDelay(attempts) {
+    // Backoff exponencial: baseDelay * 2^attempts
+    const exponentialDelay = Math.min(
+        RECONNECTION_CONFIG.baseDelay * Math.pow(2, attempts),
+        RECONNECTION_CONFIG.maxDelay
+    );
+
+    // Agregar jitter aleatorio para evitar thundering herd
+    const jitter = exponentialDelay * RECONNECTION_CONFIG.jitterFactor * (Math.random() * 2 - 1);
+    const finalDelay = Math.max(RECONNECTION_CONFIG.baseDelay, exponentialDelay + jitter);
+
+    return Math.round(finalDelay);
+}
+
+/**
+ * Verifica si una sesión puede intentar reconectarse
+ */
+function canReconnect(sessionId) {
+    const state = reconnectionState.get(sessionId);
+    if (!state) return { allowed: true, waitTime: 0 };
+
+    const now = Date.now();
+
+    // Si superó el máximo de intentos, verificar cooldown
+    if (state.attempts >= RECONNECTION_CONFIG.maxAttempts) {
+        const cooldownEnd = state.lastAttempt + RECONNECTION_CONFIG.cooldownAfterMax;
+        if (now < cooldownEnd) {
+            return {
+                allowed: false,
+                waitTime: cooldownEnd - now,
+                reason: `Máximo de intentos alcanzado (${state.attempts}). Cooldown activo.`
+            };
+        }
+        // Cooldown terminó, resetear intentos
+        state.attempts = 0;
+    }
+
+    // Verificar si ya pasó el tiempo de espera
+    if (now < state.nextAllowedTime) {
+        return {
+            allowed: false,
+            waitTime: state.nextAllowedTime - now,
+            reason: `Esperando backoff (intento ${state.attempts})`
+        };
+    }
+
+    return { allowed: true, waitTime: 0 };
+}
+
+/**
+ * Registra un intento de reconexión
+ */
+function registerReconnectionAttempt(sessionId) {
+    const now = Date.now();
+    let state = reconnectionState.get(sessionId);
+
+    if (!state) {
+        state = { attempts: 0, lastAttempt: 0, nextAllowedTime: 0 };
+    }
+
+    state.attempts++;
+    state.lastAttempt = now;
+
+    const delay = calculateBackoffDelay(state.attempts);
+    state.nextAllowedTime = now + delay;
+
+    reconnectionState.set(sessionId, state);
+
+    console.log(`[RECONNECT] 📊 ${sessionId}: Intento #${state.attempts}, próximo permitido en ${Math.round(delay/1000)}s`);
+
+    return delay;
+}
+
+/**
+ * Resetea el estado de reconexión cuando la conexión es exitosa
+ */
+function resetReconnectionState(sessionId) {
+    if (reconnectionState.has(sessionId)) {
+        const state = reconnectionState.get(sessionId);
+        console.log(`[RECONNECT] ✅ ${sessionId}: Conexión exitosa después de ${state.attempts} intentos. Reseteando estado.`);
+        reconnectionState.delete(sessionId);
+    }
+}
+
+/**
+ * Agrega una sesión a la cola de reconexión
+ */
+function queueReconnection(sessionId, reason, priority = false) {
+    // Verificar si ya está en la cola
+    if (reconnectionQueue.some(item => item.sessionId === sessionId)) {
+        console.log(`[RECONNECT-QUEUE] ⏸️ ${sessionId} ya está en cola de reconexión`);
+        return;
+    }
+
+    const canReconnectResult = canReconnect(sessionId);
+    if (!canReconnectResult.allowed) {
+        console.log(`[RECONNECT-QUEUE] ⏳ ${sessionId}: ${canReconnectResult.reason}. Esperando ${Math.round(canReconnectResult.waitTime/1000)}s`);
+        // Programar para después del cooldown
+        setTimeout(() => queueReconnection(sessionId, reason, priority), canReconnectResult.waitTime + 1000);
+        return;
+    }
+
+    const item = { sessionId, reason, addedAt: Date.now() };
+    if (priority) {
+        reconnectionQueue.unshift(item);
+    } else {
+        reconnectionQueue.push(item);
+    }
+
+    console.log(`[RECONNECT-QUEUE] 📥 ${sessionId} agregado a cola (razón: ${reason}). Cola: ${reconnectionQueue.length} pendientes`);
+
+    processReconnectionQueue();
+}
+
+/**
+ * Procesa la cola de reconexiones de forma controlada
+ */
+async function processReconnectionQueue() {
+    if (isProcessingQueue) return;
+    isProcessingQueue = true;
+
+    while (reconnectionQueue.length > 0 && activeReconnections < MAX_CONCURRENT_RECONNECTIONS) {
+        const item = reconnectionQueue.shift();
+        if (!item) continue;
+
+        const { sessionId, reason } = item;
+
+        // Verificar nuevamente si puede reconectar
+        const canReconnectResult = canReconnect(sessionId);
+        if (!canReconnectResult.allowed) {
+            console.log(`[RECONNECT-QUEUE] ⏳ ${sessionId}: Aún en cooldown, re-encolando...`);
+            setTimeout(() => queueReconnection(sessionId, reason, false), canReconnectResult.waitTime);
+            continue;
+        }
+
+        activeReconnections++;
+
+        try {
+            const delay = registerReconnectionAttempt(sessionId);
+            console.log(`[RECONNECT-QUEUE] 🔄 Procesando ${sessionId} (${reason}). Activos: ${activeReconnections}/${MAX_CONCURRENT_RECONNECTIONS}`);
+
+            // Esperar el delay calculado antes de reconectar
+            await new Promise(resolve => setTimeout(resolve, Math.min(delay, 5000))); // Máx 5s de espera aquí
+
+            // Intentar reconectar
+            await createSession(sessionId, true);
+
+        } catch (err) {
+            console.error(`[RECONNECT-QUEUE] ❌ Error reconectando ${sessionId}:`, err.message);
+        } finally {
+            activeReconnections--;
+        }
+
+        // Pequeña pausa entre reconexiones
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    isProcessingQueue = false;
+}
+
+// Limpiar estados de reconexión antiguos cada hora
+setInterval(() => {
+    const now = Date.now();
+    const oneHourAgo = now - 3600000;
+
+    for (const [sessionId, state] of reconnectionState.entries()) {
+        if (state.lastAttempt < oneHourAgo) {
+            reconnectionState.delete(sessionId);
+            console.log(`[RECONNECT] 🧹 Limpiado estado antiguo de ${sessionId}`);
+        }
+    }
+}, 3600000);
+
+// ==================== RATE LIMITING DE MENSAJES ====================
+// Evita envíos masivos que pueden causar bloqueos de WhatsApp
+const messageRateLimiter = {
+    // Tracking por sesión: sessionId -> { messages: [{timestamp}], blocked: boolean }
+    sessions: new Map(),
+
+    // Configuración
+    config: {
+        maxMessagesPerMinute: 15,      // Máximo 15 mensajes por minuto por sesión
+        maxMessagesPerHour: 200,       // Máximo 200 mensajes por hora por sesión
+        minDelayBetweenMessages: 1500, // Mínimo 1.5 segundos entre mensajes
+        blockDuration: 300000,         // 5 minutos de bloqueo si se excede
+        warningThreshold: 0.8          // Advertir al 80% del límite
+    },
+
+    /**
+     * Verifica si se puede enviar un mensaje
+     */
+    canSendMessage(sessionId) {
+        const now = Date.now();
+        let sessionData = this.sessions.get(sessionId);
+
+        if (!sessionData) {
+            sessionData = { messages: [], blocked: false, blockedUntil: 0, lastMessage: 0 };
+            this.sessions.set(sessionId, sessionData);
+        }
+
+        // Verificar si está bloqueado
+        if (sessionData.blocked) {
+            if (now < sessionData.blockedUntil) {
+                const remainingSeconds = Math.ceil((sessionData.blockedUntil - now) / 1000);
+                return {
+                    allowed: false,
+                    reason: `Sesión bloqueada por rate limiting. Espera ${remainingSeconds}s.`,
+                    remainingTime: sessionData.blockedUntil - now
+                };
+            }
+            // Desbloquear
+            sessionData.blocked = false;
+            sessionData.messages = [];
+            console.log(`[RATE-LIMIT] ✅ ${sessionId}: Bloqueo levantado`);
+        }
+
+        // Verificar delay mínimo entre mensajes
+        const timeSinceLastMessage = now - sessionData.lastMessage;
+        if (timeSinceLastMessage < this.config.minDelayBetweenMessages) {
+            const waitTime = this.config.minDelayBetweenMessages - timeSinceLastMessage;
+            return {
+                allowed: false,
+                reason: `Espera ${Math.ceil(waitTime/1000)}s entre mensajes`,
+                waitTime: waitTime,
+                shouldWait: true // Indica que debe esperar, no que está bloqueado
+            };
+        }
+
+        // Limpiar mensajes antiguos (más de 1 hora)
+        const oneHourAgo = now - 3600000;
+        sessionData.messages = sessionData.messages.filter(m => m > oneHourAgo);
+
+        // Contar mensajes en el último minuto
+        const oneMinuteAgo = now - 60000;
+        const messagesLastMinute = sessionData.messages.filter(m => m > oneMinuteAgo).length;
+
+        // Verificar límite por minuto
+        if (messagesLastMinute >= this.config.maxMessagesPerMinute) {
+            // Bloquear sesión
+            sessionData.blocked = true;
+            sessionData.blockedUntil = now + this.config.blockDuration;
+            this.sessions.set(sessionId, sessionData);
+            console.log(`[RATE-LIMIT] 🚫 ${sessionId}: BLOQUEADO por exceder ${this.config.maxMessagesPerMinute} msgs/min`);
+            return {
+                allowed: false,
+                reason: `Límite de ${this.config.maxMessagesPerMinute} mensajes por minuto excedido`,
+                remainingTime: this.config.blockDuration
+            };
+        }
+
+        // Verificar límite por hora
+        if (sessionData.messages.length >= this.config.maxMessagesPerHour) {
+            sessionData.blocked = true;
+            sessionData.blockedUntil = now + this.config.blockDuration;
+            this.sessions.set(sessionId, sessionData);
+            console.log(`[RATE-LIMIT] 🚫 ${sessionId}: BLOQUEADO por exceder ${this.config.maxMessagesPerHour} msgs/hora`);
+            return {
+                allowed: false,
+                reason: `Límite de ${this.config.maxMessagesPerHour} mensajes por hora excedido`,
+                remainingTime: this.config.blockDuration
+            };
+        }
+
+        // Advertencia si está cerca del límite
+        const minuteUsage = messagesLastMinute / this.config.maxMessagesPerMinute;
+        const hourUsage = sessionData.messages.length / this.config.maxMessagesPerHour;
+
+        if (minuteUsage >= this.config.warningThreshold || hourUsage >= this.config.warningThreshold) {
+            console.log(`[RATE-LIMIT] ⚠️ ${sessionId}: Cerca del límite (${messagesLastMinute}/${this.config.maxMessagesPerMinute}/min, ${sessionData.messages.length}/${this.config.maxMessagesPerHour}/hora)`);
+        }
+
+        return { allowed: true, messagesRemaining: this.config.maxMessagesPerMinute - messagesLastMinute };
+    },
+
+    /**
+     * Registra un mensaje enviado
+     */
+    registerMessage(sessionId) {
+        const now = Date.now();
+        let sessionData = this.sessions.get(sessionId);
+
+        if (!sessionData) {
+            sessionData = { messages: [], blocked: false, blockedUntil: 0, lastMessage: 0 };
+        }
+
+        sessionData.messages.push(now);
+        sessionData.lastMessage = now;
+        this.sessions.set(sessionId, sessionData);
+    },
+
+    /**
+     * Obtiene estadísticas de rate limiting
+     */
+    getStats(sessionId = null) {
+        if (sessionId) {
+            const data = this.sessions.get(sessionId);
+            if (!data) return null;
+
+            const now = Date.now();
+            const oneMinuteAgo = now - 60000;
+            const messagesLastMinute = data.messages.filter(m => m > oneMinuteAgo).length;
+
+            return {
+                sessionId,
+                messagesLastMinute,
+                messagesLastHour: data.messages.length,
+                blocked: data.blocked,
+                blockedUntil: data.blocked ? new Date(data.blockedUntil).toISOString() : null
+            };
+        }
+
+        // Estadísticas globales
+        const stats = [];
+        for (const [sid, data] of this.sessions.entries()) {
+            const now = Date.now();
+            const oneMinuteAgo = now - 60000;
+            stats.push({
+                sessionId: sid,
+                messagesLastMinute: data.messages.filter(m => m > oneMinuteAgo).length,
+                messagesLastHour: data.messages.length,
+                blocked: data.blocked
+            });
+        }
+        return stats;
+    },
+
+    /**
+     * Limpia datos antiguos
+     */
+    cleanup() {
+        const now = Date.now();
+        const oneHourAgo = now - 3600000;
+
+        for (const [sessionId, data] of this.sessions.entries()) {
+            // Eliminar sesiones sin actividad reciente
+            if (data.messages.length === 0 || data.messages[data.messages.length - 1] < oneHourAgo) {
+                this.sessions.delete(sessionId);
+            }
+        }
+    }
+};
+
+// Limpiar datos de rate limiting cada 30 minutos
+setInterval(() => {
+    messageRateLimiter.cleanup();
+    console.log(`[RATE-LIMIT] 🧹 Limpieza completada. Sesiones activas: ${messageRateLimiter.sessions.size}`);
+}, 1800000);
+
+/**
+ * Wrapper para enviar mensajes con rate limiting
+ * Usar esta función en lugar de sock.sendMessage directamente
+ */
+async function sendMessageWithRateLimit(sock, sessionId, jid, content, options = {}) {
+    // Verificar rate limit
+    const checkResult = messageRateLimiter.canSendMessage(sessionId);
+
+    if (!checkResult.allowed) {
+        if (checkResult.shouldWait && checkResult.waitTime) {
+            // Esperar el tiempo necesario entre mensajes
+            console.log(`[RATE-LIMIT] ⏳ ${sessionId}: Esperando ${Math.ceil(checkResult.waitTime/1000)}s antes de enviar...`);
+            await new Promise(resolve => setTimeout(resolve, checkResult.waitTime));
+        } else {
+            // Está bloqueado, no enviar
+            console.log(`[RATE-LIMIT] 🚫 ${sessionId}: Mensaje bloqueado - ${checkResult.reason}`);
+            throw new Error(`Rate limit: ${checkResult.reason}`);
+        }
+    }
+
+    // Agregar delay aleatorio pequeño para parecer más humano (300-800ms)
+    const humanDelay = Math.floor(Math.random() * 500) + 300;
+    await new Promise(resolve => setTimeout(resolve, humanDelay));
+
+    // Enviar mensaje
+    const result = await sock.sendMessage(jid, content, options);
+
+    // Registrar mensaje enviado
+    messageRateLimiter.registerMessage(sessionId);
+
+    return result;
+}
+
+// Hacer accesibles globalmente para otros módulos
+global.messageRateLimiter = messageRateLimiter;
+global.sendMessageWithRateLimit = sendMessageWithRateLimit;
+
 // ==================== SINCRONIZACIÓN is_active ====================
 // Mantener coherencia: si la sesión de WhatsApp está desconectada/no existe en memoria,
 // entonces user_sessions.is_active debe ser 0. Si está conectada en memoria, debe ser 1.
@@ -495,96 +917,90 @@ async function syncActiveFlags() {
 
         const connection = await poolRef.getConnection();
         const statusChanges = [];
+        const toDeactivate = [];
+        const toActivate = [];
+        const toUpdateActivity = [];
+
         try {
-            // Desactivar en BD las sesiones marcadas activas pero no conectadas en memoria
-            // IMPORTANTE: Solo desactivar si ha estado inactivo POR MÁS DE 30 SEGUNDOS
-            const [activeRows] = await connection.query(
-                'SELECT session_id, phone, owner_phone_number, last_activity, created_at FROM user_sessions WHERE is_active = 1'
+            // 1. Obtener todas las sesiones de la BD para comparar en memoria
+            const [dbRows] = await connection.query(
+                'SELECT session_id, phone, owner_phone_number, is_active, last_activity, created_at FROM user_sessions'
             );
 
             const now = new Date();
-            const INACTIVITY_THRESHOLD = 5 * 60 * 1000; // 5 minutos (aumentado de 30s para evitar desactivaciones prematuras)
+            const INACTIVITY_THRESHOLD = 5 * 60 * 1000;
 
-            for (const row of activeRows) {
-                // 🔥 Buscar sesión en memoria por phone, owner_phone_number o session_id
-                let mem = memSessions.get(row.phone) || memSessions.get(row.owner_phone_number) || memSessions.get(row.session_id);
+            // Mapear filas de DB por session_id para fácil acceso
+            const dbSessionsMap = new Map();
+            dbRows.forEach(row => dbSessionsMap.set(String(row.session_id), row));
 
-                // Si no se encuentra por clave directa, buscar en el contenido de las sesiones
-                if (!mem) {
-                    mem = Array.from(memSessions.values()).find(m =>
-                        m.phoneNumber === row.phone ||
-                        String(m.userId) === String(row.session_id) ||
-                        m.sessionId === row.session_id
-                    );
-                    if (mem) {
-                        console.log(`[SYNC] 🧠 Sesión ${row.session_id} encontrada por propiedades en memoria (phone: ${mem.phoneNumber}, userId: ${mem.userId})`);
-                    }
-                }
+            // 2. Procesar sesiones marcadas como activas en DB
+            for (const row of dbRows) {
+                if (row.is_active) {
+                    let mem = memSessions.get(row.phone) || memSessions.get(row.owner_phone_number) || memSessions.get(row.session_id);
 
-                const connected = !!(mem && mem.isConnected);
-
-                if (!connected) {
-                    // Usar last_activity, si es NULL usar created_at como fallback
-                    const referenceTime = row.last_activity || row.created_at;
-                    const lastActivityDate = new Date(referenceTime);
-                    const timeSinceActivity = now - lastActivityDate;
-
-                    console.log(`[SYNC-CHECK] ID=${row.session_id}, phone=${row.phone}, owner=${row.owner_phone_number}, connected=${connected}, lastActivity=${lastActivityDate.toISOString()}, elapsed=${Math.round(timeSinceActivity / 1000)}s, threshold=${INACTIVITY_THRESHOLD / 1000}s`);
-
-                    if (timeSinceActivity > INACTIVITY_THRESHOLD) {
-                        // 🔒 Validar que session_id sea numérico antes de actualizar (acepta string o number)
-                        const sessionIdNum = Number(row.session_id);
-                        if (!isNaN(sessionIdNum) && sessionIdNum > 0) {
-                            await connection.query(
-                                'UPDATE user_sessions SET is_active = 0 WHERE session_id = ?',
-                                [row.session_id]
-                            );
-                            console.log(`[SYNC] ❌ Desactivando sesión ${row.session_id} (inactiva ${Math.round(timeSinceActivity / 1000)}s)`);
-                            statusChanges.push({ sessionId: row.session_id, isActive: false });
-                        } else {
-                            console.warn(`[SYNC] ⚠️ session_id inválido: "${row.session_id}"`);
-                        }
-                    } else {
-                        console.log(`[SYNC] ✅ Mantener activo ${row.session_id} (solo ${Math.round(timeSinceActivity / 1000)}s sin conexión)`);
-                    }
-                } else {
-                    // Actualizar last_activity solo si han pasado más de 5 segundos (reducir updates)
-                    const lastUpdate = row.last_activity ? new Date(row.last_activity) : new Date(0);
-                    const timeSinceUpdate = now - lastUpdate;
-                    if (timeSinceUpdate > 5000) {
-                        await connection.query(
-                            'UPDATE user_sessions SET last_activity = NOW() WHERE session_id = ?',
-                            [row.session_id]
+                    if (!mem) {
+                        mem = Array.from(memSessions.values()).find(m =>
+                            m.phoneNumber === row.phone ||
+                            String(m.userId) === String(row.session_id) ||
+                            m.sessionId === row.session_id
                         );
                     }
-                }
-            }
 
-            // Activar en BD las sesiones conectadas en memoria que no estén activas en BD
-            for (const [hexSessionId, mem] of memSessions.entries()) {
-                if (mem && mem.isConnected) {
-                    // 🔥 Buscar en BD por phone, owner_phone_number O por session_id directamente
-                    const [dbRows] = await connection.query(
-                        'SELECT session_id, is_active FROM user_sessions WHERE phone = ? OR owner_phone_number = ? OR session_id = ? LIMIT 1',
-                        [mem.phoneNumber, hexSessionId, hexSessionId]
-                    );
+                    const connected = !!(mem && mem.isConnected);
 
-                    if (dbRows.length > 0 && !dbRows[0].is_active) {
-                        // Activar sesión en BD si está conectada en memoria y actualmente inactiva
-                        const sessionIdNum = Number(dbRows[0].session_id);
-                        if (!isNaN(sessionIdNum) && sessionIdNum > 0) {
-                            await connection.query(
-                                'UPDATE user_sessions SET is_active = 1, last_activity = NOW(), last_connection_time = NOW() WHERE session_id = ?',
-                                [dbRows[0].session_id]
-                            );
-                            console.log(`[SYNC] ✅ Activando sesión ${dbRows[0].session_id} (hex/id: ${hexSessionId})`);
-                            statusChanges.push({ sessionId: dbRows[0].session_id, isActive: true });
+                    if (!connected) {
+                        const referenceTime = row.last_activity || row.created_at;
+                        const timeSinceActivity = now - new Date(referenceTime);
+
+                        if (timeSinceActivity > INACTIVITY_THRESHOLD) {
+                            toDeactivate.push(row.session_id);
+                            statusChanges.push({ sessionId: row.session_id, isActive: false });
+                        }
+                    } else {
+                        // Actualizar last_activity si pasaron 5s
+                        const lastUpdate = row.last_activity ? new Date(row.last_activity) : new Date(0);
+                        if (now - lastUpdate > 5000) {
+                            toUpdateActivity.push(row.session_id);
                         }
                     }
                 }
             }
+
+            // 3. Procesar sesiones conectadas en memoria que no están activas en DB
+            for (const [hexSessionId, mem] of memSessions.entries()) {
+                if (mem && mem.isConnected) {
+                    // Buscar si existe esta sesión en lo que trajimos de DB
+                    const existingInDb = dbRows.find(r =>
+                        r.phone === mem.phoneNumber ||
+                        r.session_id === hexSessionId ||
+                        r.owner_phone_number === hexSessionId
+                    );
+
+                    if (existingInDb && !existingInDb.is_active) {
+                        toActivate.push(existingInDb.session_id);
+                        statusChanges.push({ sessionId: existingInDb.session_id, isActive: true });
+                    }
+                }
+            }
+
+            // 4. Ejecutar actualizaciones por lote (Batch Updates)
+            if (toDeactivate.length > 0) {
+                await connection.query('UPDATE user_sessions SET is_active = 0 WHERE session_id IN (?)', [toDeactivate]);
+                console.log(`[SYNC] ❌ Desactivadas ${toDeactivate.length} sesiones por inactividad.`);
+            }
+
+            if (toActivate.length > 0) {
+                await connection.query('UPDATE user_sessions SET is_active = 1, last_activity = NOW(), last_connection_time = NOW() WHERE session_id IN (?)', [toActivate]);
+                console.log(`[SYNC] ✅ Activadas ${toActivate.length} sesiones desde memoria.`);
+            }
+
+            if (toUpdateActivity.length > 0) {
+                await connection.query('UPDATE user_sessions SET last_activity = NOW() WHERE session_id IN (?)', [toUpdateActivity]);
+            }
+
         } catch (error) {
-            console.error('[SYNC] ❌ Error en syncActiveFlags:', error.message);
+            console.error('[SYNC] ❌ Error en procesamiento syncActiveFlags:', error.message);
         } finally {
             connection.release();
         }
@@ -677,21 +1093,41 @@ async function getMaxChannelsForOwner(ownerPhone) {
         }
 
         if (planName) {
-            // Si el plan no está activo, el límite es 0
+            const now = Date.now();
+            const cachedUser = userPlanCache.data.get(ownerPhone);
+            const userLastUpdate = userPlanCache.lastUpdate.get(ownerPhone) || 0;
+
+            // Invalidate user cache if planName or status changed, or TTL expired
+            if (!cachedUser || cachedUser.planName !== planName || cachedUser.status !== subscriptionStatus || (now - userLastUpdate > PLAN_CACHE_TTL)) {
+                userPlanCache.data.set(ownerPhone, { planName, status: subscriptionStatus });
+                userPlanCache.lastUpdate.set(ownerPhone, now);
+            }
+
+            // Check if planar is active
             if (subscriptionStatus !== 'active') {
                 return { maxChannels: 0, source: 'inactive-plan' };
             }
 
-            const [plans] = await connection.execute(
-                'SELECT max_channels, max_sessions FROM plans WHERE name = ? LIMIT 1',
-                [planName]
-            );
+            // Check plan cache
+            let plan = planCache.get(planName);
+            const planLastUpdate = planCache.get(`${planName}_ts`) || 0;
 
-            const plan = plans[0];
+            if (!plan || (now - planLastUpdate > PLAN_CACHE_TTL)) {
+                const [plans] = await connection.execute(
+                    'SELECT max_channels, max_sessions FROM plans WHERE name = ? LIMIT 1',
+                    [planName]
+                );
+                plan = plans[0];
+                if (plan) {
+                    planCache.set(planName, plan);
+                    planCache.set(`${planName}_ts`, now);
+                }
+            }
+
             if (plan) {
                 const limit = plan.max_channels || plan.max_sessions;
                 const normalized = limit && Number(limit) > 0 ? Number(limit) : 1;
-                return { maxChannels: normalized, source: 'plans' };
+                return { maxChannels: normalized, source: 'plans-cache' };
             }
         }
 
@@ -872,11 +1308,9 @@ async function initializeDatabase() {
         console.log('[DB-INIT] Successfully got a connection from pool. Database is ready.');
         connection.release();
         console.log('[DB-INIT] Connection released back to pool. Database initialization complete.');
-        await createTables();
-        console.log('[DB-INIT] createTables() finished.');
-        console.log('[DB-INIT] Running migrations...');
-        await migrateTables();
-        console.log('[DB-INIT] Migrations finished.');
+        console.log('[DB-INIT] Ensuring table schemas and migrations via dbSetup.js...');
+        await initializeSchema(pool);
+        console.log('[DB-INIT] Database schema verification completed.');
     } catch (error) {
         console.error('[DB-INIT] Full error during initializeDatabase:', error);
         if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
@@ -899,933 +1333,7 @@ async function initializeDatabase() {
     }
 }
 
-async function createTables() {
-    console.log('[DB-TABLES] Starting createTables()...');
-    let connection;
-    try {
-        console.log('[DB-TABLES] Attempting to get connection from pool...');
-        connection = await pool.getConnection();
-        console.log('[DB-TABLES] Successfully got connection from pool.');
-        console.log('[DB-TABLES] Creating tables if they do not exist...');
-
-        // Tabla para SOLO contactos individuales (@s.whatsapp.net)
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS contacts ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'jid VARCHAR(255) NOT NULL,'
-            + 'name VARCHAR(255),'
-            + 'notify_name VARCHAR(255),'
-            + 'session_id VARCHAR(255),'
-            + 'avatar_url VARCHAR(1024),'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'UNIQUE KEY unique_contact_per_session (jid, session_id),'
-            + 'INDEX idx_session_id (session_id)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'contacts\' ensured (ONLY individual contacts).');
-
-        // NOTA: Los grupos ahora se guardan en la tabla 'contact_groups' (existente)
-        // NOTA: Los miembros de grupos se guardan en 'contact_group_members' (existente)
-        // Las siguientes tablas ya NO se usan:
-        /*
-        // Tabla para grupos de WhatsApp (@g.us) - YA NO SE USA
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS whatsapp_groups ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'jid VARCHAR(255) NOT NULL,'
-            + 'name VARCHAR(255),'
-            + 'subject VARCHAR(255),'
-            + 'session_id VARCHAR(255),'
-            + 'avatar_url VARCHAR(1024),'
-            + 'owner_jid VARCHAR(255),'
-            + 'description TEXT,'
-            + 'participant_count INT DEFAULT 0,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'UNIQUE KEY unique_group_per_session (jid, session_id),'
-            + 'INDEX idx_session_id (session_id)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'whatsapp_groups\' ensured.');
-
-        // Tabla para miembros de grupos de WhatsApp - YA NO SE USA
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS whatsapp_group_members ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'group_id INT NOT NULL,'
-            + 'contact_jid VARCHAR(255) NOT NULL,'
-            + 'is_admin BOOLEAN DEFAULT FALSE,'
-            + 'is_super_admin BOOLEAN DEFAULT FALSE,'
-            + 'session_id VARCHAR(255),'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'FOREIGN KEY (group_id) REFERENCES whatsapp_groups(id) ON DELETE CASCADE,'
-            + 'UNIQUE KEY unique_member_per_group (group_id, contact_jid),'
-            + 'INDEX idx_contact_jid (contact_jid),'
-            + 'INDEX idx_session_id (session_id)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'whatsapp_group_members\' ensured.');
-        */
-
-        // Tabla para broadcasts y status
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS broadcasts ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'jid VARCHAR(255) NOT NULL,'
-            + 'name VARCHAR(255),'
-            + 'session_id VARCHAR(255),'
-            + 'broadcast_type VARCHAR(50),'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'UNIQUE KEY unique_broadcast_per_session (jid, session_id),'
-            + 'INDEX idx_session_id (session_id)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'broadcasts\' ensured.');
-
-        // Tabla unificada para grupos de WhatsApp (@g.us) y organización personalizada
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS contact_groups ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'jid VARCHAR(255),'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'session_id VARCHAR(255),'
-            + 'description TEXT,'
-            + 'participants_count INT DEFAULT 0,'
-            + 'is_announcement BOOLEAN DEFAULT FALSE,'
-            + 'is_restricted BOOLEAN DEFAULT FALSE,'
-            + 'avatar_url VARCHAR(1024),'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'UNIQUE KEY unique_group_per_session (jid, session_id),'
-            + 'INDEX idx_session_id (session_id),'
-            + 'INDEX idx_name (name)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'contact_groups\' ensured.');
-
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS contact_group_members ('
-            + 'contact_id INT,'
-            + 'group_id INT,'
-            + 'PRIMARY KEY (contact_id, group_id),'
-            + 'FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE,'
-            + 'FOREIGN KEY (group_id) REFERENCES contact_groups(id) ON DELETE CASCADE,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'contact_group_members\' ensured.');
-
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS messages ('
-            + 'id VARCHAR(255) PRIMARY KEY, '
-            + 'session_id VARCHAR(255) NOT NULL,'
-            + 'chat_jid VARCHAR(255) NOT NULL, '
-            + 'sender_jid VARCHAR(255), '
-            + 'from_me BOOLEAN NOT NULL,'
-            + 'message_type VARCHAR(50), '
-            + 'text_content TEXT,'
-            + 'media_url VARCHAR(1024),'
-            + 'media_mime_type VARCHAR(100),'
-            + 'timestamp DATETIME NOT NULL,'
-            + 'status VARCHAR(50) DEFAULT \'pending\', '
-            + 'is_read BOOLEAN DEFAULT FALSE, '
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'FOREIGN KEY (chat_jid) REFERENCES contacts(jid) ON DELETE CASCADE,'
-            + 'INDEX idx_session_id (session_id)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'messages\' ensured.');
-
-        // Agregar columna is_read si no existe (para bases de datos existentes)
-        try {
-            await connection.query(
-                'ALTER TABLE messages ADD COLUMN is_read BOOLEAN DEFAULT FALSE'
-            );
-            console.log('[DB-TABLES] Columna \'is_read\' agregada a tabla messages.');
-        } catch (error) {
-            // Ignorar si la columna ya existe
-            if (error.code !== 'ER_DUP_FIELDNAME') {
-                console.log('[DB-TABLES] Columna \'is_read\' ya existe o error:', error.message);
-            }
-        }
-
-        // 🔧 MIGRACIÓN: Agregar nuevas columnas a messages (agente, sender info, caption, file info)
-        const newColumns = [
-            { name: 'agent_id', type: 'INT NULL', description: 'ID del agente asignado' },
-            { name: 'agent_name', type: 'VARCHAR(255) NULL', description: 'Nombre del agente' },
-            { name: 'sender_name', type: 'VARCHAR(255) NULL', description: 'Nombre del remitente' },
-            { name: 'sender_avatar', type: 'VARCHAR(1024) NULL', description: 'Avatar del remitente' },
-            { name: 'caption', type: 'VARCHAR(1024) NULL', description: 'Caption de media' },
-            { name: 'file_name', type: 'VARCHAR(255) NULL', description: 'Nombre del archivo' },
-            { name: 'file_size', type: 'INT NULL', description: 'Tamaño del archivo en bytes' }
-        ];
-
-        for (const col of newColumns) {
-            try {
-                await connection.query(`ALTER TABLE messages ADD COLUMN ${col.name} ${col.type}`);
-                console.log(`[DB-MIGRATION] ✅ Columna '${col.name}' agregada - ${col.description}`);
-            } catch (error) {
-                if (error.code === 'ER_DUP_FIELDNAME') {
-                    // Columna ya existe, todo bien
-                } else {
-                    console.error(`[DB-MIGRATION] ⚠️ Error agregando columna '${col.name}':`, error.message);
-                }
-            }
-        }
-
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS campaigns ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'session_id VARCHAR(255) NOT NULL,'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'message_template TEXT NOT NULL,'
-            + 'use_random_timing BOOLEAN DEFAULT FALSE,'
-            + 'random_timing_msg_count INT,'
-            + 'random_timing_time_span_minutes INT,'
-            + 'use_id_flow BOOLEAN DEFAULT FALSE,'
-            + 'id_flow_size INT,'
-            + 'status VARCHAR(50) DEFAULT \'pending\', '
-            + 'scheduled_at DATETIME NULL, '
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'campaigns\' ensured.');
-
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS campaign_recipients ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'campaign_id INT NOT NULL,'
-            + 'contact_jid VARCHAR(255) NOT NULL,'
-            + 'message_id VARCHAR(255), '
-            + 'status VARCHAR(50) DEFAULT \'pending\', '
-            + 'error_message TEXT,'
-            + 'sent_at DATETIME,'
-            + 'delivered_at DATETIME,'
-            + 'read_at DATETIME,'
-            + 'FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,'
-            + 'FOREIGN KEY (contact_jid) REFERENCES contacts(jid) ON DELETE CASCADE,'
-            + 'UNIQUE KEY unique_campaign_recipient (campaign_id, contact_jid)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'campaign_recipients\' ensured.');
-
-        // Agregar columnas delivered_at y read_at si no existen (para bases de datos existentes)
-        try {
-            await connection.query(
-                'ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS delivered_at DATETIME'
-            );
-            await connection.query(
-                'ALTER TABLE campaign_recipients ADD COLUMN IF NOT EXISTS read_at DATETIME'
-            );
-            await connection.query(
-                'ALTER TABLE campaign_recipients ADD UNIQUE KEY IF NOT EXISTS unique_campaign_recipient (campaign_id, contact_jid)'
-            );
-            console.log('[DB-MIGRATION] Columnas delivered_at, read_at y unique constraint agregadas a campaign_recipients');
-        } catch (alterError) {
-            // Ignorar si ya existen
-            console.log('[DB-MIGRATION] Columnas/constraint ya existen en campaign_recipients');
-        }
-
-        // ==========================================
-        // TABLAS PARA CAMPAÑAS PERSONALIZADAS CON EXCEL
-        // ==========================================
-
-        // Tabla principal de campañas personalizadas
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS personalized_campaigns ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'session_id VARCHAR(255) NOT NULL,'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'message_template TEXT NOT NULL,'
-            + 'template_id INT NULL,'
-            + 'excel_filename VARCHAR(255),'
-            + 'status ENUM(\'draft\', \'active\', \'paused\', \'completed\') DEFAULT \'draft\','
-            + 'total_recipients INT DEFAULT 0,'
-            + 'sent_count INT DEFAULT 0,'
-            + 'delivered_count INT DEFAULT 0,'
-            + 'read_count INT DEFAULT 0,'
-            + 'failed_count INT DEFAULT 0,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'INDEX idx_session (session_id),'
-            + 'INDEX idx_status (status)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'personalized_campaigns\' ensured.');
-
-        // Tabla de destinatarios con datos detallados (número, nombre, monto, fecha, cuotas)
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS campaign_recipients_detailed ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'campaign_id INT NOT NULL,'
-            + 'phone VARCHAR(20) NOT NULL,'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'amount DECIMAL(12,2) NOT NULL,'
-            + 'due_day INT NOT NULL COMMENT \'Día del mes para vencimiento (1-31)\','
-            + 'installments INT DEFAULT 1,'
-            + 'paid BOOLEAN DEFAULT FALSE,'
-            + 'status ENUM(\'pending\', \'sent\', \'delivered\', \'read\', \'failed\') DEFAULT \'pending\','
-            + 'message_id VARCHAR(255),'
-            + 'error_message TEXT,'
-            + 'sent_at DATETIME NULL,'
-            + 'delivered_at DATETIME NULL,'
-            + 'read_at DATETIME NULL,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'FOREIGN KEY (campaign_id) REFERENCES personalized_campaigns(id) ON DELETE CASCADE,'
-            + 'INDEX idx_campaign (campaign_id),'
-            + 'INDEX idx_phone (phone),'
-            + 'INDEX idx_due_day (due_day),'
-            + 'INDEX idx_status (status),'
-            + 'INDEX idx_paid (paid)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'campaign_recipients_detailed\' ensured.');
-
-        // Tabla de plantillas predefinidas para campañas
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS campaign_templates_predefined ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'category ENUM(\'simple\', \'formal\', \'urgent\', \'installments\', \'custom\') DEFAULT \'custom\','
-            + 'message_text TEXT NOT NULL,'
-            + 'variables JSON COMMENT \'Lista de variables disponibles\','
-            + 'is_active BOOLEAN DEFAULT TRUE,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'INDEX idx_category (category)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'campaign_templates_predefined\' ensured.');
-
-        // ==========================================
-        // FIN TABLAS CAMPAÑAS PERSONALIZADAS
-        // ==========================================
-
-
-        // Tabla de tableros Kanban
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS kanban_boards ('
-            + 'id VARCHAR(255) PRIMARY KEY,'
-            + 'session_id VARCHAR(255) NOT NULL,'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'color VARCHAR(20) DEFAULT \'#3b82f6\','
-            + 'board_order INT DEFAULT 0,'
-            + 'is_default BOOLEAN DEFAULT FALSE,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'INDEX idx_session_id (session_id)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'kanban_boards\' ensured.');
-
-        // Tabla de contactos en tableros Kanban (sin FK a contacts primero)
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS kanban_contacts ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'board_id VARCHAR(255) NOT NULL,'
-            + 'contact_jid VARCHAR(255) NOT NULL,'
-            + 'notes TEXT,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'FOREIGN KEY (board_id) REFERENCES kanban_boards(id) ON DELETE CASCADE,'
-            + 'INDEX idx_contact_jid (contact_jid),'
-            + 'UNIQUE KEY unique_board_contact (board_id, contact_jid)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'kanban_contacts\' ensured.');
-
-        // Intentar agregar FK a contacts si no existe (puede fallar si ya existe, lo ignoramos)
-        try {
-            await connection.query(
-                'ALTER TABLE kanban_contacts ADD CONSTRAINT fk_kanban_contacts_jid '
-                + 'FOREIGN KEY (contact_jid) REFERENCES contacts(jid) ON DELETE CASCADE'
-            );
-            console.log('[DB-TABLES] Foreign key kanban_contacts -> contacts added.');
-        } catch (fkError) {
-            // Ignorar si la FK ya existe
-            if (fkError.code !== 'ER_DUP_KEYNAME' && fkError.code !== 'ER_FK_DUP_NAME') {
-                console.log('[DB-TABLES] FK kanban_contacts -> contacts already exists or skipped:', fkError.code);
-            }
-        }
-
-        // Tabla de asignaciones de chats a agentes
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS chat_assignments ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'chat_jid VARCHAR(255) NOT NULL,'
-            + 'session_id VARCHAR(255) NOT NULL,'
-            + 'user_id INT,'  // ID del agente asignado
-            + 'assigned_by INT,'  // ID del admin que asignó
-            + 'status VARCHAR(50) DEFAULT \'pending\','  // pending, accepted, rejected, active, closed, transferred
-            + 'assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'accepted_at TIMESTAMP NULL,'
-            + 'closed_at TIMESTAMP NULL,'
-            + 'notes TEXT,'
-            + 'transfer_history JSON,'  // Historial de transferencias
-            + 'INDEX idx_chat_jid (chat_jid),'
-            + 'INDEX idx_session_id (session_id),'
-            + 'INDEX idx_user_id (user_id),'
-            + 'INDEX idx_status (status)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'chat_assignments\' ensured.');
-
-        // Tabla de Citas/Agenda
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS appointments ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'session_id VARCHAR(255) NOT NULL,'
-            + 'patient_name VARCHAR(255) NOT NULL,'
-            + 'patient_phone VARCHAR(20) NOT NULL,'
-            + 'doctor_name VARCHAR(255),'
-            + 'company_name VARCHAR(255),'
-            + 'description TEXT,'
-            + 'appointment_date DATE NOT NULL,'
-            + 'appointment_time TIME NOT NULL,'
-            + 'status ENUM(\'scheduled\', \'confirmed\', \'cancelled\', \'completed\') DEFAULT \'scheduled\','
-            + 'notes TEXT,'
-            + 'reminder_time INT DEFAULT 60 COMMENT \'Minutos antes del recordatorio\','
-            + 'notification_template VARCHAR(255) DEFAULT \'default\' COMMENT \'ID de plantilla de notificación\','
-            + 'category_id INT COMMENT \'ID de categoría de cita\','
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'INDEX idx_session (session_id),'
-            + 'INDEX idx_date (appointment_date),'
-            + 'INDEX idx_phone (patient_phone)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'appointments\' ensured.');
-
-        // Agregar columnas nuevas si no existen
-        try {
-            await connection.query('ALTER TABLE appointments ADD COLUMN IF NOT EXISTS reminder_time INT DEFAULT 60');
-            await connection.query('ALTER TABLE appointments ADD COLUMN IF NOT EXISTS notification_template VARCHAR(255) DEFAULT \'default\'');
-            await connection.query('ALTER TABLE appointments ADD COLUMN IF NOT EXISTS category_id INT');
-        } catch (err) {
-            // Ignorar si las columnas ya existen
-        }
-
-        // Tabla de Plantillas de Mensajes para Citas
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS appointment_templates ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'session_id VARCHAR(255) NOT NULL,'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'message_text TEXT NOT NULL,'
-            + 'variables JSON COMMENT \'["patient_name", "doctor_name", "company_name", "date", "time"]\','
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'INDEX idx_session (session_id)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'appointment_templates\' ensured.');
-
-        // Tabla de Configuración de Recordatorios
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS appointment_reminder_config ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'session_id VARCHAR(255) NOT NULL,'
-            + 'time_before_hours INT NOT NULL COMMENT \'Horas antes: 1, 2, 4, 24\','
-            + 'template_id INT,'
-            + 'is_enabled BOOLEAN DEFAULT TRUE,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'FOREIGN KEY (template_id) REFERENCES appointment_templates(id) ON DELETE SET NULL,'
-            + 'INDEX idx_session (session_id)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'appointment_reminder_config\' ensured.');
-
-        // Tabla de Recordatorios Enviados
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS appointment_reminders_sent ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'appointment_id INT NOT NULL,'
-            + 'sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'hours_before INT NOT NULL,'
-            + 'message_text TEXT,'
-            + 'status ENUM(\'sent\', \'delivered\', \'read\', \'failed\') DEFAULT \'sent\','
-            + 'error_message TEXT,'
-            + 'FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,'
-            + 'INDEX idx_appointment (appointment_id)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'appointment_reminders_sent\' ensured.');
-
-        // Tabla unificada de Usuarios (Admins, Agentes, Staff)
-        // NOTA: Se ha eliminado la definición duplicada que existía aquí. 
-        // La definición correcta está más abajo, cerca de la línea 1007.
-        console.log('[DB-TABLES] Table \'users\' check deferred to second definition.');
-
-        // 🔧 MIGRACIÓN: Asegurar columnas en tabla 'users'
-        const userColumns = [
-            { name: 'role', type: 'VARCHAR(50) DEFAULT \'agent\'', description: 'Role del usuario' },
-            { name: 'department', type: 'VARCHAR(100)', description: 'Departamento' },
-            { name: 'category', type: 'VARCHAR(100)', description: 'Categoría' },
-            { name: 'status', type: 'VARCHAR(50) DEFAULT \'active\'', description: 'Estado' },
-            { name: 'session_id', type: 'VARCHAR(255)', description: 'Session ID vinculada' },
-            { name: 'admin_phone', type: 'VARCHAR(50)', description: 'Teléfono del admin creador' },
-            { name: 'agent_status', type: 'VARCHAR(50) DEFAULT \'offline\'', description: 'Estado de conexión del agente' },
-            { name: 'max_concurrent_chats', type: 'INT DEFAULT 5', description: 'Chats máximos' },
-            { name: 'avatar_url', type: 'VARCHAR(1024)', description: 'Avatar URL' },
-            { name: 'last_login', type: 'TIMESTAMP NULL', description: 'Último login' },
-            { name: 'is_admin', type: 'BOOLEAN DEFAULT FALSE', description: 'Flag Admin' },
-            { name: 'is_super_admin', type: 'BOOLEAN DEFAULT FALSE', description: 'Flag Super Admin' },
-            { name: 'subscription_plan', type: 'VARCHAR(100) DEFAULT \'free\'', description: 'Plan de suscripción' },
-            { name: 'subscription_status', type: 'VARCHAR(50) DEFAULT \'inactive\'', description: 'Estado de suscripción' },
-            { name: 'subscription_start_date', type: 'DATETIME', description: 'Inicio suscripción' },
-            { name: 'subscription_end_date', type: 'DATETIME', description: 'Fin suscripción' },
-            { name: 'subscription_days', type: 'INT DEFAULT 0', description: 'Días suscripción' },
-            { name: 'phone', type: 'VARCHAR(50)', description: 'Teléfono' },
-            { name: 'password', type: 'VARCHAR(255)', description: 'Password' }
-        ];
-
-        for (const col of userColumns) {
-            try {
-                await connection.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`);
-                // console.log(`[DB-MIGRATION] checked column users.${col.name}`);
-            } catch (error) {
-                if (error.code !== 'ER_DUP_FIELDNAME') {
-                    console.error(`[DB-MIGRATION] Error adding column ${col.name} to users:`, error.message);
-                }
-            }
-        }
-
-        // Tabla de Administradores (LEGACY - Mantener por si acaso, pero 'users' es la principal ahora)
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS admin_users ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'email VARCHAR(255) UNIQUE NOT NULL,'
-            + 'password VARCHAR(255) NOT NULL COMMENT \'Hashed password\','
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'role ENUM(\'super_admin\', \'admin\', \'support\') DEFAULT \'admin\','
-            + 'is_active BOOLEAN DEFAULT TRUE,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'last_login TIMESTAMP NULL,'
-            + 'INDEX idx_email (email)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'admin_users\' ensured.');
-
-        // Insertar admin por defecto si no existe
-        // Password: Cadc++**1978
-        await connection.query(
-            'INSERT IGNORE INTO admin_users (email, password, name, role) '
-            + 'VALUES (?, ?, ?, ?)',
-            ['admin@admin.com', '$2a$10$rbc6e2Qtk8dp2ChpJsExPeVXVUVxp6YggoqRyW6kjyqeNeAnQQUWa', 'Super Admin', 'super_admin']
-        );
-        console.log('[DB-TABLES] Default admin user ensured.');
-
-        // Tabla de Suscripciones/Planes
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS subscriptions ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'session_id VARCHAR(255) NOT NULL COMMENT \'Phone number of user\','
-            + 'plan_type ENUM(\'free\', \'basic\', \'pro\', \'enterprise\') DEFAULT \'free\','
-            + 'status ENUM(\'active\', \'inactive\', \'suspended\', \'expired\') DEFAULT \'inactive\','
-            + 'start_date DATE NOT NULL,'
-            + 'end_date DATE NOT NULL,'
-            + 'days_granted INT DEFAULT 0 COMMENT \'Days granted by admin (30, 60, 90, etc)\','
-            + 'features JSON COMMENT \'{"campaigns": true, "kanban": true, "agents": false}\','
-            + 'max_campaigns INT DEFAULT 0,'
-            + 'max_contacts INT DEFAULT 0,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'activated_by INT COMMENT \'admin_users.id who activated\','
-            + 'notes TEXT,'
-            + 'FOREIGN KEY (activated_by) REFERENCES admin_users(id) ON DELETE SET NULL,'
-            + 'INDEX idx_session (session_id),'
-            + 'INDEX idx_status (status),'
-            + 'INDEX idx_end_date (end_date)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'subscriptions\' ensured.');
-
-        // Tabla de Agentes (operadores de chat)
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS agents ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'session_id VARCHAR(255) NOT NULL COMMENT \'Phone number of business owner\','
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'email VARCHAR(255) UNIQUE,'
-            + 'phone VARCHAR(20),'
-            + 'status ENUM(\'available\', \'busy\', \'away\', \'offline\') DEFAULT \'offline\','
-            + 'max_concurrent_chats INT DEFAULT 10,'
-            + 'current_chats INT DEFAULT 0,'
-            + 'is_active BOOLEAN DEFAULT TRUE,'
-            + 'avatar_url VARCHAR(500),'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'last_activity TIMESTAMP NULL,'
-            + 'INDEX idx_session (session_id),'
-            + 'INDEX idx_status (status),'
-            + 'INDEX idx_email (email)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'agents\' ensured.');
-
-        // Tabla de Historial de Conversaciones por Agente
-        // Crear tabla sin FK primero para evitar errores de constraint
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS agent_chat_history ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'agent_id INT NOT NULL,'
-            + 'chat_jid VARCHAR(255) NOT NULL,'
-            + 'session_id VARCHAR(255) NOT NULL,'
-            + 'assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'closed_at TIMESTAMP NULL,'
-            + 'status ENUM(\'active\', \'closed\', \'transferred\') DEFAULT \'active\','
-            + 'transferred_to INT COMMENT \'agent_id if transferred\','
-            + 'messages_count INT DEFAULT 0,'
-            + 'notes TEXT,'
-            + 'INDEX idx_agent (agent_id),'
-            + 'INDEX idx_chat (chat_jid),'
-            + 'INDEX idx_session (session_id),'
-            + 'INDEX idx_status (status)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'agent_chat_history\' ensured.');
-
-        // Agregar FK solo si no existen (evita errores si la tabla ya existe)
-        try {
-            await connection.query(
-                'ALTER TABLE agent_chat_history '
-                + 'ADD CONSTRAINT fk_agent_chat_history_agent '
-                + 'FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE'
-            );
-            console.log('[DB-TABLES] FK agent_chat_history -> agents (agent_id) added.');
-        } catch (fkError) {
-            if (fkError.code !== 'ER_DUP_KEYNAME' && fkError.code !== 'ER_FK_DUP_NAME') {
-                console.log('[DB-TABLES] FK agent_chat_history -> agents (agent_id) already exists or error:', fkError.code);
-            }
-        }
-
-        try {
-            await connection.query(
-                'ALTER TABLE agent_chat_history '
-                + 'ADD CONSTRAINT fk_agent_chat_history_transferred '
-                + 'FOREIGN KEY (transferred_to) REFERENCES agents(id) ON DELETE SET NULL'
-            );
-            console.log('[DB-TABLES] FK agent_chat_history -> agents (transferred_to) added.');
-        } catch (fkError) {
-            if (fkError.code !== 'ER_DUP_KEYNAME' && fkError.code !== 'ER_FK_DUP_NAME') {
-                console.log('[DB-TABLES] FK agent_chat_history -> agents (transferred_to) already exists or error:', fkError.code);
-            }
-        }
-
-        // Tabla de Planes
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS plans ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'description TEXT,'
-            + 'price DECIMAL(10, 2) NOT NULL,'
-            + 'modules JSON COMMENT \'Array of module names\','
-            + 'max_agents INT DEFAULT 1,'
-            + 'max_sessions INT DEFAULT 1,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'plans\' ensured.');
-
-        // 🔧 MIGRACIÓN: Agregar nuevas columnas a plans (canales, mensajes, bot, api)
-        const newPlanColumns = [
-            { name: 'max_channels', type: 'INT DEFAULT 1', description: 'Cantidad de canales' },
-            { name: 'max_messages', type: 'INT DEFAULT 1000', description: 'Cantidad de envíos' },
-            { name: 'bot_enabled', type: 'BOOLEAN DEFAULT FALSE', description: 'Bot IA habilitado' },
-            { name: 'api_enabled', type: 'BOOLEAN DEFAULT FALSE', description: 'API REST habilitada' }
-        ];
-
-        for (const col of newPlanColumns) {
-            try {
-                await connection.query(`ALTER TABLE plans ADD COLUMN ${col.name} ${col.type}`);
-                console.log(`[DB-MIGRATION] ✅ Columna '${col.name}' agregada a plans`);
-            } catch (error) {
-                if (error.code === 'ER_DUP_FIELDNAME') {
-                    // Columna ya existe, todo bien
-                } else {
-                    console.error(`[DB-MIGRATION] ⚠️ Error agregando columna '${col.name}' a plans:`, error.message);
-                }
-            }
-        }
-
-        // Tabla de Usuarios (admins y agentes)
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS users ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'email VARCHAR(255) UNIQUE,'
-            + 'password VARCHAR(255) NOT NULL,'
-            + 'role ENUM(\'admin\', \'agent\', \'supervisor\') DEFAULT \'agent\','
-            + 'department VARCHAR(255),'
-            + 'category VARCHAR(255),'
-            + 'status ENUM(\'active\', \'inactive\', \'suspended\') DEFAULT \'active\','
-            + 'avatar_url TEXT,'
-            + 'phone VARCHAR(50),'
-            + 'last_login TIMESTAMP NULL,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
-            + 'subscription_plan VARCHAR(50),'
-            + 'subscription_status ENUM(\'active\', \'inactive\', \'trial\', \'expired\', \'cancelled\') DEFAULT \'inactive\','
-            + 'subscription_start_date DATETIME,'
-            + 'subscription_end_date DATETIME,'
-            + 'subscription_days INT DEFAULT 0,'
-            + 'is_admin TINYINT(1) DEFAULT 0 COMMENT \'1 if admin (QR login), 0 if agent (email login)\','
-            + 'is_super_admin TINYINT(1) DEFAULT 0 COMMENT \'1 if super admin from admin_users table\','
-            + 'admin_phone VARCHAR(20) COMMENT \'Phone of the admin who created this user/agent\','
-            + 'auto_sync TINYINT(1) DEFAULT 0 COMMENT \'Auto sync on connect\','
-            + 'sync_completed TINYINT(1) DEFAULT 0 COMMENT \'Sync completed at least once\','
-            + 'last_sync_date DATETIME COMMENT \'Last full sync date\','
-            + 'agent_id VARCHAR(255) COMMENT \'Agent ID if user is an agent\','
-            + 'INDEX idx_email (email),'
-            + 'INDEX idx_role (role),'
-            + 'INDEX idx_department (department),'
-            + 'INDEX idx_status (status),'
-            + 'INDEX idx_users_role_status (role, status),'
-            + 'INDEX idx_subscription_status (subscription_status),'
-            + 'INDEX idx_subscription_end_date (subscription_end_date),'
-            + 'INDEX idx_admin_phone (admin_phone),'
-            + 'INDEX idx_is_super_admin (is_super_admin),'
-            + 'INDEX idx_agent_id (agent_id)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-TABLES] Table \'users\' ensured.');
-
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS whatsapp_statuses ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'phone VARCHAR(50) NOT NULL,'
-            + 'text_content TEXT,'
-            + 'media_url VARCHAR(1024),'
-            + 'media_type ENUM(\'text\',\'image\',\'video\') DEFAULT \'text\','
-            + 'background_color VARCHAR(20),'
-            + 'font_style VARCHAR(50),'
-            + 'status ENUM(\'draft\',\'scheduled\',\'published\',\'failed\',\'expired\') DEFAULT \'draft\','
-            + 'views_count INT DEFAULT 0,'
-            + 'error_message TEXT,'
-            + 'published_at DATETIME NULL,'
-            + 'expires_at DATETIME NULL,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'INDEX idx_phone (phone),'
-            + 'INDEX idx_status (status),'
-            + 'INDEX idx_published_at (published_at)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS media_url VARCHAR(1024)');
-        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS media_type ENUM(\"text\",\"image\",\"video\") DEFAULT \"text\"');
-        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS background_color VARCHAR(20)');
-        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS font_style VARCHAR(50)');
-        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS views_count INT DEFAULT 0');
-        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS error_message TEXT');
-        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS published_at DATETIME NULL');
-        await connection.query('ALTER TABLE whatsapp_statuses ADD COLUMN IF NOT EXISTS expires_at DATETIME NULL');
-        await connection.query('ALTER TABLE whatsapp_statuses MODIFY COLUMN status VARCHAR(50) DEFAULT \"draft\"');
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS status_schedules ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'session_id VARCHAR(50) NOT NULL,'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'interval_minutes INT DEFAULT 60,'
-            + 'rotation_days INT DEFAULT 30,'
-            + 'is_active BOOLEAN DEFAULT TRUE,'
-            + 'current_index INT DEFAULT 0,'
-            + 'next_publish_at DATETIME NULL,'
-            + 'total_published INT DEFAULT 0,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'INDEX idx_session (session_id),'
-            + 'INDEX idx_active (is_active),'
-            + 'INDEX idx_next_publish (next_publish_at)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS status_schedule_items ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'schedule_id INT NOT NULL,'
-            + 'status_id INT NOT NULL,'
-            + 'order_index INT DEFAULT 0,'
-            + 'times_published INT DEFAULT 0,'
-            + 'last_published_at DATETIME NULL,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'FOREIGN KEY (schedule_id) REFERENCES status_schedules(id) ON DELETE CASCADE,'
-            + 'FOREIGN KEY (status_id) REFERENCES whatsapp_statuses(id) ON DELETE CASCADE,'
-            + 'INDEX idx_schedule (schedule_id),'
-            + 'INDEX idx_status_item (status_id)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS contact_statuses ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'session_id VARCHAR(50) NOT NULL,'
-            + 'message_id VARCHAR(255) UNIQUE,'
-            + 'contact_jid VARCHAR(255) NOT NULL,'
-            + 'contact_name VARCHAR(255),'
-            + 'avatar_url VARCHAR(1024),'
-            + 'text_content TEXT,'
-            + 'media_type ENUM(\'text\',\'image\',\'video\') DEFAULT \'text\','
-            + 'media_url VARCHAR(1024),'
-            + 'published_at DATETIME,'
-            + 'expires_at DATETIME NULL,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'INDEX idx_session (session_id),'
-            + 'INDEX idx_contact (contact_jid),'
-            + 'INDEX idx_published (published_at)'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-
-        console.log('[DB-TABLES] All tables ensured successfully.');
-
-    } catch (error) {
-        console.error('[DB-TABLES] Full error during createTables:', error);
-        if (connection) {
-            console.error('[DB-TABLES] Error occurred after connection was established.');
-        } else {
-            console.error('[DB-TABLES] Error occurred before connection was established from pool.');
-        }
-    } finally {
-        if (connection) {
-            connection.release();
-            console.log('[DB-TABLES] Connection released.');
-        }
-    }
-}
-
-// Función de migración para actualizar tablas existentes
-async function migrateTables() {
-    console.log('[DB-MIGRATION] Starting table migrations...');
-    if (!pool) {
-        console.log('[DB-MIGRATION] No pool available, skipping migrations.');
-        return;
-    }
-
-    let connection;
-    try {
-        connection = await pool.getConnection();
-
-        // Migración 1: Agregar columnas faltantes a contact_groups
-        console.log('[DB-MIGRATION] Checking contact_groups structure...');
-
-        // Migración: Crear tabla plans si no existe
-        await connection.query(
-            'CREATE TABLE IF NOT EXISTS plans ('
-            + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'name VARCHAR(255) NOT NULL,'
-            + 'description TEXT,'
-            + 'price DECIMAL(10, 2) NOT NULL,'
-            + 'modules JSON,'
-            + 'max_agents INT DEFAULT 1,'
-            + 'max_sessions INT DEFAULT 1,'
-            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
-            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
-            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
-        );
-        console.log('[DB-MIGRATION] Table \'plans\' checked/created.');
-
-        // Migración: Agregar columnas a users
-        const userColumns = [
-            { name: 'plan_id', type: 'INT NULL', description: 'ID del plan asignado' },
-            { name: 'is_blocked', type: 'BOOLEAN DEFAULT FALSE', description: 'Si el cliente está bloqueado' },
-            { name: 'last_seen', type: 'DATETIME', description: 'Última conexión' }
-        ];
-
-        for (const col of userColumns) {
-            try {
-                await connection.query(`ALTER TABLE users ADD COLUMN ${col.name} ${col.type}`);
-                console.log(`[DB-MIGRATION] ✅ Columna '${col.name}' agregada a users`);
-            } catch (error) {
-                if (error.code !== 'ER_DUP_FIELDNAME') {
-                    console.error(`[DB-MIGRATION] ⚠️ Error agregando columna '${col.name}' a users:`, error.message);
-                }
-            }
-        }
-
-        const addColumnIfNotExists = async (tableName, columnName, columnDef) => {
-            try {
-                const [columns] = await connection.query(
-                    `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-                     WHERE TABLE_SCHEMA = DATABASE()
-                     AND TABLE_NAME = ?
-                     AND COLUMN_NAME = ?`,
-                    [tableName, columnName]
-                );
-
-                if (columns.length === 0) {
-                    await connection.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`);
-                    console.log(`[DB-MIGRATION] ✓ Added column ${columnName} to ${tableName}`);
-                } else {
-                    console.log(`[DB-MIGRATION] ✓ Column ${columnName} already exists in ${tableName}`);
-                }
-            } catch (error) {
-                console.error(`[DB-MIGRATION] Error adding column ${columnName} to ${tableName}:`, error.message);
-            }
-        };
-
-        // Agregar columnas a contact_groups si no existen
-        await addColumnIfNotExists('contact_groups', 'jid', 'VARCHAR(255)');
-        await addColumnIfNotExists('contact_groups', 'session_id', 'VARCHAR(255)');
-        await addColumnIfNotExists('contact_groups', 'description', 'TEXT');
-        await addColumnIfNotExists('contact_groups', 'participants_count', 'INT DEFAULT 0');
-        await addColumnIfNotExists('contact_groups', 'is_announcement', 'BOOLEAN DEFAULT FALSE');
-        await addColumnIfNotExists('contact_groups', 'is_restricted', 'BOOLEAN DEFAULT FALSE');
-        await addColumnIfNotExists('contact_groups', 'avatar_url', 'VARCHAR(1024)');
-
-        // Migración: Agregar columna is_read a messages si no existe
-        await addColumnIfNotExists('messages', 'is_read', 'BOOLEAN DEFAULT FALSE');
-
-        // Migración: Agregar columnas faltantes a campaigns
-        await addColumnIfNotExists('campaigns', 'phone', 'VARCHAR(255)');
-        await addColumnIfNotExists('campaigns', 'message_media_url', 'VARCHAR(1024)');
-        await addColumnIfNotExists('campaigns', 'message_media_url', 'VARCHAR(1024)');
-        await addColumnIfNotExists('campaigns', 'message_media_type', 'VARCHAR(50)');
-        await addColumnIfNotExists('campaigns', 'scheduled_at', 'DATETIME NULL');
-
-        // Migración 2: Agregar índice único si no existe
-        console.log('[DB-MIGRATION] Checking contact_groups indexes...');
-        try {
-            const [indexes] = await connection.query(
-                `SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
-                 WHERE TABLE_SCHEMA = DATABASE()
-                 AND TABLE_NAME = 'contact_groups'
-                 AND INDEX_NAME = 'unique_group_per_session'`
-            );
-
-            if (indexes.length === 0) {
-                // Primero eliminar el índice UNIQUE de 'name' si existe
-                try {
-                    await connection.query('ALTER TABLE contact_groups DROP INDEX name');
-                    console.log('[DB-MIGRATION] ✓ Removed old UNIQUE index on name');
-                } catch (error) {
-                    // Ignorar si no existe
-                }
-
-                // Agregar el nuevo índice único
-                await connection.query(
-                    'ALTER TABLE contact_groups ADD UNIQUE KEY unique_group_per_session (jid, session_id)'
-                );
-                console.log('[DB-MIGRATION] ✓ Added UNIQUE index on (jid, session_id)');
-            } else {
-                console.log('[DB-MIGRATION] ✓ UNIQUE index unique_group_per_session already exists');
-            }
-        } catch (error) {
-            console.error('[DB-MIGRATION] Error managing indexes:', error.message);
-        }
-
-        console.log('[DB-MIGRATION] Migrations completed successfully.');
-
-    } catch (error) {
-        console.error('[DB-MIGRATION] Error during migration:', error);
-    } finally {
-        if (connection) {
-            connection.release();
-        }
-    }
-}
+// Database table logic moved to src/server/db/dbSetup.js
 
 // ========== HELPER FUNCTIONS FOR DIFFERENT ENTITY TYPES ==========
 
@@ -1941,18 +1449,29 @@ async function getBestContactName(sock, jid, providedName = null, providedNotify
 
 // Helper function para SOLO contactos individuales (@s.whatsapp.net)
 async function getOrInsertContact(jid, name = null, notifyName = null, phoneNumber = null, sock = null) {
-    console.log(`[DIAGNÓSTICO-DB-WRITE] --- getOrInsertContact ---`);
-    console.log(`[DIAGNÓSTICO-DB-WRITE] JID: ${jid}`);
-    console.log(`[DIAGNÓSTICO-DB-WRITE] Name: ${name}`);
-    console.log(`[DIAGNÓSTICO-DB-WRITE] Notify Name: ${notifyName}`);
-    console.log(`[DIAGNÓSTICO-DB-WRITE] Phone Number: ${phoneNumber}`);
-    console.log(`[DIAGNÓSTICO-DB-WRITE] -------------------------`);
+    // 🔧 VALIDACIÓN TEMPRANA: Ignorar JIDs inválidos o vacíos
+    if (!jid || typeof jid !== 'string' || jid.trim() === '') {
+        console.warn(`[DB-CONTACT-WARN] Invalid JID provided: ${jid}. Skipping.`);
+        return null;
+    }
+
+    // 🔧 VALIDACIÓN: Ignorar JID "0@s.whatsapp.net" y similares (JIDs de sistema/inválidos)
+    const jidPhone = jid.split('@')[0];
+    if (!jidPhone || jidPhone === '0' || jidPhone === '' || jidPhone.length < 5) {
+        console.warn(`[DB-CONTACT-WARN] Invalid phone number in JID: ${jid}. Skipping.`);
+        return null;
+    }
+
+    // Solo loguear si es un JID válido (reducir spam de logs)
+    console.log(`[DB-CONTACT] Processing: ${jid} (name: ${name || 'N/A'})`);
 
     // ✅ Convertir phoneNumber a users.id (ownerSessionId)
     let ownerSessionId = null;
     if (phoneNumber) {
         ownerSessionId = await getOwnerSessionId(phoneNumber);
-        console.log(`[DB-CONTACT] 🔄 Converted phoneNumber ${phoneNumber} to ownerSessionId: ${ownerSessionId}`);
+        if (ownerSessionId) {
+            console.log(`[DB-CONTACT] 🔄 Converted phoneNumber ${phoneNumber} to ownerSessionId: ${ownerSessionId}`);
+        }
     }
 
     // Validar que sea un contacto individual (permitir @s.whatsapp.net Y @lid)
@@ -1962,7 +1481,6 @@ async function getOrInsertContact(jid, name = null, notifyName = null, phoneNumb
     }
 
     // 🚫 NO guardar el propio número como contacto
-    const jidPhone = jid.split('@')[0];
     if (phoneNumber && jidPhone === phoneNumber) {
         console.warn(`[DB-CONTACT-WARN] Attempted to save own number as contact: ${jid}. Skipping.`);
         return null;
@@ -2983,8 +2501,8 @@ async function saveMessageToDB(sessionId, msg) {
                     name: senderName || chat_jid.split('@')[0],
                     profilePicUrl: senderAvatar
                 };
-                io.to(roomById).emit('chat-update', updatePayload);
-                io.to(roomByPhone).emit('chat-update', updatePayload);
+                io.to(roomById).to('global-admin').emit('chat-update', updatePayload);
+                io.to(roomByPhone).to('global-admin').emit('chat-update', updatePayload);
 
                 // También a agentes asignados
                 try {
@@ -3033,6 +2551,9 @@ async function getUserPhoneNumber(sessionId) {
         return phoneNumberCache.get(sessionId);
     }
 
+    console.log(`[${sessionId}] 🔍 getUserPhoneNumber: Buscando número de teléfono...`);
+    console.log(`[${sessionId}] 🔍 Sessions disponibles:`, Array.from(sessions.keys()));
+
     // Intento 1: Obtener de la sesión activa de WhatsApp
     const session = sessions.get(sessionId);
     if (session && session.sock && session.sock.user) {
@@ -3042,6 +2563,20 @@ async function getUserPhoneNumber(sessionId) {
         phoneNumberCache.set(sessionId, phoneNumber); // Cachear resultado
         console.log(`[${sessionId}] ✅ Usuario identificado desde sesión activa: ${phoneNumber}`);
         return phoneNumber;
+    }
+
+    // Intento 1b: Buscar en TODAS las sesiones activas por el sessionId hex
+    for (const [key, sess] of sessions.entries()) {
+        if (sess && sess.sock && sess.sock.user) {
+            // Verificar si esta sesión coincide con el sessionId
+            if (sess.sessionId === sessionId || key === sessionId) {
+                const userJid = sess.sock.user.id;
+                const phoneNumber = userJid.split(':')[0];
+                phoneNumberCache.set(sessionId, phoneNumber);
+                console.log(`[${sessionId}] ✅ Usuario identificado buscando en todas las sesiones: ${phoneNumber} (key: ${key})`);
+                return phoneNumber;
+            }
+        }
     }
 
     // Intento 2: Si la sesión tiene phoneNumber almacenado (se guarda al conectar)
@@ -5500,30 +5035,45 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             auth: state,
             printQRInTerminal: false,
             logger: pino({ level: 'silent' }),
-            browser: ['Winsap', 'Chrome', '120.0.0'],
-            syncFullHistory: syncHistory,
-            shouldSyncHistoryMessage: (msg) => {
-                return syncHistory;
-            },
-            fireInitQueries: syncHistory,
+            // 🔧 Browser identificado como Winsap
+            browser: Browsers.ubuntu('Winsap'),
+            // 🔧 OPTIMIZACIÓN: Desactivar sync por defecto para ahorrar memoria
+            // Solo sincronizar si el usuario lo solicita explícitamente
+            syncFullHistory: false, // Siempre false para ahorrar memoria (antes: syncHistory)
+            shouldSyncHistoryMessage: () => false, // No sincronizar historial
+            fireInitQueries: false, // Reducir queries iniciales
             getMessage: async (key) => {
-                return { conversation: 'Message not available' };
+                // Intentar obtener mensaje de la BD si es posible
+                return { conversation: '' };
             },
-            keepAliveIntervalMs: 30000,
-            connectTimeoutMs: 60000,
-            defaultQueryTimeoutMs: 60000,
+            // 🔧 OPTIMIZACIÓN: Tiempos de conexión más conservadores
+            keepAliveIntervalMs: 25000, // 25 segundos (reducido de 30s para mejor estabilidad)
+            connectTimeoutMs: 60000, // 60 segundos
+            defaultQueryTimeoutMs: 30000, // 30 segundos (antes 60s, reducido para evitar bloqueos)
+            qrTimeout: 45000, // 45 segundos para QR
             emitOwnEvents: true,
-            markOnlineOnConnect: true,
-            retryRequestDelayMs: 250,
-            maxMsgRetryCount: 5,
+            // 🔧 OPTIMIZACIÓN: NO marcar online al conectar (reduce detección de bot)
+            markOnlineOnConnect: false,
+            // 🔧 OPTIMIZACIÓN: Reintentos con delays más conservadores
+            retryRequestDelayMs: 500, // 500ms entre reintentos (antes 250ms)
+            maxMsgRetryCount: 3, // Reducido de 5 a 3
+            msgRetryCounterCache: null, // No usar caché de reintentos
             shouldIgnoreJid: jid => {
                 if (!jid) return true;
-                // ✅ PERMITIR grupos y contactos, solo validar JID básico
+                // Ignorar JIDs inválidos o vacíos
+                if (jid === '0@s.whatsapp.net' || jid.startsWith('0@')) return true;
                 return false;
             },
-            linkPreviewImageThumbnailWidth: 192,
-            maxCachedMessages: 100,
-            msgRetryCount: 3,
+            // 🔧 OPTIMIZACIÓN: Reducir uso de memoria
+            linkPreviewImageThumbnailWidth: 100, // Reducido de 192 a 100
+            maxCachedMessages: 50, // Reducido de 100 a 50 para ahorrar memoria
+            msgRetryCount: 2, // Reducido de 3 a 2
+            // 🔧 OPTIMIZACIÓN: Configuraciones adicionales para estabilidad
+            generateHighQualityLinkPreview: false, // Desactivar previews de alta calidad
+            patchMessageBeforeSending: (message) => {
+                // Asegurar que los mensajes tengan el formato correcto
+                return message;
+            },
             ...customStore
         });
 
@@ -5601,7 +5151,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 // Limpiar throttle de QR al conectarse exitosamente
                 qrThrottleMap.delete(sessionId);
 
-                console.log(`[${sessionId}] ¡WhatsApp conectado exitosamente!`);
+                // ✅ Resetear estado de reconexión (conexión exitosa)
+                resetReconnectionState(sessionId);
+
+                console.log(`[${sessionId}] ✅ ¡WhatsApp conectado exitosamente!`);
 
                 // ✅ ACTIVAR is_active en la BD inmediatamente al conectar
                 if (pool) {
@@ -6688,8 +6241,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                     case DisconnectReason.badSession:
                         // Sesión corrupta, eliminar archivos de auth y regenerar
-                        console.log(`[${sessionId}] Sesión corrupta, eliminando archivos de auth...`);
+                        console.log(`[${sessionId}] ⚠️ Sesión corrupta (badSession), eliminando archivos de auth...`);
                         sessions.delete(sessionId);
+                        resetReconnectionState(sessionId); // Resetear porque es una nueva sesión
                         const authDir = path.join(__dirname, 'auth_info_multi', sessionId);
                         if (fs.existsSync(authDir)) {
                             fs.rmSync(authDir, { recursive: true, force: true });
@@ -6697,46 +6251,50 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         if (userPhoneNumber) {
                             await deactivateUserSession(userPhoneNumber);
                         }
-                        // Generar nuevo QR
-                        setTimeout(() => createSession(sessionId, true), 2000);
+                        // Usar cola de reconexión con prioridad
+                        queueReconnection(sessionId, 'badSession', true);
                         break;
 
                     case DisconnectReason.connectionClosed:
                     case DisconnectReason.connectionLost:
-                        // Problemas de red, intentar reconectar
-                        console.log(`[${sessionId}] Conexión perdida, intentando reconectar...`);
+                        // Problemas de red, intentar reconectar con backoff
+                        console.log(`[${sessionId}] 🔌 Conexión perdida (${statusCode === DisconnectReason.connectionClosed ? 'closed' : 'lost'}), encolando reconexión...`);
                         if (userPhoneNumber) {
                             await deactivateUserSession(userPhoneNumber);
                         }
-                        setTimeout(() => createSession(sessionId, true), 3000);
+                        // Usar sistema de cola con backoff exponencial
+                        queueReconnection(sessionId, statusCode === DisconnectReason.connectionClosed ? 'connectionClosed' : 'connectionLost');
                         break;
 
                     case DisconnectReason.timedOut:
-                        // Timeout, reconectar
-                        console.log(`[${sessionId}] Timeout de conexión, reconectando...`);
+                        // Timeout, reconectar con backoff
+                        console.log(`[${sessionId}] ⏱️ Timeout de conexión, encolando reconexión...`);
                         if (userPhoneNumber) {
                             await deactivateUserSession(userPhoneNumber);
                         }
-                        setTimeout(() => createSession(sessionId, true), 5000);
+                        // Usar sistema de cola con backoff exponencial
+                        queueReconnection(sessionId, 'timedOut');
                         break;
 
                     case DisconnectReason.restartRequired:
                         // WhatsApp requiere reinicio
-                        console.log(`[${sessionId}] Reinicio requerido por WhatsApp`);
+                        console.log(`[${sessionId}] 🔄 Reinicio requerido por WhatsApp, encolando reconexión...`);
                         sessions.delete(sessionId);
                         if (userPhoneNumber) {
                             await deactivateUserSession(userPhoneNumber);
                         }
-                        setTimeout(() => createSession(sessionId, true), 2000);
+                        // Usar cola de reconexión con prioridad (WhatsApp lo pidió)
+                        queueReconnection(sessionId, 'restartRequired', true);
                         break;
 
                     default:
-                        // Otros casos, intentar reconectar
-                        console.log(`[${sessionId}] Desconexión desconocida (código: ${statusCode}), intentando reconectar...`);
+                        // Otros casos, intentar reconectar con backoff
+                        console.log(`[${sessionId}] ❓ Desconexión desconocida (código: ${statusCode}), encolando reconexión...`);
                         if (userPhoneNumber) {
                             await deactivateUserSession(userPhoneNumber);
                         }
-                        setTimeout(() => createSession(sessionId, true), 3000);
+                        // Usar sistema de cola con backoff exponencial
+                        queueReconnection(sessionId, `unknown-${statusCode}`);
                         break;
                 }
             }
@@ -6778,7 +6336,18 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             // ═══════════════════════════════════════════════════════════
             // CAPTURA DE LIDs ANTES DEL FILTRADO
             // ═══════════════════════════════════════════════════════════
-            const phoneNumber = await getUserPhoneNumber(sessionId);
+            // Obtener número de teléfono - primero intentar desde la sesión activa directamente
+            let phoneNumber = null;
+            const activeSession = sessions.get(sessionId);
+            if (activeSession && activeSession.sock && activeSession.sock.user) {
+                const userJid = activeSession.sock.user.id;
+                phoneNumber = userJid.split(':')[0];
+                console.log(`[${sessionId}] ✅ Número obtenido directo del socket activo: ${phoneNumber}`);
+            }
+            if (!phoneNumber) {
+                phoneNumber = await getUserPhoneNumber(sessionId);
+                console.log(`[${sessionId}] 📱 Número obtenido via getUserPhoneNumber: ${phoneNumber}`);
+            }
 
             // ✅ GRUPOS HABILITADOS - Los mensajes de grupos ahora se procesan normalmente
             // La captura de LIDs de grupos permanece deshabilitada por ahora
@@ -6969,6 +6538,17 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 timestamp: timestamp
                             });
 
+                            if (phoneNumber) {
+                                io.to(`session-${phoneNumber}`).emit('new-status', {
+                                    jid: contactJid,
+                                    name: contactName,
+                                    type: mediaType,
+                                    content: textContent,
+                                    mediaUrl: mediaUrl,
+                                    timestamp: timestamp
+                                });
+                            }
+
                         } finally {
                             connection.release();
                         }
@@ -7109,38 +6689,40 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     status: msg.key.fromMe ? 'sent' : 'received'
                 };
 
-                // ✅ CORREGIDO: Emitir SOLO a la sala del sessionId específico
-                // Esto previene que mensajes se crucen entre diferentes usuarios
-                io.to(`session-${sessionId}`).emit('message', messagePayload);
-                console.log(`[${sessionId}] ✅ EMITIDO a session-${sessionId} (phoneNumber: ${phoneNumber})`)
+                // ✅ CORREGIDO: Emitir a todas las salas relevantes para este usuario
+                const roomsToEmit = [`session-${sessionId}`, 'global-admin'];
+                if (phoneNumber) roomsToEmit.push(`session-${phoneNumber}`);
+
+                roomsToEmit.forEach(room => {
+                    io.to(room).emit('message', messagePayload);
+                    console.log(`[${sessionId}] ✅ EMITIDO 'message' a sala ${room}`);
+                });
 
                 // Emitir evento para actualizar contador de no leídos en header
                 if (!msg.key.fromMe && phoneNumber) {
                     const senderJidPhone = senderJid.split('@')[0];
                     console.log(`[${sessionId}] 🔍 [MONITOR] OPTIMISTIC chat-update para senderJid=${senderJid}, phone=${senderJidPhone}, phoneNumber=${phoneNumber}`);
 
-                    // ✅ CORREGIDO: Emitir solo a la sesión específica
-                    io.to(`session-${sessionId}`).emit('unread-count-update', {
-                        chatJid: senderJid,
-                        increment: 1
-                    });
-
-                    // 🆕 OPTIMISTIC CHAT UPDATE: Actualizar lista inmediatamente
-                    // 🚫 NO emitir si el sender es el propio número
-                    const senderPhone = senderJid.split('@')[0];
-                    if (senderPhone !== phoneNumber) {
-                        io.to(`session-${sessionId}`).emit('chat-update', {
-                            id: senderJid,
-                            lastMessage: textContent,
-                            timestamp: new Date(msgTime).toISOString(),
-                            unreadCount: 1, // Asumimos 1 para update optimista
-                            name: senderJid.split('@')[0],
-                            profilePicUrl: null
+                    roomsToEmit.forEach(room => {
+                        io.to(room).to('global-admin').emit('unread-count-update', {
+                            chatJid: senderJid,
+                            increment: 1
                         });
-                        console.log(`[${sessionId}] 🚀 chat-update OPTIMISTA emitido para ${senderJid}`);
-                    } else {
-                        console.log(`[${sessionId}] 🚫 chat-update NO emitido (propio número): ${senderJid}`);
-                    }
+
+                        // 🆕 OPTIMISTIC CHAT UPDATE: Actualizar lista inmediatamente
+                        // 🚫 NO emitir si el sender es el propio número
+                        const senderPhone = senderJid.split('@')[0];
+                        if (senderPhone !== phoneNumber) {
+                            io.to(room).to('global-admin').emit('chat-update', {
+                                id: senderJid,
+                                lastMessage: textContent,
+                                timestamp: new Date(msgTime).toISOString(),
+                                unreadCount: 1, // Asumimos 1 para update optimista
+                                name: senderJid.split('@')[0],
+                                profilePicUrl: null
+                            });
+                        }
+                    });
                 }
             }
             console.log(`[${sessionId}] 🏁 EMISIÓN COMPLETADA`);
@@ -7472,12 +7054,13 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             console.log(`${'='.repeat(80)}\n`);
 
                             // SIEMPRE emitir a ambas salas
-                            console.log(`[${sessionId}] 📡 Emitiendo mensaje a sala: session-${sessionId}`);
-                            io.to(`session-${sessionId}`).emit('message', clientMessage);
-                            if (phoneNumber) {
-                                console.log(`[${sessionId}] 📡 Emitiendo mensaje a sala: session-${phoneNumber}`);
-                                io.to(`session-${phoneNumber}`).emit('message', clientMessage);
-                            }
+                            const finalRooms = [`session-${sessionId}`];
+                            if (phoneNumber) finalRooms.push(`session-${phoneNumber}`);
+
+                            finalRooms.forEach(room => {
+                                console.log(`[${sessionId}] 📡 Emitiendo mensaje a sala: ${room}`);
+                                io.to(room).emit('message', clientMessage);
+                            });
 
                             // 🔥 EMITIR TAMBIÉN A AGENTES ASIGNADOS
                             if (pool && phoneNumber && dbMessage.chat_jid) {
@@ -11165,16 +10748,16 @@ app.post('/api/send/message', async (req, res) => {
             agent_name: sentByName,
             sentBy: sentByName // Agregar nombre del agente (legacy)
         };
-        io.to(`session-${sessionId}`).emit('message', clientMessage);
+        io.to(`session-${sessionId}`).to('global-admin').emit('message', clientMessage);
         // NO emitir globalmente - solo a la sesión específica
 
         // 🔄 Emitir evento para actualizar lista de chats en tiempo real
-        io.to(`session-${sessionId}`).emit('chat-list-update', {
+        io.to(`session-${sessionId}`).to('global-admin').emit('chat-list-update', {
             action: 'new-message',
             chatJid: jid,
             timestamp: dbMessage.timestamp.toISOString()
         });
-        console.log(`[${sessionId}] 📡 Evento chat-list-update emitido para ${jid}`);
+        console.log(`[${sessionId}] 📡 Evento chat-list-update emitido para ${jid} y global-admin`);
 
         console.log(`[${sessionId}] Mensaje enviado a ${jid} y guardado en DB (pending): ${message}`);
         res.json({ success: true, messageId: sentResult.key.id, message: 'Mensaje enviado correctamente' });
@@ -11264,7 +10847,7 @@ app.post('/api/send-message', async (req, res) => {
             status: dbMessage.status
         };
 
-        io.to(`session-${sessionId}`).emit('message', messageEvent);
+        io.to(`session-${sessionId}`).to('global-admin').emit('message', messageEvent);
         if (phoneNumber) {
             io.to(`session-${phoneNumber}`).emit('message', messageEvent);
         }
@@ -11276,11 +10859,11 @@ app.post('/api/send-message', async (req, res) => {
             timestamp: dbMessage.timestamp.toISOString()
         };
 
-        io.to(`session-${sessionId}`).emit('chat-list-update', chatListEvent);
+        io.to(`session-${sessionId}`).to('global-admin').emit('chat-list-update', chatListEvent);
         if (phoneNumber) {
-            io.to(`session-${phoneNumber}`).emit('chat-list-update', chatListEvent);
+            io.to(`session-${phoneNumber}`).to('global-admin').emit('chat-list-update', chatListEvent);
         }
-        console.log(`[${sessionId}] 📡 Eventos emitidos para ${jid}`);
+        console.log(`[${sessionId}] 📡 Eventos emitidos para ${jid} y global-admin`);
 
         console.log(`[${sessionId}] ✅ Mensaje enviado desde chat rápido a ${jid}: ${message}`);
         res.json({ success: true, messageId: sentResult.key.id, message: 'Mensaje enviado correctamente' });
@@ -11344,11 +10927,31 @@ app.get('/api/messages/:sessionId/:chatJid', authenticateToken, validateSessionB
                 // Mensajes del mes actual
                 dateCondition = 'AND MONTH(m.timestamp) = MONTH(CURDATE()) AND YEAR(m.timestamp) = YEAR(CURDATE())';
                 console.log('[AGENT-MESSAGES] 📅 Cargando mensajes del MES');
-            } else if (dateFilter && dateFilter !== 'all') {
-                // Fecha específica en formato YYYY-MM-DD
-                dateCondition = 'AND DATE(m.timestamp) = ?';
-                queryParams.push(dateFilter);
-                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de fecha específica:', dateFilter);
+            } else if (dateFilter === 'yesterday') {
+                // Mensajes de ayer solamente
+                dateCondition = 'AND DATE(m.timestamp) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)';
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de AYER');
+            } else if (dateFilter === '15days') {
+                // Mensajes de los últimos 15 días
+                dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 15 DAY)';
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de los ÚLTIMOS 15 DÍAS');
+            } else if (dateFilter === '3months') {
+                // Mensajes de los últimos 3 meses
+                dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 3 MONTH)';
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de los ÚLTIMOS 3 MESES');
+            } else if (dateFilter === '6months') {
+                // Mensajes de los últimos 6 meses
+                dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 6 MONTH)';
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes de los ÚLTIMOS 6 MESES');
+            } else if (dateFilter === 'year') {
+                // Mensajes del último año
+                dateCondition = 'AND m.timestamp >= DATE_SUB(NOW(), INTERVAL 1 YEAR)';
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes del ÚLTIMO AÑO');
+            } else if (dateFilter && dateFilter !== 'all' && dateFilter.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                // Fecha específica en formato YYYY-MM-DD - DESDE esta fecha hasta hoy
+                dateCondition = 'AND m.timestamp >= ?';
+                queryParams.push(dateFilter + ' 00:00:00');
+                console.log('[AGENT-MESSAGES] 📅 Cargando mensajes DESDE fecha específica:', dateFilter);
             } else {
                 // 'all' o sin filtro - cargar todos (solo si se solicita explícitamente)
                 console.log('[AGENT-MESSAGES] 📅 Cargando TODOS los mensajes');
@@ -15603,6 +15206,13 @@ io.on('connection', async (socket) => {
 
         connections.add(socket.id);
         socket.join(`session-${sessionId}`);
+
+        // 👑 ADMINS: Unirse también a la sala global si es admin
+        if (userRole === 'admin' || userRole === 'supervisor') {
+            socket.join('global-admin');
+            console.log(`👑 Admin ${socket.id} unido a sala global-admin`);
+        }
+
         console.log(`Cliente ${socket.id} conectado a session-${sessionId} (${connections.size} conexiones activas)`);
     } else {
         // Desconectar conexiones sin sessionId después de 30 segundos (dar tiempo al evento join-session)
@@ -15641,6 +15251,13 @@ io.on('connection', async (socket) => {
             sessionConnectionsMap.get(sid).add(socket.id);
 
             socket.join(`session-${sid}`);
+
+            // 👑 Asegurar que los admins que se unen via join-session también se unan a la sala global
+            if (socket.userRole === 'admin' || socket.userRole === 'supervisor') {
+                socket.join('global-admin');
+                console.log(`👑 Admin ${socket.id} unido explícitamente a sala global-admin via join-session`);
+            }
+
             console.log(`🔌 [Socket.IO] Cliente ${socket.id} unido explícitamente a session-${sid}`);
             // Confirmar al cliente que se unió exitosamente
             socket.emit('joined-session', { sessionId: sid, success: true });
@@ -17443,16 +17060,46 @@ app.get('/api/kanban/boards/:sessionId', async (req, res) => {
 
             const [boards] = await Promise.race([queryPromise, timeoutPromise]);
 
+            // 🆕 CARGAR CONTACTOS DE CADA TABLERO para campañas
+            const boardsWithContacts = await Promise.all(boards.map(async (board) => {
+                try {
+                    const [contacts] = await connection.execute(
+                        `SELECT
+                            kc.contact_jid as jid,
+                            COALESCE(c.name, c.notify_name, REPLACE(REPLACE(kc.contact_jid, '@s.whatsapp.net', ''), '@c.us', '')) as name,
+                            REPLACE(REPLACE(kc.contact_jid, '@s.whatsapp.net', ''), '@c.us', '') as phone
+                        FROM kanban_contacts kc
+                        LEFT JOIN contacts c ON c.jid = kc.contact_jid AND c.session_id = ?
+                        WHERE kc.board_id = ?
+                        LIMIT 500`,
+                        [ownerUserId, board.id]
+                    );
+                    return {
+                        ...board,
+                        contacts: contacts || [],
+                        contactCount: contacts?.length || board.user_count || 0
+                    };
+                } catch (e) {
+                    console.error(`[KANBAN] Error cargando contactos del tablero ${board.name}:`, e.message);
+                    return { ...board, contacts: [], contactCount: board.user_count || 0 };
+                }
+            }));
+
+            console.log(`[KANBAN-BOARDS] ✅ ${boardsWithContacts.length} tableros cargados con contactos`);
+            boardsWithContacts.forEach(b => {
+                console.log(`  - ${b.name}: ${b.contacts?.length || 0} contactos`);
+            });
+
             // Almacenar en caché
             kanbanCache.set(cacheKey, {
-                data: boards,
+                data: boardsWithContacts,
                 timestamp: Date.now()
             });
 
             res.json({
                 success: true,
-                boards: boards,
-                total: boards.length,
+                boards: boardsWithContacts,
+                total: boardsWithContacts.length,
                 fromCache: false
             });
 

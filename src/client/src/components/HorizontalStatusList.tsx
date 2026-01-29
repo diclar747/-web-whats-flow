@@ -28,6 +28,7 @@ interface ContactStatus {
         timestamp: number;
     }[];
     unreadCount: number;
+    lastUpdate?: number;
 }
 
 interface HorizontalStatusListProps {
@@ -42,6 +43,8 @@ const HorizontalStatusList: React.FC<HorizontalStatusListProps> = ({ sessionId, 
     const [showArrows, setShowArrows] = useState(false);
     const { on, off } = useSocket();
     const scrollRef = useRef<HTMLDivElement>(null);
+    const [isHovering, setIsHovering] = useState(false);
+    const scrollIntervalRef = useRef<any>(null);
 
     const scroll = (direction: 'left' | 'right') => {
         if (scrollRef.current) {
@@ -52,6 +55,37 @@ const HorizontalStatusList: React.FC<HorizontalStatusListProps> = ({ sessionId, 
             });
         }
     };
+
+    // Carrusel automático: se mueve cuando NO hay mouse encima, se detiene cuando SÍ hay mouse
+    useEffect(() => {
+        // Mover automáticamente cuando NO está el mouse encima
+        if (!isHovering && scrollRef.current && contactStatuses.length > 3) {
+            scrollIntervalRef.current = setInterval(() => {
+                if (scrollRef.current) {
+                    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+                    // Si llegó al final, volver al inicio
+                    if (scrollLeft + clientWidth >= scrollWidth - 5) {
+                        scrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+                    } else {
+                        // Scroll suave hacia la derecha
+                        scrollRef.current.scrollBy({ left: 1, behavior: 'auto' });
+                    }
+                }
+            }, 40); // Velocidad del carrusel
+        } else {
+            // Pausar cuando el mouse está encima
+            if (scrollIntervalRef.current) {
+                clearInterval(scrollIntervalRef.current);
+                scrollIntervalRef.current = null;
+            }
+        }
+        return () => {
+            if (scrollIntervalRef.current) {
+                clearInterval(scrollIntervalRef.current);
+                scrollIntervalRef.current = null;
+            }
+        };
+    }, [isHovering, contactStatuses.length]);
 
     const resolveMediaUrl = (url?: string | null) => {
         if (!url) return null;
@@ -79,8 +113,16 @@ const HorizontalStatusList: React.FC<HorizontalStatusListProps> = ({ sessionId, 
         }
     };
 
+    // Cargar estados al montar y periodicamente cada 30 segundos
     useEffect(() => {
         loadContactStatuses();
+
+        // Actualizar estados cada 30 segundos para mantenerlos frescos
+        const refreshInterval = setInterval(() => {
+            loadContactStatuses();
+        }, 30000);
+
+        return () => clearInterval(refreshInterval);
     }, [sessionId]);
 
     useEffect(() => {
@@ -115,7 +157,8 @@ const HorizontalStatusList: React.FC<HorizontalStatusListProps> = ({ sessionId, 
                     return {
                         ...c,
                         statuses: nextStatuses,
-                        unreadCount: nextStatuses.length
+                        unreadCount: nextStatuses.length,
+                        lastUpdate: Date.now()
                     };
                 });
                 return updated.sort((a, b) => (b.statuses[0]?.timestamp || 0) - (a.statuses[0]?.timestamp || 0));
@@ -142,8 +185,14 @@ const HorizontalStatusList: React.FC<HorizontalStatusListProps> = ({ sessionId, 
 
     return (
         <Box
-            onMouseEnter={() => setShowArrows(true)}
-            onMouseLeave={() => setShowArrows(false)}
+            onMouseEnter={() => {
+                setShowArrows(true);
+                setIsHovering(true);
+            }}
+            onMouseLeave={() => {
+                setShowArrows(false);
+                setIsHovering(false);
+            }}
             sx={{
                 p: '14px 16px',
                 bgcolor: colors.sidebar,
@@ -153,6 +202,11 @@ const HorizontalStatusList: React.FC<HorizontalStatusListProps> = ({ sessionId, 
                 '&:hover .carousel-arrow': {
                     opacity: 1,
                     visibility: 'visible'
+                },
+                '@keyframes pulse-status': {
+                    '0%': { boxShadow: '0 0 0 0 rgba(37, 211, 102, 0.4)' },
+                    '70%': { boxShadow: '0 0 0 10px rgba(37, 211, 102, 0)' },
+                    '100%': { boxShadow: '0 0 0 0 rgba(37, 211, 102, 0)' },
                 }
             }}
         >
@@ -261,7 +315,8 @@ const HorizontalStatusList: React.FC<HorizontalStatusListProps> = ({ sessionId, 
                                         display: 'flex',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        border: contact.unreadCount === 0 ? `1px solid ${colors.divider}` : 'none'
+                                        border: contact.unreadCount === 0 ? `1px solid ${colors.divider}` : 'none',
+                                        animation: contact.lastUpdate && (Date.now() - contact.lastUpdate < 5000) ? 'pulse-status 2s infinite' : 'none'
                                     }}
                                 >
                                     <Box sx={{

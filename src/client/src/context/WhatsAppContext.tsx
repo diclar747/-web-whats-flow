@@ -18,15 +18,34 @@ interface NotificationOptions {
   silent?: boolean;
 }
 
+// Sonido de notificación
+const notificationSound = typeof Audio !== 'undefined' ? new Audio('/notification.mp3') : null;
+
+const playNotificationSound = () => {
+  if (notificationSound) {
+    notificationSound.currentTime = 0;
+    notificationSound.volume = 0.5;
+    notificationSound.play().catch(() => {
+      // Silenciar error si el navegador bloquea autoplay
+    });
+  }
+};
+
 const showBrowserNotification = (options: NotificationOptions) => {
   if (!('Notification' in window)) return;
 
   if (Notification.permission === 'granted') {
+    // Reproducir sonido de notificación
+    if (!options.silent) {
+      playNotificationSound();
+    }
+
     const notification = new Notification(options.title, {
       body: options.body,
       icon: options.icon || '/whatsapp-icon.png',
       tag: options.tag || 'whatsapp-message',
-      silent: true // Sonido desactivado a petición del usuario
+      requireInteraction: options.requireInteraction || false,
+      silent: options.silent ?? false // Permitir sonido del sistema también
     });
 
     notification.onclick = () => {
@@ -34,7 +53,8 @@ const showBrowserNotification = (options: NotificationOptions) => {
       notification.close();
     };
 
-    setTimeout(() => notification.close(), 5000);
+    // Mantener notificación visible por más tiempo (8 segundos)
+    setTimeout(() => notification.close(), 8000);
     return notification;
   } else if (Notification.permission !== 'denied') {
     Notification.requestPermission().then(permission => {
@@ -43,6 +63,17 @@ const showBrowserNotification = (options: NotificationOptions) => {
   }
 
   return null;
+};
+
+// Solicitar permisos de notificación al cargar
+const requestNotificationPermission = async () => {
+  if ('Notification' in window && Notification.permission === 'default') {
+    try {
+      await Notification.requestPermission();
+    } catch (e) {
+      console.warn('No se pudo solicitar permiso de notificación');
+    }
+  }
 };
 
 interface Call {
@@ -531,8 +562,14 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
             // await requestNotificationPermission(); // 🚫 Desactivado para usar Modal UI moderno
 
-            console.log('📱 Cargando chats automáticamente...');
-            await loadChats(savedSessionId);
+            // 🚀 OPTIMIZACIÓN: Cargar chats en segundo plano SIN BLOQUEAR
+            // Los mensajes en tiempo real se procesarán inmediatamente
+            console.log('📱 Iniciando carga de chats en segundo plano (no-bloqueante)...');
+            loadChats(savedSessionId).then(() => {
+              console.log('✅ Carga inicial de chats completada en background');
+            }).catch(err => {
+              console.error('❌ Error en carga inicial de chats:', err);
+            });
           } else {
             console.log('Sesión no válida o no encontrada. Manteniendo en localStorage para posibles reintentos...');
             setConnectionStatus('disconnected');
@@ -552,10 +589,25 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   }, [loadChats, API_BASE]);
 
   // Efecto para manejar eventos del socket compartido
+  // 🚀 OPTIMIZACIÓN: Configurar listeners INMEDIATAMENTE cuando el socket esté disponible
+  // No esperar a que la sesión esté completamente verificada para no perder mensajes
   useEffect(() => {
-    if (!socket || !session?.sessionId) return;
+    if (!socket) return;
 
-    console.log('🔄 [WhatsAppContext] Configurando listeners en socket compartido for session:', session.sessionId);
+    // Usar sessionId del estado O del localStorage como fallback
+    const currentSessionId = session?.sessionId ||
+      sessionStorage.getItem('whinsap_session') ||
+      localStorage.getItem('whinsap_session');
+
+    if (!currentSessionId) {
+      console.log('⏳ [WhatsAppContext] Esperando sessionId para configurar listeners...');
+      return;
+    }
+
+    // Solicitar permisos de notificación al conectar
+    requestNotificationPermission();
+
+    console.log('🔄 [WhatsAppContext] Configurando listeners en socket compartido for session:', currentSessionId);
 
     const handleMessage = (newMessage: WhatsAppMessage) => {
       console.log('📨 [REAL-TIME] handleMessage recibido:', newMessage);
@@ -600,19 +652,37 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         const senderName = chat?.name || mappedMessage.from?.split('@')[0] || 'Contacto';
         const messagePreview = mappedMessage.message || 'Nuevo mensaje multimedia';
 
-        // 1. Mostrar notificación visual (si estamos en segundo plano o no es el chat activo)
-        const isCurrentChatActive = activeChatRef.current?.id === mappedMessage.chatJid;
+        // Verificar si es el chat activo (comparación robusta)
+        const activeChatId = activeChatRef.current?.id;
+        const activeChatPhone = activeChatId?.split('@')[0];
+        const isCurrentChatActive = activeChatId && (
+          activeChatId === mappedMessage.chatJid ||
+          activeChatPhone === chatPhone
+        );
         const channelInfo = (mappedMessage as any).channelPhone ? `[Línea: ${(mappedMessage as any).channelPhone}] ` : '';
 
+        console.log('🔔 [NOTIF-DEBUG]', {
+          isFromMe: mappedMessage.isFromMe,
+          documentHidden: document.hidden,
+          isCurrentChatActive,
+          activeChatId,
+          msgChatJid: mappedMessage.chatJid,
+          notificationPermission: typeof Notification !== 'undefined' ? Notification.permission : 'N/A'
+        });
+
+        // Mostrar notificación con sonido si no es el chat activo o está en segundo plano
         if (document.hidden || !isCurrentChatActive) {
+          console.log('🔔 [NOTIF] Mostrando notificación para:', senderName);
           showBrowserNotification({
             title: `💬 ${channelInfo}${senderName}`,
             body: messagePreview.length > 50 ? messagePreview.substring(0, 50) + '...' : messagePreview,
             icon: chat?.avatar || '/favicon.ico',
             tag: `chat-${mappedMessage.chatJid}`,
             requireInteraction: false,
-            silent: true
+            silent: false // Habilitar sonido de notificación
           });
+        } else {
+          console.log('🔔 [NOTIF] No se muestra notificación - chat activo:', activeChatId);
         }
 
         // ⚡ Actualizar título dinámicamente
@@ -686,8 +756,24 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         if (chatIndex !== -1) {
           console.log('[REAL-TIME] Actualizando chat existente en lista:', prev[chatIndex].name);
           const chat = prev[chatIndex];
-          const isMsgForActiveChat = activeChatRef.current?.id === (chat.id || mappedMessage.chatJid);
+          // Verificación robusta si es el chat activo (por ID completo o por número)
+          const activeChatId = activeChatRef.current?.id;
+          const activeChatPhone = activeChatId?.split('@')[0];
+          const isMsgForActiveChat = activeChatId && (
+            activeChatId === chat.id ||
+            activeChatId === mappedMessage.chatJid ||
+            activeChatPhone === chatPhone
+          );
           const shouldIncrementUnread = !mappedMessage.isFromMe && !isMsgForActiveChat;
+
+          console.log('[REAL-TIME] 📊 Estado de actualización:', {
+            chatName: chat.name,
+            activeChatId,
+            isMsgForActiveChat,
+            shouldIncrementUnread,
+            currentUnread: chat.unreadCount,
+            isFromMe: mappedMessage.isFromMe
+          });
 
           const updatedChat = {
             ...chat,
@@ -711,7 +797,10 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           }
 
           // Solo filtrar si el chat ES EXACTAMENTE el número de la sesión actual
-          const currentPhone = String(session?.sessionId || '').split(':')[0]?.split('@')[0];
+          const effectiveSessionId = session?.sessionId ||
+            sessionStorage.getItem('whinsap_session') ||
+            localStorage.getItem('whinsap_session') || '';
+          const currentPhone = String(effectiveSessionId).split(':')[0]?.split('@')[0];
           if (currentPhone && chatPhone === currentPhone) {
             console.log('[REAL-TIME] 🚫 Ignorando chat propio en creación:', mappedMessage.chatJid);
             return prev;
@@ -724,17 +813,18 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             name: mappedMessage.from?.split('@')[0] || chatPhone || 'Desconocido',
             isGroup: mappedMessage.chatJid.includes('@g.us'),
             lastMessage: mappedMessage.message,
-            timestamp: mappedMessage.timestamp,
+            // 🚀 OPTIMIZACIÓN: Usar timestamp actual para que SIEMPRE aparezca arriba
+            timestamp: new Date().toISOString(),
             isOnline: !mappedMessage.chatJid.includes('@g.us'),
             unreadCount: mappedMessage.isFromMe ? 0 : 1,
             avatar: undefined,
-            status: 'delivered'
+            status: 'delivered',
+            lastUpdate: Date.now()
           };
 
-          // ⚡ ORDENAMIENTO ESTRICTO: Siempre ordenar por fecha descendente
-          return [newChat, ...prev].sort((a, b) =>
-            new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
-          );
+          // 🚀 OPTIMIZACIÓN: Chat nuevo SIEMPRE va al principio (sin ordenar toda la lista)
+          console.log('[REAL-TIME] ✅ Chat nuevo agregado al TOPE de la lista');
+          return [newChat, ...prev];
         }
         return prev;
       });
@@ -743,8 +833,21 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     const handleConnect = () => {
       console.log('✅ [WhatsAppContext] Socket conectado');
       setConnectionStatus('connected');
-      if (session?.sessionId) {
-        socket.emit('join-session', { sessionId: session.sessionId });
+
+      // 🚀 Unirse a la sala de sesión inmediatamente usando cualquier sessionId disponible
+      const effectiveSessionId = session?.sessionId ||
+        sessionStorage.getItem('whinsap_session') ||
+        localStorage.getItem('whinsap_session');
+
+      if (effectiveSessionId) {
+        socket.emit('join-session', { sessionId: effectiveSessionId });
+        console.log('✅ [WhatsAppContext] Unido a sala session-' + effectiveSessionId);
+      }
+
+      const userId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
+      if (userId) {
+        socket.emit('join-session', { sessionId: userId });
+        console.log('✅ [WhatsAppContext] Unido a sala de usuario session-' + userId);
       }
       connectedAtRef.current = Date.now();
     };
@@ -986,19 +1089,46 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
       }
 
       setChats(prev => {
-        const chatIndex = prev.findIndex(c => c.id === data.id);
+        // Búsqueda más robusta del chat (por ID completo o por número)
+        const chatPhone = data.id?.split('@')[0];
+        const chatIndex = prev.findIndex(c =>
+          c.id === data.id || c.id.split('@')[0] === chatPhone
+        );
+
+        // Verificar si es el chat activo para no incrementar unread
+        const activeChatId = activeChatRef.current?.id;
+        const isChatActive = activeChatId && (
+          activeChatId === data.id ||
+          activeChatId.split('@')[0] === chatPhone
+        );
 
         // Si el chat ya existe
         if (chatIndex !== -1) {
+          const existingChat = prev[chatIndex];
+
+          // Solo incrementar unreadCount si no es el chat activo y viene unreadCount del servidor
+          const newUnreadCount = isChatActive
+            ? 0
+            : (existingChat.unreadCount || 0) + (data.unreadCount || 0);
+
           const updatedChat = {
-            ...prev[chatIndex],
-            lastMessage: data.lastMessage,
-            timestamp: data.timestamp,
-            unreadCount: prev[chatIndex].unreadCount || 0,
+            ...existingChat,
+            lastMessage: data.lastMessage || existingChat.lastMessage,
+            timestamp: data.timestamp || existingChat.timestamp,
+            unreadCount: newUnreadCount,
+            lastUpdate: Date.now(),
             // Opcionalmente actualizar nombre/foto si vienen
             ...(data.name ? { name: data.name } : {}),
             ...(data.profilePicUrl ? { avatar: data.profilePicUrl } : {})
           };
+
+          console.log(`🔄 [CHAT-UPDATE] Chat existente actualizado:`, {
+            id: data.id,
+            oldUnread: existingChat.unreadCount,
+            newUnread: newUnreadCount,
+            isChatActive,
+            movedToTop: true
+          });
 
           // Mover al principio
           const newChats = [...prev];
@@ -1013,10 +1143,18 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             lastMessage: data.lastMessage,
             timestamp: data.timestamp,
             isOnline: !data.id.includes('@g.us'),
-            unreadCount: 0,
+            unreadCount: isChatActive ? 0 : (data.unreadCount || 1),
             avatar: data.profilePicUrl,
-            status: 'delivered'
+            status: 'delivered',
+            lastUpdate: Date.now()
           };
+
+          console.log(`🔄 [CHAT-UPDATE] Nuevo chat creado:`, {
+            id: data.id,
+            unreadCount: newChat.unreadCount,
+            addedToTop: true
+          });
+
           return [newChat, ...prev];
         }
       });
@@ -1707,11 +1845,23 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   };
 
   const markChatAsRead = useCallback(async (chatId: string) => {
-    // 1. Optimistic UI update
+    console.log(`🔔 [CHAT] Marcando chat como leído: ${chatId}`);
+
+    // Normalizar chatId para comparación robusta
+    const chatPhone = chatId?.split('@')[0];
+
+    // 1. Optimistic UI update - comparar por ID exacto O por número de teléfono
     setChats(prevChats =>
-      prevChats.map(chat =>
-        chat.id === chatId ? { ...chat, unreadCount: 0 } : chat
-      )
+      prevChats.map(chat => {
+        const matchesExact = chat.id === chatId;
+        const matchesPhone = chat.id?.split('@')[0] === chatPhone;
+
+        if (matchesExact || matchesPhone) {
+          console.log(`✅ [CHAT] Reseteando unreadCount para: ${chat.name || chat.id}`);
+          return { ...chat, unreadCount: 0 };
+        }
+        return chat;
+      })
     );
 
     // 2. Call Backend API to update DB

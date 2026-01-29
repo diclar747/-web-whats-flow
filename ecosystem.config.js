@@ -8,14 +8,17 @@ module.exports = {
         instances: 1,
         exec_mode: 'fork',
 
-        // 💾 GESTIÓN DE MEMORIA
-        max_memory_restart: '500M', // Reinicia si supera 500MB
+        // 💾 GESTIÓN DE MEMORIA OPTIMIZADA
+        // Con 34+ sesiones de Baileys, necesitamos mínimo 2GB
+        // Cada sesión consume ~25-40MB de memoria
+        max_memory_restart: '3G', // Reinicia solo si supera 3GB (antes 500MB)
 
-        // ⚡ AUTO-RESTART con límites
+        // ⚡ AUTO-RESTART con límites más conservadores
         autorestart: true,
         watch: false, // No usar en producción
-        max_restarts: 10, // Máximo 10 reinicios en 1 minuto
-        min_uptime: '10s', // Tiempo mínimo antes de considerar "exitoso"
+        max_restarts: 5, // Reducido de 10 a 5 para detectar problemas
+        min_uptime: '30s', // Aumentado de 10s a 30s para estabilidad
+        restart_delay: 5000, // Esperar 5 segundos entre reinicios
 
         // 📝 LOGS
         error_file: './logs/pm2-error.log',
@@ -26,17 +29,25 @@ module.exports = {
         // 🔧 VARIABLES DE ENTORNO
         env_production: {
             NODE_ENV: 'production',
-            PORT: 3000
+            PORT: 3000,
+            // Configuración de Garbage Collector optimizada
+            UV_THREADPOOL_SIZE: 16 // Aumentar pool de threads para I/O
         },
 
-        // 🔄 ZERO DOWNTIME RELOAD
-        listen_timeout: 10000,
-        kill_timeout: 5000,
+        // 🔄 ZERO DOWNTIME RELOAD - tiempos más largos para sesiones WA
+        listen_timeout: 30000, // Aumentado de 10s a 30s
+        kill_timeout: 15000, // Aumentado de 5s a 15s para cerrar sesiones
 
         // 📊 MONITOREO
         instance_var: 'INSTANCE_ID',
 
-        // 🔍 NODE ARGS para debugging (opcional)
-        node_args: '--max-old-space-size=512'
+        // 🔍 NODE ARGS OPTIMIZADO PARA MULTISESIÓN
+        // 2GB heap + optimizaciones de GC
+        node_args: [
+            '--max-old-space-size=2048', // 2GB de heap (antes 512MB)
+            '--max-semi-space-size=128', // Mejorar GC para objetos pequeños
+            '--optimize-for-size', // Optimizar uso de memoria
+            '--gc-interval=100' // GC más frecuente para evitar picos
+        ].join(' ')
     }]
 };

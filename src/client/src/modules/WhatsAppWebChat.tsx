@@ -2031,57 +2031,36 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                       const value = e.target.value;
                       setQuickFilter(value);
 
-                      // Calcular fecha según filtro
-                      const now = new Date();
-                      let filterDate = '';
+                      // 🚀 OPTIMIZACIÓN: Pasar directamente el nombre del filtro al servidor
+                      // El servidor ahora maneja todos los filtros: today, yesterday, week, 15days, month, 3months, 6months, year
+                      const filterValue = value || 'all'; // Si está vacío, cargar todos
 
+                      // Calcular fecha para mostrar en UI (opcional)
+                      const now = new Date();
+                      let displayDate = '';
                       switch (value) {
                         case 'today':
-                          filterDate = now.toISOString().split('T')[0];
+                          displayDate = now.toISOString().split('T')[0];
                           break;
                         case 'yesterday':
                           const yesterday = new Date(now);
                           yesterday.setDate(yesterday.getDate() - 1);
-                          filterDate = yesterday.toISOString().split('T')[0];
+                          displayDate = yesterday.toISOString().split('T')[0];
                           break;
                         case 'week':
                           const weekAgo = new Date(now);
                           weekAgo.setDate(weekAgo.getDate() - 7);
-                          filterDate = weekAgo.toISOString().split('T')[0];
+                          displayDate = weekAgo.toISOString().split('T')[0];
                           break;
-                        case '15days':
-                          const days15 = new Date(now);
-                          days15.setDate(days15.getDate() - 15);
-                          filterDate = days15.toISOString().split('T')[0];
-                          break;
-                        case 'month':
-                          const monthAgo = new Date(now);
-                          monthAgo.setMonth(monthAgo.getMonth() - 1);
-                          filterDate = monthAgo.toISOString().split('T')[0];
-                          break;
-                        case '3months':
-                          const months3 = new Date(now);
-                          months3.setMonth(months3.getMonth() - 3);
-                          filterDate = months3.toISOString().split('T')[0];
-                          break;
-                        case '6months':
-                          const months6 = new Date(now);
-                          months6.setMonth(months6.getMonth() - 6);
-                          filterDate = months6.toISOString().split('T')[0];
-                          break;
-                        case 'year':
-                          const yearAgo = new Date(now);
-                          yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-                          filterDate = yearAgo.toISOString().split('T')[0];
-                          break;
+                        default:
+                          displayDate = '';
                       }
-
-                      setDateFilter(filterDate);
+                      setDateFilter(displayDate);
 
                       // 🔥 CARGAR MENSAJES DESDE EL SERVIDOR CON EL NUEVO FILTRO
-                      if (activeChat && loadMessages && filterDate) {
-                        console.log(`[DATE-FILTER] 📅 Cargando mensajes desde ${filterDate}...`);
-                        loadMessages(activeChat.id, filterDate);
+                      if (activeChat && loadMessages) {
+                        console.log(`[DATE-FILTER] 📅 Cargando mensajes con filtro: ${filterValue}`);
+                        loadMessages(activeChat.id, filterValue);
                       }
                     }}
                   >
