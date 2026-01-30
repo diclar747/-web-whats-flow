@@ -75,3 +75,4 @@ test_system.sh
 
 .vercel
 .env
+backups/
