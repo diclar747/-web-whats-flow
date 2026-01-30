@@ -54,11 +54,35 @@ export const subscribeToPush = async (urlCode: string, name?: string, email?: st
         await registration.update();
 
         console.log('[PushService] 4. Creando suscripción en el navegador...');
-        // 4. Subscribe
-        const subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(publicKey)
-        });
+        // 4. Subscribe (with auto-retry for key mismatch)
+        console.log('[PushService] 4. Creando suscripción en el navegador...');
+        let subscription;
+        try {
+            subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(publicKey)
+            });
+        } catch (subError: any) {
+            // Handle error: "A subscription with a different applicationServerKey... already exists"
+            if (subError.message && (subError.message.includes('applicationServerKey') || subError.message.includes('gcm_sender_id'))) {
+                console.warn('[PushService] Detectada suscripción con llave diferente. Desuscribiendo y reintentando...');
+
+                const existingSub = await registration.pushManager.getSubscription();
+                if (existingSub) {
+                    await existingSub.unsubscribe();
+                    console.log('[PushService] Suscripción anterior eliminada.');
+                }
+
+                // Retry subscription
+                subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(publicKey)
+                });
+                console.log('[PushService] Re-suscripción exitosa.');
+            } else {
+                throw subError; // Re-throw other errors
+            }
+        }
 
         console.log('[PushService] 5. Guardando en servidor...');
         // 5. Send to Server

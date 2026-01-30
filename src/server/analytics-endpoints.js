@@ -717,44 +717,57 @@ module.exports = function (app, pool) {
                 let sessionIds = [sessionId];
                 let phoneNumbers = [];
 
-                // Si es email o teléfono, buscar el user.id correspondiente
+                // 🔒 VERIFICAR ROL DEL USUARIO PRIMERO
                 const [userRows] = await connection.execute(
-                    'SELECT id, phone, email FROM users WHERE email = ? OR phone = ? OR id = ? OR session_id = ? LIMIT 1',
+                    'SELECT id, phone, email, role, admin_phone FROM users WHERE email = ? OR phone = ? OR id = ? OR session_id = ? LIMIT 1',
                     [sessionId, sessionId, sessionId, sessionId]
                 );
 
+                let userRole = null;
                 if (userRows.length > 0) {
                     const user = userRows[0];
-                    console.log(`[ANALYTICS-DASHBOARD] 👤 Usuario encontrado: id=${user.id}, phone=${user.phone}`);
-                    if (!sessionIds.includes(String(user.id))) {
-                        sessionIds.push(String(user.id));
-                    }
-                    if (user.phone && !phoneNumbers.includes(user.phone)) {
-                        phoneNumbers.push(user.phone);
+                    userRole = user.role;
+                    console.log(`[ANALYTICS-DASHBOARD] 👤 Usuario encontrado: id=${user.id}, phone=${user.phone}, role=${userRole}`);
+
+                    // 🔒 Si es AGENTE, solo mostrar SUS datos
+                    if (userRole === 'agent' || userRole === 'supervisor') {
+                        sessionIds = [sessionId];
+                        if (user.phone && !sessionIds.includes(user.phone)) sessionIds.push(user.phone);
+                        if (user.id && !sessionIds.includes(String(user.id))) sessionIds.push(String(user.id));
+                        if (user.phone) phoneNumbers.push(user.phone);
+                        console.log(`[ANALYTICS-DASHBOARD] 🔒 Modo AGENTE: Solo datos propios - sessionIds: [${sessionIds.join(', ')}]`);
+                    } else {
+                        // Admin/Super_admin: Expandir a todas sus sesiones
+                        if (!sessionIds.includes(String(user.id))) {
+                            sessionIds.push(String(user.id));
+                        }
+                        if (user.phone && !phoneNumbers.includes(user.phone)) {
+                            phoneNumbers.push(user.phone);
+                        }
+
+                        // Si el sessionId parece un teléfono, agregarlo a phoneNumbers
+                        if (/^\d{10,15}$/.test(sessionId) && !phoneNumbers.includes(sessionId)) {
+                            phoneNumbers.push(sessionId);
+                        }
+
+                        // Búsqueda adicional por owner_phone_number en user_sessions (solo para admins)
+                        const [ownerRows] = await connection.execute(
+                            'SELECT DISTINCT session_id, phone FROM user_sessions WHERE owner_phone_number = ? OR phone = ?',
+                            [sessionId, sessionId]
+                        );
+
+                        for (const row of ownerRows) {
+                            if (row.session_id && !sessionIds.includes(row.session_id)) {
+                                sessionIds.push(row.session_id);
+                            }
+                            if (row.phone && !phoneNumbers.includes(row.phone)) {
+                                phoneNumbers.push(row.phone);
+                            }
+                        }
                     }
                 }
 
-                // Si el sessionId parece un teléfono, agregarlo a phoneNumbers
-                if (/^\d{10,15}$/.test(sessionId) && !phoneNumbers.includes(sessionId)) {
-                    phoneNumbers.push(sessionId);
-                }
-
-                // Búsqueda adicional por owner_phone_number en user_sessions
-                const [ownerRows] = await connection.execute(
-                    'SELECT DISTINCT session_id, phone FROM user_sessions WHERE owner_phone_number = ? OR phone = ?',
-                    [sessionId, sessionId]
-                );
-
-                for (const row of ownerRows) {
-                    if (row.session_id && !sessionIds.includes(row.session_id)) {
-                        sessionIds.push(row.session_id);
-                    }
-                    if (row.phone && !phoneNumbers.includes(row.phone)) {
-                        phoneNumbers.push(row.phone);
-                    }
-                }
-
-                console.log(`[ANALYTICS-DASHBOARD] 📋 SessionIds: [${sessionIds.join(', ')}], Phones: [${phoneNumbers.join(', ')}]`);
+                console.log(`[ANALYTICS-DASHBOARD] 📋 SessionIds: [${sessionIds.join(', ')}], Phones: [${phoneNumbers.join(', ')}], Role: ${userRole}`);
 
                 const sessionPlaceholders = sessionIds.map(() => '?').join(',');
                 const phonePlaceholders = phoneNumbers.length > 0 ? phoneNumbers.map(() => '?').join(',') : null;

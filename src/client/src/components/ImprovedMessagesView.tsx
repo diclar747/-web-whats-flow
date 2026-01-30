@@ -131,6 +131,12 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
 
     console.log(`🔌 [MESSAGES-VIEW] Socket conectado, escuchando mensajes para chat ${chatJid}`);
 
+    // Unirse a la sala de la sesión específica
+    if (sessionId) {
+      socket.emit('join-session', { sessionId });
+      console.log(`🔌 [MESSAGES-VIEW] Solicitando unirse a sala: session-${sessionId}`);
+    }
+
     // Evento cuando llega un nuevo mensaje
     const handleNewMessage = (data: any) => {
       console.log('💬 [MESSAGES-VIEW] Nuevo mensaje recibido:', data);
@@ -229,7 +235,7 @@ const ImprovedMessagesView: React.FC<ImprovedMessagesViewProps> = ({
       off('message');
       off('message-status-update');
     };
-  }, [socket, isConnected, chatJid, on, off, scrollToBottom]);
+  }, [socket, isConnected, chatJid, on, off, scrollToBottom, sessionId]);
 
   // Render clickable links
   const renderTextWithLinks = (text: string) => {

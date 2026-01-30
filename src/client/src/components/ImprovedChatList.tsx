@@ -376,6 +376,12 @@ const ImprovedChatList: React.FC<ImprovedChatListProps> = ({
 
     console.log('🔌 [CHAT-LIST] Socket conectado, escuchando mensajes para reordenar chats');
 
+    // Unirse a la sala de la sesión específica para recibir actualizaciones
+    if (sessionId) {
+      socket.emit('join-session', { sessionId });
+      console.log(`🔌 [CHAT-LIST] Solicitando unirse a sala: session-${sessionId}`);
+    }
+
     const handleNewMessage = (data: any) => {
       console.log('💬 [CHAT-LIST] Nuevo mensaje recibido:', data);
 
@@ -447,7 +453,7 @@ const ImprovedChatList: React.FC<ImprovedChatListProps> = ({
     return () => {
       off('message');
     };
-  }, [socket, isConnected, on, off]);
+  }, [socket, isConnected, on, off, sessionId]);
 
   // Handle menu
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, chat: Chat) => {

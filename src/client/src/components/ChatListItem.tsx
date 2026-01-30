@@ -54,7 +54,7 @@ export const ChatListItem: React.FC<ChatListItemProps> = ({
             title={
                 <Box sx={{ p: 0.5 }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>{chat.name || chat.id.split('@')[0]}</Typography>
-                    <Typography variant="caption" sx={{ opacity: 0.8, display: 'block' }}>{chat.id}</Typography>
+                    <Typography variant="caption" sx={{ opacity: 0.8, display: 'block' }}>{chat.id.split('@')[0]}</Typography>
                     {chat.lastMessage && (
                         <Box sx={{ mt: 1, pt: 0.5, borderTop: '1px solid rgba(255,255,255,0.2)' }}>
                             <Typography variant="caption" sx={{ fontStyle: 'italic' }}>

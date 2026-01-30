@@ -640,6 +640,17 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
     loadCampaigns();
   }, [loadCampaigns]);
 
+  // Helper para procesar URLs de medios y proxies
+  // FIX: 403 Forbidden para imágenes de WhatsApp
+  const getMediaUrl = (url: string | undefined) => {
+    if (!url) return '';
+    if (url.startsWith('data:')) return url;
+    if (url.includes('whatsapp.net')) {
+      return `${getAPIBaseURL()}/api/proxy/avatar?url=${encodeURIComponent(url)}`;
+    }
+    return url;
+  };
+
   // Cargar sesiones activas de envío
   useEffect(() => {
     loadSenderSessions();
@@ -2530,7 +2541,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                                 onClick={() => handleWhatsAppGroupSelection(group.id || group.jid)}
                               >
                                 <Checkbox checked={selectedWhatsAppGroups.includes(group.id || group.jid)} />
-                                <Avatar src={group.avatar_url} sx={{ width: 32, height: 32 }}>
+                                <Avatar src={getMediaUrl(group.avatar_url)} sx={{ width: 32, height: 32 }}>
                                   {!group.avatar_url && <Group />}
                                 </Avatar>
                                 <ListItemText
@@ -2768,7 +2779,7 @@ const RealCampaignsModuleContent: React.FC<RealCampaignsModuleProps> = ({ sessio
                       <Paper sx={{ p: 2, bgcolor: (theme) => theme.palette.background.paper }}>
                         {mediaPreview ? (
                           <img
-                            src={mediaPreview}
+                            src={getMediaUrl(mediaPreview) || ''}
                             alt="Preview"
                             style={{ maxWidth: '200px', maxHeight: '200px', objectFit: 'cover' }}
                           />

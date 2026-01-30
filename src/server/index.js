@@ -589,7 +589,7 @@ function registerReconnectionAttempt(sessionId) {
 
     reconnectionState.set(sessionId, state);
 
-    console.log(`[RECONNECT] 📊 ${sessionId}: Intento #${state.attempts}, próximo permitido en ${Math.round(delay/1000)}s`);
+    console.log(`[RECONNECT] 📊 ${sessionId}: Intento #${state.attempts}, próximo permitido en ${Math.round(delay / 1000)}s`);
 
     return delay;
 }
@@ -617,7 +617,7 @@ function queueReconnection(sessionId, reason, priority = false) {
 
     const canReconnectResult = canReconnect(sessionId);
     if (!canReconnectResult.allowed) {
-        console.log(`[RECONNECT-QUEUE] ⏳ ${sessionId}: ${canReconnectResult.reason}. Esperando ${Math.round(canReconnectResult.waitTime/1000)}s`);
+        console.log(`[RECONNECT-QUEUE] ⏳ ${sessionId}: ${canReconnectResult.reason}. Esperando ${Math.round(canReconnectResult.waitTime / 1000)}s`);
         // Programar para después del cooldown
         setTimeout(() => queueReconnection(sessionId, reason, priority), canReconnectResult.waitTime + 1000);
         return;
@@ -743,7 +743,7 @@ const messageRateLimiter = {
             const waitTime = this.config.minDelayBetweenMessages - timeSinceLastMessage;
             return {
                 allowed: false,
-                reason: `Espera ${Math.ceil(waitTime/1000)}s entre mensajes`,
+                reason: `Espera ${Math.ceil(waitTime / 1000)}s entre mensajes`,
                 waitTime: waitTime,
                 shouldWait: true // Indica que debe esperar, no que está bloqueado
             };
@@ -880,7 +880,7 @@ async function sendMessageWithRateLimit(sock, sessionId, jid, content, options =
     if (!checkResult.allowed) {
         if (checkResult.shouldWait && checkResult.waitTime) {
             // Esperar el tiempo necesario entre mensajes
-            console.log(`[RATE-LIMIT] ⏳ ${sessionId}: Esperando ${Math.ceil(checkResult.waitTime/1000)}s antes de enviar...`);
+            console.log(`[RATE-LIMIT] ⏳ ${sessionId}: Esperando ${Math.ceil(checkResult.waitTime / 1000)}s antes de enviar...`);
             await new Promise(resolve => setTimeout(resolve, checkResult.waitTime));
         } else {
             // Está bloqueado, no enviar
@@ -6658,6 +6658,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 }
                 // ✅ PERMITIR LIDs de contactos individuales, pero seguir rechazando LIDs de grupos
                 // Los LIDs individuales ahora se procesan normalmente
+
+                if (!isRecent) {
+                    console.log(`[${sessionId}] ⏰ Mensaje antiguo (${ageSeconds}s > 300s), ignorando`);
+                    continue;
+                }
 
                 const messageId = msg.key.id;
                 // 🆕 USAR remoteJidAlt si existe (JID real cuando el principal es LID)
@@ -23101,32 +23106,66 @@ app.get('/api/dashboard/stats/:sessionId', async (req, res) => {
     }
 
     try {
-        // Obtener todos los session_ids válidos para este usuario
-        const sessionIds = await getAllSessionIds(sessionId);
-        console.log('[STATS-API-DEBUG] 🔑 SessionIds obtenidos:', {
-            original: sessionId,
-            encontrados: sessionIds,
-            cantidad: sessionIds?.length
-        });
-
-        if (!sessionIds || sessionIds.length === 0) {
-            console.warn('[STATS-API-DEBUG] ⚠️ NO SE ENCONTRARON SESSION IDS - Devolviendo stats en 0');
-            return res.json({
-                success: true,
-                stats: {
-                    contacts: 0,
-                    groups: 0,
-                    messages: 0,
-                    messagesToday: 0,
-                    agents: 0,
-                    activeLines: 0,
-                    unreadMessages: 0
-                }
-            });
-        }
-
         const connection = await pool.getConnection();
         try {
+            // 🔒 VERIFICAR ROL DEL USUARIO ANTES DE EXPANDIR SESIONES
+            // Si es un agente, solo mostrar SUS datos, no los del admin
+            let userRole = null;
+            let userPhone = null;
+            let userId = null;
+
+            // Buscar el usuario por sessionId (puede ser email, phone, o ID)
+            const [userCheck] = await connection.execute(
+                `SELECT id, phone, role, admin_phone FROM users
+                 WHERE email = ? OR phone = ? OR id = ? LIMIT 1`,
+                [sessionId, sessionId, sessionId]
+            );
+
+            if (userCheck.length > 0) {
+                userRole = userCheck[0].role;
+                userPhone = userCheck[0].phone;
+                userId = userCheck[0].id;
+                console.log(`[STATS-API-DEBUG] 👤 Usuario identificado: id=${userId}, role=${userRole}, phone=${userPhone}`);
+            }
+
+            let sessionIds;
+
+            // 🔒 FILTRADO POR ROL
+            if (userRole === 'agent' || userRole === 'supervisor') {
+                // Agentes/Supervisores: SOLO sus propios datos
+                sessionIds = [sessionId];
+                if (userPhone && !sessionIds.includes(userPhone)) sessionIds.push(userPhone);
+                if (userId && !sessionIds.includes(String(userId))) sessionIds.push(String(userId));
+                console.log(`[STATS-API-DEBUG] 🔒 Modo AGENTE: Solo datos propios - sessionIds: [${sessionIds.join(', ')}]`);
+            } else {
+                // Admins: Obtener todas las sesiones del usuario
+                sessionIds = await getAllSessionIds(sessionId);
+            }
+
+            console.log('[STATS-API-DEBUG] 🔑 SessionIds obtenidos:', {
+                original: sessionId,
+                encontrados: sessionIds,
+                cantidad: sessionIds?.length,
+                userRole: userRole
+            });
+
+            if (!sessionIds || sessionIds.length === 0) {
+                console.warn('[STATS-API-DEBUG] ⚠️ NO SE ENCONTRARON SESSION IDS - Devolviendo stats en 0');
+                connection.release();
+                return res.json({
+                    success: true,
+                    stats: {
+                        contacts: 0,
+                        groups: 0,
+                        messages: 0,
+                        messagesToday: 0,
+                        agents: 0,
+                        activeLines: 0,
+                        unreadMessages: 0
+                    }
+                });
+            }
+
             // Construir placeholders para IN clause
             const placeholders = sessionIds.map(() => '?').join(',');
 
