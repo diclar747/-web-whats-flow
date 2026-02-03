@@ -532,9 +532,14 @@ router.delete('/:campaignId', async (req, res) => {
 router.get('/detail/:campaignId', async (req, res) => {
   try {
     const { campaignId } = req.params;
-    const campaign = campaigns.get(campaignId);
+    // FIX: Consultar a BD en lugar de usar Map no definido
+    const pool = getPool();
+    const [campaigns] = await pool.execute(
+      'SELECT * FROM campaigns WHERE id = ?',
+      [campaignId]
+    );
 
-    if (!campaign) {
+    if (campaigns.length === 0) {
       return res.status(404).json({
         success: false,
         error: 'Campaña no encontrada'
@@ -543,7 +548,7 @@ router.get('/detail/:campaignId', async (req, res) => {
 
     res.json({
       success: true,
-      campaign
+      campaign: campaigns[0]
     });
 
   } catch (error) {

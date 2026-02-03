@@ -118,7 +118,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
   // 🌙 MODO OSCURO "LEAD WAVE"
   // El tema se gestiona vía ThemeContext, pero aquí forzamos estilos específicos para el chat
-  const theme = useTheme();
+  const themeContext = useTheme();
+  const isDarkMode = themeContext.isDarkMode;
 
   const { socket } = useSocket();
 
@@ -145,7 +146,9 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
   // Estados
   const [searchTerm, setSearchTerm] = useState('');
-  const [messageText, setMessageText] = useState('');
+  // ⚡ OPTIMIZACIÓN: Usar ref para el texto del mensaje para evitar re-renders
+  const messageTextRef = useRef('');
+  const [hasMessageText, setHasMessageText] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -509,7 +512,21 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
     console.log(`[PERFORMANCE] Filtrando ${messages.length} mensajes con filtros:`, { dateFilter, quickFilter });
 
-    const filtered = messages.filter(msg => {
+    // ✅ PASO 1: Filtrar duplicados usando Set de IDs
+    const seenIds = new Set<string>();
+    const uniqueMessages = messages.filter(msg => {
+      if (seenIds.has(msg.id)) {
+        console.log(`[DUPLICATE] Mensaje duplicado detectado: ${msg.id}, ignorando`);
+        return false;
+      }
+      seenIds.add(msg.id);
+      return true;
+    });
+
+    console.log(`[ANTI-DUPLICATE] ${messages.length} mensajes → ${uniqueMessages.length} únicos`);
+
+    // ✅ PASO 2: Filtrar por fecha
+    const filtered = uniqueMessages.filter(msg => {
       // Si no hay filtro de fecha o es 'all', mostrar todos
       if (!dateFilter || dateFilter === 'all') return true;
 
@@ -893,7 +910,8 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
   // Funciones
   const handleSendMessage = async () => {
-    if (!messageText.trim() && !selectedFile) return;
+    const currentText = messageTextRef.current.trim();
+    if (!currentText && !selectedFile) return;
     if (!activeChat) return;
 
     try {
@@ -975,7 +993,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         const formData = new FormData();
         formData.append('sessionId', sessionId);
         formData.append('number', activeChat.id);
-        formData.append('caption', messageText.trim() || '');
+        formData.append('caption', messageTextRef.current.trim() || '');
         formData.append('file', fileToSend);
 
         // ✅ AGREGADO: Información del agente
@@ -1015,17 +1033,22 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
         setSelectedFile(null);
         setFilePreview(null);
         // ✅ WhatsAppContext recibirá el mensaje vía Socket.IO y lo agregará automáticamente
-      } else if (messageText.trim() && sendMessage) {
+      } else if (messageTextRef.current.trim() && sendMessage) {
         const contextInfo = replyMessage ? {
           id: replyMessage.id,
           message: replyMessage.message,
           from: replyMessage.from
         } : undefined;
 
-        await sendMessage(activeChat.id, messageText, contextInfo);
+        await sendMessage(activeChat.id, messageTextRef.current, contextInfo);
       }
 
-      setMessageText('');
+      // Limpiar el input
+      messageTextRef.current = '';
+      setHasMessageText(false);
+      if (messageInputRef.current) {
+        messageInputRef.current.value = '';
+      }
       setReplyMessage?.(null);
       setShowEmojiPicker(false);
       // ✅ WhatsAppContext recibirá el mensaje vía Socket.IO y lo agregará automáticamente
@@ -1062,7 +1085,14 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
   };
 
   const handleEmojiClick = (emojiData: any) => {
-    setMessageText(prev => prev + emojiData.emoji);
+    // ⚡ OPTIMIZACIÓN: Actualizar ref y input directamente
+    if (messageInputRef.current) {
+      const newValue = messageTextRef.current + emojiData.emoji;
+      messageTextRef.current = newValue;
+      messageInputRef.current.value = newValue;
+      setHasMessageText(newValue.trim().length > 0);
+      messageInputRef.current.focus();
+    }
   };
 
   const formatTime = (timestamp: string) => {
@@ -1335,20 +1365,9 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       hasGroups: chats.some(c => c.isGroup)
     });
 
-    // Caché simple para evitar cálculos repetidos con mismos datos
-    // ✅ FIX: Incluir sessionId en la llave para evitar que chats de un canal aparezcan en otro
-    const cacheKey = `${sessionId}-${chats.length}-${filterTab}-${searchTerm}`;
-    const cachedResult = sessionStorage.getItem(`chatFilter-${cacheKey}`);
-
-    if (cachedResult) {
-      try {
-        const parsed = JSON.parse(cachedResult);
-        console.log('[PERFORMANCE] ✅ Usando caché de filtros');
-        return parsed;
-      } catch (e) {
-        console.warn('[PERFORMANCE] ❌ Error parseando caché, recalculando...');
-      }
-    }
+    // ⚠️ CACHÉ DESACTIVADA: Para forzar recarga de datos frescos
+    // const cacheKey = `${sessionId}-${chats.length}-${filterTab}-${searchTerm}`;
+    // const cachedResult = sessionStorage.getItem(`chatFilter-${cacheKey}`);
 
     const filtered = chats.filter(chat => {
       const chatName = chat.name || chat.id.split('@')[0] || 'Desconocido';
@@ -1411,13 +1430,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
     const groupCount = chats.filter(c => c.id.includes('@g.us')).length;
     console.log(`[PERFORMANCE] 🔍 Filtro: Tab ${filterTab}, Total: ${chats.length}, Filtrados: ${filtered.length}, Grupos ocultos: ${groupCount}`);
 
-    // Guardar en caché por 30 segundos
-    try {
-      sessionStorage.setItem(`chatFilter-${cacheKey}`, JSON.stringify(filtered));
-      sessionStorage.setItem(`chatFilter-time-${cacheKey}`, Date.now().toString());
-    } catch (e) {
-      console.warn('[PERFORMANCE] ⚠️ No se pudo guardar en caché, sessionStorage lleno');
-    }
+    // ⚠️ CACHÉ DESACTIVADA para forzar recarga de datos frescos
+    // try {
+    //   sessionStorage.setItem(`chatFilter-${cacheKey}`, JSON.stringify(filtered));
+    //   sessionStorage.setItem(`chatFilter-time-${cacheKey}`, Date.now().toString());
+    // } catch (e) {
+    //   console.warn('[PERFORMANCE] ⚠️ No se pudo guardar en caché, sessionStorage lleno');
+    // }
 
     return filtered;
   }, [chats, searchTerm, filterTab]);
@@ -1508,7 +1527,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
   }
 
   return (
-    <Box sx={{ display: 'flex', height: 'calc(100vh - 64px)', bgcolor: colors.background }}>
+    <Box sx={{
+      display: 'flex',
+      height: 'calc(100vh - 64px)',
+      maxHeight: 'calc(100vh - 64px)', // Forzar altura máxima
+      bgcolor: colors.background,
+      overflow: 'hidden' // Evitar scroll en el contenedor principal
+    }}>
       {/* ============ SIDEBAR DE CHATS ============ */}
       <Box sx={{
         width: chatListCollapsed ? 80 : 420,
@@ -1866,13 +1891,34 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       </Box>
 
       {/* ============ ÁREA DE CHAT ============ */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <Box sx={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        overflow: 'hidden',
+        minWidth: 0, // Importante para flex
+        width: '100%',
+        height: '100%', // Altura completa del contenedor padre
+        maxHeight: '100%' // No exceder
+      }}>
         {activeChat ? (
-          <>
+          <Box sx={{
+            display: 'grid',
+            gridTemplateRows: '70px auto 1fr auto', // Header, Filtros, Mensajes, Input
+            height: '100%',
+            width: '100%',
+            maxHeight: '100%',
+            overflow: 'hidden',
+            position: 'relative',
+            boxSizing: 'border-box'
+          }}>
             {/* Header del chat */}
             <Box sx={{
+              // Grid row 1: altura fija de 70px
+              gridRow: 1,
               height: 70,
-              bgcolor: colors.header, // Tema oscuro
+              bgcolor: colors.header,
               display: 'flex',
               alignItems: 'center',
               px: 3,
@@ -2014,6 +2060,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
             {/* Barra de búsqueda por fecha */}
             {showSearchBar && (
               <Box sx={{
+                gridRow: 2, // Segunda fila del grid
                 p: 2,
                 bgcolor: colors.header,
                 borderBottom: `1px solid ${colors.divider}`,
@@ -2199,13 +2246,20 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
             <Box
               data-messages-container
               sx={{
-                flex: 1,
-                overflow: 'auto',
+                // Grid row 3: ocupa el espacio flexible (1fr)
+                gridRow: 3,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                minHeight: 0, // ✅ CRÍTICO: Permite que grid controle la altura
+                height: '100%',
+                maxHeight: '100%',
                 // Dark mode background - sin imagen de fondo
-                backgroundColor: '#0f172a', // Deep slate dark
+                backgroundColor: '#0b141a', // Color WhatsApp Web dark
                 backgroundImage: 'none',
-                p: 3,
+                p: 2,
                 position: 'relative',
+                boxSizing: 'border-box',
+                width: '100%', // Asegurar ancho completo
                 // Custom scrollbar
                 '&::-webkit-scrollbar': {
                   width: '6px'
@@ -2579,45 +2633,54 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
               </Box>
             )}
 
-            {/* Barra de entrada */}
+            {/* Barra de entrada - SIEMPRE VISIBLE ABAJO */}
             <Box sx={{
-              bgcolor: colors.header,
-              p: '12px 20px',
+              gridRow: 4,
+              flexShrink: 0, // ✅ No se reduce
+              zIndex: 10,
+              width: '100%',
+              boxSizing: 'border-box',
+              bgcolor: isDarkMode ? '#202c33' : '#f0f2f5',
+              p: '12px 16px',
               display: 'flex',
               alignItems: 'center',
               gap: 1.5,
-              borderTop: `1px solid ${colors.divider}`,
-              boxShadow: '0 -1px 3px rgba(0,0,0,0.06)'
+              borderTop: `1px solid ${isDarkMode ? '#2a3942' : '#e0e0e0'}`,
+              minHeight: '62px',
+              maxHeight: '150px',
+              boxShadow: '0 -2px 10px rgba(0,0,0,0.1)'
             }}>
               <Tooltip title="Emojis">
                 <IconButton
+                  size="small"
                   onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                   sx={{
-                    color: colors.textSecondary,
-                    p: '8px',
+                    color: isDarkMode ? '#8696a0' : '#54656f',
+                    p: '6px',
                     '&:hover': {
                       color: colors.primary,
-                      bgcolor: colors.hover
+                      bgcolor: 'transparent'
                     }
                   }}
                 >
-                  <InsertEmoticon />
+                  <InsertEmoticon fontSize="small" />
                 </IconButton>
               </Tooltip>
 
               <Tooltip title="Adjuntar">
                 <IconButton
+                  size="small"
                   onClick={() => fileInputRef.current?.click()}
                   sx={{
-                    color: colors.textSecondary,
-                    p: '8px',
+                    color: isDarkMode ? '#8696a0' : '#54656f',
+                    p: '6px',
                     '&:hover': {
                       color: colors.primary,
-                      bgcolor: colors.hover
+                      bgcolor: 'transparent'
                     }
                   }}
                 >
-                  <AttachFile />
+                  <AttachFile fontSize="small" />
                 </IconButton>
               </Tooltip>
 
@@ -2633,11 +2696,14 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                 inputRef={messageInputRef}
                 fullWidth
                 multiline
-                maxRows={5}
-                placeholder="Escribe un mensaje aquí"
-                value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
-                onKeyPress={(e) => {
+                maxRows={4}
+                placeholder="Escribe un mensaje"
+                defaultValue=""
+                onChange={(e) => {
+                  messageTextRef.current = e.target.value;
+                  setHasMessageText(e.target.value.trim().length > 0);
+                }}
+                onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     handleSendMessage();
@@ -2645,75 +2711,66 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                 }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
-                    bgcolor: colors.theirMessage, // Mismo color que mensajes recibidos
-                    borderRadius: '10px',
-                    fontSize: '15px',
-                    fontWeight: 400,
-                    transition: 'all 0.2s ease',
+                    bgcolor: isDarkMode ? '#2a3942' : '#ffffff',
+                    borderRadius: '8px',
+                    minHeight: '40px',
+                    py: '4px',
+                    px: '12px',
                     '& fieldset': {
-                      border: `1px solid ${colors.divider}`,
-                      transition: 'all 0.2s ease'
+                      border: 'none'
                     },
                     '&:hover': {
-                      bgcolor: colors.theirMessageHover, // Mismo hover que mensajes
-                      '& fieldset': {
-                        borderColor: colors.divider,
-                        borderWidth: '1px'
-                      }
+                      bgcolor: isDarkMode ? '#374248' : '#f5f5f5'
                     },
                     '&.Mui-focused': {
-                      bgcolor: colors.theirMessage, // Mantener mismo color al escribir
-                      boxShadow: `0 0 0 2px ${colors.divider}`,
-                      '& fieldset': {
-                        borderColor: colors.textSecondary,
-                        borderWidth: '1px'
-                      }
-                    },
-                    '& textarea': {
-                      padding: '11px 14px',
-                      lineHeight: 1.5,
-                      letterSpacing: '0.01em'
+                      bgcolor: isDarkMode ? '#374248' : '#f5f5f5'
                     }
+                  },
+                  '& .MuiInputBase-input': {
+                    fontSize: '15px',
+                    lineHeight: '20px',
+                    color: isDarkMode ? '#e9edef' : '#111b21',
+                    padding: 0
                   }
                 }}
               />
 
-              {messageText.trim() || selectedFile ? (
+              {(hasMessageText || selectedFile) ? (
                 <Tooltip title="Enviar">
                   <IconButton
                     onClick={handleSendMessage}
+                    size="small"
                     sx={{
-                      bgcolor: colors.primary,
+                      bgcolor: '#00a884',
                       color: 'white',
                       p: '8px',
-                      // 🎨 FASE 1: Botón de envío mejorado
-                      transition: 'all 0.3s ease',
+                      transition: 'all 0.2s ease',
                       '&:hover': {
-                        bgcolor: colors.primaryDark,
-                        transform: 'scale(1.1)',
-                        boxShadow: colors.shadowStrong
+                        bgcolor: '#008f6f',
+                        transform: 'scale(1.05)'
                       },
                       '&:active': {
                         transform: 'scale(0.95)'
                       }
                     }}
                   >
-                    <Send />
+                    <Send fontSize="small" />
                   </IconButton>
                 </Tooltip>
               ) : (
                 <Tooltip title="Grabar audio">
                   <IconButton
+                    size="small"
                     sx={{
-                      color: colors.textSecondary,
+                      color: isDarkMode ? '#8696a0' : '#54656f',
                       p: '8px',
                       '&:hover': {
                         color: colors.primary,
-                        bgcolor: colors.hover
+                        bgcolor: 'transparent'
                       }
                     }}
                   >
-                    <Mic />
+                    <Mic fontSize="small" />
                   </IconButton>
                 </Tooltip>
               )}
@@ -3139,7 +3196,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                 onSuccess={handleKanbanSuccess}
               />
             )}
-          </>
+          </Box>
         ) : (
           /* Pantalla vacía cuando no hay chat seleccionado */
           <Box sx={{

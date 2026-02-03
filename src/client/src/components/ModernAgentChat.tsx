@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import {
   Box,
   Avatar,
@@ -90,8 +90,15 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
   const [assignedChats, setAssignedChats] = useState<AgentChat[]>([]);
   const [selectedChat, setSelectedChat] = useState<AgentChat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [messageText, setMessageText] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  
+  // 🚀 Usar ref para el texto del mensaje - evita re-renders en cada tecla
+  const messageTextRef = useRef('');
+  const [hasMessageContent, setHasMessageContent] = useState(false);
+  const updateMessageContent = useCallback(() => {
+    setHasMessageContent(messageTextRef.current.trim().length > 0 || !!selectedFile);
+  }, [selectedFile]);
 
   // Estados de carga
   const [loadingChats, setLoadingChats] = useState(true);
@@ -101,7 +108,6 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
   // Estados de UI
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -147,7 +153,9 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
   const loadMessages = useCallback(async (chatJid: string) => {
     setLoadingMessages(true);
     try {
-      const response = await fetch(`${apiUrl}/api/messages/${sessionId}/${chatJid}?dateFilter=today&limit=50`, {
+      // 🔥 FIX: Cargar TODO el historial, no solo los de hoy
+      // Los agentes necesitan ver la conversación completa para seguir el contexto
+      const response = await fetch(`${apiUrl}/api/messages/${sessionId}/${chatJid}?dateFilter=all&limit=100`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -156,6 +164,12 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
       const data = await response.json();
 
       if (data.success && data.messages) {
+        console.log(`📨 Mensajes recibidos del backend:`, data.messages.slice(-3).map((m: any) => ({ 
+          id: m.id, 
+          from_me: m.from_me, 
+          agent_name: m.agent_name,
+          text: m.text_content?.substring(0, 30)
+        })));
         setMessages(data.messages);
         console.log(`✅ ${data.messages.length} mensajes cargados para ${chatJid}`);
 
@@ -171,14 +185,19 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
 
   // ============== ENVIAR MENSAJE ==============
   const handleSendMessage = async () => {
-    if ((!messageText.trim() && !selectedFile) || !selectedChat || sending) return;
+    const currentText = messageTextRef.current;
+    if ((!currentText.trim() && !selectedFile) || !selectedChat || sending) return;
 
     setSending(true);
-    const tempMessage = messageText;
+    const tempMessage = currentText;
     const tempFile = selectedFile;
 
     // Limpiar input inmediatamente para mejor UX
-    setMessageText('');
+    messageTextRef.current = '';
+    if (messageInputRef.current) {
+      messageInputRef.current.value = '';
+    }
+    setHasMessageContent(false);
     setSelectedFile(null);
 
     try {
@@ -233,7 +252,11 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
     } catch (error) {
       console.error('Error enviando mensaje:', error);
       // Restaurar mensaje en caso de error
-      setMessageText(tempMessage);
+      messageTextRef.current = tempMessage;
+      if (messageInputRef.current) {
+        messageInputRef.current.value = tempMessage;
+      }
+      setHasMessageContent(true);
       setSelectedFile(tempFile);
     } finally {
       setSending(false);
@@ -241,17 +264,38 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
   };
 
   // ============== SELECCIONAR CHAT ==============
-  const handleSelectChat = (chat: AgentChat) => {
+  const handleSelectChat = async (chat: AgentChat) => {
     setSelectedChat(chat);
     setMessages([]);
     loadMessages(chat.chat_jid);
 
-    // Marcar como leído el chat seleccionado
+    // Marcar como leído el chat seleccionado (optimistic update)
     setAssignedChats(prev =>
       prev.map(c =>
         c.chat_jid === chat.chat_jid ? { ...c, unread_count: 0 } : c
       )
     );
+
+    // 🔥 IMPORTANTE: Llamar al backend para persistir el estado "leído"
+    // Si no hacemos esto, al recargar la página volverán las notificaciones
+    if (chat.unread_count > 0) {
+      try {
+        await fetch(`${apiUrl}/api/messages/mark-read`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            sessionId: sessionId,
+            chatJid: chat.chat_jid
+          })
+        });
+        console.log(`[AGENT-CHAT] ✅ Mensajes marcados como leídos en backend: ${chat.chat_jid}`);
+      } catch (error) {
+        console.error('[AGENT-CHAT] ❌ Error marcando como leído:', error);
+      }
+    }
   };
 
   // ============== ADJUNTAR ARCHIVO ==============
@@ -264,7 +308,11 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
 
   // ============== EMOJI ==============
   const handleEmojiClick = (emojiData: any) => {
-    setMessageText(prev => prev + emojiData.emoji);
+    messageTextRef.current += emojiData.emoji;
+    if (messageInputRef.current) {
+      messageInputRef.current.value = messageTextRef.current;
+    }
+    updateMessageContent();
     setShowEmojiPicker(false);
   };
 
@@ -523,10 +571,64 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
   useEffect(() => {
     loadAssignedChats();
 
-    // Actualizar cada 30 segundos
-    const interval = setInterval(loadAssignedChats, 30000);
-    return () => clearInterval(interval);
+    // ⚡ OPTIMIZACIÓN: Polling desactivado - Socket.IO maneja actualizaciones en tiempo real
+    // Solo recargar cuando llegue un mensaje nuevo o cambio de estado vía socket
+    // const interval = setInterval(loadAssignedChats, 30000);
+    // return () => clearInterval(interval);
   }, [loadAssignedChats]);
+
+  // ============== ESCUCHAR MENSAJES EN TIEMPO REAL PARA ACTUALIZAR LISTA ==============
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+
+    console.log('📢 [AGENT-CHAT] Escuchando mensajes para actualizar lista de chats');
+
+    const handleNewMessageForList = (data: any) => {
+      console.log('📢 [AGENT-CHAT] Mensaje recibido, actualizando lista:', data);
+
+      const messageChatJid = data.chatJid || data.chat_jid || data.from;
+      if (!messageChatJid) return;
+
+      // Actualizar lista de chats
+      setAssignedChats(prev => {
+        const chatIndex = prev.findIndex(c => c.chat_jid === messageChatJid);
+
+        if (chatIndex !== -1) {
+          // Chat existe - actualizar y mover arriba
+          const updatedChats = [...prev];
+          const chat = updatedChats[chatIndex];
+
+          chat.last_message = data.message || data.text_content || '';
+          chat.last_message_timestamp = data.timestamp || new Date().toISOString();
+
+          // Incrementar contador solo si no es el chat seleccionado y no es del usuario
+          if (messageChatJid !== selectedChat?.chat_jid && !data.from_me) {
+            chat.unread_count = (chat.unread_count || 0) + 1;
+          }
+
+          // Mover al inicio
+          updatedChats.splice(chatIndex, 1);
+          updatedChats.unshift(chat);
+
+          return updatedChats;
+        } else {
+          // Chat nuevo - recargar lista completa desde el servidor
+          // para obtener todos los datos del nuevo chat
+          console.log('📢 [AGENT-CHAT] Nuevo chat detectado, recargando lista...');
+          loadAssignedChats();
+          return prev;
+        }
+      });
+    };
+
+    on('message', handleNewMessageForList);
+    on('message:received', handleNewMessageForList);
+
+    return () => {
+      off('message');
+      off('message:received');
+    };
+  }, [socket, isConnected, on, off, selectedChat?.chat_jid, loadAssignedChats]);
 
   // ============== FILTRAR CHATS ==============
   const filteredChats = assignedChats.filter(chat =>
@@ -946,8 +1048,11 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
                   fullWidth
                   multiline
                   maxRows={4}
-                  value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
+                  defaultValue=""
+                  onChange={(e) => {
+                    messageTextRef.current = e.target.value;
+                    updateMessageContent();
+                  }}
                   placeholder="Escribe un mensaje"
                   variant="outlined"
                   size="small"
@@ -984,7 +1089,7 @@ const ModernAgentChat: React.FC<ModernAgentChatProps> = ({ userId: propUserId, s
               <Tooltip title="Enviar">
                 <IconButton
                   onClick={handleSendMessage}
-                  disabled={sending || (!messageText.trim() && !selectedFile)}
+                  disabled={sending || (!hasMessageContent && !selectedFile)}
                   sx={{
                     bgcolor: '#00a884',
                     color: 'white',

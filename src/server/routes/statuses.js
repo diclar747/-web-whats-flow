@@ -42,7 +42,9 @@ const upload = multer({
     }
 });
 
-module.exports = (app, io) => {
+module.exports = (app, io, getSessionFunc) => {
+    console.log('[STATUSES-ROUTER] ===== MÓDULO CARGADO =====');
+    console.log('[STATUSES-ROUTER] getSessionFunc recibida:', typeof getSessionFunc);
 
     // Helper para obtener pool de forma lazy
     const getPool = () => {
@@ -53,6 +55,16 @@ module.exports = (app, io) => {
         return pool;
     };
 
+    // Helper para obtener sesión de WhatsApp
+    const getSession = (sessionId) => {
+        if (getSessionFunc) {
+            return getSessionFunc(sessionId);
+        }
+        // Fallback: intentar obtener desde el mapa global de sesiones
+        const sessions = app.get('sessions') || new Map();
+        return sessions.get(sessionId);
+    };
+
     // Resolver sessionId cuando viene como owner_phone_number (hex) o phone (numérico)
     const resolveSessionId = async (rawId) => {
         if (!rawId) return rawId;
@@ -60,7 +72,7 @@ module.exports = (app, io) => {
             // Si parece un owner_phone_number (16 hex)
             if (typeof rawId === 'string' && rawId.length === 16 && /^[a-f0-9]{16}$/i.test(rawId)) {
                 const [rows] = await getPool().query(
-                    'SELECT session_id FROM user_sessions WHERE owner_phone_number = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
+                    'SELECT session_id FROM user_sessions WHERE owner_phone = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
                     [rawId]
                 );
                 if (rows.length > 0 && rows[0].session_id) {
@@ -72,7 +84,7 @@ module.exports = (app, io) => {
             // Si parece un número de teléfono, mapear a session_id
             if (/^\d{6,}$/.test(String(rawId))) {
                 const [rows] = await getPool().query(
-                    'SELECT session_id FROM user_sessions WHERE phone = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
+                    'SELECT session_id FROM user_sessions WHERE phone_number = ? AND is_active = 1 ORDER BY updated_at DESC LIMIT 1',
                     [String(rawId)]
                 );
                 if (rows.length > 0 && rows[0].session_id) {
@@ -112,6 +124,7 @@ module.exports = (app, io) => {
                 mediaType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
             }
 
+            // Usar 'phone_number' según el schema real de la tabla
             const [result] = await getPool().query(
                 `INSERT INTO whatsapp_statuses 
         (phone_number, text_content, media_url, media_type, background_color, font_style, status) 
@@ -142,6 +155,7 @@ module.exports = (app, io) => {
             const sessionId = await resolveSessionId(rawSessionId);
             const { status } = req.query;
 
+            // La tabla usa 'phone_number'
             let statusQuery = `
         SELECT * FROM whatsapp_statuses 
         WHERE phone_number = ?
@@ -283,6 +297,266 @@ module.exports = (app, io) => {
         }
     });
 
+    // ==================== PUBLICAR ESTADO EN WHATSAPP ====================
+    /**
+     * POST /api/statuses/publish/:id
+     * Publica un estado directamente en WhatsApp usando Baileys
+     */
+    router.post('/publish/:id', async (req, res) => {
+        console.log(`[STATUS-PUBLISH] ===== ENDPOINT INVOCADO =====`);
+        console.log(`[STATUS-PUBLISH] Params:`, req.params);
+        console.log(`[STATUS-PUBLISH] Body:`, req.body);
+        try {
+            const { id } = req.params;
+            const { sessionId: rawSessionId } = req.body;
+            console.log(`[STATUS-PUBLISH] ID: ${id}, rawSessionId: ${rawSessionId}`);
+            const sessionId = await resolveSessionId(rawSessionId);
+            console.log(`[STATUS-PUBLISH] sessionId resuelto: ${sessionId}`);
+
+            if (!sessionId) {
+                return res.status(400).json({ success: false, error: 'sessionId es requerido' });
+            }
+
+            // Obtener el estado de la base de datos
+            const [statuses] = await getPool().query(
+                'SELECT * FROM whatsapp_statuses WHERE id = ?',
+                [id]
+            );
+
+            if (statuses.length === 0) {
+                return res.status(404).json({ success: false, error: 'Estado no encontrado' });
+            }
+
+            const status = statuses[0];
+
+            // Obtener la sesión de WhatsApp
+            console.log(`[STATUS-PUBLISH] Buscando sesión: ${sessionId}`);
+            console.log(`[STATUS-PUBLISH] Total sesiones en memoria: ${global.sessions ? global.sessions.size : 'N/A'}`);
+            
+            let session = getSession(sessionId);
+            console.log(`[STATUS-PUBLISH] Resultado getSession('${sessionId}'): ${session ? 'ENCONTRADA' : 'NO ENCONTRADA'}`);
+            
+            // Si no se encuentra, intentar buscar por el número de teléfono
+            if (!session) {
+                // Buscar en todas las sesiones activas en memoria
+                console.log(`[STATUS-PUBLISH] Buscando en todas las sesiones activas...`);
+                for (const [key, sess] of global.sessions.entries()) {
+                    console.log(`[STATUS-PUBLISH]   - Sesión: ${key}, conectada: ${sess.isConnected}`);
+                    if (sess.isConnected) {
+                        session = sess;
+                        console.log(`[STATUS-PUBLISH] Usando sesión: ${key}`);
+                        break;
+                    }
+                }
+            }
+
+            if (!session || !session.sock) {
+                console.error(`[STATUS-PUBLISH] ERROR: No se encontró sesión conectada`);
+                return res.status(400).json({ 
+                    success: false, 
+                    error: 'WhatsApp no conectado. Por favor escanea el QR primero.' 
+                });
+            }
+            
+            // Verificar que la conexión esté realmente abierta
+            console.log(`[STATUS-PUBLISH] Sesión válida encontrada, sock existe: ${!!session.sock}`);
+            console.log(`[STATUS-PUBLISH] Estado de conexión: ${session.isConnected}`);
+            console.log(`[STATUS-PUBLISH] User info:`, session.user);
+            
+            if (!session.isConnected) {
+                console.error(`[STATUS-PUBLISH] ERROR: Sesión encontrada pero no conectada`);
+                return res.status(400).json({ 
+                    success: false, 
+                    error: 'WhatsApp desconectado. Reconecta primero.' 
+                });
+            }
+
+            // Publicar el estado
+            try {
+                console.log(`[STATUS-PUBLISH] Intentando publicar estado ${id} para sesión ${sessionId}`);
+                console.log(`[STATUS-PUBLISH] Tipo: ${status.media_type}, URL: ${status.media_url}`);
+                
+                // IMPORTANTE: Los estados/stories en WhatsApp tienen limitaciones conocidas en Baileys
+                // Según la documentación oficial, se necesita:
+                // 1. broadcast: true
+                // 2. statusJidList: lista de contactos que recibirán el estado
+                
+                console.log(`[STATUS-PUBLISH] ⚠️ NOTA: Los estados/stories tienen soporte limitado en Baileys/WhatsApp Web`);
+                console.log(`[STATUS-PUBLISH] Intentando obtener contactos...`);
+                
+                let statusJidList = [];
+                
+                // Intentar obtener contactos de Baileys
+                try {
+                    if (session.sock.contacts && typeof session.sock.contacts === 'object') {
+                        const contacts = Object.keys(session.sock.contacts);
+                        statusJidList = contacts.filter(jid => 
+                            jid.endsWith('@s.whatsapp.net') && 
+                            !jid.includes('@broadcast') &&
+                            !jid.includes('@g.us')
+                        );
+                        console.log(`[STATUS-PUBLISH] Contactos encontrados en Baileys: ${statusJidList.length}`);
+                    }
+                } catch (contactErr) {
+                    console.error(`[STATUS-PUBLISH] Error obteniendo contactos:`, contactErr.message);
+                }
+                
+                // Opciones de envío según documentación de Baileys
+                const messageOptions = {
+                    broadcast: true
+                };
+                
+                // Solo agregar statusJidList si hay contactos
+                if (statusJidList.length > 0) {
+                    messageOptions.statusJidList = statusJidList;
+                }
+                
+                console.log(`[STATUS-PUBLISH] Opciones de envío:`, JSON.stringify(messageOptions));
+                
+                if (status.media_url) {
+                    // La ruta correcta: routes/public/status-media/ (donde se guardan los archivos)
+                    const mediaPath = path.join(__dirname, 'public', status.media_url);
+                    console.log(`[STATUS-PUBLISH] Leyendo archivo desde: ${mediaPath}`);
+                    
+                    // Verificar si el archivo existe
+                    try {
+                        await fs.access(mediaPath);
+                        console.log(`[STATUS-PUBLISH] Archivo encontrado`);
+                    } catch (fileErr) {
+                        console.error(`[STATUS-PUBLISH] Archivo NO encontrado: ${mediaPath}`);
+                        throw new Error(`Archivo no encontrado: ${status.media_url}`);
+                    }
+                    
+                    const mediaBuffer = await fs.readFile(mediaPath);
+                    console.log(`[STATUS-PUBLISH] Archivo leído, tamaño: ${mediaBuffer.length} bytes`);
+                    
+                    if (status.media_type === 'video') {
+                        console.log(`[STATUS-PUBLISH] Enviando video a status@broadcast`);
+                        const result = await session.sock.sendMessage('status@broadcast', {
+                            video: mediaBuffer,
+                            caption: status.text_content || ''
+                        }, messageOptions);
+                        console.log(`[STATUS-PUBLISH] Resultado envío video:`, result ? 'OK' : 'FAILED');
+                    } else {
+                        console.log(`[STATUS-PUBLISH] Enviando imagen a status@broadcast`);
+                        const result = await session.sock.sendMessage('status@broadcast', {
+                            image: mediaBuffer,
+                            caption: status.text_content || ''
+                        }, messageOptions);
+                        console.log(`[STATUS-PUBLISH] Resultado envío imagen:`, result ? 'OK' : 'FAILED');
+                    }
+                } else {
+                    console.log(`[STATUS-PUBLISH] Enviando texto a status@broadcast: ${status.text_content}`);
+                    const result = await session.sock.sendMessage('status@broadcast', {
+                        text: status.text_content
+                    }, messageOptions);
+                    console.log(`[STATUS-PUBLISH] Resultado envío texto:`, result ? 'OK' : 'FAILED');
+                }
+                console.log(`[STATUS-PUBLISH] Mensaje enviado exitosamente`);
+
+                // Marcar como publicado
+                await getPool().query(
+                    `UPDATE whatsapp_statuses 
+                     SET status = 'published', published_at = NOW() 
+                     WHERE id = ?`,
+                    [id]
+                );
+
+                // Guardar en historial
+                await getPool().query(
+                    `INSERT INTO whatsapp_statuses_history 
+                     (phone_number, text_content, media_url, media_type, published_at) 
+                     VALUES (?, ?, ?, ?, NOW())`,
+                    [sessionId, status.text_content, status.media_url, status.media_type]
+                );
+
+                // Emitir evento al frontend
+                io.emit('status-published', { 
+                    statusId: id, 
+                    sessionId,
+                    publishedAt: new Date().toISOString() 
+                });
+
+                res.json({ 
+                    success: true, 
+                    message: 'Estado publicado exitosamente en WhatsApp' 
+                });
+
+            } catch (publishError) {
+                console.error('Error publicando estado:', publishError);
+                
+                // Marcar como fallido
+                await getPool().query(
+                    `UPDATE whatsapp_statuses 
+                     SET status = 'failed', error_message = ? 
+                     WHERE id = ?`,
+                    [publishError.message, id]
+                );
+
+                res.status(500).json({ 
+                    success: false, 
+                    error: 'Error al publicar en WhatsApp: ' + publishError.message 
+                });
+            }
+
+        } catch (error) {
+            console.error('Error en publish:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // ==================== OBTENER ESTADOS DE WHATSAPP ====================
+    /**
+     * GET /api/statuses/whatsapp/:sessionId
+     * Obtiene los estados publicados en WhatsApp para verificar
+     */
+    router.get('/whatsapp/:sessionId', async (req, res) => {
+        try {
+            const { sessionId: rawSessionId } = req.params;
+            const sessionId = await resolveSessionId(rawSessionId);
+
+            if (!sessionId) {
+                return res.status(400).json({ success: false, error: 'sessionId es requerido' });
+            }
+
+            const session = getSession(sessionId);
+            if (!session || !session.sock) {
+                return res.status(400).json({ 
+                    success: false, 
+                    error: 'WhatsApp no conectado' 
+                });
+            }
+
+            // Intentar obtener los estados de WhatsApp
+            // Nota: Baileys no tiene un método directo para obtener estados propios,
+            // pero podemos verificar el historial de mensajes enviados a status@broadcast
+            const [history] = await getPool().query(
+                `SELECT * FROM whatsapp_statuses_history 
+                 WHERE phone_number = ? 
+                 ORDER BY published_at DESC 
+                 LIMIT 50`,
+                [sessionId]
+            );
+
+            res.json({
+                success: true,
+                message: 'Estados publicados desde el sistema',
+                total: history.length,
+                statuses: history.map(h => ({
+                    id: h.id,
+                    text: h.text_content,
+                    mediaType: h.media_type,
+                    publishedAt: h.published_at,
+                    views: h.views_count || 0
+                }))
+            });
+
+        } catch (error) {
+            console.error('Error obteniendo estados de WhatsApp:', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
     // ==================== CREAR PROGRAMACIÓN ====================
     /**
      * POST /api/statuses/schedule/create
@@ -413,7 +687,7 @@ module.exports = (app, io) => {
             if (!session) {
                 try {
                     const [rows] = await getPool().query(
-                        'SELECT phone FROM user_sessions WHERE phone = ? OR session_id = ? LIMIT 1',
+                        'SELECT phone FROM user_sessions WHERE phone_number = ? OR session_id = ? LIMIT 1',
                         [sessionId, sessionId]
                     );
                     if (rows.length > 0 && rows[0].phone) {

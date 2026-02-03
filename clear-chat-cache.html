@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Limpiar Caché del Chat</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        button { padding: 15px 30px; font-size: 18px; cursor: pointer; background: #25d366; color: white; border: none; border-radius: 8px; }
+        button:hover { background: #128c7e; }
+        .success { color: green; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>🧹 Limpiar Caché del Chat</h1>
+    <p>Esto eliminará todos los datos almacenados en el navegador y forzará una recarga limpia.</p>
+    <button onclick="clearCache()">Limpiar Caché y Recargar</button>
+    <div id="result"></div>
+
+    <script>
+        function clearCache() {
+            // Limpiar sessionStorage
+            sessionStorage.clear();
+            
+            // Limpiar localStorage relacionado con chats
+            for (let i = localStorage.length - 1; i >= 0; i--) {
+                const key = localStorage.key(i);
+                if (key && (key.includes('chat') || key.includes('Chat') || key.includes('whatsapp'))) {
+                    localStorage.removeItem(key);
+                }
+            }
+            
+            document.getElementById('result').innerHTML = '<p class="success">✅ Caché limpiado! Redirigiendo...</p>';
+            
+            // Redirigir al chat con parámetro para evitar caché
+            setTimeout(() => {
+                window.location.href = '/chat?nocache=' + Date.now();
+            }, 1000);
+        }
+    </script>
+</body>
+</html>

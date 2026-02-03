@@ -909,7 +909,7 @@ const ChatbotModuleContent: React.FC<ChatbotModuleProps> = ({ sessionId }) => {
                           Bot con IA
                         </Typography>
                         <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                          Respuestas inteligentes generadas automáticamente con Google AI
+                          Respuestas inteligentes generadas automáticamente con Kimi AI
                         </Typography>
                         <Chip label="Recomendado" color="success" size="small"/>
                       </CardContent>

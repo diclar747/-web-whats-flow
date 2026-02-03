@@ -73,7 +73,8 @@ import {
   CheckCircle,
   AccountBalance as ManagementIcon,
   Notifications as PushIcon,
-  Sms as SmsIcon
+  Sms as SmsIcon,
+
 } from '@mui/icons-material';
 
 // Componente de llamada entrante (cargado inmediatamente por ser crítico)
@@ -98,7 +99,7 @@ const UsersModule = lazy(() => import('../modules/UsersModule'));
 const AgentsManagementModule = lazy(() => import('../modules/AgentsManagementModule'));
 const KanbanContactsModule = lazy(() => import('../modules/KanbanContactsModule'));
 const AgentPermissionsManager = lazy(() => import('../components/AgentPermissionsManager'));
-const WhatsAppStatusModule = lazy(() => import('../modules/WhatsAppStatusModule'));
+
 const SMSPremiumModule = lazy(() => import('../modules/SMSPremiumModule'));
 const WhatsAppConnectionModule = lazy(() => import('../modules/WhatsAppConnectionModule'));
 const ManagementModule = lazy(() => import('../modules/ManagementModule'));
@@ -1606,9 +1607,7 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                         <CalendarModule sessionId={activeSessionId || sessionId} />
                       </ProtectedRoute>
                     } />
-                    <Route path="/whatsapp-status/*" element={
-                      <WhatsAppStatusModule sessionId={activeSessionId || sessionId} />
-                    } />
+
                     <Route path="/agents/*" element={
                       <ProtectedRoute module="users" action="view">
                         <AgentsManagementModule sessionId={activeSessionId} />

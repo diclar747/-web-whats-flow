@@ -106,6 +106,39 @@ async function createTables(pool) {
             + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
         );
 
+        // Tabla CHAT - Optimizada para interfaz de chat (mensajes recientes/nuevos)
+        // NO almacena historial completo, solo mensajes activos para UI rápida
+        // Filtra por session_id (usuario) y phone (número de canal WhatsApp)
+        await connection.query(
+            'CREATE TABLE IF NOT EXISTS chat ('
+            + 'id VARCHAR(255) PRIMARY KEY, '
+            + 'session_id VARCHAR(255) NOT NULL,'
+            + 'phone VARCHAR(50) NOT NULL,'
+            + 'chat_jid VARCHAR(255) NOT NULL, '
+            + 'sender_jid VARCHAR(255), '
+            + 'from_me BOOLEAN NOT NULL,'
+            + 'message_type VARCHAR(50), '
+            + 'text_content TEXT,'
+            + 'media_url VARCHAR(1024),'
+            + 'media_mime_type VARCHAR(100),'
+            + 'timestamp DATETIME NOT NULL,'
+            + 'status VARCHAR(50) DEFAULT \'received\', '
+            + 'is_read BOOLEAN DEFAULT FALSE, '
+            + 'sender_name VARCHAR(255), '
+            + 'sender_pushname VARCHAR(255), '
+            + 'agent_id INT, '
+            + 'agent_name VARCHAR(255), '
+            + 'created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,'
+            + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
+            + 'FOREIGN KEY (chat_jid) REFERENCES contacts(jid) ON DELETE CASCADE,'
+            + 'INDEX idx_session_phone (session_id, phone), '
+            + 'INDEX idx_session_chat (session_id, chat_jid), '
+            + 'INDEX idx_phone_timestamp (phone, timestamp), '
+            + 'INDEX idx_timestamp (timestamp), '
+            + 'INDEX idx_chat_timestamp (chat_jid, timestamp) '
+            + ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;'
+        );
+
         await connection.query(
             'CREATE TABLE IF NOT EXISTS campaigns ('
             + 'id INT AUTO_INCREMENT PRIMARY KEY,'
@@ -182,7 +215,7 @@ async function createTables(pool) {
             + 'updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,'
             + 'FOREIGN KEY (campaign_id) REFERENCES personalized_campaigns(id) ON DELETE CASCADE,'
             + 'INDEX idx_campaign (campaign_id),'
-            + 'INDEX idx_phone (phone),'
+            + 'INDEX idx_phone_number (phone_number),'
             + 'INDEX idx_due_day (due_day),'
             + 'INDEX idx_status (status),'
             + 'INDEX idx_paid (paid)'
@@ -454,7 +487,7 @@ async function createTables(pool) {
         await connection.query(
             'CREATE TABLE IF NOT EXISTS whatsapp_statuses ('
             + 'id INT AUTO_INCREMENT PRIMARY KEY,'
-            + 'phone VARCHAR(50) NOT NULL,'
+            + 'phone_number VARCHAR(50) NOT NULL,'
             + 'text_content TEXT,'
             + 'media_url VARCHAR(1024),'
             + 'media_type ENUM(\'text\',\'image\',\'video\') DEFAULT \'text\','

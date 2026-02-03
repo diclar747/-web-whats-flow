@@ -183,6 +183,8 @@ interface Message {
   file_name?: string;
   sender_name?: string;
   sender_avatar?: string;
+  agent_name?: string;
+  agent_id?: number;
 }
 
 interface WhatsAppStyleMessagesProps {
@@ -379,9 +381,24 @@ const WhatsAppStyleMessages: React.FC<WhatsAppStyleMessagesProps> = ({
             <MessageGroup key={msg.id || idx}>
               {msg.from_me ? (
                 <Tooltip title={format(new Date(msg.timestamp), 'HH:mm', { locale: es })}>
-                  <SentBubble elevation={0}>
-                    {renderMessageContent(msg)}
-                  </SentBubble>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                    {/* Etiqueta del agente que envió el mensaje */}
+                    <Chip
+                      label={msg.agent_name || msg.sender_name || 'Admin'}
+                      size="small"
+                      sx={{
+                        height: '20px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        backgroundColor: theme.palette.success.main,
+                        color: theme.palette.success.contrastText,
+                        '& .MuiChip-label': { px: 1 },
+                      }}
+                    />
+                    <SentBubble elevation={0}>
+                      {renderMessageContent(msg)}
+                    </SentBubble>
+                  </Box>
                 </Tooltip>
               ) : (
                 <Tooltip

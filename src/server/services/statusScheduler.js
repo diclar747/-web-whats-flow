@@ -82,8 +82,9 @@ class StatusScheduler {
             console.log(`[STATUS-SCHEDULER] 📱 Procesando programación: ${schedule.name} (ID: ${schedule.id})`);
 
             // Obtener items de la programación
+            // FIX: Seleccionar si.id explicitamente como schedule_item_id para evitar conflicto con ws.id
             const [items] = await this.pool.query(
-                `SELECT si.*, ws.* 
+                `SELECT si.id as schedule_item_id, si.*, ws.* 
          FROM status_schedule_items si
          JOIN whatsapp_statuses ws ON si.status_id = ws.id
          WHERE si.schedule_id = ?
@@ -121,11 +122,12 @@ class StatusScheduler {
                 );
 
                 // Actualizar contador de veces publicado
+                // FIX: Usar schedule_item_id (si.id) en lugar de statusToPublish.id (ws.id)
                 await this.pool.query(
                     `UPDATE status_schedule_items 
            SET times_published = times_published + 1, last_published_at = NOW()
            WHERE id = ?`,
-                    [statusToPublish.id]
+                    [statusToPublish.schedule_item_id || statusToPublish.si_id]
                 );
 
                 // Calcular siguiente índice (rotación circular)
@@ -197,7 +199,10 @@ class StatusScheduler {
                 // Estado con imagen o video
                 const path = require('path');
                 const fs = require('fs');
-                const mediaPath = path.join(__dirname, '..', 'routes', 'public', status.media_url);
+                // FIX: Ruta correcta a archivos multimedia
+                const mediaPath = status.media_url.startsWith('/') 
+                    ? path.join(__dirname, '..', '..', 'public', status.media_url)
+                    : path.join(__dirname, '..', '..', 'public', 'uploads', status.media_url);
 
                 if (!fs.existsSync(mediaPath)) {
                     console.log(`[STATUS-SCHEDULER] ⚠️ Archivo multimedia no encontrado: ${mediaPath}`);

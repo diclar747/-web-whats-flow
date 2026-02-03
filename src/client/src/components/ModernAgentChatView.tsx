@@ -53,7 +53,7 @@ const ChatListPanel = styled(Box)(({ theme }) => ({
   display: 'flex',
   flexDirection: 'column',
   backgroundColor: theme.palette.background.paper,
-  
+
   [theme.breakpoints.down('sm')]: {
     position: 'absolute',
     left: 0,
@@ -69,7 +69,7 @@ const ChatViewPanel = styled(Box)(({ theme }) => ({
   display: 'flex',
   flexDirection: 'column',
   backgroundColor: theme.palette.background.default,
-  
+
   [theme.breakpoints.down('sm')]: {
     position: 'absolute',
     left: 0,
@@ -147,7 +147,7 @@ const ModernAgentChatView: React.FC<ModernAgentChatViewProps> = ({
     open: false,
     title: '',
     message: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
 
   // Cargar chats
@@ -219,6 +219,96 @@ const ModernAgentChatView: React.FC<ModernAgentChatViewProps> = ({
   useEffect(() => {
     loadMessages();
   }, [selectedChat, loadMessages]);
+
+  // Manejar eventos de Socket.IO
+  const { socket, on, off } = useSocket();
+
+  useEffect(() => {
+    if (!socket || !isConnected) return;
+
+    // Obtener sessionId correcta (prioridad: whinsap_session -> adminSessionId)
+    const sessionId = sessionStorage.getItem('whinsap_session') ||
+      localStorage.getItem('whinsap_session') ||
+      sessionStorage.getItem('adminSessionId');
+
+    console.log(`🔌 [ModernAgentChatView] Intentando unirse con sessionId: "${sessionId}"`);
+
+    if (sessionId) {
+      // Unirse a AMBAS salas posibles para asegurar recepción
+      socket.emit('join-session', { sessionId });
+      // También unirse a una sala específica de agente si fuera necesario, pero session-{sessionId} es la principal
+    } else {
+      console.warn('⚠️ [ModernAgentChatView] No se encontró sessionId en storage. Real-time updates no funcionarán.');
+    }
+
+    const handleNewMessage = (data: any) => {
+      console.log('💬 [ModernAgentChatView] Nuevo mensaje:', data);
+
+      const messageChatJid = data.chatJid || data.chat_jid || data.from;
+      if (!messageChatJid) return;
+
+      // 1. Actualizar lista de CHATS
+      setChats(prevChats => {
+        const existingIndex = prevChats.findIndex(c => c.id === messageChatJid);
+        const isFromMe = data.isFromMe || data.from_me;
+
+        let newChatList = [...prevChats];
+        let chatToUpdate: Chat;
+
+        if (existingIndex !== -1) {
+          // Chat existe -> Actualizar y mover al inicio
+          const existing = newChatList[existingIndex];
+          chatToUpdate = {
+            ...existing,
+            lastMessage: data.message || data.text || data.text_content || existing.lastMessage,
+            timestamp: data.timestamp || new Date().toISOString(),
+            unreadCount: isFromMe ? existing.unreadCount : (existing.unreadCount + 1)
+          };
+          newChatList.splice(existingIndex, 1);
+          newChatList.unshift(chatToUpdate);
+        } else {
+          // Chat nuevo -> Crear y agregar al inicio
+          chatToUpdate = {
+            id: messageChatJid,
+            name: data.contactName || data.pushName || messageChatJid.split('@')[0],
+            avatar: data.avatar || undefined,
+            lastMessage: data.message || data.text || data.text_content || '',
+            timestamp: data.timestamp || new Date().toISOString(),
+            unreadCount: isFromMe ? 0 : 1,
+            status: 'active'
+          };
+          newChatList.unshift(chatToUpdate);
+        }
+        return newChatList;
+      });
+
+      // 2. Actualizar conversación activa si coincide
+      if (selectedChat && selectedChat.id === messageChatJid) {
+        setMessages(prev => {
+          // Evitar duplicados
+          if (prev.some(m => m.id === data.id)) return prev;
+
+          return [...prev, {
+            id: data.id || Date.now().toString(),
+            from_me: Boolean(data.isFromMe || data.from_me),
+            text_content: data.message || data.text || data.text_content,
+            timestamp: data.timestamp || new Date().toISOString(),
+            status: 'delivered',
+            message_type: 'conversation', // Simplificado
+            sender_name: data.senderName
+          } as Message];
+        });
+
+        // Marcar como leído visualmente (opcional: llamar a API mark-read)
+      }
+    };
+
+    on('message', handleNewMessage);
+
+    return () => {
+      off('message');
+    };
+  }, [socket, isConnected, on, off, selectedChat]);
 
   // Manejar cambio de chat
   const handleSelectChat = (chat: Chat) => {

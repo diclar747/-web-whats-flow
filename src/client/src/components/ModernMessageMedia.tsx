@@ -25,7 +25,7 @@ import {
 } from '@mui/icons-material';
 
 interface ModernMessageMediaProps {
-  type: string;
+  type?: string;
   mediaUrl?: string;
   media_url?: string; // Fallback snake_case
   mediaMimeType?: string;

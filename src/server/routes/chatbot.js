@@ -752,18 +752,43 @@ router.post('/process-message/:sessionId', async (req, res) => {
 
           console.log(`[CHATBOT-AI] 📝 System Prompt (primeros 200 chars): ${systemPrompt.substring(0, 200)}...`);
 
-          const { GoogleGenerativeAI } = require('@google/generative-ai');
-          const genAI = new GoogleGenerativeAI('AIzaSyAVuDMmr7hhARDpYyMBj_URbZYADkLQtsQ');
-          const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
-          const fullPrompt = `${systemPrompt}\n\nUsuario: ${message}`;
-
-          console.log(`[GEMINI-AI] 🚀 Enviando prompt a Gemini (modelo: gemini-2.5-flash)...`);
-          const result = await model.generateContent(fullPrompt);
-          console.log(`[GEMINI-AI] ✅ Respuesta recibida de Gemini`);
-
-          const response = await result.response;
-          const aiResponse = response.text();
+          // Usar API de Kimi (Moonshot AI)
+          const KIMI_API_KEY = process.env.KIMI_API_KEY;
+          
+          if (!KIMI_API_KEY) {
+            console.error('[KIMI-AI] ❌ KIMI_API_KEY no está configurada en .env');
+            throw new Error('KIMI_API_KEY no configurada');
+          }
+          
+          console.log(`[KIMI-AI] 🚀 Enviando prompt a Kimi AI...`);
+          console.log(`[KIMI-AI] 🔑 API Key (primeros 20 chars): ${KIMI_API_KEY.substring(0, 20)}...`);
+          
+          // Configuración correcta para Kimi API
+          const requestBody = {
+            model: 'moonshot-v1-8k',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: message }
+            ],
+            temperature: matchedFlow.aiConfig?.temperature || 0.7,
+            max_tokens: matchedFlow.aiConfig?.maxTokens || 500
+          };
+          
+          console.log(`[KIMI-AI] 📤 Request body:`, JSON.stringify(requestBody, null, 2));
+          
+          const kimiResponse = await axios.post('https://api.moonshot.cn/v1/chat/completions', requestBody, {
+            headers: {
+              'Authorization': `Bearer ${KIMI_API_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 30000 // 30 segundos timeout
+          });
+          
+          console.log(`[KIMI-AI] ✅ Respuesta recibida de Kimi`);
+          console.log(`[KIMI-AI] 📥 Response status:`, kimiResponse.status);
+          console.log(`[KIMI-AI] 📥 Response data:`, JSON.stringify(kimiResponse.data, null, 2));
+          
+          const aiResponse = kimiResponse.data.choices?.[0]?.message?.content || 'Lo siento, no pude generar una respuesta.';
 
           console.log(`[CHATBOT] 🤖 IA respondió (${aiResponse.length} chars): ${aiResponse.substring(0, 100)}...`);
 
@@ -774,19 +799,19 @@ router.post('/process-message/:sessionId', async (req, res) => {
           }];
 
         } catch (aiError) {
-          console.error('[GEMINI-AI] ❌ ERROR COMPLETO:');
-          console.error('[GEMINI-AI] Tipo de error:', aiError.constructor.name);
-          console.error('[GEMINI-AI] Mensaje:', aiError.message);
-          console.error('[GEMINI-AI] Stack:', aiError.stack);
+          console.error('[KIMI-AI] ❌ ERROR COMPLETO:');
+          console.error('[KIMI-AI] Tipo de error:', aiError.constructor.name);
+          console.error('[KIMI-AI] Mensaje:', aiError.message);
+          if (aiError.stack) console.error('[KIMI-AI] Stack:', aiError.stack);
 
-          // Intentar obtener detalles específicos de Gemini
+          // Intentar obtener detalles específicos de Kimi
           if (aiError.response) {
-            console.error('[GEMINI-AI] Response status:', aiError.response.status);
-            console.error('[GEMINI-AI] Response data:', JSON.stringify(aiError.response.data, null, 2));
+            console.error('[KIMI-AI] Response status:', aiError.response.status);
+            console.error('[KIMI-AI] Response data:', JSON.stringify(aiError.response.data, null, 2));
           }
 
           // Logs adicionales para debugging
-          console.error('[GEMINI-AI] Full error object:', JSON.stringify(aiError, Object.getOwnPropertyNames(aiError)));
+          console.error('[KIMI-AI] Full error object:', JSON.stringify(aiError, Object.getOwnPropertyNames(aiError)));
 
           // Usar respuesta de error pero continuar
           responses = [{
@@ -1092,25 +1117,48 @@ router.post('/ai-response', async (req, res) => {
     systemPrompt += '\n\nResponde siempre basándote en la información proporcionada. Si no sabes algo, sé honesto y ofrece ayuda alternativa.';
 
     try {
-      const { GoogleGenerativeAI } = require('@google/generative-ai');
-      const genAI = new GoogleGenerativeAI('AIzaSyAVuDMmr7hhARDpYyMBj_URbZYADkLQtsQ');
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-      const fullPrompt = `${systemPrompt}\n\nUsuario: ${message}`;
-      const result = await model.generateContent(fullPrompt);
-      const response = await result.response;
-      const aiResponse = response.text();
-
-      console.log('[GEMINI-AI] ✅ Respuesta generada:', aiResponse.substring(0, 100) + '...');
+      // Usar API de Kimi (Moonshot AI)
+      const KIMI_API_KEY = process.env.KIMI_API_KEY;
+      
+      if (!KIMI_API_KEY) {
+        console.error('[KIMI-AI] ❌ KIMI_API_KEY no está configurada en .env');
+        throw new Error('KIMI_API_KEY no configurada');
+      }
+      
+      console.log(`[KIMI-AI] 🚀 Enviando prompt a Kimi AI...`);
+      
+      const kimiResponse = await axios.post('https://api.moonshot.cn/v1/chat/completions', {
+        model: 'moonshot-v1-8k',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: message }
+        ],
+        temperature: temperature,
+        max_tokens: maxTokens
+      }, {
+        headers: {
+          'Authorization': `Bearer ${KIMI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      });
+      
+      console.log('[KIMI-AI] ✅ Respuesta generada');
+      
+      const aiResponse = kimiResponse.data.choices?.[0]?.message?.content || 'Lo siento, no pude generar una respuesta.';
 
       res.json({
         success: true,
         response: aiResponse,
-        model: 'gemini-1.5-flash',
-        tokensUsed: 0
+        model: 'moonshot-v1-8k',
+        tokensUsed: kimiResponse.data.usage?.total_tokens || 0
       });
     } catch (aiError) {
-      console.error('[GEMINI-AI] ❌ Error de API:', aiError.message);
+      console.error('[KIMI-AI] ❌ Error de API:', aiError.message);
+      if (aiError.response) {
+        console.error('[KIMI-AI] Response status:', aiError.response.status);
+        console.error('[KIMI-AI] Response data:', aiError.response.data);
+      }
       res.status(500).json({
         success: false,
         error: 'Error al generar respuesta con IA',

@@ -174,6 +174,7 @@ interface WhatsAppContextType {
   connectSession: (sessionId: string) => void;
   disconnectSession: () => void;
   loadChats: (sessionId: string, dateFilter?: string, offset?: number, append?: boolean) => Promise<void>;
+  loadChatHistory: (dateFilter?: string) => void; // ⚡ Cargar historial bajo demanda
   hasMoreChats: boolean;
   isLoadingMoreChats: boolean;
   loadMessages: (chatId: string, dateFilter?: string, limit?: number, offset?: number, append?: boolean) => Promise<void>;
@@ -231,6 +232,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   const messagesCacheRef = useRef<Map<string, WhatsAppMessage[]>>(new Map());
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
   const messagesRef = useRef<WhatsAppMessage[]>([]); // Ref para acceso síncrono en listeners
+  // 🛡️ Set para evitar duplicados de mensajes recientes (últimos 100 IDs)
+  const recentMessageIdsRef = useRef<Set<string>>(new Set());
   const [typingStatus, setTypingStatus] = useState<Map<string, string>>(new Map()); // 🔥 NUEVO: Estado de escritura
 
   // Sincronizar ref con state
@@ -272,13 +275,12 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
   useEffect(() => {
     activeChatRef.current = activeChat;
 
-    // 🔥 AUTOMATIC MESSAGE LOADING
+    // ⚡ MODO WHATSAPP WEB: NO cargar mensajes históricos
+    // Los mensajes solo aparecerán cuando lleguen en tiempo real
     if (activeChat?.id) {
-      // Avoid reloading if it's the same chat (optional check, but good for perf)
-      // But since we want to ensure messages are loaded, just call it.
-      // loadMessages handles state reset.
-      console.log(`[WhatsAppContext] 🔄 Chat activo cambiado a ${activeChat.id}, cargando mensajes...`);
-      loadMessages(activeChat.id, 'all', 50);
+      console.log(`[WhatsAppContext] 📱 Chat activo: ${activeChat.id} - Modo tiempo real activado`);
+      // NO cargar mensajes antiguos - solo mostrar los que lleguen en tiempo real
+      setMessages([]); // Limpiar mensajes al cambiar de chat
     }
   }, [activeChat?.id]);
 
@@ -294,247 +296,98 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     return false;
   };
 
-  const loadChats = useCallback(async (sessionId: string, dateFilter: string = 'week', offset: number = 0, append: boolean = false): Promise<void> => {
-    // 🛡️ SEGURIDAD: No intentar cargar chats si no hay token (tras logout o sesión expirada)
+  // 🆕 MODO WHATSAPP WEB: No cargar chats antiguos, solo crear dinámicamente
+  const [chatsLoadedFromHistory, setChatsLoadedFromHistory] = useState(false);
+
+  const loadChats = useCallback(async (sessionId: string, dateFilter: string = 'today', offset: number = 0, append: boolean = false): Promise<void> => {
+    // 🛡️ SEGURIDAD: No intentar cargar chats si no hay token
     const token = sessionStorage.getItem('token') || localStorage.getItem('token');
     if (!token) {
-      console.log('[WhatsAppContext] 🛑 Omitiendo loadChats: No hay token de autenticación');
+      console.log('[WhatsAppContext] 🛑 Omitiendo loadChats: No hay token');
       return;
     }
 
     if (!sessionId) {
-      console.log('[WhatsAppContext] 🛑 Omitiendo loadChats: sessionId es nulo o indefinido');
+      console.log('[WhatsAppContext] 🛑 Omitiendo loadChats: sessionId es nulo');
       return;
     }
 
-    // 🔓 MULTI-CHANNEL: Permitir cargar chats para cualquier número conectado
-    // Anteriormente se bloqueaba si no era primario, pero ahora el usuario puede cambiar de pestañas.
-    console.log(`[WhatsAppContext] 🔄 Iniciando carga de chats para sesión ${sessionId}...`);
+    // ⚡ CARGAR CHATS DEL DÍA (tabla chat) - No es historial antiguo, son chats activos
+    console.log('[WhatsAppContext] 🚀 Cargando chats del día desde tabla chat...');
 
-    console.log('[WhatsAppContext] 🚀 loadChats llamado con:', {
-      sessionId,
-      dateFilter,
-      userRole,
-      userId,
-      stackTrace: new Error().stack?.split('\n').slice(1, 4).join('\n')
-    });
+    if (!append) {
+      setIsLoading(true);
+    } else {
+      setIsLoadingMoreChats(true);
+    }
 
     try {
-      setIsLoading(true);
-      setError(null);
-
-      // Si es agente, usar endpoint de chats asignados
-      const isAgent = userRole && userRole !== 'admin';
-      const limit = 500; // Sin límite práctico - cargar TODOS los chats del día
-      const offsetParam = offset || 0; // Si no se pasa, es 0
-
-      if (append) {
-        setIsLoadingMoreChats(true);
-      } else {
-        setIsLoading(true);
-        // Si es carga nueva (no append), resetear hasMoreChats temporalmente
-        setHasMoreChats(true);
-
-        // 🔥 CRÍTICO: Si el sessionId cambió, limpiar datos anteriores inmediatamente
-        // para evitar "flicker" o datos mezclados entre canales
-        if (session?.sessionId !== sessionId) {
-          console.log(`[WhatsAppContext] 🔀 Detectado cambio de sesión: ${session?.sessionId || 'ninguna'} -> ${sessionId}`);
-          // Solo limpiar si realmente estamos cambiando de ID de sesión
-          // pero manteniendo chats en memoria para un cambio suave
-          setMessages([]);
-          setActiveChat(null); // 🔥 CRÍTICO: Limpiar chat activo al cambiar de sesión
-          setSession(prev => ({
-            sessionId: sessionId,
-            isConnected: true,
-            status: 'connected',
-            phoneNumber: sessionId.length >= 10 ? sessionId : (prev?.phoneNumber || ''),
-            lastActivity: new Date().toISOString()
-          }));
+      // Usar el endpoint optimizado que lee de la tabla chat (mensajes del día)
+      const response = await fetch(`${API_BASE}/api/chats/${sessionId}?dateFilter=today&limit=50&offset=${offset}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
         }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error ${response.status}: ${response.statusText}`);
       }
 
-      const endpoint = isAgent && userId
-        ? `${API_BASE}/api/agents/${userId}/chats?sessionId=${sessionId}&dateFilter=${dateFilter}&limit=${limit}&offset=${offsetParam}`
-        : `${API_BASE}/api/chats/${sessionId}?dateFilter=${dateFilter}&limit=${limit}&offset=${offsetParam}`;
-
-      console.log(`🔄 Cargando chats desde API (${isAgent ? 'AGENTE' : 'ADMIN'}) con filtro: ${dateFilter}`, endpoint);
-
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      const response = await sessionFetch(endpoint, {
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-      });
       const data = await response.json();
 
-      console.log('[WhatsAppContext] 📦 Respuesta de API recibida:', {
-        success: data.success,
-        chatsLength: data.chats?.length,
-        source: data.source,
-        fullData: data
-      });
-
       if (data.success && data.chats) {
-        console.log(`✅ Chats cargados exitosamente: ${data.chats.length}`);
-
-        const chatMap = new Map();
-
-        data.chats.forEach((chat: any) => {
-          // Safety check: ensure chat.id exists
-          if (!chat.id && chat.chat_jid) chat.id = chat.chat_jid; // Fallback for agent chats
-
-          if (chat.id && !chatMap.has(chat.id)) {
-            chatMap.set(chat.id, {
-              id: chat.id,
-              name: chat.subject || chat.name || (chat.id ? chat.id.split('@')[0] : 'Desconocido'),
-              isGroup: chat.isGroup || (chat.id && chat.id.includes('@g.us')),
-              lastMessage: chat.lastMessage || 'Toca para cargar mensajes',
-              lastMessageFromMe: chat.fromMe !== undefined ? chat.fromMe : undefined, // Mapear campo del servidor
-              timestamp: chat.timestamp || new Date().toISOString(),
-              isOnline: !chat.isGroup && !chat.id.includes('@g.us'),
-              unreadCount: 0,
-              avatar: chat.avatar || null,
-              lastSeen: chat.lastSeen || null,
-              isPinned: chat.isPinned || false,
-              isMuted: chat.isMuted || false,
-              isArchived: chat.isArchived || false,
-              assigned_agent_name: chat.assigned_to || chat.assigned_agent_name,
-              status: chat.status || 'pending'
-            });
-          }
-        });
-
-        const mappedChats: WhatsAppChat[] = Array.from(chatMap.values());
-        console.log(`📱 Chats únicos cargados: ${mappedChats.length} de ${data.chats.length} total`);
-
-        // FILTRAR GRUPOS: YA NO FILTRAR GRUPOS - Mostrarlos para la pestaña respectiva
-        // 🔒 Filtro: NO chats propios, NO LIDs, NO Status broadcast
-        const currentSessionId = sessionId;
-        const currentPhone = String(currentSessionId || '').split(':')[0]?.split('@')[0];
-
-        const filteredChats = mappedChats.filter(chat => {
-          // ✅ FIX: Permitir grupos (se filtrarán visualmente en tabs)
-          // if (chat.isGroup) return false;
-
-          if (chat.id.includes('@lid')) {
-            console.log('[WhatsAppContext] 🚫 Filtrando chat LID:', chat.id);
-            return false;
-          }
-          if (chat.id.includes('status@broadcast')) {
-            console.log('[WhatsAppContext] 🚫 Filtrando status broadcast');
-            return false;
-          }
-
-          // 🛡️ FILTRO MEJORADO: Solo filtrar el chat propio si coincide EXACTAMENTE
-          const chatNumber = chat.id.split('@')[0].split(':')[0]; // Extraer solo el número
-
-          // Solo filtrar si el chat ES EXACTAMENTE el número de la sesión actual
-          if (currentPhone && chatNumber === currentPhone) {
-            console.log('[WhatsAppContext] 🚫 Filtrando chat propio (número exacto):', chat.id, 'vs', currentPhone);
-            return false;
-          }
-
-          console.log('[WhatsAppContext] ✅ Chat permitido:', chat.id, '(sessionId:', currentPhone, ')');
-          return true;
-        })
-          // ⚡ ORDENAR EXPLÍCITAMENTE
-          .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
-
-        const groupCount = filteredChats.filter(chat => chat.isGroup).length;
-        console.log(`📋 Chats filtrados: ${filteredChats.length}. Grupos incluidos: ${groupCount}`);
-
-        console.log('[WhatsAppContext] 💾 Guardando chats en estado (ordenado):', filteredChats.length);
-        console.log('[WhatsAppContext] 📅 Fechas de chats:', filteredChats.map(c => ({
-          name: c.name,
-          timestamp: c.timestamp,
-        })).slice(0, 5));
+        // Transformar los chats al formato del frontend
+        const formattedChats: WhatsAppChat[] = data.chats.map((chat: any) => ({
+          id: chat.id,
+          name: chat.name || chat.contact_name || chat.id.split('@')[0],
+          lastMessage: chat.lastMessage || chat.last_message || '',
+          lastMessageFromMe: chat.fromMe || chat.from_me || false,
+          timestamp: chat.timestamp || chat.last_message_time || new Date().toISOString(),
+          unreadCount: chat.unreadCount || chat.unread_count || 0,
+          isGroup: chat.isGroup || chat.id?.includes('@g.us') || false,
+          avatar: chat.avatar || chat.avatar_url,
+          isOnline: chat.isOnline || false,
+          status: chat.status,
+          phone_channel: chat.phone,
+          channel_phone: chat.phone
+        }));
 
         if (append) {
+          // Agregar a chats existentes (paginación)
           setChats(prev => {
-            // Evitar duplicados al añadir
             const existingIds = new Set(prev.map(c => c.id));
-            const newUniqueChats = filteredChats.filter(c => !existingIds.has(c.id));
-            // Ordenar todo de nuevo al unir
-            return [...prev, ...newUniqueChats].sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+            const newChats = formattedChats.filter((c: WhatsAppChat) => !existingIds.has(c.id));
+            return [...prev, ...newChats];
           });
-          console.log(`[WhatsAppContext] ➕ Chats añadidos: ${filteredChats.length}`);
         } else {
-          // 🔥 OPTIMIZADO: NO limpiar chats viejos para evitar flickering
-          // El usuario verá los antiguos hasta que lleguen los nuevos del filtro actual
-          setChats(filteredChats);
-          console.log('[WhatsAppContext] ✅ Chats actualizados:', filteredChats.length);
+          // Reemplazar chats (carga inicial)
+          setChats(formattedChats);
         }
 
-        const pagination = (data as any).pagination;
-        if (pagination) {
-          setHasMoreChats(pagination.hasMore);
-          console.log(`[WhatsAppContext] 📜 Paginación: hasMore=${pagination.hasMore}, count=${pagination.count}`);
-        } else {
-          // Fallback si no hay info de paginación
-          setHasMoreChats(filteredChats.length >= limit);
-        }
-
-        setConnectionStatus('connected');
-
-        // Actualizar sesión con el phoneNumber real que viene de la API si es posible
-        if (data.sessionId || sessionId) {
-          const actualSessionId = data.sessionId || sessionId;
-          setSession(prev => ({
-            ...prev,
-            sessionId: actualSessionId,
-            isConnected: true,
-            status: 'connected',
-            phoneNumber: data.phoneNumber || prev?.phoneNumber || (actualSessionId.length >= 10 ? actualSessionId : ''),
-            lastActivity: new Date().toISOString()
-          }));
-        }
-      } else if (data.source === 'database_fallback') {
-        const fallbackChats: WhatsAppChat[] = [
-          {
-            id: 'fallback@c.us',
-            name: 'Datos de respaldo',
-            isGroup: false,
-            lastMessage: 'Conecte WhatsApp para ver chats completos',
-            timestamp: new Date().toISOString(),
-            isOnline: false,
-            unreadCount: 0
-          }
-        ];
-
-        if (!append) setChats(fallbackChats);
-        setConnectionStatus('connected');
-        if (!append) setError('Usando datos guardados. Conecte WhatsApp para ver chats completos.');
+        setHasMoreChats(data.chats.length === 50); // Si recibimos 50, hay más
+        console.log(`[WhatsAppContext] ✅ ${formattedChats.length} chats cargados del día`);
+        console.log(`[WhatsAppContext] 📅 Primeros 3 chats:`, formattedChats.slice(0, 3).map(c => ({
+          id: c.id,
+          fecha: c.timestamp,
+          mensaje: c.lastMessage?.substring(0, 30)
+        })));
       } else {
-        console.error('[WhatsAppContext] ❌ No se encontraron chats o API falló:', {
-          success: data.success,
-          hasChats: !!data.chats,
-          chatsLength: data.chats?.length,
-          error: data.error,
-          message: data.message,
-          chatsActuales: chats.length
-        });
-
-        // 🛡️ NO limpiar chats si ya tenemos datos cargados (mantener estabilidad)
-        if (chats.length > 0) {
-          console.warn('[WhatsAppContext] ⚠️ API falló pero manteniendo chats existentes:', chats.length);
-          setConnectionStatus('error');
-          setError('Error actualizando chats. Mostrando última versión disponible.');
-        } else {
-          console.log('[WhatsAppContext] 🚫 No hay chats previos, no cargar datos vacíos');
-          setConnectionStatus('error');
-          setError('No se pudieron cargar los chats. Verifique la conexión de WhatsApp.');
+        if (!append) {
+          setChats([]);
         }
+        setHasMoreChats(false);
       }
     } catch (error) {
-      console.error('❌ Error cargando chats:', error);
-      setError('Error de conexión. No se pudieron cargar los chats.');
-      setConnectionStatus('error');
-    } finally {
-      if (append) {
-        setIsLoadingMoreChats(false);
-      } else {
-        setIsLoading(false);
+      console.error('[WhatsAppContext] ❌ Error cargando chats:', error);
+      if (!append) {
+        setChats([]);
       }
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMoreChats(false);
     }
-  }, [API_BASE, userId, userRole]);
+
+  }, [API_BASE]);
 
   useEffect(() => {
     // 🔄 FIX: Check localStorage too in case AuthContext hasn't synced it to sessionStorage yet
@@ -562,14 +415,18 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
             // await requestNotificationPermission(); // 🚫 Desactivado para usar Modal UI moderno
 
-            // 🚀 OPTIMIZACIÓN: Cargar chats en segundo plano SIN BLOQUEAR
-            // Los mensajes en tiempo real se procesarán inmediatamente
-            console.log('📱 Iniciando carga de chats en segundo plano (no-bloqueante)...');
-            loadChats(savedSessionId).then(() => {
-              console.log('✅ Carga inicial de chats completada en background');
-            }).catch(err => {
-              console.error('❌ Error en carga inicial de chats:', err);
-            });
+            // ⚡ MODO WHATSAPP WEB: NO cargar chats antiguos
+            // Los chats aparecerán dinámicamente cuando lleguen mensajes nuevos
+            console.log('📱 MODO TIEMPO REAL: No se cargan chats antiguos. Esperando mensajes nuevos...');
+            setChats([]); // Lista vacía al inicio
+            setIsLoading(false);
+
+            // 🚫 DESHABILITADO: No cargar chats históricos
+            // loadChats(savedSessionId).then(() => {
+            //   console.log('✅ Carga inicial de chats completada en background');
+            // }).catch(err => {
+            //   console.error('❌ Error en carga inicial de chats:', err);
+            // });
           } else {
             console.log('Sesión no válida o no encontrada. Manteniendo en localStorage para posibles reintentos...');
             setConnectionStatus('disconnected');
@@ -609,8 +466,29 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
     console.log('🔄 [WhatsAppContext] Configurando listeners en socket compartido for session:', currentSessionId);
 
+    // 🔥 FORCE JOIN: Asegurar que estamos en la sala correcta
+    // SocketContext lo intenta al inicio, pero si el login ocurrió después, necesitamos unirnos ahora
+    socket.emit('join-session', { sessionId: currentSessionId });
+    console.log(`🔌 [WhatsAppContext] Uniendo explícitamente a sala: session-${currentSessionId}`);
+
     const handleMessage = (newMessage: WhatsAppMessage) => {
       console.log('📨 [REAL-TIME] handleMessage recibido:', newMessage);
+
+      // 🛡️ EVITAR DUPLICADOS: Verificar si ya procesamos este mensaje recientemente
+      const messageId = newMessage.id || (newMessage as any).message_id;
+      if (messageId && recentMessageIdsRef.current.has(messageId)) {
+        console.log('🛡️ [DUPLICATE-BLOCK] Mensaje duplicado ignorado:', messageId);
+        return;
+      }
+      // Agregar ID al Set y limitar tamaño
+      if (messageId) {
+        recentMessageIdsRef.current.add(messageId);
+        // Mantener solo últimos 100 IDs
+        if (recentMessageIdsRef.current.size > 100) {
+          const firstItem = recentMessageIdsRef.current.values().next().value;
+          recentMessageIdsRef.current.delete(firstItem);
+        }
+      }
 
       // ⚡ ACTUALIZACIÓN: Ahora no filtramos por canal individual porque el backend ya lo hace
       // El backend devuelve solo los mensajes que pertenecen al usuario actual
@@ -965,7 +843,9 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         setConnectionStatus('connected');
         // ❌ NO sobrescribir whinsap_session - debe mantener el user.id del usuario logueado
         // sessionStorage.setItem('whinsap_session', newSid);
-        loadChats(newSid);
+
+        // ⚡ MODO TIEMPO REAL: No cargar chats antiguos
+        // loadChats(newSid);
       } else if (data.status === 'disconnected') {
         console.log('⚠️ [WhatsAppContext] WhatsApp desconectado');
         setConnectionStatus('disconnected');
@@ -1006,7 +886,9 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             phoneNumber: data.phoneNumber
           });
           setConnectionStatus('connected');
-          loadChats(newSessionId);
+
+          // ⚡ MODO TIEMPO REAL: No cargar chats antiguos
+          // loadChats(newSessionId);
         }
       } else {
         console.log(`ℹ️ [WhatsAppContext] Ignorando cambio de sesión automática para ${newSessionId}. Sesión actual ${currentActiveSession} se mantiene.`);
@@ -1040,7 +922,9 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             phoneNumber: data.phoneNumber
           });
           setConnectionStatus('connected');
-          loadChats(data.sessionId);
+          // ⚡ MODO TIEMPO REAL: No cargar chats antiguos automáticamente
+          console.log('[WhatsAppContext] ⚡ Sesión conectada. Los chats aparecerán cuando lleguen mensajes nuevos.');
+          setChats([]); // Lista vacía al inicio
         } else {
           console.log(`ℹ️ [WhatsAppContext] Session updated para ${data.sessionId}, pero el foco está en ${currentActiveSession}. Manteniendo foco.`);
         }
@@ -1063,7 +947,9 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
             phoneNumber: data.phoneNumber
           });
           setConnectionStatus('connected');
-          loadChats(data.sessionId);
+          // ⚡ MODO TIEMPO REAL: No cargar chats antiguos
+          console.log('[WhatsAppContext] ⚡ Sesión conectada. Los chats aparecerán cuando lleguen mensajes nuevos.');
+          setChats([]); // Lista vacía al inicio
         }
       }
     };
@@ -1136,28 +1022,54 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
           return [updatedChat, ...newChats];
         } else {
           // Nuevo chat
+          const chatJid = data.id || data.chatJid;
+          if (!chatJid) return prev;
+
           const newChat: WhatsAppChat = {
-            id: data.id,
-            name: data.name || data.id.split('@')[0],
-            isGroup: data.id.includes('@g.us'),
-            lastMessage: data.lastMessage,
-            timestamp: data.timestamp,
-            isOnline: !data.id.includes('@g.us'),
+            id: chatJid,
+            name: data.name || chatJid.split('@')[0],
+            isGroup: chatJid.includes('@g.us'),
+            lastMessage: data.lastMessage || data.message,
+            timestamp: data.timestamp || new Date().toISOString(),
+            isOnline: !chatJid.includes('@g.us'),
             unreadCount: isChatActive ? 0 : (data.unreadCount || 1),
-            avatar: data.profilePicUrl,
+            avatar: data.profilePicUrl || null,
             status: 'delivered',
             lastUpdate: Date.now()
           };
 
-          console.log(`🔄 [CHAT-UPDATE] Nuevo chat creado:`, {
-            id: data.id,
-            unreadCount: newChat.unreadCount,
-            addedToTop: true
-          });
-
+          console.log(`🔄 [CHAT-UPDATE] Nuevo chat creado en lista:`, { id: chatJid });
           return [newChat, ...prev];
         }
       });
+    };
+
+    // 🛡️ SISTEMA ANTI-DUPLICADOS: Map con TTL de 5 segundos
+    const processedMessages = new Map<string, number>();
+    const dedupeWindowMs = 5000; // 5 segundos
+
+    const dedupedHandleMessage = (newMessage: WhatsAppMessage) => {
+      const msgId = newMessage.id || (newMessage as any).message_id || `${newMessage.chatJid}-${newMessage.timestamp}`;
+      const now = Date.now();
+
+      // Limpiar entradas antiguas
+      processedMessages.forEach((timestamp, id) => {
+        if (now - timestamp > dedupeWindowMs) {
+          processedMessages.delete(id);
+        }
+      });
+
+      // Si ya procesamos este mensaje recientemente, ignorar
+      if (processedMessages.has(msgId)) {
+        console.log('🛡️ [DEDUPE] Mensaje duplicado ignorado:', msgId);
+        return;
+      }
+
+      // Marcar como procesado
+      processedMessages.set(msgId, now);
+
+      // Llamar al handler original
+      handleMessage(newMessage);
     };
 
     // Registrar listeners
@@ -1168,10 +1080,11 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     socket.on('incoming-call', handleIncomingCall);
     socket.on('message-status-update', handleMessageStatusUpdate);
     socket.on('connection-update', handleConnectionUpdate);
-    socket.on('message', handleMessage);
-    socket.on('message:received', handleMessage);
-    socket.on('message:sent', handleMessage);
-    socket.on('chat-update', handleChatUpdate);
+    // 🛡️ Usar el wrapper con deduplicación
+    socket.on('message', dedupedHandleMessage);
+    socket.on('message:received', dedupedHandleMessage);
+    socket.on('message:sent', dedupedHandleMessage);
+    socket.on('chat-update', handleChatUpdate); // 🔥 Listener agregado
     socket.on('sync-complete', handleSyncComplete);
     socket.on('whatsapp-connected', handleWhatsAppConnected);
     socket.on('whatsapp-session-updated', handleWhatsAppSessionUpdated);
@@ -1398,10 +1311,12 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
 
     // 🔒 SEGURIDAD: NO guardar automáticamente el sessionId aquí
     // Solo debe guardarse cuando el usuario EXPLÍCITAMENTE inicia sesión
-    // Esta función puede ser llamada desde eventos de Socket.IO sin autenticación
     // sessionStorage.setItem('whinsap_session', sessionId);
 
-    loadChats(sessionId);
+    // ⚡ MODO TIEMPO REAL: No cargar chats antiguos al conectar
+    console.log('[WhatsAppContext] ⚡ Conectado. Esperando mensajes nuevos...');
+    setChats([]);
+    setChatsLoadedFromHistory(false);
   };
 
   const disconnectSession = () => {
@@ -1909,6 +1824,15 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     }, 100);
   }, []);
 
+  // ⚡ MODO TIEMPO REAL: Función para cargar chats históricos bajo demanda
+  const loadChatHistory = useCallback((dateFilter: string = 'week') => {
+    if (session?.sessionId) {
+      console.log(`[WhatsAppContext] 📚 Cargando historial de chats: ${dateFilter}`);
+      setChatsLoadedFromHistory(true);
+      loadChats(session.sessionId, dateFilter);
+    }
+  }, [session?.sessionId, loadChats]);
+
   // Memoizar el valor del contexto para evitar re-renders innecesarios
   const value: WhatsAppContextType = useMemo(() => ({
     session,
@@ -1923,6 +1847,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     connectSession,
     disconnectSession,
     loadChats,
+    loadChatHistory, // ⚡ Nueva función para cargar historial bajo demanda
     hasMoreChats,
     isLoadingMoreChats,
     loadMessages,
@@ -1963,6 +1888,7 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     connectSession,
     disconnectSession,
     loadChats,
+    loadChatHistory,
     hasMoreChats,
     isLoadingMoreChats,
     loadMessages,
@@ -1992,7 +1918,8 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
     const handleReloadChats = () => {
       console.log('🔄 [CONTEXT] Recargando chats después de transferencia...');
       if (session?.sessionId) {
-        loadChats(session.sessionId);
+        setChatsLoadedFromHistory(true); // Permitir carga histórica
+        loadChats(session.sessionId, 'today');
       }
     };
 

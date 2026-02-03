@@ -81,6 +81,7 @@ interface StatusSchedule {
 const WhatsAppStatusModule: React.FC<WhatsAppStatusModuleProps> = ({ sessionId }) => {
     const [statuses, setStatuses] = useState<WhatsAppStatus[]>([]);
     const [schedules, setSchedules] = useState<StatusSchedule[]>([]);
+    const [history, setHistory] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [tabValue, setTabValue] = useState(0);
 
@@ -119,6 +120,7 @@ const WhatsAppStatusModule: React.FC<WhatsAppStatusModuleProps> = ({ sessionId }
             if (data.success) {
                 setStatuses(data.statuses || []);
                 setSchedules(data.schedules || []);
+                setHistory(data.history || []);
             } else {
                 showAlert('error', 'Error al cargar estados');
             }
@@ -352,6 +354,7 @@ const WhatsAppStatusModule: React.FC<WhatsAppStatusModuleProps> = ({ sessionId }
                 <Tab label={`Borradores (${draftStatuses.length})`} />
                 <Tab label={`Programados (${scheduledStatuses.length})`} />
                 <Tab label={`Publicados (${publishedStatuses.length})`} />
+                <Tab label={`Historial (${history.length})`} />
                 <Tab label={`Programaciones (${schedules.length})`} />
             </Tabs>
 
@@ -518,8 +521,47 @@ const WhatsAppStatusModule: React.FC<WhatsAppStatusModuleProps> = ({ sessionId }
                         </Grid>
                     )}
 
-                    {/* Tab 3: Programaciones */}
+                    {/* Tab 3: Historial */}
                     {tabValue === 3 && (
+                        <Grid container spacing={3}>
+                            {history.length === 0 ? (
+                                <Grid item xs={12}>
+                                    <Card sx={{ textAlign: 'center', py: 6 }}>
+                                        <Typography variant="h6" color="textSecondary">
+                                            No hay historial de estados publicados
+                                        </Typography>
+                                    </Card>
+                                </Grid>
+                            ) : (
+                                history.map((item) => (
+                                    <Grid item xs={12} md={6} lg={4} key={item.id}>
+                                        <Card>
+                                            <CardContent>
+                                                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+                                                    {getStatusIcon(item.media_type)}
+                                                    <Chip label="Publicado en WhatsApp" color="success" size="small" />
+                                                </Stack>
+                                                <Typography variant="body2" sx={{ mb: 1 }}>
+                                                    {item.text_content?.substring(0, 100) || 'Estado multimedia'}
+                                                </Typography>
+                                                <Typography variant="caption" color="textSecondary" display="block">
+                                                    Publicado: {new Date(item.published_at).toLocaleString()}
+                                                </Typography>
+                                                {item.views_count !== undefined && (
+                                                    <Typography variant="caption" color="textSecondary" display="block">
+                                                        👁️ Vistas: {item.views_count}
+                                                    </Typography>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    </Grid>
+                                ))
+                            )}
+                        </Grid>
+                    )}
+
+                    {/* Tab 4: Programaciones */}
+                    {tabValue === 4 && (
                         <Box>
                             <Button
                                 variant="contained"

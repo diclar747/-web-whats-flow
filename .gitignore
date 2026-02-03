@@ -76,3 +76,6 @@ test_system.sh
 .vercel
 .env
 backups/
+backups/*.tar.gz
+*.tar.gz
+backups/
