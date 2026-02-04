@@ -72,6 +72,7 @@ import {
   Schedule,
   CheckCircle,
   AccountBalance as ManagementIcon,
+  AccountBalanceWallet as CreditIcon,
   Notifications as PushIcon,
   Sms as SmsIcon,
 
@@ -104,6 +105,7 @@ const SMSPremiumModule = lazy(() => import('../modules/SMSPremiumModule'));
 const WhatsAppConnectionModule = lazy(() => import('../modules/WhatsAppConnectionModule'));
 const ManagementModule = lazy(() => import('../modules/ManagementModule'));
 const PushNotificationsModule = lazy(() => import('../modules/PushNotificationsModule'));
+const CreditManagement = lazy(() => import('../components/CreditManagement'));
 
 // Componente de loading para Suspense con animación mejorada
 const ModuleLoadingFallback = () => (
@@ -371,7 +373,9 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
     'agents': 'users',
     'kanban': 'kanban',
     'permissions': 'users',
-    'management': 'management'
+    'management': 'management',
+    'credits': 'management',
+    'sms': 'sms'
   };
 
   // Elementos de navegación principal
@@ -446,6 +450,13 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
       icon: <ManagementIcon />,
       path: '/dashboard/management',
       color: '#3f51b5'
+    },
+    {
+      id: 'credits',
+      label: 'Créditos',
+      icon: <CreditIcon />,
+      path: '/dashboard/credits',
+      color: '#795548'
     },
     {
       id: 'sms',
@@ -1621,6 +1632,11 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
                     <Route path="/management/*" element={
                       <Suspense fallback={<ModuleLoadingFallback />}>
                         <ManagementModule sessionId={activeSessionId} />
+                      </Suspense>
+                    } />
+                    <Route path="/credits/*" element={
+                      <Suspense fallback={<ModuleLoadingFallback />}>
+                        <CreditManagement sessionId={activeSessionId} userId={userId || undefined} apiUrl={window.location.origin} />
                       </Suspense>
                     } />
                     <Route path="/connection/*" element={

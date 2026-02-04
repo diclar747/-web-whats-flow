@@ -20,7 +20,8 @@ import {
     AccountBalance,
     Category,
     Refresh,
-    NavigateNext
+    NavigateNext,
+    AccountBalanceWallet as CreditIcon
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -135,6 +136,21 @@ const ManagementModule: React.FC<{ sessionId: string }> = ({ sessionId }) => {
                         </Box>
 
                         <Stack direction="row" spacing={2}>
+                            <Tooltip title="Gestionar Créditos">
+                                <IconButton
+                                    onClick={() => window.location.href = '/dashboard/credits'}
+                                    sx={{
+                                        bgcolor: alpha(theme.palette.warning.main, 0.1),
+                                        backdropFilter: 'blur(8px)',
+                                        border: `1px solid ${alpha(theme.palette.warning.main, 0.3)}`,
+                                        boxShadow: theme.shadows[2],
+                                        color: theme.palette.warning.main,
+                                        '&:hover': { bgcolor: alpha(theme.palette.warning.main, 0.2), transform: 'scale(1.1)', transition: 'all 0.3s ease' }
+                                    }}
+                                >
+                                    <CreditIcon />
+                                </IconButton>
+                            </Tooltip>
                             <Tooltip title="Actualizar Datos">
                                 <IconButton
                                     onClick={() => window.location.reload()}

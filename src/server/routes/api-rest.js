@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2/promise');
 const crypto = require('crypto');
+const axios = require('axios');
 require('dotenv').config();
 
 const dbConfig = {
@@ -767,6 +768,101 @@ router.get('/connect', async (req, res) => {
   } catch (error) {
     console.error('Error in /connect:', error);
     res.status(500).send('Error interno en la vinculacion');
+  }
+});
+
+// Enviar SMS (Premium)
+router.post('/sms/send', authenticateAPIKey, async (req, res) => {
+  const connection = await mysql.createConnection(dbConfig);
+  try {
+    const { to, message } = req.body;
+    const { userId } = req; // Obtenido del API Key
+
+    if (!to || !message) {
+      await connection.end();
+      return res.status(400).json({
+        success: false,
+        error: 'Los campos "to" y "message" son requeridos'
+      });
+    }
+
+    // 1. Calcular costo
+    const cleanPhone = to.replace(/\D/g, '');
+    const cost = Math.ceil(message.length / 160);
+
+    // 2. Verificar saldo
+    const [users] = await connection.query('SELECT sms_balance FROM users WHERE id = ?', [userId]);
+    if (users.length === 0 || users[0].sms_balance < cost) {
+      await connection.end();
+      return res.status(402).json({ // 402 Payment Required
+        success: false,
+        error: 'Saldo insuficiente para enviar este mensaje',
+        details: {
+          required: cost,
+          available: users[0]?.sms_balance || 0,
+          chars: message.length
+        }
+      });
+    }
+
+    // 3. Autenticación con Mayten (Proveedor SMS)
+    // Usamos credenciales hardcoded por compatibilidad con sms-endpoints.js existente
+    const authRes = await axios.post('https://mayten.cloud/auth', {
+      username: 'claudio@cnid.com.py',
+      password: 'Cadc@1978'
+    });
+    const token = authRes.data.token;
+
+    // 4. Enviar SMS
+    await axios.post('https://mayten.cloud/api/Mensajes/Texto', {
+      origen: 'SMS_CORTO',
+      mensajes: [{
+        mensaje: message,
+        telefono: cleanPhone,
+        identificador: `api_${userId}_${Date.now()}`
+      }]
+    }, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    // 5. Descontar saldo
+    await connection.execute('UPDATE users SET sms_balance = sms_balance - ? WHERE id = ?', [cost, userId]);
+
+    // 6. Registrar en Campañas (para visualización en tabla)
+    const [campResult] = await connection.execute(
+      'INSERT INTO sms_campaigns (user_id, name, message_template, status, total_recipients, sent_count, failed_count, created_at, category) VALUES (?, ?, ?, "completed", 1, 1, 0, NOW(), "API")',
+      [userId, 'API', message]
+    );
+    const campaignId = campResult.insertId;
+
+    await connection.execute(
+      'INSERT INTO sms_campaign_recipients (campaign_id, phone, name, status) VALUES (?, ?, "API User", "sent")',
+      [campaignId, cleanPhone]
+    );
+
+    // 7. Registrar historial (vinculado a la campaña)
+    await connection.execute(
+      'INSERT INTO sms_history (user_id, phone, message, status, sent_at, campaign_id) VALUES (?, ?, ?, ?, NOW(), ?)',
+      [userId, to, message, 'sent', campaignId]
+    );
+
+    await connection.end();
+
+    res.json({
+      success: true,
+      message: 'SMS enviado exitosamente',
+      cost: cost,
+      remaining_balance: users[0].sms_balance - cost,
+      to: cleanPhone
+    });
+
+  } catch (error) {
+    if (connection) await connection.end();
+    console.error('Error sending SMS via API:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al enviar SMS: ' + (error.response?.data?.message || error.message)
+    });
   }
 });
 

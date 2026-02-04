@@ -237,7 +237,12 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
 
       switch (testEndpoint) {
         case 'text':
+        case 'text':
           endpoint = '/api/rest/send/text';
+          body = { to: testTo, message: testMessage };
+          break;
+        case 'sms':
+          endpoint = '/api/rest/sms/send';
           body = { to: testTo, message: testMessage };
           break;
         case 'image':
@@ -376,6 +381,13 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
   -d '{
     "to": "595981234567",
     "message": "Hola desde la API!"
+  }'`,
+    curl_sms: `curl -X POST "${getAPIBaseURL()}/api/rest/sms/send" \\
+  -H "X-API-Key: YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "to": "595981234567",
+    "message": "Mensaje SMS Premium"
   }'`,
     curl_image: `curl -X POST "${getAPIBaseURL()}/api/rest/send/image" \\
   -H "X-API-Key: YOUR_API_KEY" \\
@@ -777,6 +789,12 @@ if __name__ == '__main__':
         </Typography>
       </Alert>
 
+      <Alert severity="success" sx={{ mb: 3, bgcolor: '#1a2332', color: '#e3e8ef' }}>
+        <Typography variant="body2">
+          <strong>📱 NUEVO: API SMS Premium</strong> - Ya disponible en la pestaña <strong>"Probar API"</strong> (selecciona "📱 SMS Premium").
+        </Typography>
+      </Alert>
+
       <Paper sx={{ mb: 3, bgcolor: '#1a2332' }}>
         <Tabs value={selectedTab} onChange={(_, v) => setSelectedTab(v)} sx={{ '& .MuiTab-root': { color: '#8b949e' }, '& .Mui-selected': { color: '#58a6ff' } }}>
           <Tab label="📋 Mis API Keys" />
@@ -1026,6 +1044,32 @@ if __name__ == '__main__':
                   </AccordionDetails>
                 </Accordion>
 
+                {/* Enviar SMS */}
+                <Accordion sx={{ bgcolor: '#161b22', color: '#e3e8ef', mb: 1 }}>
+                  <AccordionSummary expandIcon={<ExpandMore sx={{ color: '#8b949e' }} />}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Chip label="POST" size="small" sx={{ bgcolor: '#238636', color: '#fff' }} />
+                      <Typography variant="body1" sx={{ fontWeight: 600 }}>/api/rest/sms/send</Typography>
+                      <Typography variant="body2" sx={{ color: '#8b949e' }}>- Enviar SMS Premium</Typography>
+                    </Box>
+                  </AccordionSummary>
+                  <AccordionDetails sx={{ bgcolor: '#0d1117' }}>
+                    <Typography variant="subtitle2" gutterBottom>Parámetros (JSON):</Typography>
+                    <Box sx={{ bgcolor: '#161b22', p: 2, borderRadius: 2, mb: 1, border: '1px solid #30363d' }}>
+                      <pre style={{ margin: 0, fontSize: '11px', color: '#79c0ff' }}>{`{
+  "to": "595981234567",
+  "message": "Mensaje SMS"
+}`}</pre>
+                    </Box>
+                    <Box sx={{ bgcolor: '#161b22', p: 2, borderRadius: 2, mb: 2, border: '1px solid #30363d' }}>
+                      <Typography variant="caption" sx={{ color: '#e3b341' }}>
+                        ⚠️ Costo: 1 crédito por cada 160 caracteres (o fracción).
+                      </Typography>
+                    </Box>
+                    <Button size="small" startIcon={<ContentCopy />} onClick={() => copyToClipboard(codeExamples.curl_sms)} sx={{ color: '#58a6ff' }}>Copiar cURL</Button>
+                  </AccordionDetails>
+                </Accordion>
+
                 {/* Enviar Ubicación */}
                 <Accordion sx={{ bgcolor: '#161b22', color: '#e3e8ef', mb: 1 }}>
                   <AccordionSummary expandIcon={<ExpandMore sx={{ color: '#8b949e' }} />}>
@@ -1257,6 +1301,7 @@ if __name__ == '__main__':
                     sx={{ color: '#e3e8ef', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#30363d' } }}
                   >
                     <MenuItem value="text" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>📝 Mensaje de Texto</MenuItem>
+                    <MenuItem value="sms" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>📱 SMS Premium</MenuItem>
                     <MenuItem value="image" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>🖼️ Imagen (URL)</MenuItem>
                     <MenuItem value="location" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>📍 Ubicación</MenuItem>
                     <MenuItem value="contact" sx={{ bgcolor: '#0d1117', color: '#e3e8ef' }}>👤 Contacto (vCard)</MenuItem>
@@ -1305,7 +1350,7 @@ if __name__ == '__main__':
                       />
                     )}
 
-                    {['text', 'image', 'buttons', 'list'].includes(testEndpoint) && (
+                    {['text', 'image', 'buttons', 'list', 'sms'].includes(testEndpoint) && (
                       <TextField
                         fullWidth
                         multiline

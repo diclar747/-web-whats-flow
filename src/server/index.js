@@ -370,9 +370,6 @@ console.log('✅ Endpoints de Push Notifications cargados');
 require('./sms-endpoints')(app, poolProxy);
 console.log('✅ Endpoints de SMS Premium cargados');
 
-
-
-
 // 🔓 Rate limiter DESACTIVADO para desarrollo (estaba bloqueando demasiado)
 // app.use(generalLimiter);
 
@@ -463,6 +460,10 @@ const getSession = (sessionId) => {
 // Initializar rutas que dependen de sessions
 require('./routes/clients')(app, poolProxy, sessions);
 console.log('✅ Rutas de Clientes cargadas (init post-sessions)');
+
+// Sistema de Gestión de Créditos
+require('./credit-management-endpoints')(app, poolProxy, io, sessions);
+console.log('✅ Sistema de Gestión de Créditos cargado');
 let lastQRSession = null;
 const QR_EXPIRY_TIME = 2 * 60 * 1000; // 2 minutos
 
@@ -27321,6 +27322,20 @@ server.listen(PORT, '0.0.0.0', async () => {
         }
     } else {
         console.error('[STARTUP] ❌ POOL NOT DEFINED - Skipping Reminder Service');
+    }
+
+    // ============= SERVICIO DE RECORDATORIOS DE CRÉDITOS =============
+    // Iniciar servicio de recordatorios para cuotas de créditos
+    if (pool) {
+        try {
+            console.log('[STARTUP] 🚀 Iniciando servicio de recordatorios de créditos...');
+            const CreditReminderService = require('./credit-reminder-service');
+            const creditReminderService = new CreditReminderService(pool, io, sessions);
+            creditReminderService.start();
+            console.log('✅ Servicio de recordatorios de créditos iniciado');
+        } catch (error) {
+            console.error('❌ Error iniciando servicio de recordatorios de créditos:', error);
+        }
     }
 
     // ============= SCHEDULER DE CAMPAÑAS PROGRAMADAS =============
