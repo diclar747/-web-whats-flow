@@ -29,6 +29,7 @@ const { sendPlanActivationMessage } = require('./utils/subscriptionNotification'
 const { sendPlanApprovalEmail } = require('./utils/subscriptionEmail');
 const { initializeDatabase: initializeSchema } = require('./db/dbSetup');
 const sessionResolver = require('./utils/sessionResolver');
+const { startPlanExpiryScheduler } = require('./utils/plan-expiry-scheduler');
 
 // Importar Sync Worker y Chat Cleanup (Arquitectura de doble almacenamiento)
 const syncWorker = require('./syncWorker');
@@ -85,10 +86,8 @@ server.headersTimeout = 66000; // 66 segundos
 
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',
-    'https://web.whats-flow.com',
-    'http://web.whats-flow.com',
-    'https://crm.whats-flow.com',
-    'http://crm.whats-flow.com'
+    'https://winsap.com.py',
+    'http://winsap.com.py'
 ];
 
 const io = new Server(server, {
@@ -1321,6 +1320,10 @@ async function initializeDatabase() {
         console.log('[DB-INIT] Ensuring table schemas and migrations via dbSetup.js...');
         await initializeSchema(pool);
         console.log('[DB-INIT] Database schema verification completed.');
+
+        // Iniciar programador de vencimientos de planes
+        startPlanExpiryScheduler(pool, sessions);
+        console.log('[DB-INIT] Plan expiry scheduler started');
     } catch (error) {
         console.error('[DB-INIT] Full error during initializeDatabase:', error);
         if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
@@ -2037,7 +2040,7 @@ async function saveMessageToDB(sessionId, msg, skipChat = false) {
 
     // También obtener phoneNumber para emisión de eventos
     let phoneNumber = await getUserPhoneNumber(sessionId);
-    
+
     // 🔧 FIX CRÍTICO: Validar que phoneNumber sea un número de teléfono válido
     if (phoneNumber && typeof phoneNumber === 'string') {
         // Si es hexadecimal o no es numérico, invalidar
@@ -2046,12 +2049,12 @@ async function saveMessageToDB(sessionId, msg, skipChat = false) {
             phoneNumber = null;
         }
     }
-    
+
     // Si no se pudo obtener el phoneNumber, intentar múltiples métodos
     if (!phoneNumber) {
         console.log(`[DB-MSG] 🔍 phoneNumber no encontrado para sessionId: ${sessionId}. Intentando métodos alternativos...`);
         console.log(`[DB-MSG] 🔍 Sessions disponibles:`, Array.from(sessions.keys()));
-        
+
         // Método 1: Usar sessionId si es un número
         if (/^\d{10,15}$/.test(sessionId)) {
             phoneNumber = sessionId;
@@ -2073,7 +2076,7 @@ async function saveMessageToDB(sessionId, msg, skipChat = false) {
                 }
             }
         }
-        
+
         // Método 3: Buscar en la sesión por ownerSessionId
         if (!phoneNumber && ownerSessionId) {
             const sessionByOwner = sessions.get(ownerSessionId);
@@ -2380,7 +2383,7 @@ async function saveMessageToDB(sessionId, msg, skipChat = false) {
         }
 
         console.log(`[DB-MSG-QUERY] Attempting to insert/update messageId: ${messageId} for session_id: ${ownerSessionId}, phone: ${phoneNumber}, chat_jid: ${chat_jid}, sender_jid: ${finalSenderJid}, from_me: ${from_me}, agent: ${agent_name}, type: ${params[7]}, status: ${params[15]}, sender_name: ${senderName}, is_read: ${is_read}`);
-        
+
         // 🔧 LOG CRÍTICO: Verificar phoneNumber antes de insertar
         if (!phoneNumber || !/^\d{10,15}$/.test(phoneNumber)) {
             console.error(`[DB-MSG] ⚠️ CRÍTICO: phoneNumber inválido antes de INSERT: ${phoneNumber}. Esto causará problemas de filtrado.`);
@@ -2399,7 +2402,7 @@ async function saveMessageToDB(sessionId, msg, skipChat = false) {
         const today = new Date();
         const msgDate = new Date(timestamp);
         const isToday = msgDate.toDateString() === today.toDateString();
-        
+
         if (!skipChat && isToday) {
             try {
                 const chatParams = [
@@ -2434,9 +2437,9 @@ async function saveMessageToDB(sessionId, msg, skipChat = false) {
                         media_url = COALESCE(VALUES(media_url), media_url),
                         updated_at = CURRENT_TIMESTAMP`,
                     [messageId, ownerSessionId, phoneNumber, chat_jid, finalSenderJid, from_me,
-                     message_type || null, text_content || null, media_url || null, media_mime_type || null,
-                     mysqlTimestamp, finalStatus, is_read, senderName, sender_pushname || null,
-                     agent_id, agent_name]
+                        message_type || null, text_content || null, media_url || null, media_mime_type || null,
+                        mysqlTimestamp, finalStatus, is_read, senderName, sender_pushname || null,
+                        agent_id, agent_name]
                 );
                 console.log(`[DB-CHAT] ✅ Mensaje de HOY guardado en tabla chat: ${messageId}`);
             } catch (chatError) {
@@ -2592,7 +2595,7 @@ async function saveMessageToDB(sessionId, msg, skipChat = false) {
             const roomById = `session-${sessionId}`;
             const roomByPhone = `session-${phoneNumber}`;
             console.log(`[${sessionId}] 📡 Emitiendo a salas: ${roomById} y ${roomByPhone}`);
-            
+
             // Emitir evento 'new-message' para el nuevo sistema de chat
             io.to(roomById).emit('new-message', {
                 key: {
@@ -2640,11 +2643,11 @@ async function saveMessageToDB(sessionId, msg, skipChat = false) {
                 senderAvatar: senderAvatar,
                 isGroup: chat_jid.includes('@g.us')
             });
-            
+
             // También emitir evento 'message' para compatibilidad con sistemas antiguos
             io.to(roomById).emit('message', payload);
             io.to(roomByPhone).emit('message', payload);
-            
+
             // 🔥 CRÍTICO: Emitir evento para actualizar la lista de chats en tiempo real
             io.to(roomById).emit('chat-update', {
                 jid: chat_jid,
@@ -2855,7 +2858,7 @@ async function getUserPhoneNumber(sessionId) {
                         return phoneNumber;
                     }
                 }
-                
+
                 // Buscar por phone / session_id / owner_phone_number
                 const [phoneRows] = await connection.execute(
                     'SELECT phone, session_id FROM user_sessions WHERE owner_phone_number = ? OR session_id = ? ORDER BY updated_at DESC LIMIT 1',
@@ -3015,9 +3018,13 @@ async function getAllSessionIds(sessionId) {
                         }
 
                         // Incluir el admin_phone (ID del dueño de las sesiones)
+                        // ⚠️ FIX: No incluir automáticamente al admin (padre) para evitar ver datos de otros usuarios
+                        // si compartimos número. Cada usuario debe ver solo lo suyo o lo de sus dependientes.
+                        /*
                         if (user.admin_phone && !sessionIds.includes(user.admin_phone)) {
                             sessionIds.push(user.admin_phone);
                         }
+                        */
 
                         // Incluir el phone propio del usuario
                         if (user.phone && !sessionIds.includes(user.phone)) {
@@ -3093,7 +3100,7 @@ async function getAllSessionIds(sessionId) {
 
                 for (const uRow of userRows) {
                     if (uRow.phone && !sessionIds.includes(uRow.phone)) sessionIds.push(uRow.phone);
-                    if (uRow.admin_phone && !sessionIds.includes(uRow.admin_phone)) sessionIds.push(uRow.admin_phone);
+                    // if (uRow.admin_phone && !sessionIds.includes(uRow.admin_phone)) sessionIds.push(uRow.admin_phone);
                 }
 
             } finally {
@@ -5743,10 +5750,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 console.error(`[${userPhoneNumber}] ❌ Error obteniendo grupos:`, err.message);
                                 return {};
                             });
-                            
+
                             const groupList = Object.values(groups);
                             console.log(`[${userPhoneNumber}] 📊 Total de grupos encontrados: ${groupList.length}`);
-                            
+
                             let syncedCount = 0;
                             for (const group of groupList) {
                                 try {
@@ -5767,9 +5774,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                     console.error(`[${userPhoneNumber}] ❌ Error sincronizando grupo ${group.id}:`, groupErr.message);
                                 }
                             }
-                            
+
                             console.log(`[${userPhoneNumber}] ✅ Grupos sincronizados: ${syncedCount}/${groupList.length}`);
-                            
+
                             // Emitir evento al frontend con los grupos actualizados
                             io.emit('groups-synced', {
                                 sessionId: userPhoneNumber,
@@ -8481,7 +8488,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         // ═══════════════════════════════════════════════════════════
         // MANEJADORES DE GRUPOS - CRÍTICO PARA FUNCIONALIDAD COMPLETA
         // ═══════════════════════════════════════════════════════════
-        
+
         // Nuevos grupos creados o añadidos
         sock.ev.on('groups.upsert', async (groups) => {
             console.log(`[${sessionId}] 👥 EVENTO groups.upsert: ${groups.length} grupo(s)`);
@@ -8502,12 +8509,12 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         },
                         sock
                     );
-                    
+
                     // Si hay participantes, guardarlos
                     if (group.participants && group.participants.length > 0) {
                         await insertGroupMembers(group.id, group.participants, phoneNumber || sessionId);
                     }
-                    
+
                     // Notificar al frontend
                     io.to(`session-${sessionId}`).emit('group-created', {
                         groupId: group.id,
@@ -8526,7 +8533,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
             try {
                 const { id, participants, action } = update;
                 console.log(`[${sessionId}]   └─ Acción: ${action}, Participantes: ${participants.length}`);
-                
+
                 // Actualizar miembros del grupo según la acción
                 if (action === 'add') {
                     // Nuevos miembros añadidos
@@ -8569,7 +8576,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         }
                     }
                 }
-                
+
                 // Notificar al frontend
                 io.to(`session-${sessionId}`).emit('group-participants-update', {
                     groupId: id,
@@ -8601,7 +8608,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             connection.release();
                         }
                     }
-                    
+
                     // Notificar al frontend
                     io.to(`session-${sessionId}`).emit('group-updated', {
                         groupId: update.id,
@@ -11643,7 +11650,7 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
 
         // 🔥 MEJORADO: SIEMPRE intentar obtener datos del agente de la BD si no vienen
         // Ya tenemos finalAgentId y finalAgentName desde los parámetros (ver arriba)
-        
+
         // Si NO viene agentId pero tenemos phoneNumber, buscar en chat_assignments
         if (!finalAgentId && phoneNumber && pool) {
             try {
@@ -11677,7 +11684,7 @@ app.post('/api/messages/send', upload.single('file'), async (req, res) => {
                 console.log('[AGENT-SEND] ⚠️ No se pudo obtener nombre del agente:', err.message);
             }
         }
-        
+
         // Usar el nombre resuelto o el recibido del cliente
         const effectiveAgentName = resolvedAgentName || finalAgentName || 'Agente';
         console.log('[AGENT-SEND] 📝 Nombre del agente a usar:', effectiveAgentName, '(finalAgentName:', finalAgentName, ', resolved:', resolvedAgentName, ')');
@@ -12834,7 +12841,7 @@ async function resolveSessionIdentifiers(identifier) {
             };
         }
     }
-    
+
     // Es un sessionId (ID numérico del usuario)
     const phoneNumber = await getUserPhoneNumber(identifier);
     const ownerSessionId = await getOwnerSessionId(phoneNumber);
@@ -12945,7 +12952,7 @@ app.get('/api/chats/:sessionId', authenticateToken, async (req, res) => {
 
             // 🔧 FIX: Convertir last_message_from_me correctamente (viene como string "1"/"0" de GROUP_CONCAT)
             const fromMeValue = chat.last_message_from_me === '1' || chat.last_message_from_me === 1 || chat.last_message_from_me === true;
-            
+
             return {
                 id: chat.id,
                 name: chat.contact_name || phoneOnly,
@@ -13034,7 +13041,7 @@ app.get('/api/messages', async (req, res) => {
 
         const useChatTable = chatTables.length > 0;
         const tableName = useChatTable ? 'chat' : 'messages';
-        
+
         console.log(`[MESSAGES-CHAT] 📋 Usando tabla: ${tableName}`);
 
         // Construir filtro de fecha
@@ -16620,16 +16627,20 @@ app.get('/api/kanban/search-all-contacts/:sessionId', authenticateToken, validat
     }
 
     try {
-        const dbIdentifier = await getUserDbIdentifier(sessionId);
-        if (!dbIdentifier) {
-            return res.status(400).json({
-                success: false,
-                error: 'No se pudo obtener el identificador de sesión'
-            });
-        }
+        // Obtener identificadores posibles (numérico y teléfono) para buscar en ambos
+        const userId = await getOwnerSessionId(sessionId);
+        let phoneId = sessionId;
 
+        // Si el userId es diferente del sessionId, significa que logramos resolverlo satisfactoriamente
+        // pero queremos buscar en ambos por si hay fragmentación en la tabla contacts
         const connection = await pool.getConnection();
         try {
+            // Obtener el teléfono real si lo que tenemos es un ID numérico
+            if (userId === sessionId || !isNaN(parseInt(sessionId))) {
+                const [userRows] = await connection.execute('SELECT phone FROM users WHERE id = ?', [userId]);
+                if (userRows.length > 0) phoneId = userRows[0].phone;
+            }
+
             if (!search || search.trim() === '') {
                 return res.json({
                     success: true,
@@ -16638,53 +16649,56 @@ app.get('/api/kanban/search-all-contacts/:sessionId', authenticateToken, validat
                 });
             }
 
-            // Buscar en TODA la tabla contacts, no solo en kanban_contacts
+            console.log(`[KANBAN-SEARCH-ALL] 🔍 Buscando "${search}" para user_id=${userId} y phone=${phoneId}`);
+
             const searchTerm = `%${search.trim()}%`;
+
+            // 🔥 MEJORA: Usar subconsulta con GROUP BY jid para evitar contactos duplicados
+            // y buscar en ambos session_id posibles por fragmentación histórica
             const [contacts] = await connection.execute(`
-                SELECT
+                SELECT 
                     c.jid,
-                    CASE
+                    CASE 
                         WHEN c.name IS NULL OR c.name = '' OR c.name = '.' OR c.name = '..' OR c.name = '...' OR c.name = '....' THEN REPLACE(REPLACE(c.jid, '@s.whatsapp.net', ''), '@c.us', '')
-                        ELSE c.name
+                        ELSE c.name 
                     END as name,
                     c.notify_name,
                     c.avatar_url,
                     c.created_at,
-                    CASE
-                        WHEN kc.id IS NOT NULL THEN kc.board_id
-                        ELSE NULL
-                    END as current_board_id,
-                    CASE
-                        WHEN kc.id IS NOT NULL THEN kb.name
-                        ELSE NULL
-                    END as current_board_name
-                FROM contacts c
+                    kc.board_id as current_board_id,
+                    kb.name as current_board_name
+                FROM (
+                    SELECT jid, MAX(id) as max_id
+                    FROM contacts
+                    WHERE session_id IN (?, ?) 
+                    AND jid LIKE '%@s.whatsapp.net'
+                    AND jid NOT LIKE '%@broadcast%' AND jid NOT LIKE 'status@%'
+                    GROUP BY jid
+                ) latest
+                INNER JOIN contacts c ON c.id = latest.max_id
                 LEFT JOIN kanban_contacts kc ON c.jid = kc.contact_jid
-                LEFT JOIN kanban_boards kb ON kc.board_id = kb.id AND kb.session_id = c.session_id
-                WHERE c.session_id = ?
-                AND c.jid LIKE '%@s.whatsapp.net'
-                AND c.jid NOT LIKE '%@broadcast%' AND c.jid NOT LIKE 'status@%'
-                AND (
-                    c.name LIKE ? OR
-                    c.notify_name LIKE ? OR
+                LEFT JOIN kanban_boards kb ON kc.board_id = kb.id 
+                WHERE (
+                    c.name LIKE ? OR 
+                    c.notify_name LIKE ? OR 
                     c.jid LIKE ?
                 )
-                ORDER BY
-                    CASE
-                        WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0
-                        WHEN c.name REGEXP '^[0-9]' THEN 1
-                        ELSE 2
-                    END,
+                ORDER BY 
+                    CASE 
+                        WHEN c.name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 
+                        WHEN c.name REGEXP '^[0-9]' THEN 1 
+                        ELSE 2 
+                    END, 
                     c.name ASC
                 LIMIT 100
-            `, [dbIdentifier, searchTerm, searchTerm, searchTerm]);
+            `, [userId, phoneId, searchTerm, searchTerm, searchTerm]);
 
-            console.log(`[KANBAN-SEARCH-ALL] ✅ ${contacts.length} contactos encontrados en toda la BD`);
+            console.log(`[KANBAN-SEARCH-ALL] ✅ ${contacts.length} contactos de-duplicados encontrados`);
 
             const formattedContacts = contacts.map(c => ({
                 jid: c.jid,
                 phone: c.jid?.split('@')[0] || '',
-                name: c.name, // Ya viene corregido del CASE en SQL
+                name: c.name,
                 avatarUrl: c.avatar_url,
                 currentBoardId: c.current_board_id,
                 currentBoardName: c.current_board_name,
@@ -20652,7 +20666,7 @@ app.post('/api/users', authenticateToken, async (req, res) => {
             if (phone) {
                 try {
                     const { sendWhatsAppMessage } = require('./whatsapp-loader');
-                    
+
                     const welcomeMessage = `🎉 *¡Bienvenido a WhatsFlow!*
 
 Hola ${name},
@@ -20663,7 +20677,7 @@ Tu cuenta de agente ha sido creada exitosamente. Aquí están tus datos de acces
 🔑 *Contraseña:* ${password}
 
 🌐 *Acceso al sistema:*
-https://web.whats-flow.com
+https://winsap.com.py
 
 💡 *Instrucciones:*
 1. Ingresa a la plataforma con tu email y contraseña
@@ -20675,7 +20689,7 @@ Si tienes alguna duda, contacta a tu administrador.
 _Este es un mensaje automático de WhatsFlow_`;
 
                     const waResult = await sendWhatsAppMessage(sessionId || adminPhone, phone, welcomeMessage);
-                    
+
                     if (waResult.success) {
                         console.log(`[USERS] ✅ Mensaje de bienvenida enviado a ${phone}`);
                     } else {
@@ -26896,7 +26910,7 @@ console.log('✅ Health check endpoints disponibles en /api/health, /api/ready, 
 // Iniciar sincronización de historial manualmente
 app.post('/api/sync/start/:sessionId', authenticateToken, async (req, res) => {
     const { sessionId } = req.params;
-    
+
     try {
         const session = sessions.get(sessionId);
         if (!session || !session.sock) {
@@ -26908,7 +26922,7 @@ app.post('/api/sync/start/:sessionId', authenticateToken, async (req, res) => {
 
         // Iniciar sync en segundo plano
         const result = await syncWorker.startHistoricalSync(sessionId, session.sock, io);
-        
+
         res.json({
             success: true,
             message: 'Sincronización iniciada',
@@ -26927,7 +26941,7 @@ app.post('/api/sync/start/:sessionId', authenticateToken, async (req, res) => {
 app.get('/api/sync/status/:sessionId', authenticateToken, async (req, res) => {
     const { sessionId } = req.params;
     const state = syncWorker.getSyncState(sessionId);
-    
+
     res.json({
         success: true,
         data: state
@@ -26937,7 +26951,7 @@ app.get('/api/sync/status/:sessionId', authenticateToken, async (req, res) => {
 // Estadísticas de sincronización global
 app.get('/api/sync/stats', authenticateToken, async (req, res) => {
     const stats = syncWorker.getStats();
-    
+
     res.json({
         success: true,
         data: stats
@@ -26964,7 +26978,7 @@ app.get('/api/chat/stats', authenticateToken, async (req, res) => {
 // Limpieza manual de tabla chat
 app.post('/api/chat/cleanup', authenticateToken, authorizeRole('admin'), async (req, res) => {
     const { days, limit } = req.body;
-    
+
     try {
         const result = await chatCleanup.manualCleanup(days, limit);
         res.json({

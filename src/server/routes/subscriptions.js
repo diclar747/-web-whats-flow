@@ -627,7 +627,7 @@ router.post('/users', async (req, res) => {
         us.created_at,
         us.last_connection_time as last_login,
         COALESCE(us.phone, 'Cliente') as name,
-        CONCAT(us.phone, '@whats-flow.com') as email,
+        CONCAT(us.phone, '@winsap.com.py') as email,
         DATEDIFF(us.subscription_end_date, NOW()) as days_remaining,
         COALESCE(p.name,
           CASE
@@ -758,13 +758,15 @@ router.post('/activate', checkAdmin, async (req, res) => {
           // Usuario existe en user_sessions, actualizar ahí
           await connection.query(`
             UPDATE user_sessions SET
-      subscription_plan = ?,
-        subscription_status = 'active',
-        subscription_start_date = ?,
-        subscription_end_date = ?,
-        subscription_days = ?
-          WHERE phone = ?
-            `, [finalPlanName, startDate, endDate, subscriptionDays, phone]);
+                subscription_plan = ?,
+                subscription_status = 'active',
+                subscription_start_date = ?,
+                subscription_end_date = ?,
+                subscription_days = ?,
+                plan_id = ?,
+                plan_expires_at = ?
+            WHERE phone = ?
+            `, [finalPlanName, startDate, endDate, subscriptionDays, plan.id, endDate, phone]);
 
           console.log('[ACTIVATE] Plan activado en user_sessions para:', phone);
           sessionUpdated = true;
@@ -816,13 +818,15 @@ router.post('/activate', checkAdmin, async (req, res) => {
         targetUserId = users[0].id;
         await connection.query(`
         UPDATE users SET
-      subscription_plan = ?,
-        subscription_status = 'active',
-        subscription_start_date = ?,
-        subscription_end_date = ?,
-        subscription_days = ?
+            subscription_plan = ?,
+            subscription_status = 'active',
+            subscription_start_date = ?,
+            subscription_end_date = ?,
+            subscription_days = ?,
+            plan_id = ?,
+            plan_expires_at = ?
           WHERE id = ?
-            `, [finalPlanName, startDate, endDate, subscriptionDays, targetUserId]);
+            `, [finalPlanName, startDate, endDate, subscriptionDays, plan.id, endDate, targetUserId]);
 
         console.log('[ACTIVATE] Plan activado en users para userId:', targetUserId);
 

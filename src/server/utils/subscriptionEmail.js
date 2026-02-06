@@ -80,7 +80,11 @@ async function sendPlanRequestEmail(email, name, planInfo) {
                         </div>
                         <div class="footer">
                             <p><strong>Winsap Enterprise</strong></p>
-                            <p>Asunción, Paraguay • Soporte 24/7</p>
+                            <p>Avenida Fundadores Bella Vista Itapua Paraguay</p>
+                            <p>
+                                <a href="https://winsap.com.py" style="color: #3b82f6; text-decoration: none;">winsap.com.py</a> • 
+                                <a href="https://wa.me/595994854167" style="color: #10b981; text-decoration: none;">WhatsApp Soporte</a>
+                            </p>
                         </div>
                     </div>
                 </body>
@@ -131,7 +135,7 @@ async function sendPlanApprovalEmail(email, name, planInfo) {
                             </div>
 
                             <div style="text-align: center; margin: 40px 0;">
-                                <a href="https://crm.whats-flow.com/dashboard" class="button" style="background-color: #10b981;">Ir a mi Panel de Control</a>
+                                <a href="https://winsap.com.py/dashboard" class="button" style="background-color: #10b981;">Ir a mi Panel de Control</a>
                             </div>
 
                             <p><strong>Lo que puedes hacer ahora:</strong></p>
@@ -154,7 +158,11 @@ async function sendPlanApprovalEmail(email, name, planInfo) {
                         </div>
                         <div class="footer">
                             <p><strong>Winsap Enterprise</strong></p>
-                            <p>Haciendo crecer negocios a través de la comunicación</p>
+                            <p>Avenida Fundadores Bella Vista Itapua Paraguay</p>
+                            <p>
+                                <a href="https://winsap.com.py" style="color: #3b82f6; text-decoration: none;">winsap.com.py</a> • 
+                                <a href="https://wa.me/595994854167" style="color: #10b981; text-decoration: none;">WhatsApp Soporte</a>
+                            </p>
                         </div>
                     </div>
                 </body>
@@ -171,7 +179,134 @@ async function sendPlanApprovalEmail(email, name, planInfo) {
     }
 }
 
+/**
+ * Enviar correo de recordatorio de vencimiento de plan
+ */
+async function sendPlanExpiryReminderEmail(email, name, planName, expiryDate) {
+    try {
+        const formattedDate = new Date(expiryDate).toLocaleDateString('es-PY', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric'
+        });
+
+        const mailOptions = {
+            from: '"Winsap" <cnid.py@gmail.com>',
+            to: email,
+            subject: `⚠️ Recordatorio: Tu plan de Winsap vence hoy`,
+            html: `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <style>${PREMIUM_EMAIL_STYLES}</style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="header" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                            <div class="logo">Winsap</div>
+                            <div class="badge" style="background-color: rgba(255, 255, 255, 0.3);">Vencimiento de Suscripción</div>
+                        </div>
+                        <div class="content">
+                            <div class="greeting">¡Hola, ${name}! 👋</div>
+                            <p>Queremos recordarte que tu suscripción al plan <strong>${planName}</strong> vence el día de hoy, <strong>${formattedDate}</strong>.</p>
+                            
+                            <div class="plan-card" style="border-left: 4px solid #f59e0b;">
+                                <div class="plan-name" style="color: #d97706;">${planName}</div>
+                                <div class="plan-detail">Fecha de Vencimiento: ${formattedDate}</div>
+                                <div class="plan-detail">Estado: <span style="color: #d97706; font-weight: 700;">POR VENCER</span></div>
+                            </div>
+
+                            <p>Para mantener tu cuenta activa y no perder el acceso a tus herramientas de WhatsApp y flujos automatizados, te recomendamos renovar tu plan ahora mismo.</p>
+
+                            <div style="text-align: center; margin: 40px 0;">
+                                <a href="https://winsap.com.py/dashboard" class="button" style="background-color: #f59e0b;">Renovar Suscripción Ahora</a>
+                            </div>
+
+                            <p>Si tienes alguna duda o necesitas asistencia durante el proceso de renovación, no dudes en contactar con nuestro soporte técnico.</p>
+                        </div>
+                        <div class="footer">
+                            <p><strong>Winsap Enterprise</strong></p>
+                            <p>Avenida Fundadores Bella Vista Itapua Paraguay</p>
+                            <p>
+                                <a href="https://winsap.com.py" style="color: #3b82f6; text-decoration: none;">winsap.com.py</a> • 
+                                <a href="https://wa.me/595994854167" style="color: #10b981; text-decoration: none;">WhatsApp Soporte</a>
+                            </p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('[EMAIL-NOTIF] ✅ Recordatorio de vencimiento enviado a:', email);
+        return true;
+    } catch (error) {
+        console.error('[EMAIL-NOTIF] ❌ Error enviando email de recordatorio:', error);
+        return false;
+    }
+}
+
+/**
+ * Enviar notificación genérica vía email
+ */
+async function sendGenericNotificationEmail(email, name, subject, message) {
+    try {
+        const mailOptions = {
+            from: '"Winsap" <cnid.py@gmail.com>',
+            to: email,
+            subject: subject || 'Notificación Importante - Winsap',
+            html: `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <style>${PREMIUM_EMAIL_STYLES}</style>
+                </head>
+                <body>
+                    <div class="container">
+                        <div class="header">
+                            <div class="logo">Winsap</div>
+                            <div class="badge">Notificación</div>
+                        </div>
+                        <div class="content">
+                            <div class="greeting">Hola, ${name}</div>
+                            
+                            <div style="background-color: #f8fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #3b82f6; margin: 20px 0;">
+                                ${message.replace(/\n/g, '<br>')}
+                            </div>
+
+                            <p style="margin-top: 30px; font-size: 14px; color: #64748b;">
+                                Este es un mensaje automático enviado desde la plataforma administrativa de Winsap.
+                            </p>
+                        </div>
+                        <div class="footer">
+                            <p><strong>Winsap Enterprise</strong></p>
+                            <p>Avenida Fundadores Bella Vista Itapua Paraguay</p>
+                            <p>
+                                <a href="https://winsap.com.py" style="color: #3b82f6; text-decoration: none;">winsap.com.py</a> • 
+                                <a href="https://wa.me/595994854167" style="color: #10b981; text-decoration: none;">WhatsApp Soporte</a>
+                            </p>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log('[EMAIL-NOTIF] ✅ Notificación genérica enviada a:', email);
+        return true;
+    } catch (error) {
+        console.error('[EMAIL-NOTIF] ❌ Error enviando notificación genérica:', error);
+        return false;
+    }
+}
+
 module.exports = {
     sendPlanRequestEmail,
-    sendPlanApprovalEmail
+    sendPlanApprovalEmail,
+    sendPlanExpiryReminderEmail,
+    sendGenericNotificationEmail
 };

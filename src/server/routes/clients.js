@@ -2,6 +2,9 @@ const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
 const { hashPassword } = require('../auth-utils');
 
+const { sendPlanExpiryReminderEmail, sendGenericNotificationEmail } = require('../utils/subscriptionEmail');
+const { sendWhatsAppReminder, sendGenericWhatsApp } = require('../utils/plan-expiry-scheduler');
+
 module.exports = function (app, pool, sessions) {
     const { requireSuperAdmin } = require('../auth-utils');
 
@@ -36,6 +39,7 @@ module.exports = function (app, pool, sessions) {
                 const [clients] = await connection.execute(`
                     SELECT
                         u.id, u.name, u.email, u.phone, u.status, u.is_blocked, u.last_seen, u.created_at,
+                        u.plan_expires_at,
                         p.name as plan_name, p.id as plan_id,
                         (SELECT COUNT(*) FROM user_sessions us WHERE us.phone = u.phone AND us.is_active = 1) as is_connected
                     FROM users u
@@ -62,8 +66,23 @@ module.exports = function (app, pool, sessions) {
         try {
             const connection = await pool.getConnection();
             try {
-                await connection.execute('UPDATE users SET plan_id = ? WHERE id = ?', [plan_id, id]);
-                res.json({ success: true, message: 'Plan asignado correctamente' });
+                // Al asignar el plan, establecemos el vencimiento en 30 días por defecto
+                // Sincronizar ambos sistemas de planes: legacy (plan_id, plan_expires_at) y nuevo (subscription_*)
+                const [planRows] = await connection.execute('SELECT name FROM plans WHERE id = ?', [plan_id]);
+                const planName = planRows.length > 0 ? planRows[0].name : 'Estándar';
+
+                await connection.execute(`
+                    UPDATE users SET 
+                        plan_id = ?, 
+                        plan_expires_at = DATE_ADD(NOW(), INTERVAL 30 DAY),
+                        subscription_plan = ?,
+                        subscription_status = 'active',
+                        subscription_start_date = NOW(),
+                        subscription_end_date = DATE_ADD(NOW(), INTERVAL 30 DAY),
+                        subscription_days = 30
+                    WHERE id = ?
+                `, [plan_id, planName, id]);
+                res.json({ success: true, message: 'Plan asignado correctamente con vencimiento en 30 días (Sincronizado)' });
             } finally {
                 connection.release();
             }
@@ -196,6 +215,12 @@ module.exports = function (app, pool, sessions) {
                     console.log('[DEBUG-CLIENTS] NO se envió contraseña nueva o está vacía.');
                 }
 
+                if (req.body.plan_expires_at) {
+                    query += ', plan_expires_at = ?, subscription_end_date = ?, subscription_status = "active"';
+                    params.push(req.body.plan_expires_at);
+                    params.push(req.body.plan_expires_at);
+                }
+
                 query += ' WHERE id = ?';
                 params.push(id);
 
@@ -299,4 +324,158 @@ module.exports = function (app, pool, sessions) {
             res.status(500).json({ success: false, error: 'Error eliminando cliente: ' + error.message });
         }
     });
+
+    // POST /api/clients/:id/notify-expiration - Enviar notificación manual
+    app.post('/api/clients/:id/notify-expiration', authenticateToken, requireSuperAdmin, async (req, res) => {
+        const { id } = req.params;
+
+        try {
+            const connection = await pool.getConnection();
+            try {
+                // Obtener datos del usuario
+                const [users] = await connection.execute(`
+                    SELECT u.id, u.name, u.email, u.phone, u.plan_expires_at, p.name as plan_name
+                    FROM users u
+                    LEFT JOIN plans p ON u.plan_id = p.id
+                    WHERE u.id = ?
+                `, [id]);
+
+                if (users.length === 0) {
+                    return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+                }
+
+                const user = users[0];
+                let emailSent = false;
+                let whatsappSent = false;
+
+                // Enviar Email
+                if (user.email && user.email.includes('@') && !user.email.includes('.local')) {
+                    emailSent = await sendPlanExpiryReminderEmail(user.email, user.name, user.plan_name || 'Sin Plan', user.plan_expires_at || new Date());
+                }
+
+                // Enviar WhatsApp
+                if (user.phone) {
+                    await sendWhatsAppReminder(user, sessions);
+                    whatsappSent = true;
+                }
+
+                res.json({
+                    success: true,
+                    message: `Notificaciones enviadas. Email: ${emailSent ? 'OK' : 'No enviado'}, WhatsApp: ${whatsappSent ? 'Enviado' : 'No enviado'}`
+                });
+
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error sending manual notification:', error);
+            res.status(500).json({ success: false, error: 'Error enviando notificaciones' });
+        }
+    });
+
+    // POST /api/notifications/bulk - Enviar notificaciones masivas
+    app.post('/api/notifications/bulk', authenticateToken, requireSuperAdmin, async (req, res) => {
+        const { userIds, message, subject, sendEmail, sendWhatsApp } = req.body;
+        console.log(`[BULK-NOTIF] Request received: userIds=${JSON.stringify(userIds)}, sendEmail=${sendEmail}, sendWhatsApp=${sendWhatsApp}`);
+
+        if (!message) {
+            console.log('[BULK-NOTIF] ❌ Error: Mensaje vacío');
+            return res.status(400).json({ success: false, error: 'El mensaje es obligatorio' });
+        }
+
+        if (!sendEmail && !sendWhatsApp) {
+            console.log('[BULK-NOTIF] ❌ Error: Ningún canal seleccionado');
+            return res.status(400).json({ success: false, error: 'Debe seleccionar al menos un canal de envío (Email o WhatsApp)' });
+        }
+
+        try {
+            const connection = await pool.getConnection();
+            try {
+                console.log('[BULK-NOTIF] DB Connection acquired');
+                let query = `
+                    SELECT u.id, u.name, u.email, u.phone
+                    FROM users u
+                    WHERE u.role != 'super_admin'
+                `;
+                const params = [];
+
+                // Si no es "todos", filtrar por IDs
+                if (userIds !== 'all' && Array.isArray(userIds) && userIds.length > 0) {
+                    query += ` AND u.id IN (${userIds.map(() => '?').join(',')})`;
+                    params.push(...userIds);
+                } else if (userIds !== 'all') {
+                    // Si no es 'all' y no es array válido, error o vacío
+                    return res.status(400).json({ success: false, error: 'Selección de usuarios inválida' });
+                }
+
+                const [users] = await connection.execute(query, params);
+                console.log(`[BULK-NOTIF] Iniciando envío a ${users.length} usuarios.`);
+
+                // Procesar envíos en segundo plano (no bloquear respuesta HTTP si son muchos)
+                // O responder con progreso. Aquí responderemos rápido y procesaremos.
+                // Para feedback inmediato, mejor procesar async y devolver "En proceso".
+
+                const results = {
+                    total: users.length,
+                    emailSent: 0,
+                    whatsappSent: 0,
+                    errors: 0
+                };
+
+                // Enviamos respuesta rápida para no timeout
+                res.json({ success: true, message: `Procesando envío a ${users.length} usuarios...`, total: users.length });
+
+                // Procesamiento Async
+                (async () => {
+                    const { sendGenericNotificationEmail } = require('../utils/subscriptionEmail');
+                    const { sendGenericWhatsApp } = require('../utils/plan-expiry-scheduler');
+
+                    for (const user of users) {
+                        try {
+                            // Reemplazar variables en el mensaje
+                            let personalizedMessage = message;
+                            personalizedMessage = personalizedMessage.replace(/{nombre}/gi, user.name || 'Usuario');
+                            personalizedMessage = personalizedMessage.replace(/{email}/gi, user.email || '');
+                            personalizedMessage = personalizedMessage.replace(/{phone}/gi, user.phone || '');
+                            personalizedMessage = personalizedMessage.replace(/{telefono}/gi, user.phone || '');
+
+                            // Email
+                            if (sendEmail && user.email && user.email.includes('@') && !user.email.includes('.local')) {
+                                const sent = await sendGenericNotificationEmail(user.email, user.name, subject, personalizedMessage);
+                                if (sent) results.emailSent++;
+                            }
+
+                            // WhatsApp
+                            if (sendWhatsApp && user.phone) {
+                                console.log(`[BULK-NOTIF] Intentando enviar WhatsApp a ${user.phone}, sessions disponibles: ${sessions ? sessions.size : 'undefined'}`);
+                                const sent = await sendGenericWhatsApp(user, sessions, personalizedMessage);
+                                if (sent) {
+                                    results.whatsappSent++;
+                                    console.log(`[BULK-NOTIF] ✅ WhatsApp enviado a ${user.name} (${user.phone})`);
+                                } else {
+                                    console.log(`[BULK-NOTIF] ❌ Falló envío WhatsApp a ${user.name} (${user.phone})`);
+                                }
+                            }
+                        } catch (err) {
+                            console.error(`[BULK-NOTIF] Error procesando usuario ${user.id}:`, err);
+                            results.errors++;
+                        }
+                        // Pequeña pausa para no saturar
+                        await new Promise(r => setTimeout(r, 500));
+                    }
+                    console.log('[BULK-NOTIF] Proceso completado:', results);
+                })();
+
+            } finally {
+                connection.release();
+            }
+        } catch (error) {
+            console.error('Error in bulk notification:', error);
+            // Si ya respondimos, esto no tendrá efecto en el cliente HTTP, pero loguea
+            if (!res.headersSent) {
+                res.status(500).json({ success: false, error: 'Error procesando notificaciones' });
+            }
+        }
+    });
+
 };

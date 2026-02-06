@@ -141,7 +141,7 @@ const EMAIL_STYLES = `
  */
 async function sendWelcomeEmail(email, name, token) {
     try {
-        const activationUrl = `https://crm.whats-flow.com/activate/${token}`;
+        const activationUrl = `https://winsap.com.py/activate/${token}`;
 
         const mailOptions = {
             from: '"Winsap" <cnid.py@gmail.com>',
@@ -192,8 +192,12 @@ async function sendWelcomeEmail(email, name, token) {
                             </p>
                         </div>
                         <div class="footer">
-                            <p><strong>Winsap</strong> - Gestión de WhatsApp Empresarial</p>
-                            <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
+                            <p><strong>Winsap Enterprise</strong></p>
+                            <p>Avenida Fundadores Bella Vista Itapua Paraguay</p>
+                            <p>
+                                <a href="https://winsap.com.py" style="color: #3b82f6; text-decoration: none;">winsap.com.py</a> • 
+                                <a href="https://wa.me/595994854167" style="color: #10b981; text-decoration: none;">WhatsApp Soporte</a>
+                            </p>
                         </div>
                     </div>
                 </body>
@@ -243,7 +247,7 @@ Este es un correo automático, por favor no respondas a este mensaje.
  */
 async function sendPasswordResetEmail(email, token) {
     try {
-        const resetUrl = `https://crm.whats-flow.com/reset-password/${token}`;
+        const resetUrl = `https://winsap.com.py/reset-password/${token}`;
 
         const mailOptions = {
             from: '"Winsap" <cnid.py@gmail.com>',
@@ -285,8 +289,12 @@ async function sendPasswordResetEmail(email, token) {
                             </p>
                         </div>
                         <div class="footer">
-                            <p><strong>Winsap</strong> - Gestión de WhatsApp Empresarial</p>
-                            <p>Este es un correo automático, por favor no respondas a este mensaje.</p>
+                            <p><strong>Winsap Enterprise</strong></p>
+                            <p>Avenida Fundadores Bella Vista Itapua Paraguay</p>
+                            <p>
+                                <a href="https://winsap.com.py" style="color: #3b82f6; text-decoration: none;">winsap.com.py</a> • 
+                                <a href="https://wa.me/595994854167" style="color: #10b981; text-decoration: none;">WhatsApp Soporte</a>
+                            </p>
                         </div>
                     </div>
                 </body>
