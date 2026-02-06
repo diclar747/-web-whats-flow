@@ -197,7 +197,7 @@ module.exports = function (app, pool) {
                     try {
                         const token = authHeader.split(' ')[1];
                         const jwt = require('jsonwebtoken');
-                        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                        const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
                         console.log('🔍 [AGENT-CREATE] JWT decodificado:', {
                             phone: decoded.phone,
@@ -957,7 +957,7 @@ module.exports = function (app, pool) {
                         type: 'agent',
                         name: agent.name
                     },
-                    process.env.JWT_SECRET || 'whatsflow_jwt_secret',
+                    process.env.JWT_SECRET,
                     { expiresIn: '24h' }
                 );
 
@@ -1094,7 +1094,7 @@ module.exports = function (app, pool) {
                     try {
                         const token = req.headers.authorization.split(' ')[1];
                         const jwt = require('jsonwebtoken');
-                        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                        const decoded = jwt.verify(token, process.env.JWT_SECRET);
                         if (decoded.phone) {
                             adminPhone = decoded.phone;
                         }

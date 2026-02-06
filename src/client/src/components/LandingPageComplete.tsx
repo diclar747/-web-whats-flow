@@ -45,7 +45,21 @@ import {
     PlayArrow,
     Groups,
     NotificationsActive,
-    BarChart
+    BarChart,
+    Notifications,
+    Sms,
+    TouchApp,
+    Code,
+    Send,
+    Link,
+    Image,
+    Timer,
+    AccountBalance,
+    CreditScore,
+    AccountBalanceWallet,
+    ReceiptLong,
+    Payments,
+    PointOfSale
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import WinsapLogo from './WinsapLogo';
@@ -95,39 +109,70 @@ const LandingPageComplete: React.FC = () => {
         element?.scrollIntoView({ behavior: 'smooth' });
     };
 
+    // SEO: Inyectar datos estructurados JSON-LD
+    useEffect(() => {
+        const structuredData = {
+            "@context": "https://schema.org",
+            "@type": "SoftwareApplication",
+            "name": "Winsap",
+            "operatingSystem": "Web",
+            "applicationCategory": "BusinessApplication, CRM, Marketing",
+            "description": "Plataforma profesional de WhatsApp Marketing, SMS masivo, CRM multi-agente y Chatbot IA.",
+            "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "USD"
+            },
+            "aggregateRating": {
+                "@type": "AggregateRating",
+                "ratingValue": "4.9",
+                "ratingCount": "1250"
+            }
+        };
+
+        const script = document.createElement('script');
+        script.type = 'application/ld+json';
+        script.innerHTML = JSON.stringify(structuredData);
+        document.head.appendChild(script);
+
+        return () => {
+            document.head.removeChild(script);
+        };
+    }, []);
+
     const coreFeatures = [
         {
             icon: <Campaign sx={{ fontSize: 32 }} />,
-            title: 'Winsap Campañas Masivas',
-            description: 'Envíos masivos automatizados a toda su base de contactos en segundos.',
+            title: 'WhatsApp Masivo Profesional',
+            description: 'Realice envíos masivos por WhatsApp de forma segura. Campañas automatizadas para miles de contactos en segundos.',
             color: '#10b981',
             image: '/images/campaigns_module.png'
         },
         {
             icon: <Schedule sx={{ fontSize: 32 }} />,
-            title: 'Winsap Envíos Programados',
-            description: 'Defina día y hora para sus comunicaciones. Automatización total.',
+            title: 'Envíos Programados de WhatsApp',
+            description: 'Automatice su comunicación programando mensajes de WhatsApp para fechas y horas específicas. Eficacia total.',
             color: '#3b82f6',
             image: '/images/agenda_module.png'
         },
         {
             icon: <AutoGraph sx={{ fontSize: 32 }} />,
-            title: 'Winsap Personalización',
-            description: 'Use variables y campos dinámicos para mensajes únicos por cliente.',
+            title: 'Personalización de Mensajes',
+            description: 'Cree mensajes únicos con variables dinámicas. Marketing personalizado por WhatsApp para aumentar conversiones.',
             color: '#8b5cf6',
             image: '/images/chatbot_module.png'
         },
         {
             icon: <DashboardIcon sx={{ fontSize: 32 }} />,
-            title: 'Winsap Tableros Kanban',
-            description: 'Gestione su embudo de ventas visualmente. Leads organizados.',
+            title: 'CRM con WhatsApp & Kanban',
+            description: 'El mejor CRM con WhatsApp integrado. Gestione su embudo de ventas visualmente y no pierda ningún lead.',
             color: '#f59e0b',
             image: '/images/kanban_module.png'
         },
         {
             icon: <NotificationsActive sx={{ fontSize: 32 }} />,
-            title: 'Winsap Agenda Inteligente',
-            description: 'Recordatorios automáticos por WhatsApp para citas y eventos.',
+            title: 'Agenda & Recordatorios WhatsApp',
+            description: 'Sistema de citas con recordatorios automáticos por WhatsApp. Reduzca inasistencias de forma inteligente.',
             color: '#ef4444',
             image: '/images/agenda_module.png'
         },
@@ -179,66 +224,216 @@ const LandingPageComplete: React.FC = () => {
             description: 'Tracking en tiempo real: Enviado, Entregado y Leído (Doble Check).',
             color: '#22c55e',
             image: '/images/hero_dashboard.png'
+        },
+        // NUEVOS SERVICIOS - NOTIFICACIONES PUSH
+        {
+            icon: <Notifications sx={{ fontSize: 32 }} />,
+            title: 'Winsap Notificaciones Push',
+            description: 'Campañas de notificaciones push masivas en tiempo real para sus usuarios.',
+            color: '#ff5722',
+            image: '/images/campaigns_module.png'
+        },
+        {
+            icon: <Image sx={{ fontSize: 32 }} />,
+            title: 'Winsap Push con Imágenes',
+            description: 'Envíe notificaciones push con imágenes, banners y contenido multimedia.',
+            color: '#e91e63',
+            image: '/images/campaigns_module.png'
+        },
+        {
+            icon: <Link sx={{ fontSize: 32 }} />,
+            title: 'Winsap Push con URLs',
+            description: 'Notificaciones con enlaces directos que redirigen a su app o sitio web.',
+            color: '#9c27b0',
+            image: '/images/campaigns_module.png'
+        },
+        {
+            icon: <TouchApp sx={{ fontSize: 32 }} />,
+            title: 'Winsap Métricas Push',
+            description: 'Mida clics, aperturas y conversiones de sus campañas push en tiempo real.',
+            color: '#673ab7',
+            image: '/images/analytics_module.png'
+        },
+        // NUEVOS SERVICIOS - SMS
+        {
+            icon: <Sms sx={{ fontSize: 32 }} />,
+            title: 'SMS Masivo & Marketing',
+            description: 'Combine WhatsApp con SMS masivo. Envíe mensajes de texto a cualquier operadora con alta tasa de entrega.',
+            color: '#2196f3',
+            image: '/images/campaigns_module.png'
+        },
+        {
+            icon: <Timer sx={{ fontSize: 32 }} />,
+            title: 'Programación de SMS',
+            description: 'Programe sus campañas de SMS masivo. Ideal para notificaciones urgentes, alertas y marketing directo.',
+            color: '#03a9f4',
+            image: '/images/agenda_module.png'
+        },
+        {
+            icon: <Campaign sx={{ fontSize: 32 }} />,
+            title: 'Campañas de SMS Integradas',
+            description: 'Cree campañas omnicanal. Gestione WhatsApp y SMS desde un solo dashboard con métricas reales.',
+            color: '#00bcd4',
+            image: '/images/campaigns_module.png'
+        },
+        // NUEVOS SERVICIOS - APIs
+        {
+            icon: <Code sx={{ fontSize: 32 }} />,
+            title: 'Winsap API WhatsApp',
+            description: 'API completa para enviar y recibir mensajes de WhatsApp desde su sistema.',
+            color: '#009688',
+            image: '/images/api_module.png'
+        },
+        {
+            icon: <Send sx={{ fontSize: 32 }} />,
+            title: 'Winsap API SMS',
+            description: 'API REST para integrar envío de SMS en sus aplicaciones y sistemas.',
+            color: '#4caf50',
+            image: '/images/api_module.png'
+        },
+        {
+            icon: <NotificationsActive sx={{ fontSize: 32 }} />,
+            title: 'Winsap API Push',
+            description: 'API para enviar notificaciones push programáticas desde su backend.',
+            color: '#8bc34a',
+            image: '/images/api_module.png'
+        },
+        // NUEVOS SERVICIOS - GESTIÓN Y CRÉDITOS
+        {
+            icon: <AccountBalance sx={{ fontSize: 32 }} />,
+            title: 'Gestión Administrativa',
+            description: 'Registre todos sus movimientos financieros: ingresos, egresos y balances detallados para un control total.',
+            color: '#0ea5e9',
+            image: '/images/hero_dashboard.png'
+        },
+        {
+            icon: <CreditScore sx={{ fontSize: 32 }} />,
+            title: 'Sistema de Créditos',
+            description: 'Gestione acreedores y cuotas con fechas personalizadas. Notificaciones automáticas de vencimiento por WhatsApp.',
+            color: '#f59e0b',
+            image: '/images/kanban_module.png'
+        },
+        {
+            icon: <Payments sx={{ fontSize: 32 }} />,
+            title: 'Cuotas y Cobranzas',
+            description: 'El sistema detecta vencimientos y envía recordatorios automáticos por WhatsApp para asegurar el pago de cada cuota.',
+            color: '#10b981',
+            image: '/images/agenda_module.png'
+        },
+        {
+            icon: <ReceiptLong sx={{ fontSize: 32 }} />,
+            title: 'Balances Financieros',
+            description: 'Visualice su rentabilidad real con balances automatizados de ingresos vs egresos por periodos seleccionados.',
+            color: '#6366f1',
+            image: '/images/analytics_module.png'
         }
     ];
 
     const showcaseModules = [
         {
-            title: 'Bot de Inteligencia Artificial',
-            description: 'Chatbots avanzados que entienden el contexto y responden 24/7. Automatice sus ventas y soporte sin perder el toque humano con nuestra tecnología NEURAL.',
+            title: 'Chatbot IA para WhatsApp',
+            description: 'Automatice su atención al cliente con Chatbots inteligentes que entienden el lenguaje natural y responden 24/7 sin intervención humana.',
             image: '/images/chatbot_module.png',
             icon: <WhatsApp />,
             color: '#10b981'
         },
         {
-            title: 'Panel Multi-Agente Profesional',
-            description: 'Centralice la atención de su empresa. Múltiples agentes atendiendo una sola línea con transferencias inteligentes y notas internas para su equipo.',
+            title: 'Plataforma Multi-Agente Profesional',
+            description: 'Centralice todas sus líneas de WhatsApp en un solo lugar. Varios agentes atendiendo la misma línea con transferencias y CRM integrado.',
             image: '/images/multiagent_module.png',
             icon: <People />,
             color: '#3b82f6'
         },
         {
-            title: 'Campañas Masivas y Analítica',
-            description: 'Llegue a miles de clientes con un solo clic. Mida la tasa de entrega, lectura y conversión en tiempo real con dashboards interactivos y detallados.',
+            title: 'WhatsApp Masivo & Campañas',
+            description: 'Llegue a miles de clientes potenciales. Envíe promociones, avisos o noticias de forma masiva y analice los resultados en tiempo real.',
             image: '/images/campaigns_module.png',
             icon: <BarChart />,
             color: '#f59e0b'
         },
         {
-            title: 'CRM Kanban Integrado',
-            description: 'Visualice su embudo de ventas de manera intuitiva. Mueva sus leads entre etapas personalizables y asegure el cierre de cada negocio.',
+            title: 'CRM con WhatsApp & Kanban',
+            description: 'Organice su flujo de ventas con un tablero Kanban intuitivo vinculado directamente a sus conversaciones de WhatsApp.',
             image: '/images/kanban_module.png',
             icon: <DashboardIcon />,
             color: '#8b5cf6'
         },
         {
-            title: 'Agenda Electrónica Inteligente',
-            description: 'Gestione citas y reservas sin esfuerzo. El sistema envía recordatorios automáticos por WhatsApp para eliminar las inasistencias por completo.',
+            title: 'Agenda & Citas Automatizadas',
+            description: 'Olvídese de las inasistencias. Nuestro sistema agenda citas y envía recordatorios automáticos por WhatsApp a sus clientes.',
             image: '/images/agenda_module.png',
             icon: <Schedule />,
             color: '#ef4444'
         },
         {
-            title: 'API REST para Desarrolladores',
-            description: 'Poderosa infraestructura escalable. Integre Winsap con cualquier sistema externo mediante nuestra API robusta y de baja latencia.',
+            title: 'API de WhatsApp para Desarrolladores',
+            description: 'Infraestructura robusta para integrar WhatsApp en cualquier sistema o aplicación móvil con facilidad y seguridad.',
             image: '/images/api_module.png',
             icon: <Dns />,
             color: '#06b6d4'
+        },
+        // NUEVOS MÓDULOS DESTACADOS
+        {
+            title: 'Notificaciones Push Masivas',
+            description: 'Aumente el engagement de sus usuarios enviando notificaciones push personalizadas con imágenes y enlaces directos a su sitio.',
+            image: '/images/campaigns_module.png',
+            icon: <Notifications />,
+            color: '#ff5722'
+        },
+        {
+            title: 'Marketing por SMS Masivo',
+            description: 'Combine el poder de WhatsApp y SMS. Envíe mensajes de texto programados y personalizados a gran escala de forma eficiente.',
+            image: '/images/campaigns_module.png',
+            icon: <Sms />,
+            color: '#2196f3'
+        },
+        {
+            title: 'Solución Multi-Canal API',
+            description: 'Una única API para gestionar WhatsApp, SMS y Push. Simplifique su desarrollo e integración con nuestras APIs unificadas.',
+            image: '/images/api_module.png',
+            icon: <Code />,
+            color: '#9c27b0'
+        },
+        {
+            title: 'ERP & Gestión de Créditos',
+            description: 'Gestione su negocio al completo. Desde el control financiero hasta la automatización de cobranzas y recuperación de cartera por WhatsApp.',
+            image: '/images/hero_dashboard.png',
+            icon: <AccountBalanceWallet />,
+            color: '#0ea5e9'
         }
     ];
 
     const renderPlanFeatures = (plan: Plan) => {
         const features = [];
-        features.push(`${plan.max_channels} ${plan.max_channels === 1 ? 'canal' : 'canales'} WhatsApp`);
+
+        // Canales y Mensajería
+        features.push(`${plan.max_channels} ${plan.max_channels === 1 ? 'Canal' : 'Canales'} WhatsApp`);
+
         if (plan.max_messages >= 999999) {
             features.push('Mensajes ilimitados');
         } else {
-            features.push(`${plan.max_messages.toLocaleString()} mensajes/mes`);
+            features.push(`${plan.max_messages.toLocaleString()} Mensajes/mes`);
         }
-        features.push(`${plan.max_agents} ${plan.max_agents === 1 ? 'agente' : 'agentes'}`);
-        features.push(`${plan.max_sessions} ${plan.max_sessions === 1 ? 'sesión' : 'sesiones'} simultáneas`);
-        if (plan.bot_enabled) features.push('Bot IA Avanzado');
-        if (plan.api_enabled) features.push('API REST Profesional');
+
+        // Multi-Agente
+        features.push(`${plan.max_agents} ${plan.max_agents === 1 ? 'Agente' : 'Agentes'} de atención`);
+
+        // Automatización y API
+        if (plan.bot_enabled) features.push('Chatbot IA con Inteligencia Neural');
+        if (plan.api_enabled) {
+            features.push('API WhatsApp Business Profesional');
+            features.push('API SMS Masivo para Integración');
+        }
+
+        // Módulos Especializados (Nuevos)
+        features.push('Notificaciones Push Masivas');
+        features.push('Envío de SMS Masivo & Marketing');
+        features.push('Gestión Administrativa (Ingresos/Egresos)');
+        features.push('Sistema de Créditos & Acreedores');
+        features.push('Cobranzas Automáticas por WhatsApp');
+        features.push('Balances Financieros en Tiempo Real');
+        features.push('CRM Kanban & Embudo de Ventas');
+
         return features;
     };
 
@@ -356,10 +551,10 @@ const LandingPageComplete: React.FC = () => {
                                     mb: 3,
                                     letterSpacing: '-0.04em'
                                 }}>
-                                    Potencie su Empresa con <Box component="span" sx={{ color: '#10b981' }}>Winsap</Box> Profesional
+                                    WhatsApp Masivo, <Box component="span" sx={{ color: '#10b981' }}>CRM</Box> & Chatbot IA
                                 </Typography>
                                 <Typography variant="h5" sx={{ color: '#94a3b8', mb: 5, lineHeight: 1.6, fontWeight: 400, maxWidth: 600 }}>
-                                    La plataforma líder en automatización de WhatsApp. Gestión multi-agente, IA avanzada y CRM integrado para equipos de alto rendimiento.
+                                    Llegue a sus clientes donde siempre están. La plataforma profesional de WhatsApp Marketing para envíos masivos, gestión multi-agente y automatización de procesos.
                                 </Typography>
 
                                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
@@ -746,10 +941,10 @@ const LandingPageComplete: React.FC = () => {
                             boxShadow: '0 40px 100px rgba(0,0,0,0.4)'
                         }}
                     >
-                        <Typography variant="h2" sx={{ fontWeight: 800, mb: 3 }}>¿Listo para el siguiente nivel?</Typography>
-                        < Typography variant="h6" sx={{ color: '#94a3b8', mb: 5 }}>
-                            Únase a cientos de empresas que ya automatizan y escalan sus conversaciones con Winsap.
-                        </Typography >
+                        <Typography variant="h2" sx={{ fontWeight: 800, mb: 3 }}>Potencie su Negocio con WhatsApp Masivo</Typography>
+                        <Typography variant="h6" sx={{ color: '#94a3b8', mb: 5 }}>
+                            Únase a cientos de empresas que ya automatizan su marketing por WhatsApp y escalan sus ventas con el CRM de Winsap.
+                        </Typography>
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center">
                             < Button
                                 variant="contained"
@@ -804,11 +999,14 @@ const LandingPageComplete: React.FC = () => {
                             </Stack >
                         </Grid >
                         <Grid item xs={6} md={2}>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 3 }}>Producto</Typography>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 3 }}>Servicios SEO</Typography>
                             <Stack spacing={2}>
-                                <Typography sx={{ color: '#64748b', cursor: 'pointer', '&:hover': { color: '#10b981' } }}>Funciones</Typography>
-                                <Typography sx={{ color: '#64748b', cursor: 'pointer', '&:hover': { color: '#10b981' } }}>API</Typography>
-                                <Typography sx={{ color: '#64748b', cursor: 'pointer', '&:hover': { color: '#10b981' } }}>Precios</Typography>
+                                <Typography sx={{ color: '#64748b', cursor: 'pointer', '&:hover': { color: '#10b981' } }}>WhatsApp Masivo</Typography>
+                                <Typography sx={{ color: '#64748b', cursor: 'pointer', '&:hover': { color: '#10b981' } }}>CRM WhatsApp</Typography>
+                                <Typography sx={{ color: '#64748b', cursor: 'pointer', '&:hover': { color: '#10b981' } }}>Notificaciones Push</Typography>
+                                <Typography sx={{ color: '#64748b', cursor: 'pointer', '&:hover': { color: '#10b981' } }}>SMS Masivo Internacional</Typography>
+                                <Typography sx={{ color: '#64748b', cursor: 'pointer', '&:hover': { color: '#10b981' } }}>API WhatsApp Business</Typography>
+                                <Typography sx={{ color: '#64748b', cursor: 'pointer', '&:hover': { color: '#10b981' } }}>Planes y Precios</Typography>
                             </Stack>
                         </Grid >
                         <Grid item xs={6} md={2}>

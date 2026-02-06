@@ -806,10 +806,9 @@ router.post('/sms/send', authenticateAPIKey, async (req, res) => {
     }
 
     // 3. Autenticación con Mayten (Proveedor SMS)
-    // Usamos credenciales hardcoded por compatibilidad con sms-endpoints.js existente
     const authRes = await axios.post('https://mayten.cloud/auth', {
-      username: 'claudio@cnid.com.py',
-      password: 'Cadc@1978'
+      username: process.env.SMS_MAYTEN_USERNAME,
+      password: process.env.SMS_MAYTEN_PASSWORD
     });
     const token = authRes.data.token;
 

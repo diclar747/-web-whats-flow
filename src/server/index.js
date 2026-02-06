@@ -84,10 +84,12 @@ server.timeout = 120000; // 2 minutos
 server.keepAliveTimeout = 65000; // 65 segundos
 server.headersTimeout = 66000; // 66 segundos
 
+const helmet = require('helmet');
+
 const ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'https://winsap.com.py',
-    'http://winsap.com.py'
+    'https://www.winsap.com.py'
 ];
 
 const io = new Server(server, {
@@ -217,33 +219,33 @@ const storage = multer.diskStorage({
 const upload = multer({
     storage: storage,
     limits: {
-        fileSize: 100 * 1024 * 1024, // 100MB limit
-        fieldSize: 100 * 1024 * 1024
+        fileSize: parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024, // 50MB limit (configurable via .env)
+        fieldSize: 50 * 1024 * 1024
     },
     fileFilter: (req, file, cb) => {
-        // Tipos de archivo permitidos expandidos
-        const allowedTypes = /jpeg|jpg|png|gif|bmp|webp|svg|mp4|mov|avi|mkv|flv|wmv|webm|mp3|wav|ogg|m4a|aac|flac|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|zip|rar/;
+        // Tipos de archivo permitidos (sin SVG ni archivos comprimidos por seguridad)
+        const allowedTypes = /jpeg|jpg|png|gif|bmp|webp|mp4|mov|avi|mkv|flv|wmv|webm|mp3|wav|ogg|m4a|aac|flac|pdf|doc|docx|xls|xlsx|ppt|pptx|txt/;
         const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
 
-        // Lista de mimetypes permitidos (más completa)
+        // Lista de mimetypes permitidos (sin SVG para prevenir XSS, sin zip/rar para prevenir ejecución de código)
         const allowedMimetypes = [
-            'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/bmp', 'image/webp', 'image/svg+xml',
+            'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/bmp', 'image/webp',
             'video/mp4', 'video/quicktime', 'video/x-msvideo', 'video/x-matroska', 'video/x-flv', 'video/x-ms-wmv', 'video/webm',
             'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/aac', 'audio/flac', 'audio/x-m4a',
             'application/pdf',
             'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            'text/plain',
-            'application/zip', 'application/x-rar-compressed'
+            'text/plain'
         ];
 
+        // AMBOS deben coincidir: extensión válida Y mimetype válido
         const mimetypeAllowed = allowedMimetypes.includes(file.mimetype);
 
-        if (mimetypeAllowed || extname) {
+        if (mimetypeAllowed && extname) {
             return cb(null, true);
         } else {
-            console.log(`[UPLOAD] Archivo rechazado: ${file.originalname} (${file.mimetype})`);
+            console.log(`[UPLOAD] Archivo rechazado: ${file.originalname} (${file.mimetype}) - ext:${extname}, mime:${mimetypeAllowed}`);
             cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}`));
         }
     }
@@ -260,6 +262,18 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+
+// ✅ Security headers con Helmet.js
+app.use(helmet({
+    contentSecurityPolicy: false, // Desactivar CSP por ahora (puede romper frontend)
+    crossOriginEmbedderPolicy: false, // Necesario para cargar recursos externos
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // Permitir media cross-origin
+    hsts: {
+        maxAge: 31536000, // 1 año
+        includeSubDomains: true,
+        preload: true
+    }
+}));
 
 // ✅ Compression middleware para optimizar transferencia
 app.use(compression({
@@ -1784,7 +1798,7 @@ async function getOrInsertWhatsAppGroup(jid, name = null, subject = null, phoneN
         } else {
             let [rows] = await connection.execute(
                 'SELECT id FROM contact_groups WHERE jid = ? AND session_id = ?',
-                [jid, ownerUserId]
+                [jid, sessionIdForGroup]
             );
             return rows[0]?.id || null;
         }
@@ -3209,9 +3223,10 @@ async function getOwnerSessionId(sessionId) {
         }
     }
 
-    // Fallback: retornar '1' para usuario por defecto (claudio)
-    console.warn(`[getOwnerSessionId] ⚠️ Could not resolve users.id, using default: 1`);
-    return '1';
+    // ✅ SECURITY FIX: NO devolver un userId hardcodeado ('1') - causaba mezcla de datos entre usuarios
+    // Retornar el sessionId original como fallback (mejor que hardcodear un userId ajeno)
+    console.error(`[getOwnerSessionId] ❌ No se pudo resolver users.id para sessionId: ${sessionId}. Usando sessionId como fallback.`);
+    return sessionId;
 }
 
 async function getUserSessionId(sessionId) {
@@ -4632,10 +4647,11 @@ async function loadChatListFromDB(sessionId, includeGroups = false, dateFilter =
             FROM chat c
             LEFT JOIN contacts ct ON c.chat_jid = ct.jid AND ct.session_id = c.session_id
             LEFT JOIN contact_groups cg ON c.chat_jid = cg.jid AND cg.session_id = c.session_id
-            WHERE c.session_id = ? 
+            WHERE c.session_id = ?
               AND c.phone = ?
               AND c.chat_jid NOT LIKE '%status@broadcast%'
               AND c.chat_jid NOT LIKE CONCAT(?, '@%')
+              AND DATE(c.timestamp) = CURDATE()
               ${includeGroups ? '' : "AND c.chat_jid NOT LIKE '%@g.us%'"}
             GROUP BY c.chat_jid
             ORDER BY MAX(c.timestamp) DESC
@@ -5928,7 +5944,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
 
                     const adminToken = jwt.sign(
                         tokenPayload,
-                        process.env.JWT_SECRET || 'tu-secret-key',
+                        process.env.JWT_SECRET,
                         { expiresIn: '30d' }
                     );
 
@@ -8814,7 +8830,7 @@ app.post('/api/whatsapp/qr-code', async (req, res) => {
             if (req.headers.authorization) {
                 const token = req.headers.authorization.split(' ')[1];
                 const jwt = require('jsonwebtoken');
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
                 // Priorizar email del usuario autenticado como identificador de dueño
                 if (decoded && decoded.email) {
                     ownerIdentifier = decoded.email;
@@ -9048,7 +9064,7 @@ app.get('/api/qr-status', async (req, res) => {
         try {
             const token = req.headers.authorization.split(' ')[1];
             const jwt = require('jsonwebtoken');
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
             userEmail = decoded.email || null;
             console.log(`[QR-STATUS] 👤 Usuario autenticado: ${userEmail}`);
         } catch (jwtErr) {
@@ -9248,7 +9264,7 @@ app.post('/api/qr-refresh', async (req, res) => {
         try {
             const token = req.headers.authorization.split(' ')[1];
             const jwt = require('jsonwebtoken');
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
             userEmail = decoded.email || null;
             console.log(`[QR-REFRESH] 👤 Usuario autenticado: ${userEmail}`);
         } catch (jwtErr) {
@@ -9347,7 +9363,7 @@ app.get('/api/sessions/active', async (req, res) => {
             try {
                 const token = req.headers.authorization.split(' ')[1];
                 const jwt = require('jsonwebtoken');
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
                 // Extraer email, userId y phone del token
                 userEmail = decoded.email || null;
@@ -9864,7 +9880,7 @@ app.get('/api/session/discover', async (req, res) => {
         if (req.headers.authorization) {
             try {
                 const token = req.headers.authorization.split(' ')[1];
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
                 userEmail = decoded.email;
                 userPhone = decoded.phone || decoded.phoneNumber;
             } catch (jwtErr) {
@@ -12827,23 +12843,35 @@ app.post('/api/force-sync/:sessionId', authenticateToken, validateSessionBelongs
 // El historial completo está en tabla 'messages' (vía /api/history)
 // ═══════════════════════════════════════════════════════════
 // Helper para resolver sessionId/phone a valores correctos
-async function resolveSessionIdentifiers(identifier) {
-    // Si parece un número de teléfono (solo dígitos, 8+ caracteres)
+// authenticatedUser: objeto req.user del JWT (si disponible) para evitar resolución incorrecta
+async function resolveSessionIdentifiers(identifier, authenticatedUser = null) {
+    // ✅ PRIORIDAD: Si tenemos usuario autenticado, usar su userId como ownerSessionId
+    const authOwnerSessionId = authenticatedUser ? String(authenticatedUser.userId || authenticatedUser.id) : null;
+
+    // Determinar phoneNumber desde el identificador
+    let phoneNumber;
     if (/^\d{8,}$/.test(identifier)) {
-        // Es un número de teléfono, buscar el sessionId
-        const phoneNumber = identifier;
+        // Es un número de teléfono directo
+        phoneNumber = identifier;
+    } else {
+        // Es un sessionId hex o ID numérico, resolver a phone
+        phoneNumber = await getUserPhoneNumber(identifier);
+    }
+
+    // Si tenemos userId del JWT, usarlo directamente (siempre correcto, evita fallback a user 1)
+    if (authOwnerSessionId && /^\d+$/.test(authOwnerSessionId)) {
+        console.log(`[resolveSessionIdentifiers] ✅ Usando userId del JWT: ${authOwnerSessionId}, phone: ${phoneNumber}`);
+        return { phoneNumber, ownerSessionId: authOwnerSessionId, isPhone: /^\d{8,}$/.test(identifier) };
+    }
+
+    // Fallback: resolver ownerSessionId desde el identificador (para llamadas sin auth)
+    if (/^\d{8,}$/.test(identifier)) {
         const [rows] = await pool.query('SELECT id FROM users WHERE phone = ?', [phoneNumber]);
         if (rows.length > 0) {
-            return {
-                phoneNumber: phoneNumber,
-                ownerSessionId: rows[0].id.toString(),
-                isPhone: true
-            };
+            return { phoneNumber, ownerSessionId: rows[0].id.toString(), isPhone: true };
         }
     }
 
-    // Es un sessionId (ID numérico del usuario)
-    const phoneNumber = await getUserPhoneNumber(identifier);
     const ownerSessionId = await getOwnerSessionId(phoneNumber);
     return { phoneNumber, ownerSessionId, isPhone: false };
 }
@@ -12855,7 +12883,8 @@ app.get('/api/chats/:sessionId', authenticateToken, async (req, res) => {
     const parsedOffset = parseInt(offset);
 
     // Resolver identificadores (puede ser sessionId o número de teléfono)
-    const { phoneNumber, ownerSessionId } = await resolveSessionIdentifiers(sessionId);
+    // ✅ Pasar req.user para usar userId del JWT (evita resolución incorrecta entre usuarios)
+    const { phoneNumber, ownerSessionId } = await resolveSessionIdentifiers(sessionId, req.user);
 
     console.log(`[API-CHATS-DIA] ============================================`);
     console.log(`[API-CHATS-DIA] 🚀 CONSULTA DESDE TABLA CHAT (MENSAJES DEL DÍA)`);
@@ -15706,7 +15735,7 @@ io.on('connection', async (socket) => {
                             type: 'qr_login_existing',
                             iat: Math.floor(Date.now() / 1000)
                         },
-                        process.env.JWT_SECRET || 'tu-secret-key',
+                        process.env.JWT_SECRET,
                         { expiresIn: '30d' }
                     );
 
@@ -19861,7 +19890,7 @@ app.put('/api/auth/change-password', async (req, res) => {
             return res.status(401).json({ error: 'Token no proporcionado' });
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const { currentPassword, newPassword } = req.body;
 
         // Validar request
@@ -19946,7 +19975,7 @@ app.get('/api/settings/profile', async (req, res) => {
             return res.status(401).json({ error: 'Token no proporcionado' });
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const connection = await pool.getConnection();
 
         try {
@@ -20003,7 +20032,7 @@ app.put('/api/settings/profile', async (req, res) => {
             return res.status(401).json({ error: 'Token no proporcionado' });
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const {
             companyName,
             address,
@@ -20182,7 +20211,7 @@ app.get('/api/clients', async (req, res) => {
         let isSuperAdmin = false;
 
         try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
             if (decoded.role === 'super_admin' || decoded.role === 'superadmin') {
                 isSuperAdmin = true;
             }
@@ -20267,7 +20296,7 @@ app.get('/api/users', async (req, res) => {
             const token = authHeader.substring(7);
             try {
                 const jwt = require('jsonwebtoken');
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
                 adminPhone = decoded.phone || decoded.phoneNumber || decoded.id;
                 userEmail = decoded.email || null;
 
@@ -21673,7 +21702,7 @@ app.get('/api/agents/available', async (req, res) => {
                 try {
                     const token = req.headers.authorization.split(' ')[1];
                     const jwt = require('jsonwebtoken');
-                    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                    const decoded = jwt.verify(token, process.env.JWT_SECRET);
                     if (decoded.phone) jwtPhone = decoded.phone;
                 } catch (jwtErr) {
                     // Ignorar error JWT
@@ -21747,7 +21776,7 @@ app.get('/api/agents/list', async (req, res) => {
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const token = authHeader.substring(7);
             try {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
                 adminIdentifier = decoded.email || decoded.phone || decoded.id;
                 adminPhone = decoded.phone;
                 console.log(`[AGENTS-LIST] 📧 Email/password login detectado: ${adminIdentifier}`);
@@ -22723,7 +22752,7 @@ app.post('/api/agent/transfer/accept', async (req, res) => {
             return res.status(401).json({ success: false, error: 'Token no proporcionado' });
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const { chatJid, sessionId } = req.body;
 
         // Obtener datos del agente desde el token
@@ -22836,7 +22865,7 @@ app.post('/api/agent/transfer/reject', async (req, res) => {
             return res.status(401).json({ success: false, error: 'Token no proporcionado' });
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         const { chatJid, sessionId, reason } = req.body;
 
         // Obtener datos del agente desde el token
@@ -23770,7 +23799,7 @@ app.get('/api/appointments/:sessionId', async (req, res) => {
             const token = req.headers.authorization?.split(' ')[1];
             if (token) {
                 try {
-                    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+                    const decoded = jwt.verify(token, process.env.JWT_SECRET);
                     console.log('[APPOINTMENTS] 🔐 Usuario autenticado del token:', decoded.userId);
 
                     // Obtener TODAS las sesiones del usuario
@@ -26524,7 +26553,7 @@ const verifySuperAdmin = (req, res, next) => {
     }
     const token = authHeader.substring(7);
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         console.log('[VERIFY-SUPER-ADMIN] Token decodificado:', { role: decoded.role, is_super_admin: decoded.is_super_admin, email: decoded.email, phone: decoded.phone });
 
         const isSuperAdmin = (

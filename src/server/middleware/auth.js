@@ -1,6 +1,7 @@
 const { validateUniqueSession } = require('./sessionValidator');
 const { validateDeviceFingerprint } = require('../utils/deviceFingerprint');
 const sessionResolver = require('../utils/sessionResolver');
+const { isTokenBlacklisted } = require('../utils/tokenBlacklist');
 
 // Middleware para proteger rutas que requieren autenticación
 const authenticateToken = (req, res, next) => {
@@ -12,6 +13,15 @@ const authenticateToken = (req, res, next) => {
             return res.status(401).json({
                 success: false,
                 error: 'Acceso denegado. Token no proporcionado.',
+                requiresReauth: true
+            });
+        }
+
+        // Verificar si el token fue revocado (blacklist)
+        if (isTokenBlacklisted(token)) {
+            return res.status(401).json({
+                success: false,
+                error: 'Token revocado. Por favor, inicia sesión nuevamente.',
                 requiresReauth: true
             });
         }
@@ -97,40 +107,8 @@ const authenticateToken = (req, res, next) => {
             console.error('[AUTH-MIDDLEWARE] Token Verification Failed:', err.message);
             console.log('[AUTH-DEBUG] Received Token:', token.substring(0, 15) + '...', 'Length:', token.length);
 
-            // FALLBACK: Intentar decodificar como token Legacy (Base64)
-            try {
-                const decoded = Buffer.from(token, 'base64').toString('utf-8');
-                console.log('[AUTH-DEBUG] Fallback Decoded:', decoded);
-                const [userId, email, timestamp, tokenHash] = decoded.split(':');
-
-                if ((userId || email) && (userId.length > 5 || email.length > 5)) {
-                    console.log('[AUTH-MIDDLEWARE] Legacy Token accepted (Relaxed):', { userId, email });
-
-                    const user = {
-                        id: userId || 'legacy_' + Date.now(),
-                        dbId: null, // Legacy tokens typically don't map to new ID schema instantly
-                        email: email,
-                        role: 'agent', // Default to agent
-                        status: 'active',
-                        session_id: null,
-                        phone: email && !email.includes('@') ? email : null
-                    };
-
-                    // Si parece ser admin (telefono como email)
-                    if (user.phone) {
-                        user.role = 'admin';
-                        user.id = 'admin_' + user.phone;
-                        user.name = 'Admin Legacy';
-                    }
-
-                    req.user = user;
-                    return next();
-                } else {
-                    console.warn('[AUTH-DEBUG] Legacy fallback rejected: userId/email too short or missing', { userId, email });
-                }
-            } catch (legacyError) {
-                console.error('[AUTH-MIDDLEWARE] Legacy fallback failed:', legacyError.message);
-            }
+            // SECURITY: Tokens legacy Base64 eliminados por vulnerabilidad de seguridad
+            // Los tokens legacy permitían forjar acceso sin validación criptográfica
 
             if (err.name === 'TokenExpiredError') {
                 return res.status(403).json({

@@ -140,8 +140,20 @@ export const setupFetchInterceptor = (): void => {
               return response;
             }
 
-            // Limpiar sessionStorage
+            // Limpiar sessionStorage Y localStorage de tokens
             sessionStorage.clear();
+            localStorage.removeItem('token');
+            localStorage.removeItem('whinsap_token');
+            localStorage.removeItem('sessionToken');
+            localStorage.removeItem('whinsap_session_token');
+            localStorage.removeItem('deviceId');
+            localStorage.removeItem('device_id');
+            localStorage.removeItem('whinsap_device_id');
+            localStorage.removeItem('whinsap_session_device_id');
+            localStorage.removeItem('userRole');
+            localStorage.removeItem('userId');
+            localStorage.removeItem('userName');
+            localStorage.removeItem('userEmail');
 
             // Redirigir a login
             if (!window.location.pathname.includes('/login')) {

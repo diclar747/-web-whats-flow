@@ -11,8 +11,8 @@ module.exports = function (app, pool) {
             const { username, password } = req.body;
 
             const response = await axios.post('https://mayten.cloud/auth', {
-                username: username || 'claudio@cnid.com.py',
-                password: password || 'Cadc@1978'
+                username: username || process.env.SMS_MAYTEN_USERNAME,
+                password: password || process.env.SMS_MAYTEN_PASSWORD
             }, {
                 headers: {
                     'Content-Type': 'application/json'
@@ -580,8 +580,8 @@ module.exports = function (app, pool) {
 
                         // Obtener token
                         const authRes = await axios.post('https://mayten.cloud/auth', {
-                            username: 'claudio@cnid.com.py',
-                            password: 'Cadc@1978'
+                            username: process.env.SMS_MAYTEN_USERNAME,
+                            password: process.env.SMS_MAYTEN_PASSWORD
                         });
                         const token = authRes.data.token;
 

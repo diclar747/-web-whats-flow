@@ -313,7 +313,7 @@ router.get('/my-subscription', async (req, res) => {
       try {
         const token = authHeader.substring(7);
         const jwt = require('jsonwebtoken');
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
         userEmailFromJWT = decoded.email;
         if (decoded.role === 'super_admin' || decoded.role === 'superadmin') {
           isSuperAdminFromJWT = true;

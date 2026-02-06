@@ -5,14 +5,18 @@ const nodemailer = require('nodemailer');
  * Usando credenciales proporcionadas para cnid.py@gmail.com
  */
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT) || 587,
     secure: false, // true para 465, false para otros puertos
     auth: {
-        user: 'cnid.py@gmail.com',
-        pass: 'jwny hrlq brzg iamu'
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
     }
 });
+
+if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.error('[EMAIL] SMTP_USER y SMTP_PASS deben estar configurados en .env');
+}
 
 /**
  * Verificar la configuración del transportador
@@ -144,7 +148,7 @@ async function sendWelcomeEmail(email, name, token) {
         const activationUrl = `https://winsap.com.py/activate/${token}`;
 
         const mailOptions = {
-            from: '"Winsap" <cnid.py@gmail.com>',
+            from: `"${process.env.SMTP_FROM_NAME || 'Winsap'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
             to: email,
             subject: 'Bienvenido a Winsap - Activa tu Cuenta',
             html: `
@@ -250,7 +254,7 @@ async function sendPasswordResetEmail(email, token) {
         const resetUrl = `https://winsap.com.py/reset-password/${token}`;
 
         const mailOptions = {
-            from: '"Winsap" <cnid.py@gmail.com>',
+            from: `"${process.env.SMTP_FROM_NAME || 'Winsap'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
             to: email,
             subject: 'Recuperación de contraseña - Winsap',
             html: `

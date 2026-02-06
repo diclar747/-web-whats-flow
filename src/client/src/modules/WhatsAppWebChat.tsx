@@ -489,7 +489,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       // 1. sessionId is in allSessions list, OR
       // 2. sessionId looks like a phone number (10+ digits), OR
       // 3. allSessions is empty (still loading) and sessionId is truthy
-      const isInAllSessions = allSessions && allSessions.length > 0 && allSessions.some(s => s.sessionId === sessionId);
+      const isInAllSessions = allSessions && allSessions.length > 0 && allSessions.some(s => s.sessionId === sessionId || s.phoneNumber === sessionId);
       const looksLikePhoneNumber = /^\d{10,15}$/.test(sessionId);
       const isValidSession = isInAllSessions || looksLikePhoneNumber || (allSessions.length === 0 && sessionId.length > 0);
 
@@ -510,20 +510,13 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
   const filteredMessages = useMemo(() => {
     if (!messages || messages.length === 0) return [];
 
-    console.log(`[PERFORMANCE] Filtrando ${messages.length} mensajes con filtros:`, { dateFilter, quickFilter });
-
     // ✅ PASO 1: Filtrar duplicados usando Set de IDs
     const seenIds = new Set<string>();
     const uniqueMessages = messages.filter(msg => {
-      if (seenIds.has(msg.id)) {
-        console.log(`[DUPLICATE] Mensaje duplicado detectado: ${msg.id}, ignorando`);
-        return false;
-      }
+      if (seenIds.has(msg.id)) return false;
       seenIds.add(msg.id);
       return true;
     });
-
-    console.log(`[ANTI-DUPLICATE] ${messages.length} mensajes → ${uniqueMessages.length} únicos`);
 
     // ✅ PASO 2: Filtrar por fecha
     const filtered = uniqueMessages.filter(msg => {
@@ -555,15 +548,6 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       return msgDate.getTime() === filterDate.getTime();
     });
 
-    console.log(`[PERFORMANCE] Mensajes después del filtro: ${filtered.length}`);
-    console.log(`[DATE-FILTER]`, {
-      totalMessages: messages.length,
-      dateFilter,
-      quickFilter,
-      filteredCount: filtered.length,
-      firstMsg: messages[0]?.timestamp,
-      lastMsg: messages[messages.length - 1]?.timestamp
-    });
     return filtered;
   }, [messages, dateFilter, quickFilter]);
 
@@ -852,13 +836,14 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
   // Los mensajes se cargan automáticamente desde WhatsAppContext cuando cambia activeChat
   // No necesitamos useEffect aquí para evitar loops infinitos
 
-  // 🎯 FASE 3: Auto-scroll optimizado con requestAnimationFrame
+  // 🎯 FASE 3: Auto-scroll optimizado - usar 'auto' en vez de 'smooth' para evitar jank
   useEffect(() => {
+    if (!messages || messages.length === 0) return;
     requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'end'
-      });
+      const container = document.querySelector('[data-messages-container]');
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
     });
   }, [messages]);
 
@@ -1358,13 +1343,6 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
   // 🚀 FASE 2: Filtrado optimizado con useMemo y caché inteligente
   const filteredChats = useMemo(() => {
-    console.log('[PERFORMANCE] 🔍 Calculando filteredChats:', {
-      totalChats: chats.length,
-      filterTab,
-      searchTerm,
-      hasGroups: chats.some(c => c.isGroup)
-    });
-
     // ⚠️ CACHÉ DESACTIVADA: Para forzar recarga de datos frescos
     // const cacheKey = `${sessionId}-${chats.length}-${filterTab}-${searchTerm}`;
     // const cachedResult = sessionStorage.getItem(`chatFilter-${cacheKey}`);
@@ -1427,8 +1405,6 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       return true;
     });
 
-    const groupCount = chats.filter(c => c.id.includes('@g.us')).length;
-    console.log(`[PERFORMANCE] 🔍 Filtro: Tab ${filterTab}, Total: ${chats.length}, Filtrados: ${filtered.length}, Grupos ocultos: ${groupCount}`);
 
     // ⚠️ CACHÉ DESACTIVADA para forzar recarga de datos frescos
     // try {
@@ -1817,7 +1793,6 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                 hasMoreChats &&
                 target.scrollHeight - target.scrollTop <= target.clientHeight + 50 // Umbral de 50px
               ) {
-                console.log('📜 [SCROLL] Llegó al fondo, cargando más chats...');
                 if (loadChats) {
                   // Usar chats.length como offset, ampliar a filtro de 1 mes
                   loadChats(sessionId, 'all', chats.length, true);
@@ -1925,8 +1900,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
               gap: 2,
               borderBottom: `1px solid ${colors.divider}`,
               position: 'relative',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-              backdropFilter: 'blur(10px)'
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
             }}>
               <Avatar
                 src={activeChat.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${activeChat.id}`}
@@ -2106,7 +2080,6 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
                       // 🔥 CARGAR MENSAJES DESDE EL SERVIDOR CON EL NUEVO FILTRO
                       if (activeChat && loadMessages) {
-                        console.log(`[DATE-FILTER] 📅 Cargando mensajes con filtro: ${filterValue}`);
                         loadMessages(activeChat.id, filterValue);
                       }
                     }}
@@ -2134,7 +2107,6 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
                     // 🔥 CARGAR MENSAJES DESDE EL SERVIDOR CON LA FECHA ESPECIFICA
                     if (activeChat && loadMessages && newDate) {
-                      console.log(`[DATE-FILTER] 📅 Cargando mensajes desde fecha específica: ${newDate}...`);
                       loadMessages(activeChat.id, newDate);
                     }
                   }}
@@ -2153,7 +2125,6 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
                       // 🔥 RECARGAR MENSAJES CON FILTRO POR DEFECTO (24h)
                       if (activeChat && loadMessages) {
-                        console.log(`[DATE-FILTER] 🔄 Limpiando filtro, recargando última semana...`);
                         loadMessages(activeChat.id, 'all');
                       }
                     }}
@@ -2466,19 +2437,25 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                             }}
                             dangerouslySetInnerHTML={{
                               __html: msg.message
-                                ? msg.message
-                                  // Detectar URLs y convertirlas en enlaces clicables
-                                  .replace(
-                                    /(https?:\/\/[^\s]+)/g,
-                                    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-                                  )
-                                  // Detectar emails
-                                  .replace(
-                                    /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/gi,
-                                    '<a href="mailto:$1">$1</a>'
-                                  )
-                                  // Saltos de línea
-                                  .replace(/\n/g, '<br/>')
+                                ? (() => {
+                                    // Sanitizar: eliminar tags HTML peligrosos antes de procesar
+                                    const sanitized = msg.message
+                                      .replace(/</g, '&lt;')
+                                      .replace(/>/g, '&gt;')
+                                      // Detectar URLs y convertirlas en enlaces clicables
+                                      .replace(
+                                        /(https?:\/\/[^\s]+)/g,
+                                        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+                                      )
+                                      // Detectar emails
+                                      .replace(
+                                        /([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/gi,
+                                        '<a href="mailto:$1">$1</a>'
+                                      )
+                                      // Saltos de línea
+                                      .replace(/\n/g, '<br/>');
+                                    return sanitized;
+                                  })()
                                 : ''
                             }}
                           />
@@ -2568,6 +2545,15 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
               <div ref={messagesEndRef} />
             </Box>
 
+            {/* ============ ZONA INFERIOR: Reply + Preview + Input ============ */}
+            <Box sx={{
+              gridRow: 4,
+              display: 'flex',
+              flexDirection: 'column',
+              flexShrink: 0,
+              width: '100%',
+              boxSizing: 'border-box'
+            }}>
             {/* Barra de respuesta */}
             {replyMessage && (
               <Box sx={{ bgcolor: colors.header, p: 1.5, display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -2635,8 +2621,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
             {/* Barra de entrada - SIEMPRE VISIBLE ABAJO */}
             <Box sx={{
-              gridRow: 4,
-              flexShrink: 0, // ✅ No se reduce
+              flexShrink: 0,
               zIndex: 10,
               width: '100%',
               boxSizing: 'border-box',
@@ -2701,7 +2686,11 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                 defaultValue=""
                 onChange={(e) => {
                   messageTextRef.current = e.target.value;
-                  setHasMessageText(e.target.value.trim().length > 0);
+                  const hasText = e.target.value.trim().length > 0;
+                  // Solo actualizar state si el valor booleano cambió (evita re-renders innecesarios)
+                  if (hasText !== hasMessageText) {
+                    setHasMessageText(hasText);
+                  }
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
@@ -2775,6 +2764,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                 </Tooltip>
               )}
             </Box>
+            </Box>{/* Cierre ZONA INFERIOR wrapper */}
 
             {/* Menú contextual de mensajes - Popover mejorado */}
             <Popover

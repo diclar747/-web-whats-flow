@@ -3,7 +3,10 @@ const jwt = require('jsonwebtoken');
 const mysql = require('mysql2/promise');
 
 // Configuración JWT
-const JWT_SECRET = process.env.JWT_SECRET || 'pushsaas-secret-key-2024';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    throw new Error('[SECURITY] JWT_SECRET no está configurado en variables de entorno.');
+}
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 // Función para hashear contraseña

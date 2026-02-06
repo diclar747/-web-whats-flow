@@ -287,14 +287,23 @@ const WinsapDashboard: React.FC<WinsapDashboardProps> = ({ sessionId, onLogout }
 
         // Update active tab index based on current activeSessionId
         if (sortedSessions.length > 0) {
-          const index = sortedSessions.findIndex(s => s.sessionId === activeSessionId);
+          // ✅ FIX: Buscar por sessionId O phoneNumber (activeSessionId puede ser phone o hex)
+          const index = sortedSessions.findIndex(s =>
+            s.sessionId === activeSessionId || s.phoneNumber === activeSessionId
+          );
           if (index !== -1) {
             setActiveTab(index);
+            // Si el match fue por phoneNumber, actualizar activeSessionId al phoneNumber para consistencia
+            const matchedSession = sortedSessions[index];
+            if (activeSessionId !== matchedSession.phoneNumber) {
+              console.log(`[DASHBOARD] 🔄 Normalizando activeSessionId de "${activeSessionId}" a phoneNumber: ${matchedSession.phoneNumber}`);
+              setActiveSessionId(matchedSession.phoneNumber);
+            }
           } else {
-            // 🔧 FIX: If activeSessionId is not in the sessions list (e.g., it's a userId "1" instead of phoneNumber),
-            // default to the first session. This fixes the chat loading issue.
-            console.log(`[DASHBOARD] ⚠️ activeSessionId "${activeSessionId}" not found in sessions, defaulting to first session: ${sortedSessions[0].sessionId}`);
-            setActiveSessionId(sortedSessions[0].sessionId);
+            // Si no se encontró, usar el phoneNumber de la primera sesión
+            const firstPhone = sortedSessions[0].phoneNumber || sortedSessions[0].sessionId;
+            console.log(`[DASHBOARD] ⚠️ activeSessionId "${activeSessionId}" no encontrado, usando primera sesión: ${firstPhone}`);
+            setActiveSessionId(firstPhone);
             setActiveTab(0);
           }
         }

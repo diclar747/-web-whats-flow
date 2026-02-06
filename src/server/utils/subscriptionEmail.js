@@ -4,12 +4,12 @@ const nodemailer = require('nodemailer');
  * Configuración del transportador SMTP (Reutilizando configuración de emailService.js)
  */
 const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT) || 587,
     secure: false,
     auth: {
-        user: 'cnid.py@gmail.com',
-        pass: 'jwny hrlq brzg iamu'
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
     }
 });
 
@@ -43,7 +43,7 @@ const PREMIUM_EMAIL_STYLES = `
 async function sendPlanRequestEmail(email, name, planInfo) {
     try {
         const mailOptions = {
-            from: '"Winsap" <cnid.py@gmail.com>',
+            from: `"${process.env.SMTP_FROM_NAME || 'Winsap'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
             to: email,
             subject: `📋 Solicitud de Plan Recibida: ${planInfo.name}`,
             html: `
@@ -107,7 +107,7 @@ async function sendPlanRequestEmail(email, name, planInfo) {
 async function sendPlanApprovalEmail(email, name, planInfo) {
     try {
         const mailOptions = {
-            from: '"Winsap" <cnid.py@gmail.com>',
+            from: `"${process.env.SMTP_FROM_NAME || 'Winsap'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
             to: email,
             subject: `🎉 ¡Plan Activado con Éxito! - Winsap`,
             html: `
@@ -191,7 +191,7 @@ async function sendPlanExpiryReminderEmail(email, name, planName, expiryDate) {
         });
 
         const mailOptions = {
-            from: '"Winsap" <cnid.py@gmail.com>',
+            from: `"${process.env.SMTP_FROM_NAME || 'Winsap'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
             to: email,
             subject: `⚠️ Recordatorio: Tu plan de Winsap vence hoy`,
             html: `
@@ -254,7 +254,7 @@ async function sendPlanExpiryReminderEmail(email, name, planName, expiryDate) {
 async function sendGenericNotificationEmail(email, name, subject, message) {
     try {
         const mailOptions = {
-            from: '"Winsap" <cnid.py@gmail.com>',
+            from: `"${process.env.SMTP_FROM_NAME || 'Winsap'}" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
             to: email,
             subject: subject || 'Notificación Importante - Winsap',
             html: `

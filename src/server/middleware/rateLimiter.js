@@ -1,53 +1,48 @@
 const rateLimit = require('express-rate-limit');
 
-// Rate limiter general para todas las rutas (MUY PERMISIVO)
+// Rate limiter general para todas las rutas
 const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 1000, // Máximo 1000 requests por ventana (aumentado de 100)
+    max: 300, // Máximo 300 requests por ventana
     message: {
         success: false,
         error: 'Demasiadas peticiones desde esta IP, por favor intenta más tarde.'
     },
     standardHeaders: true,
     legacyHeaders: false,
-    validate: { trustProxy: false }, // Desactivar validación estricta de proxy
+    validate: { trustProxy: false },
     skip: (req) => {
-        // Permitir requests desde localhost y IPs privadas
+        // Solo permitir localhost (no toda la red privada)
         const ip = req.ip || req.connection.remoteAddress;
-        return ip === '127.0.0.1' || 
-               ip === '::1' || 
-               ip === 'localhost' ||
-               ip?.startsWith('192.168.') ||
-               ip?.startsWith('10.') ||
-               ip?.startsWith('172.');
+        return ip === '127.0.0.1' || ip === '::1';
     }
 });
 
-// Rate limiter para autenticación (menos estricto)
+// Rate limiter para autenticación (estricto contra fuerza bruta)
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 20, // Máximo 20 intentos de login (aumentado de 5)
+    max: 5, // Máximo 5 intentos de login
     message: {
         success: false,
         error: 'Demasiados intentos de autenticación. Por favor intenta en 15 minutos.'
     },
     standardHeaders: true,
     legacyHeaders: false,
-    validate: { trustProxy: false }, // Desactivar validación estricta de proxy
+    validate: { trustProxy: false },
     skipSuccessfulRequests: true // No contar requests exitosos
 });
 
 // Rate limiter para envío de mensajes por API
 const apiMessageLimiter = rateLimit({
     windowMs: 1 * 60 * 1000, // 1 minuto
-    max: 120, // Máximo 120 mensajes por minuto (aumentado de 30)
+    max: 120, // Máximo 120 mensajes por minuto
     message: {
         success: false,
         error: 'Límite de envío de mensajes alcanzado. Máximo 120 mensajes por minuto.'
     },
     standardHeaders: true,
     legacyHeaders: false,
-    validate: { trustProxy: false } // Desactivar validación estricta de proxy
+    validate: { trustProxy: false }
 });
 
 // Rate limiter para webhooks
@@ -60,20 +55,20 @@ const webhookLimiter = rateLimit({
     },
     standardHeaders: true,
     legacyHeaders: false,
-    validate: { trustProxy: false } // Desactivar validación estricta de proxy
+    validate: { trustProxy: false }
 });
 
 // Rate limiter para QR code generation
 const qrLimiter = rateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutos
-    max: 30, // Máximo 30 QR codes en 5 minutos (aumentado de 10)
+    max: 15, // Máximo 15 QR codes en 5 minutos
     message: {
         success: false,
         error: 'Demasiadas solicitudes de código QR. Intenta más tarde.'
     },
     standardHeaders: true,
     legacyHeaders: false,
-    validate: { trustProxy: false } // Desactivar validación estricta de proxy
+    validate: { trustProxy: false }
 });
 
 module.exports = {

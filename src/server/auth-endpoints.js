@@ -38,10 +38,21 @@ function registerAuthEndpoints(app, pool) {
                 });
             }
 
-            if (password.length < 6) {
+            if (password.length < 8) {
                 return res.status(400).json({
                     success: false,
-                    error: 'La contraseña debe tener al menos 6 caracteres'
+                    error: 'La contraseña debe tener al menos 8 caracteres'
+                });
+            }
+
+            // Validar complejidad de contraseña
+            const hasUpperCase = /[A-Z]/.test(password);
+            const hasLowerCase = /[a-z]/.test(password);
+            const hasNumbers = /\d/.test(password);
+            if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'La contraseña debe contener al menos una mayúscula, una minúscula y un número'
                 });
             }
 
@@ -430,6 +441,7 @@ function registerAuthEndpoints(app, pool) {
 
         try {
             const dbPool = global.dbPool || pool;
+            const { blacklistToken } = require('./utils/tokenBlacklist');
 
             // Intentar obtener userId del token (incluso si es inválido)
             let userId = null;
@@ -442,6 +454,10 @@ function registerAuthEndpoints(app, pool) {
                     const decoded = jwt.decode(token);
                     userId = decoded?.userId || decoded?.id;
                     console.log(`[AUTH-LOGOUT] Token decodificado, userId: ${userId}`);
+
+                    // Revocar el token agregándolo a la blacklist
+                    blacklistToken(token);
+                    console.log(`[AUTH-LOGOUT] Token agregado a blacklist`);
                 } catch (err) {
                     console.log(`[AUTH-LOGOUT] No se pudo decodificar token:`, err.message);
                 }
@@ -659,10 +675,18 @@ function registerAuthEndpoints(app, pool) {
                 });
             }
 
-            if (newPassword.length < 6) {
+            if (newPassword.length < 8) {
                 return res.status(400).json({
                     success: false,
-                    error: 'La contraseña debe tener al menos 6 caracteres'
+                    error: 'La contraseña debe tener al menos 8 caracteres'
+                });
+            }
+
+            // Validar complejidad
+            if (!/[A-Z]/.test(newPassword) || !/[a-z]/.test(newPassword) || !/\d/.test(newPassword)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'La contraseña debe contener al menos una mayúscula, una minúscula y un número'
                 });
             }
 

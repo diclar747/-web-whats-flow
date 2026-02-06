@@ -100,7 +100,7 @@ const checkAdmin = async (req, res, next) => {
         try {
           const jwt = require('jsonwebtoken');
           const token = authHeader.split(' ')[1];
-          const decoded = jwt.verify(token, process.env.JWT_SECRET || 'whatsflow_jwt_secret');
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
           phone = decoded.phone;
           userId = decoded.id;
           console.log('[checkAdmin] Usuario identificado desde JWT:', phone);
