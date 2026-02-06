@@ -25,8 +25,9 @@ import {
     Alert,
     Snackbar,
 } from '@mui/material';
-import { MoreVert, Block, CheckCircle, Smartphone, Search, Edit, Delete, PersonAdd, Message, Lock, Visibility, VisibilityOff } from '@mui/icons-material';
+import { MoreVert, Block, CheckCircle, Smartphone, Search, Edit, Delete, PersonAdd, Message, Lock, Visibility, VisibilityOff, NotificationsActive, Campaign } from '@mui/icons-material';
 import { getAPIBaseURL } from '../../utils/socketConfig';
+import { BulkNotificationDialog } from './components/BulkNotificationDialog';
 
 interface Client {
     id: number;
@@ -39,6 +40,7 @@ interface Client {
     last_seen: string;
     plan_name: string;
     plan_id: number;
+    plan_expires_at: string;
 }
 
 interface Plan {
@@ -63,11 +65,13 @@ const ClientsManager: React.FC = () => {
         name: '',
         email: '',
         phone: '',
-        password: ''
+        password: '',
+        plan_expires_at: ''
     });
 
     const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
     const [openSmsDialog, setOpenSmsDialog] = useState(false);
+    const [openBulkDialog, setOpenBulkDialog] = useState(false);
     const [smsAmount, setSmsAmount] = useState<number | ''>('');
     const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
 
@@ -196,7 +200,8 @@ const ClientsManager: React.FC = () => {
             name: selectedClient.name,
             email: selectedClient.email,
             phone: selectedClient.phone,
-            password: ''
+            password: '',
+            plan_expires_at: selectedClient.plan_expires_at ? selectedClient.plan_expires_at.split('T')[0] : ''
         });
         setAnchorEl(null);
         setOpenEditDialog(true);
@@ -294,6 +299,29 @@ const ClientsManager: React.FC = () => {
         }
     };
 
+    const handleSendExpirationNotification = async () => {
+        if (!selectedClient) return;
+        try {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${getAPIBaseURL()}/api/clients/${selectedClient.id}/notify-expiration`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            const data = await response.json();
+            if (data.success) {
+                showSnackbar(data.message || 'Notificación enviada exitosamente', 'success');
+                handleMenuClose();
+            } else {
+                showSnackbar(data.error || 'Error al enviar notificación', 'error');
+            }
+        } catch (error) {
+            console.error('Error sending notification:', error);
+            showSnackbar('Error al conectar con el servidor', 'error');
+        }
+    };
+
     const showSnackbar = (message: string, severity: 'success' | 'error') => {
         setSnackbar({ open: true, message, severity });
     };
@@ -328,6 +356,14 @@ const ClientsManager: React.FC = () => {
                 <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)', minWidth: 150, textAlign: 'right' }}>
                     {filteredClients.length} de {clients.length} clientes
                 </Typography>
+                <Button 
+                    variant="contained" 
+                    startIcon={<Campaign />} 
+                    onClick={() => setOpenBulkDialog(true)}
+                    sx={{ bgcolor: '#eab308', '&:hover': { bgcolor: '#ca8a04' }, color: 'black', fontWeight: 'bold' }}
+                >
+                    Notificaciones
+                </Button>
             </Box>
 
             <TableContainer component={Paper} sx={{ bgcolor: '#1a1a2e', color: 'white' }}>
@@ -337,7 +373,7 @@ const ClientsManager: React.FC = () => {
                             <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Cliente</TableCell>
                             <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Contacto</TableCell>
                             <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Estado Conexión</TableCell>
-                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Plan Actual</TableCell>
+                            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Plan Actual / Vencimiento</TableCell>
                             <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Estado Cuenta</TableCell>
                             <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Acciones</TableCell>
                         </TableRow>
@@ -364,7 +400,40 @@ const ClientsManager: React.FC = () => {
                                             <Chip icon={<Smartphone />} label="Desconectado" color="default" size="small" sx={{ color: 'rgba(255,255,255,0.7)' }} />
                                         )}
                                     </TableCell>
-                                    <TableCell sx={{ color: 'white' }}>{client.plan_name || 'Sin Plan'}</TableCell>
+                                    <TableCell sx={{ color: 'white' }}>
+                                        <Typography variant="body2">{client.plan_name || 'Sin Plan'}</Typography>
+                                        {client.plan_expires_at && (
+                                            <Box>
+                                                {new Date(client.plan_expires_at) < new Date() ? (
+                                                    <Chip
+                                                        label={`Vencido: ${new Date(client.plan_expires_at).toLocaleDateString('es-PY', { day: '2-digit', month: '2-digit', year: 'numeric' })}`}
+                                                        size="small"
+                                                        sx={{
+                                                            mt: 0.5,
+                                                            bgcolor: 'rgba(244, 67, 54, 0.1)',
+                                                            color: '#f44336',
+                                                            border: '1px solid rgba(244, 67, 54, 0.3)',
+                                                            height: 20,
+                                                            fontSize: '0.7rem'
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <Chip
+                                                        label={`Vence: ${new Date(client.plan_expires_at).toLocaleDateString('es-PY', { day: '2-digit', month: '2-digit', year: 'numeric' })}`}
+                                                        size="small"
+                                                        sx={{
+                                                            mt: 0.5,
+                                                            bgcolor: 'rgba(76, 175, 80, 0.1)',
+                                                            color: '#4caf50',
+                                                            border: '1px solid rgba(76, 175, 80, 0.3)',
+                                                            height: 20,
+                                                            fontSize: '0.7rem'
+                                                        }}
+                                                    />
+                                                )}
+                                            </Box>
+                                        )}
+                                    </TableCell>
                                     <TableCell>
                                         {client.is_blocked ? (
                                             <Chip label="Bloqueado" color="error" size="small" />
@@ -401,6 +470,9 @@ const ClientsManager: React.FC = () => {
                 </MenuItem>
                 <MenuItem onClick={openAssignSmsDialog}>
                     <Message sx={{ mr: 1, fontSize: 20 }} /> Asignar Saldo SMS
+                </MenuItem>
+                <MenuItem onClick={handleSendExpirationNotification}>
+                    <NotificationsActive sx={{ mr: 1, fontSize: 20 }} /> Enviar Notificación Vencimiento
                 </MenuItem>
                 <MenuItem onClick={handleToggleBlock}>
                     <Block sx={{ mr: 1, fontSize: 20 }} /> {selectedClient?.is_blocked ? 'Desbloquear Cliente' : 'Bloquear Cliente'}
@@ -504,6 +576,23 @@ const ClientsManager: React.FC = () => {
                                 }}
                             />
                         </FormControl>
+                        <TextField
+                            label="Fecha de Vencimiento del Plan"
+                            type="date"
+                            fullWidth
+                            value={editFormData.plan_expires_at}
+                            onChange={(e) => setEditFormData({ ...editFormData, plan_expires_at: e.target.value })}
+                            InputLabelProps={{ shrink: true }}
+                            sx={{
+                                '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.7)' },
+                                '& .MuiOutlinedInput-root': {
+                                    color: 'white',
+                                    '& fieldset': { borderColor: 'rgba(255,255,255,0.1)' },
+                                    '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.2)' },
+                                    '&.Mui-focused fieldset': { borderColor: '#25D366' }
+                                }
+                            }}
+                        />
                     </Box>
                 </DialogContent>
                 <DialogActions sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
@@ -625,6 +714,13 @@ const ClientsManager: React.FC = () => {
                     <Button onClick={handleDeleteClient} variant="contained" color="error">Eliminar Cliente</Button>
                 </DialogActions>
             </Dialog>
+
+            {/* Diálogo de Notificaciones Masivas */}
+            <BulkNotificationDialog 
+                open={openBulkDialog} 
+                onClose={() => setOpenBulkDialog(false)} 
+                users={clients} 
+            />
 
             {/* Snackbar de notificaciones */}
             <Snackbar

@@ -1,7 +1,7 @@
 // Script para forzar logout de todos los usuarios
 const io = require('socket.io-client');
 
-const socket = io('https://web.whats-flow.com', {
+const socket = io('https://winsap.com.py', {
   transports: ['websocket', 'polling']
 });
 
