@@ -6273,11 +6273,12 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 syncContactsOnly(newSessionId, sock, userSessionId).then(stats => {
                                     console.log(`[${newSessionId}] ✅ Sincronización de contactos completada:`, stats);
 
-                                    // DESCARGAR AVATARES en background
-                                    console.log(`[${newSessionId}] 🖼️ Iniciando descarga de avatares...`);
-                                    downloadAllAvatars(newSessionId, sock).catch(err => {
-                                        console.error(`[${newSessionId}] Error descargando avatares:`, err);
-                                    });
+                                    // 🔧 OPTIMIZACIÓN: AVATARES DESACTIVADOS en auto-sync para evitar sobrecarga
+                                    // Los avatares se descargarán bajo demanda o mediante sincronización manual
+                                    console.log(`[${newSessionId}] ⏭️ Descarga de avatares diferida (se cargarán bajo demanda)`);
+                                    // downloadAllAvatars(newSessionId, sock).catch(err => {
+                                    //     console.error(`[${newSessionId}] Error descargando avatares:`, err);
+                                    // });
 
                                     // Después de sincronizar, cargar y emitir la lista de chats actualizada
                                     return loadChatListFromDB(newSessionId);
@@ -6335,11 +6336,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             } else {
                                 console.log(`[${newSessionId}] 🚫 Sincronización desactivada - Solo mensajes nuevos serán capturados`);
 
-                                // DESCARGAR AVATARES aunque no se sincronice
-                                console.log(`[${newSessionId}] 🖼️ Descargando avatares de contactos existentes...`);
-                                downloadAllAvatars(newSessionId, sock).catch(err => {
-                                    console.error(`[${newSessionId}] Error descargando avatares:`, err);
-                                });
+                                // 🔧 OPTIMIZACIÓN: AVATARES DESACTIVADOS para evitar sobrecarga al iniciar
+                                console.log(`[${newSessionId}] ⏭️ Descarga de avatares diferida (se cargarán bajo demanda)`);
+                                // downloadAllAvatars(newSessionId, sock).catch(err => {
+                                //     console.error(`[${newSessionId}] Error descargando avatares:`, err);
+                                // });
 
                                 // Cargar chats existentes sin sincronizar
                                 loadChatListFromDB(newSessionId).then(initialChats => {
@@ -6376,9 +6377,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 console.log(`[${newSessionId}] 🔄 Usando preferencia de memoria - Sincronizando contactos`);
                                 syncContactsOnly(newSessionId, sock, userSessionId).then(stats => {
                                     console.log(`[${newSessionId}] ✅ Sincronización de contactos completada:`, stats);
-                                    downloadAllAvatars(newSessionId, sock).catch(err => {
-                                        console.error(`[${newSessionId}] Error descargando avatares:`, err);
-                                    });
+                                    // 🔧 OPTIMIZACIÓN: AVATARES DESACTIVADOS para evitar sobrecarga
+                                    console.log(`[${newSessionId}] ⏭️ Descarga de avatares diferida`);
+                                    // downloadAllAvatars(newSessionId, sock).catch(err => {
+                                    //     console.error(`[${newSessionId}] Error descargando avatares:`, err);
+                                    // });
                                     return loadChatListFromDB(newSessionId);
                                 }).then(initialChats => {
                                     io.emit(`initial-chats-${newSessionId}`, { chats: initialChats });
@@ -6393,11 +6396,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             } else {
                                 console.log(`[${newSessionId}] 🚫 Sincronización desactivada - Solo mensajes nuevos serán capturados`);
 
-                                // DESCARGAR AVATARES aunque no se sincronice
-                                console.log(`[${newSessionId}] 🖼️ Descargando avatares de contactos existentes...`);
-                                downloadAllAvatars(newSessionId, sock).catch(err => {
-                                    console.error(`[${newSessionId}] Error descargando avatares:`, err);
-                                });
+                                // 🔧 OPTIMIZACIÓN: AVATARES DESACTIVADOS para evitar sobrecarga al iniciar
+                                console.log(`[${newSessionId}] ⏭️ Descarga de avatares diferida (se cargarán bajo demanda)`);
+                                // downloadAllAvatars(newSessionId, sock).catch(err => {
+                                //     console.error(`[${newSessionId}] Error descargando avatares:`, err);
+                                // });
 
                                 // Cargar chats existentes sin sincronizar
                                 loadChatListFromDB(newSessionId).then(initialChats => {
