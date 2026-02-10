@@ -20,11 +20,11 @@ const activeSockets = new Map();
 // Estado de reconexión con backoff exponencial
 const reconnectionState = new Map(); // sessionId -> { attempts, nextAllowedTime }
 
-// Configuración de backoff
+// 🔧 OPTIMIZACIÓN: Configuración de backoff mejorada para mayor resilencia
 const BACKOFF_CONFIG = {
     baseDelay: 30000,      // 30 segundos inicial
-    maxDelay: 300000,      // 5 minutos máximo
-    maxAttempts: 5,        // Máximo intentos antes de pausar
+    maxDelay: 600000,      // 🔧 10 minutos máximo (aumentado de 5min)
+    maxAttempts: 50,       // 🔧 50 intentos antes de pausar (aumentado de 5)
     jitterFactor: 0.2      // 20% de variación
 };
 
@@ -133,12 +133,12 @@ async function getOrCreateWhatsAppSocket(sessionId) {
             printQRInTerminal: false,
             // 🔧 Browser identificado como Winsap CRM (aparece en el teléfono)
             browser: ['Winsap CRM', 'Chrome', '120.0.0'],
-            // Timeouts optimizados
-            connectTimeoutMs: 45000, // 45 segundos
-            defaultQueryTimeoutMs: 30000, // 30 segundos (antes 0 = infinito)
-            qrTimeout: 40000, // 40 segundos para QR
-            // KeepAlive más frecuente para este módulo bajo demanda
-            keepAliveIntervalMs: 20000, // 20 segundos
+            // 🔧 OPTIMIZACIÓN: Timeouts mejorados para estabilidad a largo plazo
+            connectTimeoutMs: 90000, // 🔧 90 segundos (aumentado de 45s - tolera redes lentas)
+            defaultQueryTimeoutMs: 45000, // 🔧 45 segundos (aumentado de 30s - evita timeouts prematuros)
+            qrTimeout: 45000, // 45 segundos para QR
+            // 🔧 OPTIMIZACIÓN: KeepAlive más frecuente para mantener conexión activa
+            keepAliveIntervalMs: 15000, // 🔧 15 segundos (reducido de 20s - más proactivo)
             // No emitir eventos propios
             emitOwnEvents: false,
             // NO marcar como online (reduce detección)

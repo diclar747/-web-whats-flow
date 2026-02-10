@@ -530,15 +530,15 @@ const reconnectionState = new Map(); // sessionId -> { attempts, lastAttempt, ne
 const RECONNECTION_CONFIG = {
     baseDelay: 30000,        // 30 segundos inicial
     maxDelay: 600000,        // 10 minutos máximo
-    maxAttempts: 10,         // Máximo intentos antes de pausar
+    maxAttempts: 50,         // 🔧 OPTIMIZADO: Aumentado de 10 a 50 intentos (más resiliente)
     jitterFactor: 0.3,       // 30% de variación aleatoria
-    cooldownAfterMax: 1800000 // 30 minutos de pausa después de max intentos
+    cooldownAfterMax: 600000 // 🔧 OPTIMIZADO: Reducido de 30min a 10min (600000ms)
 };
 
 // Cola de reconexiones para evitar sobrecarga
 const reconnectionQueue = [];
 let isProcessingQueue = false;
-const MAX_CONCURRENT_RECONNECTIONS = 2; // Máximo 2 reconexiones simultáneas
+const MAX_CONCURRENT_RECONNECTIONS = 5; // 🔧 OPTIMIZADO: Aumentado de 2 a 5 reconexiones simultáneas
 let activeReconnections = 0;
 
 /**
@@ -577,8 +577,11 @@ function canReconnect(sessionId) {
                 reason: `Máximo de intentos alcanzado (${state.attempts}). Cooldown activo.`
             };
         }
-        // Cooldown terminó, resetear intentos
+        // 🔧 OPTIMIZACIÓN: Cooldown terminó, resetear intentos para reintentar automáticamente
+        console.log(`[RECONNECT] 🔄 ${sessionId}: Cooldown terminado. Reseteando intentos de ${state.attempts} a 0`);
         state.attempts = 0;
+        state.nextAllowedTime = 0;
+        reconnectionState.set(sessionId, state);
     }
 
     // Verificar si ya pasó el tiempo de espera
@@ -951,7 +954,9 @@ async function syncActiveFlags() {
             );
 
             const now = new Date();
-            const INACTIVITY_THRESHOLD = 5 * 60 * 1000;
+            // 🔧 OPTIMIZACIÓN: Aumentado de 5 minutos a 48 horas para evitar desconexiones prematuras
+            // Una sesión solo se desactiva si lleva 48 horas sin actividad Y no está conectada en memoria
+            const INACTIVITY_THRESHOLD = 48 * 60 * 60 * 1000; // 48 horas
 
             // Mapear filas de DB por session_id para fácil acceso
             const dbSessionsMap = new Map();
@@ -1047,6 +1052,59 @@ async function syncActiveFlags() {
 setInterval(syncActiveFlags, 10000);
 // Ejecutar una vez al iniciar, con pequeño retraso
 setTimeout(syncActiveFlags, 2000);
+
+// ==================== HEALTH CHECKS PROACTIVOS ====================
+// 🔧 OPTIMIZACIÓN: Verificar proactivamente conexiones "zombies"
+// Detecta sesiones que parecen conectadas pero están muertas
+async function healthCheckSessions() {
+    try {
+        const memSessions = global.sessions || new Map();
+        const now = Date.now();
+        let checkedCount = 0;
+        let zombieCount = 0;
+
+        for (const [sessionId, sessionInfo] of memSessions.entries()) {
+            // Solo verificar sesiones que dicen estar conectadas
+            if (!sessionInfo || !sessionInfo.isConnected) continue;
+
+            const sock = sessionInfo.sock;
+            if (!sock) {
+                console.log(`[HEALTH-CHECK] ⚠️ ${sessionId}: Marcada como conectada pero sin socket`);
+                sessionInfo.isConnected = false;
+                zombieCount++;
+                continue;
+            }
+
+            // Verificar si el socket tiene usuario (indica conexión real)
+            if (!sock.user || !sock.user.id) {
+                const timeSinceCreation = now - (sessionInfo.createdAt || 0);
+
+                // Si lleva más de 2 minutos "conectada" sin user, es zombie
+                if (timeSinceCreation > 120000) {
+                    console.log(`[HEALTH-CHECK] 🧟 ${sessionId}: Conexión zombie detectada (sin user después de 2min)`);
+                    sessionInfo.isConnected = false;
+                    zombieCount++;
+
+                    // Intentar reconectar
+                    queueReconnection(sessionId, 'zombie-connection', true);
+                }
+            }
+
+            checkedCount++;
+        }
+
+        if (zombieCount > 0) {
+            console.log(`[HEALTH-CHECK] 🔍 Verificadas ${checkedCount} sesiones. ${zombieCount} zombies detectados y encolados para reconexión.`);
+        }
+    } catch (err) {
+        console.warn('[HEALTH-CHECK] ⚠️ Error en health check:', err.message);
+    }
+}
+
+// Ejecutar health check cada 60 segundos
+setInterval(healthCheckSessions, 60000);
+// Primera ejecución después de 30 segundos (dar tiempo a que las sesiones se establezcan)
+setTimeout(healthCheckSessions, 30000);
 
 // Sistema de caché para Kanban
 const kanbanCache = new Map();
@@ -2388,8 +2446,16 @@ async function saveMessageToDB(sessionId, msg, skipChat = false) {
             const contactNotify = from_me ? null : senderName;
 
             await connection.execute(
-                `INSERT IGNORE INTO contacts (jid, session_id, phone, name, notify_name, is_group, created_at) 
-                 VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+                `INSERT INTO contacts (jid, session_id, phone, name, notify_name, is_group, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, NOW())
+                 ON DUPLICATE KEY UPDATE
+                    name = CASE
+                        WHEN VALUES(name) IS NOT NULL AND VALUES(name) != '' AND VALUES(name) NOT REGEXP '^[0-9]+$'
+                             AND (name IS NULL OR name = '' OR name REGEXP '^[0-9]+$')
+                        THEN VALUES(name) ELSE name END,
+                    notify_name = COALESCE(VALUES(notify_name), notify_name),
+                    phone = COALESCE(VALUES(phone), phone),
+                    updated_at = NOW()`,
                 [chat_jid, ownerSessionId, phoneNumber, contactName, contactNotify, chat_jid.includes('@g.us') ? 1 : 0]
             );
         } catch (contactErr) {
@@ -4105,20 +4171,20 @@ async function syncContactsOnly(sessionId, sock, userSessionId) {
                         [contactJid, ownerSessionId]
                     );
 
-                    if (existing.length === 0) {
-                        await connection.query(
-                            `INSERT INTO contacts (jid, name, notify_name, session_id, is_group, created_at)
-                             VALUES (?, ?, ?, ?, ?, NOW())`,
-                            [
-                                contactJid,
-                                contact.name || contact.notify || contactJid.split('@')[0],
-                                contact.notify || contact.name || null,
-                                ownerSessionId,  // ✅ Siempre guardar con ownerSessionId (users.id como '1')
-                                false
-                            ]
-                        );
-                        stats.contacts++;
-                    }
+                    const cName = contact.name || contact.notify || contactJid.split('@')[0];
+                    const cNotify = contact.notify || contact.name || null;
+                    await connection.query(
+                        `INSERT INTO contacts (jid, name, notify_name, session_id, is_group, created_at)
+                         VALUES (?, ?, ?, ?, ?, NOW())
+                         ON DUPLICATE KEY UPDATE
+                            name = CASE
+                                WHEN VALUES(name) IS NOT NULL AND VALUES(name) != '' AND VALUES(name) NOT REGEXP '^[0-9]+$'
+                                THEN VALUES(name) ELSE name END,
+                            notify_name = COALESCE(VALUES(notify_name), notify_name),
+                            updated_at = NOW()`,
+                        [contactJid, cName, cNotify, ownerSessionId, false]
+                    );
+                    if (existing.length === 0) stats.contacts++;
                 } catch (err) {
                     console.error(`[CONTACTS-SYNC] Error guardando contacto ${contact.id}:`, err.message);
                     stats.errors++;
@@ -4223,14 +4289,17 @@ async function performFullSync(sessionId, sock, userSessionId) {
                             [chatId, userSessionId]
                         );
 
-                        if (existing.length === 0) {
-                            await connection.query(
-                                `INSERT INTO contacts (jid, name, session_id, is_group, created_at) 
-                                 VALUES (?, ?, ?, ?, NOW())`,
-                                [chatId, chat.name || chatId.split('@')[0], userSessionId, false]
-                            );
-                            stats.chats++;
-                        }
+                        await connection.query(
+                            `INSERT INTO contacts (jid, name, session_id, is_group, created_at)
+                             VALUES (?, ?, ?, ?, NOW())
+                             ON DUPLICATE KEY UPDATE
+                                name = CASE
+                                    WHEN VALUES(name) IS NOT NULL AND VALUES(name) != '' AND VALUES(name) NOT REGEXP '^[0-9]+$'
+                                    THEN VALUES(name) ELSE name END,
+                                updated_at = NOW()`,
+                            [chatId, chat.name || chatId.split('@')[0], userSessionId, false]
+                        );
+                        if (existing.length === 0) stats.chats++;
                     }
                 } catch (err) {
                     console.error(`[FULL-SYNC] Error guardando chat ${chat.id}:`, err.message);
@@ -4282,7 +4351,8 @@ async function performFullSync(sessionId, sock, userSessionId) {
                     );
                     if (existingContact.length === 0) {
                         await connection.query(
-                            'INSERT INTO contacts (jid, name, session_id, is_group, created_at) VALUES (?, ?, ?, 1, NOW())',
+                            `INSERT INTO contacts (jid, name, session_id, is_group, created_at) VALUES (?, ?, ?, 1, NOW())
+                             ON DUPLICATE KEY UPDATE name = VALUES(name), is_group = 1, updated_at = NOW()`,
                             [group.id, group.subject || group.id.split('@')[0], userSessionId]
                         );
                     } else {
@@ -4463,13 +4533,19 @@ async function performFullSync(sessionId, sock, userSessionId) {
                             [contact.id, sessionId]
                         );
 
-                        if (existing.length === 0) {
+                        {
+                            const syncName = contact.name || contact.notify || contact.id.split('@')[0];
                             await connection.query(
-                                `INSERT INTO contacts (jid, name, session_id, is_group, created_at) 
-                                 VALUES (?, ?, ?, ?, NOW())`,
-                                [contact.id, contact.name || contact.notify || contact.id.split('@')[0], sessionId, false]
+                                `INSERT INTO contacts (jid, name, session_id, is_group, created_at)
+                                 VALUES (?, ?, ?, ?, NOW())
+                                 ON DUPLICATE KEY UPDATE
+                                    name = CASE
+                                        WHEN VALUES(name) IS NOT NULL AND VALUES(name) != '' AND VALUES(name) NOT REGEXP '^[0-9]+$'
+                                        THEN VALUES(name) ELSE name END,
+                                    updated_at = NOW()`,
+                                [contact.id, syncName, sessionId, false]
                             );
-                            stats.contacts++;
+                            if (existing.length === 0) stats.contacts++;
                         }
                     }
                 } catch (err) {
@@ -5288,10 +5364,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 // Intentar obtener mensaje de la BD si es posible
                 return { conversation: '' };
             },
-            // 🔧 OPTIMIZACIÓN: Tiempos de conexión más conservadores
-            keepAliveIntervalMs: 25000, // 25 segundos (reducido de 30s para mejor estabilidad)
-            connectTimeoutMs: 60000, // 60 segundos
-            defaultQueryTimeoutMs: 30000, // 30 segundos (antes 60s, reducido para evitar bloqueos)
+            // 🔧 OPTIMIZACIÓN: Tiempos de conexión optimizados para estabilidad a largo plazo
+            keepAliveIntervalMs: 15000, // 🔧 15 segundos (reducido de 25s - mantiene conexión más activa)
+            connectTimeoutMs: 90000, // 🔧 90 segundos (aumentado de 60s - tolera redes lentas)
+            defaultQueryTimeoutMs: 45000, // 🔧 45 segundos (aumentado de 30s - evita timeouts prematuros)
             qrTimeout: 45000, // 45 segundos para QR
             emitOwnEvents: true,
             // 🔧 OPTIMIZACIÓN: NO marcar online al conectar (reduce detección de bot)
@@ -5989,7 +6065,17 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     timestamp: new Date().toISOString()
                 });
 
-                console.log(`[${sessionId}] ✅ Evento whatsapp-connected EMITIDO`);
+                // 🔧 LOGGING MEJORADO: Información completa de conexión exitosa
+                console.log(`[${sessionId}] ========================================`);
+                console.log(`[${sessionId}] ✅ CONEXIÓN EXITOSA - RESUMEN`);
+                console.log(`[${sessionId}] ========================================`);
+                console.log(`[${sessionId}] Session ID: ${newSessionId}`);
+                console.log(`[${sessionId}] Teléfono: ${userPhoneNumber}`);
+                console.log(`[${sessionId}] Usuario ID: ${userId || 'N/A'}`);
+                console.log(`[${sessionId}] Email: ${userEmail || 'N/A'}`);
+                console.log(`[${sessionId}] Timestamp: ${new Date().toISOString()}`);
+                console.log(`[${sessionId}] Eventos Emitidos: whatsapp-connected, connection-update`);
+                console.log(`[${sessionId}] ========================================`);
 
                 // 🔄 SINCRONIZAR is_active inmediatamente tras conexión exitosa
                 syncActiveFlags().then(() => {
@@ -6448,8 +6534,19 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 sessionInfo.isConnected = false;
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const reason = lastDisconnect?.error?.output?.payload?.error || 'unknown';
+                const errorMessage = lastDisconnect?.error?.message || 'No error message';
 
-                console.log(`[${sessionId}] Conexión cerrada - Código: ${statusCode}, Razón: ${reason}`);
+                // 🔧 LOGGING MEJORADO: Información completa para debugging
+                console.log(`[${sessionId}] ========================================`);
+                console.log(`[${sessionId}] 🔴 CONEXIÓN CERRADA - ANÁLISIS COMPLETO`);
+                console.log(`[${sessionId}] ========================================`);
+                console.log(`[${sessionId}] Código de Estado: ${statusCode}`);
+                console.log(`[${sessionId}] Razón: ${reason}`);
+                console.log(`[${sessionId}] Mensaje de Error: ${errorMessage}`);
+                console.log(`[${sessionId}] Timestamp: ${new Date().toISOString()}`);
+                console.log(`[${sessionId}] Usuario: ${sessionInfo.phoneNumber || 'unknown'}`);
+                console.log(`[${sessionId}] Tiempo Conectado: ${sessionInfo.createdAt ? Math.round((Date.now() - sessionInfo.createdAt) / 1000) : 0}s`);
+                console.log(`[${sessionId}] ========================================`);
 
                 // 🔥 DESACTIVAR INMEDIATAMENTE en la BD cuando se detecta desconexión
                 // Validar que sessionId sea un string válido (ID hexadecimal de WhatsApp)
@@ -8550,6 +8647,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 const { id, participants, action } = update;
                 console.log(`[${sessionId}]   └─ Acción: ${action}, Participantes: ${participants.length}`);
 
+                // Obtener phoneNumber del socket activo
+                const userPhone = sock.user?.id?.split(':')[0] || sessionId;
+
                 // Actualizar miembros del grupo según la acción
                 if (action === 'add') {
                     // Nuevos miembros añadidos
@@ -8557,7 +8657,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         id: p,
                         admin: null
                     }));
-                    await insertGroupMembers(id, newParticipants, phoneNumber || sessionId);
+                    await insertGroupMembers(id, newParticipants, userPhone);
                 } else if (action === 'remove') {
                     // Miembros eliminados - marcar como inactivos en BD
                     if (pool) {
@@ -8565,9 +8665,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         try {
                             for (const participantJid of participants) {
                                 await connection.execute(
-                                    `DELETE FROM contact_group_members 
+                                    `DELETE FROM contact_group_members
                                      WHERE group_jid = ? AND contact_jid = ? AND session_id = ?`,
-                                    [id, participantJid, phoneNumber || sessionId]
+                                    [id, participantJid, userPhone]
                                 );
                             }
                         } finally {
@@ -8581,10 +8681,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         try {
                             for (const participantJid of participants) {
                                 await connection.execute(
-                                    `UPDATE contact_group_members 
+                                    `UPDATE contact_group_members
                                      SET is_admin = ?, is_super_admin = ?
                                      WHERE group_jid = ? AND contact_jid = ? AND session_id = ?`,
-                                    [action === 'promote', false, id, participantJid, phoneNumber || sessionId]
+                                    [action === 'promote', false, id, participantJid, userPhone]
                                 );
                             }
                         } finally {
@@ -8608,6 +8708,7 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
         sock.ev.on('groups.update', async (updates) => {
             console.log(`[${sessionId}] 👥 EVENTO groups.update: ${updates.length} actualización(es)`);
             try {
+                const userPhone = sock.user?.id?.split(':')[0] || sessionId;
                 for (const update of updates) {
                     console.log(`[${sessionId}]   └─ Grupo actualizado: ${update.id}`);
                     // Actualizar información del grupo en BD
@@ -8615,10 +8716,10 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                         const connection = await pool.getConnection();
                         try {
                             await connection.execute(
-                                `UPDATE contact_groups 
+                                `UPDATE contact_groups
                                  SET name = ?, updated_at = NOW()
                                  WHERE jid = ? AND session_id = ?`,
-                                [update.subject, update.id, phoneNumber || sessionId]
+                                [update.subject, update.id, userPhone]
                             );
                         } finally {
                             connection.release();
@@ -12959,6 +13060,60 @@ app.get('/api/chats/:sessionId', authenticateToken, async (req, res) => {
         const queryTime = Date.now() - startTime;
         console.log(`[API-CHATS-OPTIMIZED] ✅ ${chats.length} chats cargados en ${queryTime}ms`);
 
+        // 🔧 FIX: Cargar TODOS los grupos del usuario desde contact_groups
+        // Esto resuelve: 1) Grupos sin mensajes hoy no aparecen  2) Nombres de grupo muestran JID
+        try {
+            const [allGroups] = await pool.query(`
+                SELECT jid, name, avatar_url, updated_at
+                FROM contact_groups
+                WHERE session_id IN (?, ?)
+                ORDER BY name ASC
+            `, [ownerSessionId, phoneNumber]);
+
+            if (allGroups.length > 0) {
+                const groupNamesMap = new Map();
+                for (const g of allGroups) {
+                    groupNamesMap.set(g.jid, g);
+                }
+
+                // 1. Corregir nombres de grupos que muestran JID en vez de nombre real
+                for (const chat of chats) {
+                    if (chat.id && chat.id.includes('@g.us') && groupNamesMap.has(chat.id)) {
+                        const groupData = groupNamesMap.get(chat.id);
+                        if (!chat.contact_name || chat.contact_name === chat.id || chat.contact_name === chat.id.split('@')[0]) {
+                            chat.contact_name = groupData.name;
+                        }
+                        if (!chat.avatar_url && groupData.avatar_url) {
+                            chat.avatar_url = groupData.avatar_url;
+                        }
+                    }
+                }
+
+                // 2. Agregar grupos que no tienen mensajes hoy (no aparecen en la query principal)
+                const existingIds = new Set(chats.map(c => c.id));
+                let addedGroups = 0;
+                for (const [jid, group] of groupNamesMap) {
+                    if (!existingIds.has(jid)) {
+                        chats.push({
+                            id: jid,
+                            contact_name: group.name,
+                            avatar_url: group.avatar_url,
+                            last_message_time: group.updated_at,
+                            last_message_content: null,
+                            last_message_type: null,
+                            last_message_from_me: '0',
+                            last_message_status: null,
+                            unread_count: 0
+                        });
+                        addedGroups++;
+                    }
+                }
+                console.log(`[API-CHATS-GROUPS] ✅ ${allGroups.length} grupos totales, ${addedGroups} agregados (no tenían mensajes hoy)`);
+            }
+        } catch (groupErr) {
+            console.error(`[API-CHATS-GROUPS] ⚠️ Error cargando grupos:`, groupErr.message);
+        }
+
         // Mapear al formato esperado por el frontend
         const formattedChats = chats.map(chat => {
             const phoneOnly = chat.id.split('@')[0];
@@ -13304,24 +13459,25 @@ app.get('/api/history/messages', authenticateToken, async (req, res) => {
         // 🔧 FIX: No verificar mensajes previamente - el conteo se hace con los mismos filtros que el query principal
 
         // 🔧 CORRECCIÓN: Definir los parámetros finales en el orden exacto de los "?" en la query
-        const finalQueryParams = [];
-
-        // 1. Los "?" en los JOINs (ahora 3 JOINs)
-        finalQueryParams.push(userId); // contacts c
-        finalQueryParams.push(userId); // contact_groups cg
-        finalQueryParams.push(userId); // contacts c_sender
-
-        // 2. Los siguientes "?" están en el sessionFilter
-        finalQueryParams.push(...queryParams);
+        // No se usan JOINs, los params van directo del sessionFilter
 
         // Construir la cláusula WHERE dinámica para filtros
-        let filterClause = " AND m.chat_jid NOT LIKE '%@g.us' AND m.chat_jid != 'status@broadcast'";
+        let filterClause = '';
         let filterParams = [];
 
-        if (chatJid) {
-            const searchVal = `%${chatJid}%`;
+        // Búsqueda por texto (chatJid o search param)
+        const searchParam = chatJid || req.query.search;
+        if (searchParam) {
+            const searchVal = `%${searchParam}%`;
             filterClause += ' AND (m.chat_jid LIKE ? OR m.text_content LIKE ? OR m.sender_name LIKE ? OR m.sender_jid LIKE ?)';
             filterParams.push(searchVal, searchVal, searchVal, searchVal);
+        }
+
+        // Filtro por tipo de mensaje
+        const typeFilter = req.query.type;
+        if (typeFilter && typeFilter !== 'all') {
+            filterClause += ' AND m.message_type = ?';
+            filterParams.push(typeFilter);
         }
         if (startDate) {
             filterClause += ' AND m.timestamp >= ?';
@@ -13804,24 +13960,27 @@ app.get('/api/contacts/:sessionId', async (req, res) => {
                 try {
                     const placeholders = sessionIds.map(() => '?').join(',');
                     const [dbContacts] = await connection.execute(
-                        `SELECT jid,
-    MAX(CASE
+                        `SELECT jid, name, notify_name, avatar_url, session_id FROM (
+                            SELECT jid,
+                                CASE
                                     WHEN name IS NULL OR name = '' OR name = '.' OR name = '..' OR name = '...' OR name = '....' THEN REPLACE(REPLACE(jid, '@s.whatsapp.net', ''), '@c.us', '')
                                     ELSE name
-                                END) as name,
-    MAX(notify_name) as notify_name,
-    MAX(avatar_url) as avatar_url,
-    MAX(session_id) as session_id
-                         FROM contacts
-                         WHERE session_id IN(${placeholders}) AND jid LIKE '%@s.whatsapp.net'
-                         GROUP BY jid
-                         ORDER BY
-CASE
-                                WHEN name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0
-                                WHEN name REGEXP '^[0-9]' THEN 1
-                                ELSE 2
-END,
-    name ASC`,
+                                END as name,
+                                notify_name,
+                                avatar_url,
+                                session_id,
+                                ROW_NUMBER() OVER (
+                                    PARTITION BY jid
+                                    ORDER BY
+                                        CASE WHEN name IS NOT NULL AND name != '' AND name NOT REGEXP '^[0-9]+$' THEN 0 ELSE 1 END ASC,
+                                        updated_at DESC
+                                ) as rn
+                            FROM contacts
+                            WHERE session_id IN(${placeholders}) AND jid LIKE '%@s.whatsapp.net'
+                        ) ranked WHERE rn = 1
+                        ORDER BY
+                            CASE WHEN name REGEXP '^[A-Za-zÀ-ÿ]' THEN 0 WHEN name REGEXP '^[0-9]' THEN 1 ELSE 2 END,
+                            name ASC`,
                         sessionIds
                     );
 
@@ -24543,15 +24702,22 @@ app.get('/api/contacts/search-by-name/:sessionId/:searchTerm', authenticateToken
             console.log(`[CONTACTS-SEARCH] 🔎 Ejecutando query con patrón: "${searchPattern}", sessionId: "${sessionId}", phoneNumber: "${phoneNumber || 'N/A'}", userId: "${userId || 'N/A'}"`);
 
             // Buscar por sessionId, phoneNumber Y userId (múltiples formas de identificar al usuario)
-            const query = `SELECT name, 
+            // GROUP BY jid para evitar duplicados cuando el mismo contacto existe con diferentes session_id
+            const query = `SELECT name, phone, jid FROM (
+                   SELECT name,
                           SUBSTRING_INDEX(jid, '@', 1) as phone,
-                          jid
-                   FROM contacts 
+                          jid,
+                          ROW_NUMBER() OVER (
+                              PARTITION BY jid
+                              ORDER BY updated_at DESC
+                          ) as rn
+                   FROM contacts
                    WHERE (session_id = ? OR session_id = ? OR session_id = ? OR session_id = ?)
                      AND name LIKE ?
                      AND jid LIKE '%@s.whatsapp.net'
                      AND name IS NOT NULL
                      AND name != SUBSTRING_INDEX(jid, '@', 1)
+                   ) ranked WHERE rn = 1
                    ORDER BY name ASC
                    LIMIT 20`;
 
