@@ -628,6 +628,10 @@ async function migrateTables(pool) {
             }
         } catch (e) { }
 
+        // API Keys: columnas para auto-generación al conectar WhatsApp
+        await addColumnIfNotExists('api_keys', 'is_auto_generated', 'TINYINT(1) NOT NULL DEFAULT 0');
+        await addColumnIfNotExists('api_keys', 'phone_number', 'VARCHAR(20) DEFAULT NULL');
+
         console.log('[DB-MIGRATION] Migrations completed successfully.');
     } catch (error) {
         console.error('[DB-MIGRATION] Error during migration:', error);

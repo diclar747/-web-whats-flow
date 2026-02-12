@@ -583,8 +583,22 @@ export const WhatsAppProvider: React.FC<WhatsAppProviderProps> = ({ children, us
         console.log(`[DEBUG] activeChatId: ${activeChatId}, msgChatJid: ${mappedMessage.chatJid}, chatPhone: ${chatPhone}`);
         requestAnimationFrame(() => {
           setMessages(prev => {
-            // Evitar duplicados por ID
-            if (prev.some(msg => msg.id === mappedMessage.id)) return prev;
+            // Check for existing message with same ID - UPDATE if new data is richer
+            const existingIdx = prev.findIndex(msg => msg.id === mappedMessage.id);
+            if (existingIdx !== -1) {
+              const existing = prev[existingIdx];
+              // Update if new emission has media data the first one lacked
+              const newHasMedia = !!(mappedMessage as any).mediaUrl || !!(mappedMessage as any).media_url;
+              const oldHasMedia = !!(existing as any).mediaUrl || !!(existing as any).media_url;
+              const newHasRicherType = mappedMessage.type !== 'text' && existing.type === 'text';
+              if ((newHasMedia && !oldHasMedia) || newHasRicherType) {
+                console.log('[REAL-TIME] 🔄 Actualizando mensaje existente con datos más completos:', mappedMessage.id);
+                const newArr = [...prev];
+                newArr[existingIdx] = { ...existing, ...mappedMessage };
+                return newArr;
+              }
+              return prev; // Same data, skip
+            }
 
             // Lógica de reemplazo de temporales optimizada
             if (mappedMessage.isFromMe) {

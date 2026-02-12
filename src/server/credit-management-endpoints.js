@@ -101,12 +101,39 @@ module.exports = function (app, pool, io, whatsAppSessions) {
 
             const credit = credits[0];
 
-            // Obtener las cuotas
+            // Obtener las cuotas con conteo de notificaciones y cálculo de interés por mora
+            const interestRate = parseFloat(credit.interest_rate) || 0;
             const [installments] = await pool.execute(
-                `SELECT * FROM credit_installments 
-                 WHERE credit_id = ? 
-                 ORDER BY installment_number ASC`,
-                [creditId]
+                `SELECT ci.*,
+                    COALESCE(logs.notification_count, 0) AS notification_count,
+                    logs.last_notification_at,
+                    CASE
+                        WHEN ci.status != 'paid' AND ci.due_date < CURDATE()
+                        THEN GREATEST(DATEDIFF(CURDATE(), ci.due_date), 0)
+                        ELSE 0
+                    END AS days_overdue,
+                    CASE
+                        WHEN ci.status != 'paid' AND ci.due_date < CURDATE()
+                        THEN ROUND(ci.amount * (? / 100) * GREATEST(DATEDIFF(CURDATE(), ci.due_date), 0), 0)
+                        ELSE 0
+                    END AS interest_amount,
+                    CASE
+                        WHEN ci.status != 'paid' AND ci.due_date < CURDATE()
+                        THEN ROUND(ci.amount + (ci.amount * (? / 100) * GREATEST(DATEDIFF(CURDATE(), ci.due_date), 0)), 0)
+                        ELSE ci.amount
+                    END AS total_with_interest
+                 FROM credit_installments ci
+                 LEFT JOIN (
+                    SELECT installment_id,
+                           COUNT(*) AS notification_count,
+                           MAX(sent_at) AS last_notification_at
+                    FROM credit_reminder_logs
+                    WHERE status = 'sent'
+                    GROUP BY installment_id
+                 ) logs ON logs.installment_id = ci.id
+                 WHERE ci.credit_id = ?
+                 ORDER BY ci.installment_number ASC`,
+                [interestRate, interestRate, creditId]
             );
 
             // Obtener estadísticas de recordatorios
@@ -150,6 +177,7 @@ module.exports = function (app, pool, io, whatsAppSessions) {
             installmentAmount,
             startDate,
             dueDay,
+            interestRate = 0,
             reminderDaysBefore = 1,
             reminderTemplateId,
             description
@@ -215,13 +243,14 @@ module.exports = function (app, pool, io, whatsAppSessions) {
 
             // Crear el crédito
             const [creditResult] = await connection.execute(
-                `INSERT INTO credits 
-                 (session_id, contact_id, contact_jid, contact_name, total_amount, 
-                  installment_count, installment_amount, start_date, due_day, 
+                `INSERT INTO credits
+                 (session_id, contact_id, contact_jid, contact_name, total_amount,
+                  installment_count, installment_amount, start_date, due_day, interest_rate,
                   reminder_days_before, reminder_template_id, description, created_by, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
                 [resolvedSessionId, finalContactId, contactJid, contactName, Number(totalAmount),
                     Number(installmentCount), Number(installmentAmount), startDate, Number(dueDay),
+                    Number(interestRate) || 0,
                     Number(reminderDaysBefore), reminderTemplateId || null, description || null, req.user?.id || null]
             );
 
@@ -368,7 +397,7 @@ module.exports = function (app, pool, io, whatsAppSessions) {
      */
     app.put('/api/credits/:sessionId/installments/:installmentId', authenticateToken, async (req, res) => {
         const { sessionId, installmentId } = req.params;
-        const { status, paidDate, notes } = req.body;
+        const { status, paidDate, notes, amount, dueDate } = req.body;
 
         try {
             const updates = [];
@@ -387,6 +416,16 @@ module.exports = function (app, pool, io, whatsAppSessions) {
             if (notes !== undefined) {
                 updates.push('notes = ?');
                 values.push(notes);
+            }
+
+            if (amount !== undefined && amount !== null) {
+                updates.push('amount = ?');
+                values.push(Number(amount));
+            }
+
+            if (dueDate) {
+                updates.push('due_date = ?');
+                values.push(dueDate);
             }
 
             values.push(installmentId);
@@ -425,6 +464,66 @@ module.exports = function (app, pool, io, whatsAppSessions) {
         } catch (error) {
             console.error('[CREDITS] Error al actualizar cuota:', error);
             res.status(500).json({ success: false, error: 'Error al actualizar cuota' });
+        }
+    });
+
+    /**
+     * DELETE /api/credits/:sessionId/installments/:installmentId
+     * Eliminar una cuota individual
+     */
+    app.delete('/api/credits/:sessionId/installments/:installmentId', authenticateToken, async (req, res) => {
+        const { sessionId, installmentId } = req.params;
+
+        try {
+            const resolvedSessionId = await resolveToUserId(sessionId);
+
+            // Obtener info de la cuota antes de eliminar
+            const [installment] = await pool.execute(
+                'SELECT credit_id, installment_number FROM credit_installments WHERE id = ? AND session_id = ?',
+                [installmentId, resolvedSessionId]
+            );
+
+            if (installment.length === 0) {
+                return res.status(404).json({ success: false, error: 'Cuota no encontrada' });
+            }
+
+            const creditId = installment[0].credit_id;
+
+            // Eliminar logs de recordatorios asociados
+            await pool.execute(
+                'DELETE FROM credit_reminder_logs WHERE installment_id = ?',
+                [installmentId]
+            );
+
+            // Eliminar la cuota
+            await pool.execute(
+                'DELETE FROM credit_installments WHERE id = ? AND session_id = ?',
+                [installmentId, resolvedSessionId]
+            );
+
+            // Re-numerar las cuotas restantes
+            const [remaining] = await pool.execute(
+                'SELECT id FROM credit_installments WHERE credit_id = ? ORDER BY due_date ASC',
+                [creditId]
+            );
+
+            for (let i = 0; i < remaining.length; i++) {
+                await pool.execute(
+                    'UPDATE credit_installments SET installment_number = ? WHERE id = ?',
+                    [i + 1, remaining[i].id]
+                );
+            }
+
+            // Actualizar el conteo de cuotas en el crédito
+            await pool.execute(
+                'UPDATE credits SET installment_count = ? WHERE id = ?',
+                [remaining.length, creditId]
+            );
+
+            res.json({ success: true, message: 'Cuota eliminada exitosamente' });
+        } catch (error) {
+            console.error('[CREDITS] Error al eliminar cuota:', error);
+            res.status(500).json({ success: false, error: 'Error al eliminar cuota' });
         }
     });
 
@@ -490,7 +589,7 @@ module.exports = function (app, pool, io, whatsAppSessions) {
 
             // Obtener información de la cuota
             const [installments] = await pool.execute(
-                `SELECT 
+                `SELECT
                     ci.id as installment_id,
                     ci.credit_id,
                     ci.installment_number,
@@ -500,7 +599,18 @@ module.exports = function (app, pool, io, whatsAppSessions) {
                     c.contact_jid,
                     c.contact_name,
                     c.installment_count as total_installments,
-                    c.reminder_template_id
+                    c.reminder_template_id,
+                    COALESCE(c.interest_rate, 0) as interest_rate,
+                    CASE
+                        WHEN ci.status != 'paid' AND ci.due_date < CURDATE()
+                        THEN GREATEST(DATEDIFF(CURDATE(), ci.due_date), 0)
+                        ELSE 0
+                    END AS days_overdue,
+                    CASE
+                        WHEN ci.status != 'paid' AND ci.due_date < CURDATE()
+                        THEN ROUND(ci.amount * (COALESCE(c.interest_rate, 0) / 100) * GREATEST(DATEDIFF(CURDATE(), ci.due_date), 0), 0)
+                        ELSE 0
+                    END AS interest_amount
                  FROM credit_installments ci
                  JOIN credits c ON ci.credit_id = c.id
                  WHERE ci.id = ? AND c.session_id = ?`,
@@ -542,12 +652,25 @@ module.exports = function (app, pool, io, whatsAppSessions) {
                 });
             };
 
-            const message = template
+            // Calcular total con interés
+            const interestAmt = Number(installment.interest_amount) || 0;
+            const totalWithInterest = installment.amount + interestAmt;
+            const daysOverdue = Number(installment.days_overdue) || 0;
+
+            let message = template
                 .replace(/{{nombre}}/g, installment.contact_name?.split(' ')[0] || 'Cliente')
                 .replace(/{{monto}}/g, formatCurrency(installment.amount))
                 .replace(/{{cuota_numero}}/g, installment.installment_number.toString())
                 .replace(/{{total_cuotas}}/g, installment.total_installments.toString())
-                .replace(/{{fecha_vencimiento}}/g, formatDate(installment.due_date));
+                .replace(/{{fecha_vencimiento}}/g, formatDate(installment.due_date))
+                .replace(/{{interes}}/g, formatCurrency(interestAmt))
+                .replace(/{{total_con_interes}}/g, formatCurrency(totalWithInterest))
+                .replace(/{{dias_mora}}/g, daysOverdue.toString());
+
+            // Si hay interés por mora, agregar info al final del mensaje
+            if (interestAmt > 0 && Number(installment.interest_rate) > 0) {
+                message += `\n\n📊 *Detalle de mora:*\n💰 Cuota: Gs. ${formatCurrency(installment.amount)}\n📈 Interés (${daysOverdue} días × ${installment.interest_rate}%): Gs. ${formatCurrency(interestAmt)}\n💵 *Total a pagar: Gs. ${formatCurrency(totalWithInterest)}*`;
+            }
 
             // Enviar por WhatsApp
             console.log('[DEBUG-CREDITS] Buscando sesión:', sessionId);
@@ -609,8 +732,8 @@ module.exports = function (app, pool, io, whatsAppSessions) {
 
                 // Guardar log (usar resolvedSessionId para consistencia)
                 await pool.execute(
-                    `INSERT INTO credit_reminder_logs 
-                     (installment_id, credit_id, session_id, contact_jid, reminder_type, 
+                    `INSERT INTO credit_reminder_logs
+                     (installment_id, credit_id, session_id, contact_jid, reminder_type,
                       days_before, message_text, template_used, whatsapp_message_id, status)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                     [
@@ -625,6 +748,16 @@ module.exports = function (app, pool, io, whatsAppSessions) {
                         result?.key?.id,
                         'sent'
                     ]
+                );
+
+                // Incrementar contador de notificaciones en la cuota
+                await pool.execute(
+                    `UPDATE credit_installments
+                     SET reminder_count = COALESCE(reminder_count, 0) + 1,
+                         reminder_sent = TRUE,
+                         reminder_sent_at = NOW()
+                     WHERE id = ?`,
+                    [installmentId]
                 );
 
                 res.json({ success: true, message: 'Recordatorio enviado exitosamente' });

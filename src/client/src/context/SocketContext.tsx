@@ -41,6 +41,9 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
       console.log('🔌 UserRole para conexión:', userRole);
       console.log('🔌 UserId para conexión:', userId);
 
+      // Obtener JWT token para autenticación en Socket.IO
+      const token = sessionStorage.getItem('token') || localStorage.getItem('token') || '';
+
       const newSocket = io(socketURL, {
         transports: ['websocket', 'polling'],
         autoConnect: true,
@@ -60,6 +63,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
           userId: userId || ''
         },
         auth: {
+          token: token,
           sessionId: sessionId || '',
           userRole: userRole,
           userId: userId || ''
@@ -91,37 +95,27 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         const currentSessionId = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
         const currentUserRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
         const currentUserId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
-        // Obtener también el número de teléfono para unirse a esa sala
-        const whatsappPhone = sessionStorage.getItem('whatsappPhone') || localStorage.getItem('whatsappPhone');
-        const userPhone = sessionStorage.getItem('userPhone') || localStorage.getItem('userPhone');
-        const adminPhone = sessionStorage.getItem('adminPhoneNumber') || localStorage.getItem('adminPhoneNumber');
 
         console.log('🔌 Socket conectado:', newSocket.id);
         console.log('🔌 SessionId actual:', currentSessionId);
         console.log('🔌 UserRole actual:', currentUserRole);
         console.log('🔌 UserId actual:', currentUserId);
-        console.log('🔌 WhatsApp Phone:', whatsappPhone || userPhone || adminPhone);
         setIsConnected(true);
 
-        // Unirse a sala del sessionId (hex)
+        // Unirse a sala del sessionId (verificado por el backend)
         if (currentSessionId) {
           newSocket.emit('join-session', { sessionId: currentSessionId });
           console.log('🔌 Uniéndose a sala:', `session-${currentSessionId}`);
         }
 
-        // Unirse a sala del userId
+        // Unirse a sala del userId (sala personal)
         if (currentUserId) {
           newSocket.emit('join-session', { sessionId: currentUserId });
           console.log('🔌 Uniéndose a sala de usuario:', `session-${currentUserId}`);
         }
 
-        // ⚡ IMPORTANTE: Unirse también a la sala del número de teléfono
-        // El servidor emite mensajes a session-{phoneNumber}
-        const phoneNumber = whatsappPhone || userPhone || adminPhone;
-        if (phoneNumber && phoneNumber !== currentSessionId) {
-          newSocket.emit('join-session', { sessionId: phoneNumber });
-          console.log('🔌 Uniéndose a sala de teléfono:', `session-${phoneNumber}`);
-        }
+        // NO unirse a salas de teléfono aquí - el backend validará la propiedad
+        // Las salas de teléfono se unen desde WhatsAppContext/AgentDashboard cuando se confirma conexión
 
         if (currentUserRole === 'agent' && currentUserId) {
           newSocket.emit('join-agent-room', { agentId: parseInt(currentUserId) });
@@ -138,9 +132,6 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
         const currentSessionId = sessionStorage.getItem('whinsap_session') || localStorage.getItem('whinsap_session');
         const currentUserRole = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
         const currentUserId = sessionStorage.getItem('userId') || localStorage.getItem('userId');
-        const whatsappPhone = sessionStorage.getItem('whatsappPhone') || localStorage.getItem('whatsappPhone');
-        const userPhone = sessionStorage.getItem('userPhone') || localStorage.getItem('userPhone');
-        const adminPhone = sessionStorage.getItem('adminPhoneNumber') || localStorage.getItem('adminPhoneNumber');
 
         console.log('🔌 Socket reconectado después de', attemptNumber, 'intentos');
         setIsConnected(true);
@@ -150,12 +141,7 @@ export const SocketProvider: React.FC<SocketProviderProps> = ({ children }) => {
           console.log('🔌 Re-uniéndose a sala:', `session-${currentSessionId}`);
         }
 
-        // Re-unirse a sala del número de teléfono
-        const phoneNumber = whatsappPhone || userPhone || adminPhone;
-        if (phoneNumber && phoneNumber !== currentSessionId) {
-          newSocket.emit('join-session', { sessionId: phoneNumber });
-          console.log('🔌 Re-uniéndose a sala de teléfono:', `session-${phoneNumber}`);
-        }
+        // NO re-unirse a salas de teléfono - el backend validará la propiedad
 
         if (currentUserRole === 'agent' && currentUserId) {
           newSocket.emit('join-agent-room', { agentId: parseInt(currentUserId) });

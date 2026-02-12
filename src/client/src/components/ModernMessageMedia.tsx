@@ -62,48 +62,26 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
   const audioRef = React.useRef<HTMLAudioElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
 
-  // 🐛 DEBUG: Log props recibidos
-  console.log('[ModernMessageMedia] 🔍 Props recibidos:', {
-    type,
-    mediaUrl,
-    mediaMimeType,
-    hasMessage: !!message,
-    isFromMe,
-    fileName
-  });
-
   if (!mediaUrl) {
-    console.warn('[ModernMessageMedia] ⚠️ mediaUrl está vacío para tipo:', type);
     return null;
   }
 
   const getMediaUrl = (url: string) => {
-    if (!url) {
-      console.warn('[ModernMessageMedia] ⚠️ URL vacía en getMediaUrl');
-      return '';
-    }
+    if (!url) return '';
 
-    // 🛡️ SECURITY: Usar proxy para URLs de WhatsApp CDN para evitar 403 y CORS
+    // Proxy para URLs de WhatsApp CDN para evitar 403 y CORS
     if (url.startsWith('http') && (url.includes('whatsapp.net') || url.includes('pps.whatsapp.net') || url.includes('mmg.whatsapp.net'))) {
-      console.log('[ModernMessageMedia] 🛡️ Proxying WhatsApp CDN URL:', url.substring(0, 50) + '...');
-      return `/api/proxy/avatar?url=${encodeURIComponent(url)}`;
+      return `/api/proxy/media?url=${encodeURIComponent(url)}`;
     }
 
-    // Si ya es una URL completa (y no es de WhatsApp), retornarla tal cual
+    // URLs completas (no WhatsApp) - retornar tal cual
     if (url.startsWith('data:') || url.startsWith('http') || url.startsWith('blob:')) {
-      console.log('[ModernMessageMedia] ✅ URL completa detectada:', url.substring(0, 50) + '...');
       return url;
     }
 
-    // Construir URL completa para rutas relativas
+    // Rutas relativas - construir URL completa
     const API_BASE = process.env.REACT_APP_API_URL || window.location.origin;
-    const fullUrl = url.startsWith('/') ? `${API_BASE}${url}` : `${API_BASE}/${url}`;
-    console.log('[ModernMessageMedia] 🔗 URL procesada:', {
-      original: url,
-      base: API_BASE,
-      final: fullUrl
-    });
-    return fullUrl;
+    return url.startsWith('/') ? `${API_BASE}${url}` : `${API_BASE}/${url}`;
   };
 
   const handleDownload = async (url: string, name: string) => {
@@ -131,37 +109,48 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
     return <InsertDriveFile sx={{ fontSize: 40, color: '#9e9e9e' }} />;
   };
 
-  // 🖼️ IMAGEN - Optimizada con lazy loading
+  // 🖼️ IMAGEN
   if (type === 'image' || type === 'imageMessage') {
+    const resolvedUrl = getMediaUrl(mediaUrl);
     return (
       <>
         <Box
           sx={{
             position: 'relative',
             maxWidth: '300px',
+            minHeight: isLoading ? '200px' : 'auto',
             borderRadius: '8px',
             overflow: 'hidden',
             cursor: 'pointer',
+            bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
             '&:hover .image-overlay': {
               opacity: 1
             }
           }}
-          onClick={() => setShowImagePreview(true)}
+          onClick={() => !hasError && setShowImagePreview(true)}
         >
-          {isLoading && (
-            <Skeleton
-              variant="rectangular"
-              width="100%"
-              height={200}
-              sx={{ borderRadius: '8px' }}
-            />
+          {isLoading && !hasError && (
+            <Box sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+              borderRadius: '8px',
+              minHeight: '200px'
+            }}>
+              <CircularProgress size={32} sx={{ color: '#00a884' }} />
+            </Box>
           )}
           <img
-            src={getMediaUrl(mediaUrl)}
+            src={resolvedUrl}
             alt="Imagen"
-            loading="lazy" // ⚡ Optimización: Lazy loading
+            loading="lazy"
             style={{
-              display: isLoading ? 'none' : 'block',
               width: '100%',
               maxHeight: '300px',
               objectFit: 'cover',
@@ -174,19 +163,13 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
               setIsLoading(false);
               setImageLoaded(true);
             }}
-            onError={(e) => {
-              console.error('[ModernMessageMedia] ❌ Error cargando imagen:', {
-                originalUrl: mediaUrl,
-                processedUrl: getMediaUrl(mediaUrl),
-                type: type,
-                error: e
-              });
+            onError={() => {
               setIsLoading(false);
               setHasError(true);
             }}
           />
 
-          {!isLoading && !hasError && (
+          {imageLoaded && !hasError && (
             <Box
               className="image-overlay"
               sx={{
@@ -195,7 +178,7 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
                 left: 0,
                 right: 0,
                 bottom: message ? '30px' : 0,
-                background: 'rgba(0,0,0,0.4)',
+                background: 'rgba(0,0,0,0.3)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -218,10 +201,11 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                borderRadius: '8px'
+                borderRadius: '8px',
+                cursor: 'default'
               }}
             >
-              <ImageIcon sx={{ fontSize: 50, color: 'rgba(255,255,255,0.3)', mb: 1 }} />
+              <ImageIcon sx={{ fontSize: 50, color: isDarkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)', mb: 1 }} />
               <Typography variant="caption" color="textSecondary">
                 No se pudo cargar la imagen
               </Typography>
@@ -258,13 +242,14 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
                 right: 10,
                 bgcolor: 'rgba(0,0,0,0.5)',
                 color: 'white',
+                zIndex: 1,
                 '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' }
               }}
             >
               <Close />
             </IconButton>
             <img
-              src={getMediaUrl(mediaUrl)}
+              src={resolvedUrl}
               alt="Preview"
               style={{
                 width: '100%',
@@ -281,55 +266,74 @@ const ModernMessageMedia: React.FC<ModernMessageMediaProps> = ({
 
   // 🎥 VIDEO
   if (type === 'video' || type === 'videoMessage') {
+    const resolvedVideoUrl = getMediaUrl(mediaUrl);
     return (
-      <Box sx={{ maxWidth: '350px', borderRadius: '12px', overflow: 'hidden', bgcolor: '#000' }}>
-        {isLoading && (
-          <Skeleton variant="rectangular" width="100%" height={250} />
+      <Box sx={{
+        maxWidth: '350px',
+        borderRadius: '12px',
+        overflow: 'hidden',
+        bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'
+      }}>
+        {isLoading && !hasError && (
+          <Box sx={{
+            width: '100%',
+            height: '250px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 1
+          }}>
+            <CircularProgress size={32} sx={{ color: '#00a884' }} />
+            <Typography variant="caption" sx={{ color: isDarkMode ? '#8696a0' : '#667781' }}>
+              Cargando video...
+            </Typography>
+          </Box>
         )}
         <video
           controls
+          preload="metadata"
           controlsList="nodownload"
           style={{
-            display: isLoading ? 'none' : 'block',
+            display: isLoading && !hasError ? 'none' : 'block',
             width: '100%',
             maxHeight: '350px',
             borderRadius: '12px'
           }}
           onLoadedMetadata={() => setIsLoading(false)}
-          onError={(e) => {
-            console.error('[ModernMessageMedia] ❌ Error cargando video:', {
-              originalUrl: mediaUrl,
-              processedUrl: getMediaUrl(mediaUrl),
-              mimeType: mediaMimeType,
-              error: e
-            });
+          onError={() => {
             setIsLoading(false);
             setHasError(true);
           }}
         >
-          <source src={getMediaUrl(mediaUrl)} type={mediaMimeType || 'video/mp4'} />
-          Tu navegador no soporta videos
+          <source src={resolvedVideoUrl} type={mediaMimeType || 'video/mp4'} />
         </video>
         {hasError && (
           <Box
             sx={{
               width: '100%',
-              height: '250px',
+              height: '200px',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              bgcolor: '#000'
+              bgcolor: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
             }}
           >
-            <Videocam sx={{ fontSize: 50, color: 'rgba(255,255,255,0.3)', mb: 1 }} />
-            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.7)' }}>
+            <Videocam sx={{ fontSize: 50, color: isDarkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)', mb: 1 }} />
+            <Typography variant="caption" color="textSecondary">
               No se pudo cargar el video
             </Typography>
           </Box>
         )}
         {message && (
-          <Typography variant="body2" sx={{ p: 1.5, bgcolor: isFromMe ? '#005c4b' : '#2a3942', color: 'white' }}>
+          <Typography variant="body2" sx={{
+            p: 1.5,
+            bgcolor: isFromMe
+              ? (isDarkMode ? 'rgba(0, 92, 75, 0.5)' : 'rgba(0, 92, 75, 0.1)')
+              : (isDarkMode ? 'rgba(42, 57, 66, 0.8)' : 'rgba(0,0,0,0.05)'),
+            color: isDarkMode ? '#e9edef' : '#111b21'
+          }}>
             {message}
           </Typography>
         )}

@@ -61,6 +61,7 @@ const authenticateAPIKey = async (req, res, next) => {
 
 // Generar nueva API Key
 router.post('/keys/generate', async (req, res) => {
+  let connection;
   try {
     const { sessionId, name, description } = req.body;
 
@@ -71,9 +72,59 @@ router.post('/keys/generate', async (req, res) => {
       });
     }
 
+    connection = await mysql.createConnection(dbConfig);
+
+    // Verificar límites del plan antes de generar
+    const [userRows] = await connection.query(
+      'SELECT subscription_plan, subscription_status, is_super_admin FROM users WHERE id = ? LIMIT 1',
+      [sessionId]
+    );
+
+    if (userRows.length === 0) {
+      await connection.end();
+      return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+    }
+
+    const user = userRows[0];
+
+    if (!user.is_super_admin) {
+      if (!user.subscription_status || user.subscription_status !== 'active') {
+        await connection.end();
+        return res.status(403).json({
+          success: false,
+          error: 'Tu suscripción no está activa. Activa tu plan para generar API Keys.'
+        });
+      }
+
+      if (user.subscription_plan) {
+        const [planRows] = await connection.query(
+          'SELECT max_channels FROM plans WHERE name = ? LIMIT 1',
+          [user.subscription_plan]
+        );
+
+        if (planRows.length > 0 && planRows[0].max_channels) {
+          const maxKeys = planRows[0].max_channels;
+          const [countRows] = await connection.query(
+            'SELECT COUNT(*) as total FROM api_keys WHERE session_id = ? AND is_active = TRUE',
+            [sessionId]
+          );
+          const currentCount = countRows[0].total;
+
+          if (currentCount >= maxKeys) {
+            await connection.end();
+            return res.status(403).json({
+              success: false,
+              error: `Has alcanzado el límite de ${maxKeys} API Keys de tu plan. Elimina una existente para crear una nueva.`,
+              limit: maxKeys,
+              current: currentCount
+            });
+          }
+        }
+      }
+    }
+
     // Generar API key única
     const apiKey = 'wf_' + crypto.randomBytes(32).toString('hex');
-    const connection = await mysql.createConnection(dbConfig);
 
     await connection.query(
       `INSERT INTO api_keys (session_id, api_key, name, description, is_active, created_at)
@@ -90,6 +141,7 @@ router.post('/keys/generate', async (req, res) => {
     });
   } catch (error) {
     console.error('Error generating API key:', error);
+    if (connection) try { await connection.end(); } catch(e) {}
     res.status(500).json({
       success: false,
       error: error.message
@@ -104,18 +156,57 @@ router.get('/keys/:userId', async (req, res) => {
     const connection = await mysql.createConnection(dbConfig);
 
     const [keys] = await connection.query(
-      `SELECT id, api_key, name, description, is_active, created_at, last_used_at, request_count
-       FROM api_keys 
-       WHERE session_id = ?
-       ORDER BY created_at DESC`,
+      `SELECT id, api_key, name, description, is_active, created_at, last_used_at, request_count,
+              COALESCE(is_auto_generated, 0) as is_auto_generated, phone_number
+       FROM api_keys
+       WHERE session_id = ? AND is_active = TRUE
+       ORDER BY is_auto_generated DESC, created_at DESC`,
       [userId]
     );
+
+    // Obtener phones conectados actualmente
+    const sessions = req.sessions;
+    const connectedPhones = new Set();
+    if (sessions) {
+      for (const [, sess] of sessions) {
+        if (sess && sess.isConnected && sess.sock && sess.sock.user) {
+          const phone = sess.sock.user.id.split(':')[0].replace(/\D/g, '');
+          if (phone) connectedPhones.add(phone);
+        }
+      }
+    }
+
+    // Agregar estado de conexión a cada key
+    for (const key of keys) {
+      if (key.phone_number && connectedPhones.has(key.phone_number)) {
+        key.connection_status = 'connected';
+      } else {
+        key.connection_status = 'disconnected';
+      }
+    }
+
+    // Obtener max_channels del plan del usuario
+    let maxKeys = null;
+    const [userRows] = await connection.query(
+      'SELECT subscription_plan, is_super_admin FROM users WHERE id = ? LIMIT 1',
+      [userId]
+    );
+    if (userRows.length > 0 && !userRows[0].is_super_admin && userRows[0].subscription_plan) {
+      const [planRows] = await connection.query(
+        'SELECT max_channels FROM plans WHERE name = ? LIMIT 1',
+        [userRows[0].subscription_plan]
+      );
+      if (planRows.length > 0 && planRows[0].max_channels) {
+        maxKeys = planRows[0].max_channels;
+      }
+    }
 
     await connection.end();
 
     res.json({
       success: true,
-      keys: keys
+      keys: keys,
+      maxKeys: maxKeys
     });
   } catch (error) {
     console.error('Error listing API keys:', error);
@@ -126,14 +217,28 @@ router.get('/keys/:userId', async (req, res) => {
   }
 });
 
-// Desactivar API Key
+// Eliminar API Key
 router.delete('/keys/:keyId', async (req, res) => {
   try {
     const { keyId } = req.params;
     const connection = await mysql.createConnection(dbConfig);
 
+    // Verificar si es auto-generada (no se puede eliminar)
+    const [keyRows] = await connection.query(
+      'SELECT id, is_auto_generated FROM api_keys WHERE id = ?',
+      [keyId]
+    );
+
+    if (keyRows.length > 0 && keyRows[0].is_auto_generated === 1) {
+      await connection.end();
+      return res.status(403).json({
+        success: false,
+        error: 'No se puede eliminar la API Key principal. Esta key fue generada automaticamente al conectar WhatsApp.'
+      });
+    }
+
     await connection.query(
-      'UPDATE api_keys SET is_active = FALSE WHERE id = ?',
+      'DELETE FROM api_keys WHERE id = ?',
       [keyId]
     );
 
@@ -141,7 +246,7 @@ router.delete('/keys/:keyId', async (req, res) => {
 
     res.json({
       success: true,
-      message: 'API Key desactivada'
+      message: 'API Key eliminada correctamente'
     });
   } catch (error) {
     console.error('Error deleting API key:', error);
@@ -669,96 +774,157 @@ router.get('/connect', async (req, res) => {
       <html>
       <head>
         <title>Conectar WhatsApp - WhatsFlow API</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="/socket.io/socket.io.js"></script>
         <style>
-          body { font-family: 'Segoe UI', sans-serif; background: #0f1419; color: white; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-          .card { background: #1a2332; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 400px; width: 90%; }
+          * { box-sizing: border-box; }
+          body { font-family: 'Segoe UI', sans-serif; background: #0f1419; color: white; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+          .card { background: #1a2332; padding: 40px; border-radius: 20px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); max-width: 420px; width: 90%; transition: all 0.5s ease; }
           .qr-container { background: white; padding: 15px; border-radius: 10px; display: inline-block; margin: 20px 0; min-width: 250px; min-height: 250px; }
           .qr-image { width: 250px; height: 250px; display: block; }
           h1 { margin: 0 0 10px 0; color: #58a6ff; font-size: 24px; }
           p { color: #8b949e; line-height: 1.5; font-size: 14px; }
           .status { margin-top: 20px; font-weight: bold; color: #25d366; display: flex; align-items: center; justify-content: center; gap: 10px; }
-          .loader { border: 3px solid #f3f3f3; border-top: 3px solid #25d366; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+          .loader { border: 3px solid #f3f3f3; border-top: 3px solid #25d366; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; }
           @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-          .footer { margin-top: 30px; font-size: 11px; color: #444; }
+          @keyframes fadeIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+          @keyframes checkmark { 0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
+          .success-icon { font-size: 80px; animation: checkmark 0.6s ease; display: block; margin: 20px 0; }
+          .success-card { animation: fadeIn 0.5s ease; }
+          .phone-number { font-size: 22px; color: #25d366; font-weight: bold; background: rgba(37, 211, 102, 0.1); padding: 12px 20px; border-radius: 10px; display: inline-block; margin: 10px 0; border: 1px solid rgba(37, 211, 102, 0.3); }
+          .api-info { background: #0d1117; border: 1px solid #30363d; border-radius: 10px; padding: 15px; margin: 15px 0; text-align: left; }
+          .api-info-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; }
+          .api-info-label { color: #8b949e; font-size: 12px; }
+          .api-info-value { color: #58a6ff; font-size: 12px; font-family: monospace; }
+          .btn-primary { background: #25d366; color: white; border: none; padding: 12px 30px; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 15px; transition: background 0.3s; }
+          .btn-primary:hover { background: #1da851; }
+          .btn-copy { background: none; border: 1px solid #30363d; color: #8b949e; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 11px; transition: all 0.3s; }
+          .btn-copy:hover { border-color: #58a6ff; color: #58a6ff; }
+          .footer { margin-top: 25px; font-size: 11px; color: #444; }
           .btn-retry { display: block; margin-top: 15px; color: #58a6ff; text-decoration: none; font-size: 12px; }
         </style>
       </head>
       <body>
         <div class="card" id="main-card">
           <h1>Vincular WhatsApp</h1>
-          <p>Abre WhatsApp en tu telefono > Menu/Configuracion > Dispositivos vinculados > Vincular dispositivo</p>
-          
+          <p>Abre WhatsApp en tu telefono &gt; Dispositivos vinculados &gt; Vincular dispositivo</p>
+
           <div class="qr-container" id="qr-box">
             ${qrDataUrl ? `<img src="${qrDataUrl}" id="qr-img" class="qr-image" />` : `
               <div style="width: 250px; height: 250px; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #000;">
                 <div class="loader"></div>
-                <p style="margin-top: 10px; font-size: 12px;">Generando codigo QR...</p>
+                <p style="margin-top: 10px; font-size: 12px; color: #666;">Generando codigo QR...</p>
               </div>
             `}
           </div>
-          
+
           <div class="status" id="status-text">
             <div class="loader"></div>
             <span>Esperando escaneo...</span>
           </div>
 
           <div class="footer">
-            ID Sesion: ${sessionId}<br>
-            API Key: ${apiKey.substring(0, 10)}...<br>
-            <a href="?api_key=${apiKey}" class="btn-retry">¿Problemas? Generar nuevo ID</a>
+            <a href="?api_key=${apiKey}" class="btn-retry">¿Problemas? Generar nuevo QR</a>
           </div>
         </div>
 
         <script>
           const socket = io();
           const sessionId = '${sessionId}';
+          const apiKeyFull = '${apiKey}';
+          let connected = false;
 
           socket.on('connect', () => {
-             console.log('Conectado al servidor de eventos');
              socket.emit('join-session', sessionId);
           });
 
-          // Escuchar nuevos QRs en tiempo real
           socket.on('qr-code', (data) => {
-            if (data.sessionId === sessionId) {
+            if (data.sessionId === sessionId && !connected) {
               updateQR(data.qrDataUrl);
             }
           });
 
-          // Listener específico de Baileys
           socket.on('qr-' + sessionId, (data) => {
-             updateQR(data.qrDataUrl);
+             if (!connected) updateQR(data.qrDataUrl);
           });
 
           function updateQR(url) {
             const qrBox = document.getElementById('qr-box');
-            qrBox.innerHTML = '<img src="' + url + '" class="qr-image" id="qr-img" />';
+            if (qrBox) qrBox.innerHTML = '<img src="' + url + '" class="qr-image" id="qr-img" />';
           }
 
-          // Escuchar conexión exitosa
+          function showSuccess(phoneNumber) {
+            if (connected) return;
+            connected = true;
+            const card = document.getElementById('main-card');
+            card.className = 'card success-card';
+            card.innerHTML =
+              '<span class="success-icon">✅</span>' +
+              '<h1 style="color: #25d366; font-size: 28px;">Conexion Exitosa</h1>' +
+              '<p style="color: #e3e8ef; font-size: 16px;">WhatsApp vinculado correctamente</p>' +
+              '<div class="phone-number">' + (phoneNumber || 'Conectado') + '</div>' +
+              '<div class="api-info">' +
+                '<div class="api-info-row"><span class="api-info-label">API Key</span><span class="api-info-value">' + apiKeyFull.substring(0, 20) + '...</span></div>' +
+                '<div class="api-info-row"><span class="api-info-label">Estado</span><span style="color: #25d366; font-size: 12px;">● Activo</span></div>' +
+              '</div>' +
+              '<div style="display: flex; gap: 10px; justify-content: center; margin-top: 20px;">' +
+                '<button class="btn-primary" onclick="window.close()">Cerrar</button>' +
+                '<button class="btn-copy" onclick="copyKey()">Copiar API Key</button>' +
+              '</div>';
+          }
+
+          function copyKey() {
+            navigator.clipboard.writeText(apiKeyFull).then(() => {
+              const btn = document.querySelector('.btn-copy');
+              if (btn) { btn.textContent = '✓ Copiado!'; btn.style.borderColor = '#25d366'; btn.style.color = '#25d366'; }
+            });
+          }
+
+          // Escuchar conexion exitosa - multiples listeners para mayor cobertura
           socket.on('whatsapp-connected', (data) => {
-            if (data.sessionId === sessionId) {
-              document.getElementById('main-card').innerHTML = \`
-                <h1 style="color: #25d366;">¡Exito!</h1>
-                <div style="font-size: 60px; margin: 20px;">✅</div>
-                <p>Tu WhatsApp se ha vinculado correctamente.</p>
-                <p style="font-size: 18px; color: white;">Numero: <strong>\${data.phoneNumber}</strong></p>
-                <div style="margin-top: 30px;">
-                  <button onclick="window.close()" style="background: #25d366; color: white; border: none; padding: 12px 25px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 16px;">Comenzar a usar</button>
-                </div>
-              \`;
+            if (data.sessionId === sessionId || data.phoneNumber) {
+              showSuccess(data.phoneNumber);
             }
           });
 
-          // Manejar desconexiones del socket
-          socket.on('disconnect', () => {
-             document.getElementById('status-text').innerHTML = '<span style="color: #e74c3c;">Desconectado del servidor. Reintentando...</span>';
+          socket.on('connection-update', (data) => {
+            if (data.sessionId === sessionId && data.status === 'connected') {
+              showSuccess(data.phoneNumber);
+            }
           });
-          
+
+          socket.on('session-status', (data) => {
+            if (data.sessionId === sessionId && data.isConnected) {
+              showSuccess(data.phoneNumber);
+            }
+          });
+
+          // Polling cada 3s como fallback por si el socket no entrega el evento
+          const pollInterval = setInterval(async () => {
+            if (connected) { clearInterval(pollInterval); return; }
+            try {
+              const resp = await fetch('/api/rest/status/' + sessionId + '?api_key=' + apiKeyFull);
+              const data = await resp.json();
+              if (data.connected) {
+                showSuccess(data.phoneNumber || '');
+                clearInterval(pollInterval);
+              }
+            } catch(e) {}
+          }, 3000);
+
+          socket.on('disconnect', () => {
+            if (!connected) {
+              const st = document.getElementById('status-text');
+              if (st) st.innerHTML = '<span style="color: #e74c3c;">Reconectando...</span>';
+            }
+          });
+
           socket.on('reconnect', () => {
-             document.getElementById('status-text').innerHTML = '<div class="loader"></div><span>Esperando escaneo...</span>';
-             socket.emit('join-session', sessionId);
+            if (!connected) {
+              const st = document.getElementById('status-text');
+              if (st) st.innerHTML = '<div class="loader"></div><span>Esperando escaneo...</span>';
+              socket.emit('join-session', sessionId);
+            }
           });
         </script>
       </body>

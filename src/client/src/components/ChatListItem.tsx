@@ -13,8 +13,6 @@ import {
 import { People, Image as ImageIcon, Videocam, Mic } from '@mui/icons-material';
 import { useDrag } from 'react-dnd';
 import { getAPIBaseURL } from '../utils/socketConfig';
-import { useWhatsApp } from '../context/WhatsAppContext';
-import SophisticatedProgressBar from './SophisticatedProgressBar';
 
 interface ChatListItemProps {
     chat: any;
@@ -37,7 +35,6 @@ export const ChatListItem: React.FC<ChatListItemProps> = ({
     sessionId,
     typingStatus
 }) => {
-    const { syncProgress } = useWhatsApp();
     const [{ isDragging }, drag] = useDrag(() => ({
         type: 'CHAT_ITEM',
         item: { chatJid: chat.id, chatName: chat.name },
@@ -73,151 +70,141 @@ export const ChatListItem: React.FC<ChatListItemProps> = ({
                 selected={activeChatId === chat.id}
                 onClick={() => onSelect(chat)}
                 sx={{
-                    px: 2,
-                    py: 1.5,
+                    px: 1.5,
+                    py: 1,
                     opacity: isDragging ? 0.5 : 1,
                     cursor: 'grab',
                     position: 'relative',
                     overflow: 'hidden',
-                    transition: 'all 0.3s ease',
-                    '&.Mui-selected': { backgroundColor: colors.selected },
-                    '&:hover': { backgroundColor: colors.hover },
-                    // 🟢 Animación de pulso cuando llega un mensaje
-                    animation: chat.lastUpdate && (Date.now() - chat.lastUpdate < 3000) ? 'pulse-new 2s ease-out' : 'none',
-                    '@keyframes pulse-new': {
-                        '0%': { backgroundColor: 'transparent' },
-                        '10%': { backgroundColor: '#25d36622' },
-                        '100%': { backgroundColor: 'transparent' }
+                    borderRadius: '8px !important',
+                    mx: 0.5,
+                    mb: '2px !important',
+                    '&.Mui-selected': {
+                        backgroundColor: colors.selected,
+                        borderLeft: `3px solid ${colors.primary} !important`,
                     },
-                    '@keyframes pulse-red': {
-                        '0%': { transform: 'scale(1)', opacity: 1 },
-                        '50%': { transform: 'scale(1.2)', opacity: 0.8 },
-                        '100%': { transform: 'scale(1)', opacity: 1 }
-                    }
+                    '&:hover': { backgroundColor: colors.hover },
                 }}
             >
-                {/* Indicador lateral de mensaje nuevo */}
-                {chat.unreadCount > 0 && (
-                    <Box sx={{
-                        position: 'absolute',
-                        left: 0,
-                        top: '15%',
-                        bottom: '15%',
-                        width: 4,
-                        bgcolor: '#f44336', // Red
-                        borderRadius: '0 4px 4px 0'
-                    }} />
-                )}
-                <ListItemAvatar sx={{ minWidth: chatListCollapsed ? 'auto' : 56, justifyContent: 'center', display: 'flex' }}>
+                <ListItemAvatar sx={{ minWidth: chatListCollapsed ? 'auto' : 50, justifyContent: 'center', display: 'flex' }}>
                     <Tooltip title={chatListCollapsed ? chat.name : ''} placement="right">
                         <Badge
                             badgeContent={chat.unreadCount}
-                            color="error" // 'error' is red in default MUI theme
                             invisible={!chat.unreadCount || chat.unreadCount === 0}
                             sx={{
                                 '& .MuiBadge-badge': {
-                                    backgroundColor: '#f44336', // Red
+                                    backgroundColor: '#ef4444',
                                     color: 'white',
-                                    fontWeight: 'bold',
-                                    boxShadow: '0 0 0 2px #fff'
+                                    fontWeight: 700,
+                                    fontSize: '0.65rem',
+                                    minWidth: 18,
+                                    height: 18,
+                                    borderRadius: 9,
                                 }
                             }}
                         >
-                            <Box sx={{ position: 'relative' }}>
-                                <Avatar
-                                    src={chat.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.id}`}
-                                    imgProps={{
-                                        onError: (e: any) => {
-                                            e.target.src = '';
-                                            e.target.onerror = null;
-                                        }
-                                    }}
-                                    sx={{
-                                        bgcolor: chat.isGroup ? '#9c27b0' : colors.primary,
-                                        border: chat.unreadCount > 0 ? '2px solid #f44336' : 'none' // Red border for pending
-                                    }}
-                                >
-                                    {chat.name ? chat.name.charAt(0).toUpperCase() : chat.id.split('@')[0].charAt(0)}
-                                </Avatar>
-                                {/* PUNTITO ROJO DE "PENDIENTE" sobre el avatar */}
-                                {chat.unreadCount > 0 && (
-                                    <Box
-                                        sx={{
-                                            position: 'absolute',
-                                            bottom: 0,
-                                            right: 0,
-                                            width: 12,
-                                            height: 12,
-                                            borderRadius: '50%',
-                                            bgcolor: '#f44336',
-                                            border: '2px solid white',
-                                            zIndex: 2,
-                                            animation: 'pulse-red 1.5s infinite'
-                                        }}
-                                    />
-                                )}
-                            </Box>
+                            <Avatar
+                                src={chat.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.id}`}
+                                imgProps={{
+                                    onError: (e: any) => {
+                                        e.target.src = '';
+                                        e.target.onerror = null;
+                                    }
+                                }}
+                                sx={{
+                                    bgcolor: chat.isGroup ? '#7c3aed' : colors.primary,
+                                    width: 42,
+                                    height: 42,
+                                    fontSize: '1rem',
+                                    fontWeight: 600,
+                                }}
+                            >
+                                {chat.name ? chat.name.charAt(0).toUpperCase() : chat.id.split('@')[0].charAt(0)}
+                            </Avatar>
                         </Badge>
                     </Tooltip>
                 </ListItemAvatar>
                 {!chatListCollapsed && (
                     <ListItemText
+                        sx={{ my: 0, ml: 0.5 }}
                         primary={
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    {chat.isGroup && <People sx={{ fontSize: 16, color: '#9c27b0' }} />}
-                                    <Typography variant="body1" noWrap sx={{ fontWeight: chat.unreadCount ? 600 : 400, color: colors.text }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flex: 1, minWidth: 0 }}>
+                                    {chat.isGroup && <People sx={{ fontSize: 14, color: '#7c3aed', flexShrink: 0 }} />}
+                                    <Typography variant="body2" noWrap sx={{
+                                        fontWeight: chat.unreadCount ? 600 : 500,
+                                        color: colors.text,
+                                        fontSize: '0.875rem',
+                                        lineHeight: 1.3
+                                    }}>
                                         {chat.name || chat.id.split('@')[0]}
                                     </Typography>
-                                    {/* Etiqueta de Agente Asignado */}
                                     {chat.assigned_agent_name && (
                                         <Chip
-                                            label={`Agente: ${chat.assigned_agent_name}`}
+                                            label={chat.assigned_agent_name}
                                             size="small"
                                             sx={{
-                                                ml: 1,
+                                                ml: 0.5,
                                                 height: 16,
-                                                fontSize: '0.65rem',
-                                                bgcolor: '#e3f2fd',
-                                                color: '#1976d2',
-                                                fontWeight: 600
+                                                fontSize: '0.6rem',
+                                                bgcolor: `${colors.primary}20`,
+                                                color: colors.primary,
+                                                fontWeight: 600,
+                                                '& .MuiChip-label': { px: 0.5 }
                                             }}
                                         />
                                     )}
                                 </Box>
-                                <Typography variant="caption" sx={{ color: colors.textSecondary, ml: 1 }}>
+                                <Typography variant="caption" sx={{
+                                    color: chat.unreadCount ? colors.primary : colors.textSecondary,
+                                    fontWeight: chat.unreadCount ? 600 : 400,
+                                    fontSize: '0.7rem',
+                                    ml: 1,
+                                    flexShrink: 0
+                                }}>
                                     {chat.timestamp ? formatTime(chat.timestamp) : ''}
                                 </Typography>
                             </Box>
                         }
                         secondary={
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                    {chat.lastMessage?.includes('📷 Imagen') && <ImageIcon sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
-                                    {chat.lastMessage?.includes('🎥 Video') && <Videocam sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
-                                    {chat.lastMessage?.includes('🔊 Audio') && <Mic sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.3 }} />}
-                                    <Typography
-                                        variant="body2"
-                                        noWrap
-                                        sx={{
-                                            color: typingStatus?.[chat.id] ? '#25d366' : colors.textSecondary,
-                                            fontWeight: (chat.unreadCount || typingStatus?.[chat.id]) ? 500 : 400,
-                                            fontStyle: typingStatus?.[chat.id] ? 'italic' : 'normal',
-                                            fontSize: '0.85rem',
-                                            display: 'flex',
-                                            alignItems: 'center'
-                                        }}
-                                    >
-                                        {typingStatus?.[chat.id] || (
-                                            <>
-                                                {chat.lastMessageFromMe && <span style={{ color: colors.primary, fontWeight: 600, marginRight: '4px' }}>Tú:</span>}
-                                                {chat.lastMessage || 'Toca para chatear'}
-                                            </>
-                                        )}
-                                    </Typography>
-                                </Box>
-                                {syncProgress?.status === 'syncing' && (
-                                    <SophisticatedProgressBar progress={syncProgress.progress} compact />
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.2 }}>
+                                {chat.lastMessage?.includes('📷 Imagen') && <ImageIcon sx={{ fontSize: 13, color: colors.textSecondary, flexShrink: 0 }} />}
+                                {chat.lastMessage?.includes('🎥 Video') && <Videocam sx={{ fontSize: 13, color: colors.textSecondary, flexShrink: 0 }} />}
+                                {chat.lastMessage?.includes('🔊 Audio') && <Mic sx={{ fontSize: 13, color: colors.textSecondary, flexShrink: 0 }} />}
+                                <Typography
+                                    variant="body2"
+                                    noWrap
+                                    sx={{
+                                        color: typingStatus?.[chat.id] ? '#34d399' : colors.textSecondary,
+                                        fontWeight: chat.unreadCount ? 500 : 400,
+                                        fontStyle: typingStatus?.[chat.id] ? 'italic' : 'normal',
+                                        fontSize: '0.8rem',
+                                        lineHeight: 1.3,
+                                        flex: 1
+                                    }}
+                                >
+                                    {typingStatus?.[chat.id] || (
+                                        <>
+                                            {chat.lastMessageFromMe && <span style={{ color: colors.primary, fontWeight: 500, marginRight: '4px' }}>Tú:</span>}
+                                            {chat.lastMessage || 'Toca para chatear'}
+                                        </>
+                                    )}
+                                </Typography>
+                                {chat.unreadCount > 0 && (
+                                    <Box sx={{
+                                        minWidth: 20,
+                                        height: 20,
+                                        borderRadius: 10,
+                                        bgcolor: '#ef4444',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        flexShrink: 0
+                                    }}>
+                                        <Typography sx={{ color: 'white', fontSize: '0.65rem', fontWeight: 700 }}>
+                                            {chat.unreadCount}
+                                        </Typography>
+                                    </Box>
                                 )}
                             </Box>
                         }

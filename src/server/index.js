@@ -119,6 +119,34 @@ const io = new Server(server, {
 global.io = io;
 app.set('io', io);
 
+// 🔐 Autenticar JWT en conexión Socket.IO
+io.use(async (socket, next) => {
+    try {
+        const token = socket.handshake.auth?.token;
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                socket.userId = String(decoded.userId || decoded.id);
+                socket.userEmail = decoded.email;
+                socket.userPhone = decoded.phone || decoded.phoneNumber;
+                socket.userRole = decoded.role;
+                socket.isAuthenticated = true;
+                console.log(`[SOCKET-AUTH] ✅ JWT verificado: userId=${socket.userId}, email=${socket.userEmail}, phone=${socket.userPhone}`);
+            } catch (jwtErr) {
+                console.warn(`[SOCKET-AUTH] ⚠️ JWT inválido: ${jwtErr.message}`);
+                socket.isAuthenticated = false;
+            }
+        } else {
+            console.log(`[SOCKET-AUTH] ℹ️ Sin JWT token (QR flow o conexión anónima)`);
+            socket.isAuthenticated = false;
+        }
+        next();
+    } catch (err) {
+        console.warn('[SOCKET-AUTH] Error en middleware:', err.message);
+        next();
+    }
+});
+
 // 🔄 Resolver owner_phone_number en handshake de Socket.IO
 io.use(async (socket, next) => {
     try {
@@ -506,6 +534,10 @@ const sessionUserEmailMap = new Map();
 
 // Mapa para almacenar preferencias de sincronización por sesión
 const sessionSyncPreferences = new Map();
+
+// Mapa para vincular hex session IDs con phone numbers
+// Cuando una sesión de Baileys (hex) se conecta, almacenamos hex → phone
+const hexSessionPhoneMap = new Map();
 
 // Mapa para vincular sesiones con deviceId (seguridad)
 const sessionDeviceMap = new Map();
@@ -2834,7 +2866,14 @@ async function getUserPhoneNumber(sessionId) {
     }
 
     console.log(`[${sessionId}] 🔍 getUserPhoneNumber: Buscando número de teléfono...`);
-    console.log(`[${sessionId}] 🔍 Sessions disponibles:`, Array.from(sessions.keys()));
+
+    // Intento 0: Buscar en hexSessionPhoneMap (mapeo hex → phone establecido al conectar)
+    if (hexSessionPhoneMap.has(sessionId)) {
+        const phone = hexSessionPhoneMap.get(sessionId);
+        phoneNumberCache.set(sessionId, phone);
+        console.log(`[${sessionId}] ✅ Usuario identificado desde hexSessionPhoneMap: ${phone}`);
+        return phone;
+    }
 
     // Intento 1: Obtener de la sesión activa de WhatsApp
     const session = sessions.get(sessionId);
@@ -3350,6 +3389,37 @@ async function getUserSessionId(sessionId) {
         return null;
     } catch (error) {
         console.error(`[DB-USER-ID] Error obteniendo user_session_id:`, error);
+        return null;
+    } finally {
+        if (connection) connection.release();
+    }
+}
+
+// Auto-genera una API Key "Principal" al conectar WhatsApp (idempotente)
+async function autoGenerateApiKeyForConnection(userId, phoneNumber) {
+    if (!pool || !userId || !phoneNumber) return null;
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        const [existing] = await connection.execute(
+            'SELECT id FROM api_keys WHERE session_id = ? AND is_auto_generated = 1 AND phone_number = ? LIMIT 1',
+            [String(userId), phoneNumber]
+        );
+        if (existing.length > 0) {
+            console.log(`[API-KEY-AUTO] Key principal ya existe para user ${userId}, phone ${phoneNumber}`);
+            return existing[0].id;
+        }
+        const apiKey = 'wf_' + crypto.randomBytes(32).toString('hex');
+        const keyName = `Principal (${phoneNumber})`;
+        const [result] = await connection.execute(
+            `INSERT INTO api_keys (session_id, api_key, name, description, is_active, is_auto_generated, phone_number, created_at)
+             VALUES (?, ?, ?, ?, TRUE, 1, ?, NOW())`,
+            [String(userId), apiKey, keyName, 'Generada automaticamente al conectar WhatsApp', phoneNumber]
+        );
+        console.log(`[API-KEY-AUTO] ✅ Key principal creada para user ${userId}, phone ${phoneNumber} (id: ${result.insertId})`);
+        return result.insertId;
+    } catch (error) {
+        console.error(`[API-KEY-AUTO] ❌ Error:`, error.message);
         return null;
     } finally {
         if (connection) connection.release();
@@ -5558,6 +5628,14 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     if (userPhoneNumber) {
                         // ✅ GUARDAR phoneNumber en la sesión para futuras consultas
                         sessionInfo.phoneNumber = userPhoneNumber;
+                        // ✅ GUARDAR mapeo hex → phone para que getUserPhoneNumber lo encuentre
+                        if (sessionId !== userPhoneNumber && /^[a-f0-9]{16}$/.test(sessionId)) {
+                            hexSessionPhoneMap.set(sessionId, userPhoneNumber);
+                            // Limpiar cache incorrecto si existía
+                            phoneNumberCache.delete(sessionId);
+                            phoneNumberCache.delete(`warned_${sessionId}`);
+                            console.log(`[${sessionId}] ✅ Mapeo hex→phone guardado: ${sessionId} → ${userPhoneNumber}`);
+                        }
                         console.log(`[${sessionId}] ✅ phoneNumber guardado en sesión: ${userPhoneNumber}`);
 
                         // 🔥 BUSCAR userId en la BD para asociar esta sesión con el usuario correcto
@@ -5733,6 +5811,16 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                             }
                         }
 
+                        // ✅ AUTO-GENERAR API KEY PRINCIPAL para esta conexión
+                        try {
+                            const apiKeyUserId = sessionInfo.userId || idForSession;
+                            if (apiKeyUserId && userPhoneNumber) {
+                                await autoGenerateApiKeyForConnection(apiKeyUserId, userPhoneNumber);
+                            }
+                        } catch (autoKeyErr) {
+                            console.error(`[${sessionId}] ⚠️ Error auto API key:`, autoKeyErr.message);
+                        }
+
                         // ✅ CREAR/ACTUALIZAR registro en tabla users para auto_sync
                         if (pool) {
                             try {
@@ -5817,8 +5905,9 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                                 console.log(`[${sessionId}] ✅ No había preferencia definida, estableciendo TRUE por defecto para sincronizar todo`);
                             }
 
-                            // Eliminar sesión temporal
+                            // Eliminar sesión hex (hexSessionPhoneMap ya resuelve el mapeo)
                             sessions.delete(sessionId);
+                            sessionInfo.originalSessionId = sessionId;
 
                             // Actualizar mapeos de memoria con el nuevo ID (teléfono)
                             if (userEmail) sessionUserEmailMap.set(userPhoneNumber, userEmail);
@@ -7071,13 +7160,33 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                 const textContent = msg.message?.conversation ||
                     msg.message?.extendedTextMessage?.text ||
                     msg.message?.imageMessage?.caption ||
-                    'Media';
+                    msg.message?.videoMessage?.caption ||
+                    '';
+
+                // Detect actual message type from Baileys message structure
+                const rawMsgType = msg.message ? Object.keys(msg.message)[0] || 'conversation' : 'conversation';
+                const normalizedFirstEmitType = rawMsgType.replace('Message', '').toLowerCase();
+                const firstEmitType = normalizedFirstEmitType === 'ptt' ? 'audio' :
+                    normalizedFirstEmitType === 'conversation' ? 'text' :
+                    normalizedFirstEmitType === 'extendedtext' ? 'text' :
+                    normalizedFirstEmitType;
+
+                // For media messages without text, provide descriptive fallback
+                const displayText = textContent || (
+                    firstEmitType === 'image' ? '📷 Imagen' :
+                    firstEmitType === 'video' ? '🎥 Video' :
+                    firstEmitType === 'audio' ? '🔊 Audio' :
+                    firstEmitType === 'sticker' ? '🎨 Sticker' :
+                    firstEmitType === 'document' ? '📄 Documento' :
+                    'Media'
+                );
 
                 console.log(`[${sessionId}] 🚀🚀🚀 EMITIENDO EN TIEMPO REAL:`, {
                     id: messageId.substring(0, 20),
                     from: senderJid.substring(0, 30),
                     rawJid: rawSenderJid !== senderJid ? rawSenderJid.substring(0, 30) : 'igual',
-                    text: textContent.substring(0, 30),
+                    text: displayText.substring(0, 30),
+                    type: firstEmitType,
                     isGroup: senderJid.includes('@g.us')
                 });
 
@@ -7085,10 +7194,11 @@ const createSession = async (sessionId, forceNew = false, syncHistory = true) =>
                     id: messageId,
                     from: senderJid,
                     chatJid: senderJid,
-                    message: textContent,
-                    text: textContent,
+                    message: displayText,
+                    text: displayText,
                     timestamp: new Date(msgTime).toISOString(),
-                    type: 'text',
+                    type: firstEmitType,
+                    message_type: rawMsgType,
                     isFromMe: Boolean(msg.key.fromMe),
                     isGroup: senderJid.includes('@g.us'),
                     status: msg.key.fromMe ? 'sent' : 'received'
@@ -12680,8 +12790,66 @@ app.get('/api/proxy/avatar', async (req, res) => {
         res.send(response.data);
 
     } catch (error) {
-        console.error('[AVATAR-PROXY] Error:', error.message);
-        res.status(500).json({ error: 'Failed to proxy avatar', details: error.message });
+        // Devolver imagen placeholder SVG en vez de error 500
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+          <rect width="200" height="200" fill="#2a3942"/>
+          <circle cx="100" cy="80" r="35" fill="#8696a0"/>
+          <ellipse cx="100" cy="170" rx="55" ry="45" fill="#8696a0"/>
+        </svg>`;
+        res.set('Content-Type', 'image/svg+xml');
+        res.set('Cache-Control', 'public, max-age=300');
+        res.send(svg);
+    }
+});
+
+// ✅ Proxy para media de WhatsApp CDN (imágenes, videos, documentos)
+app.get('/api/proxy/media', async (req, res) => {
+    try {
+        const { url } = req.query;
+
+        if (!url) {
+            return res.status(400).json({ error: 'URL parameter required' });
+        }
+
+        // Verificar que sea una URL de WhatsApp CDN
+        const whatsappCDNHosts = ['pps.whatsapp.net', 'mmg.whatsapp.net', 'media.whatsapp.net', 'web.whatsapp.com'];
+        let isWhatsAppURL = false;
+        try {
+            const parsed = new URL(url);
+            isWhatsAppURL = whatsappCDNHosts.some(host => parsed.hostname === host || parsed.hostname.endsWith('.' + host));
+        } catch (e) {
+            return res.status(400).json({ error: 'Invalid URL' });
+        }
+
+        if (!isWhatsAppURL) {
+            return res.status(403).json({ error: 'Only WhatsApp CDN URLs allowed' });
+        }
+
+        const response = await axios.get(url, {
+            responseType: 'arraybuffer',
+            headers: {
+                'User-Agent': 'WhatsApp/2.23.20.0',
+                'Accept': '*/*',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://web.whatsapp.com/',
+                'Origin': 'https://web.whatsapp.com'
+            },
+            timeout: 30000,
+            maxContentLength: 50 * 1024 * 1024 // 50MB max
+        });
+
+        const contentType = response.headers['content-type'] || 'application/octet-stream';
+        res.set('Content-Type', contentType);
+        res.set('Cache-Control', 'public, max-age=86400');
+        if (response.headers['content-length']) {
+            res.set('Content-Length', response.headers['content-length']);
+        }
+        res.send(response.data);
+
+    } catch (error) {
+        console.error('[MEDIA-PROXY] Error:', error.message);
+        res.status(500).json({ error: 'Failed to proxy media' });
     }
 });
 
@@ -15794,17 +15962,13 @@ io.on('connection', async (socket) => {
     console.log(`   - Socket ID: ${socket.id}`);
     console.log(`   - SessionId recibido: ${sessionId || 'NO RECIBIDO'}`);
     console.log(`   - User Role: ${userRole || 'NO ESPECIFICADO'}`);
-    console.log(`   - Query completo:`, socket.handshake.query);
-    console.log(`   - Headers:`, {
-        'user-agent': socket.handshake.headers['user-agent'],
-        'origin': socket.handshake.headers.origin,
-        'x-real-ip': socket.handshake.headers['x-real-ip'],
-        'x-forwarded-for': socket.handshake.headers['x-forwarded-for']
-    });
+    console.log(`   - Autenticado: ${socket.isAuthenticated ? `SI (userId=${socket.userId}, email=${socket.userEmail})` : 'NO'}`);
     console.log(`   - Transporte: ${socket.conn.transport.name}`);
 
-    // Guardar rol en el socket para uso posterior
-    socket.userRole = userRole;
+    // Guardar rol en el socket (priorizar JWT sobre query)
+    if (!socket.userRole) {
+        socket.userRole = userRole;
+    }
 
     // Limitar conexiones por sessionId
     // Guardar timeout para poder cancelarlo
@@ -15845,82 +16009,127 @@ io.on('connection', async (socket) => {
         }, 30000); // Aumentado a 30 segundos
     }
 
-    socket.on('join-session', (data) => {
-        console.log(`📡 [JOIN-SESSION] Recibido de ${socket.id}:`, {
-            data: data,
-            type: typeof data,
-            sessionId: data?.sessionId,
-            dataString: typeof data === 'string' ? data : 'no es string'
-        });
-
+    socket.on('join-session', async (data) => {
         const sid = data?.sessionId || data;
-        console.log(`📡 [JOIN-SESSION] sessionId extraído: "${sid}" (tipo: ${typeof sid})`);
+        const sidStr = String(sid);
 
-        if (sid) {
-            // Cancelar timeout de desconexión si existe
-            if (disconnectTimeout) {
-                clearTimeout(disconnectTimeout);
-                disconnectTimeout = null;
-                console.log(`✅ Timeout cancelado para ${socket.id} - sessionId recibido via join-session`);
-            }
+        if (!sid) {
+            console.error(`❌ [JOIN-SESSION] sessionId vacío o inválido para ${socket.id}`);
+            return;
+        }
 
-            // Agregar a mapa de conexiones
-            if (!sessionConnectionsMap.has(sid)) {
-                sessionConnectionsMap.set(sid, new Set());
-            }
-            sessionConnectionsMap.get(sid).add(socket.id);
+        // 🔐 VALIDACIÓN DE PROPIEDAD: Verificar que el sessionId pertenece al usuario autenticado
+        if (socket.isAuthenticated && socket.userId) {
+            // Permitir unirse a la sala del propio userId (sala personal)
+            const isOwnUserRoom = sidStr === String(socket.userId);
 
-            socket.join(`session-${sid}`);
-
-            // 👑 Asegurar que los admins que se unen via join-session también se unan a la sala global
-            if (socket.userRole === 'admin' || socket.userRole === 'supervisor') {
-                socket.join('global-admin');
-                console.log(`👑 Admin ${socket.id} unido explícitamente a sala global-admin via join-session`);
-            }
-
-            console.log(`🔌 [Socket.IO] Cliente ${socket.id} unido explícitamente a session-${sid}`);
-            // Confirmar al cliente que se unió exitosamente
-            socket.emit('joined-session', { sessionId: sid, success: true });
-
-            // 🔐 GENERAR Y ENVIAR TOKEN JWT SI LA SESIÓN YA ESTÁ CONECTADA
-            // Esto cubre el caso donde WhatsApp ya estaba conectado antes de que el cliente se uniera
-            const existingSession = sessions.get(sid);
-            if (existingSession && existingSession.sock && existingSession.phoneNumber) {
-                console.log(`[${sid}] 🔐 Sesión ya conectada - Generando token JWT para admin: ${existingSession.phoneNumber}`);
-
+            if (!isOwnUserRoom) {
+                // Verificar propiedad en la base de datos
+                let isOwner = false;
                 try {
-                    const adminToken = jwt.sign(
-                        {
-                            phone: existingSession.phoneNumber,
-                            role: 'admin',
-                            sessionId: sid,
-                            type: 'qr_login_existing',
-                            iat: Math.floor(Date.now() / 1000)
-                        },
-                        process.env.JWT_SECRET,
-                        { expiresIn: '30d' }
-                    );
+                    if (global.dbPool) {
+                        const conn = await global.dbPool.getConnection();
+                        try {
+                            // Verificar si el sessionId pertenece al usuario (como admin)
+                            const [rows] = await conn.query(
+                                `SELECT us.id FROM user_sessions us
+                                 INNER JOIN users u ON (us.session_id = CAST(u.id AS CHAR) OR us.phone = u.phone)
+                                 WHERE u.id = ? AND (us.session_id = ? OR us.phone = ? OR CAST(u.id AS CHAR) = ?)
+                                 LIMIT 1`,
+                                [socket.userId, sidStr, sidStr, sidStr]
+                            );
+                            if (rows.length > 0) {
+                                isOwner = true;
+                            }
 
-                    // Enviar token solo a este cliente específico
-                    socket.emit('auth_token', {
-                        token: adminToken,
-                        user: {
-                            phone: existingSession.phoneNumber,
-                            role: 'admin',
-                            sessionId: sid
+                            // Si es agente, verificar si el admin al que pertenece tiene esa sesión
+                            if (!isOwner && (socket.userRole === 'agent' || socket.userRole === 'supervisor')) {
+                                const [agentRows] = await conn.query(
+                                    `SELECT a.id FROM agents a
+                                     INNER JOIN users u ON a.admin_id = u.id
+                                     WHERE a.user_id = ? AND (
+                                         CAST(u.id AS CHAR) = ? OR u.phone = ? OR
+                                         EXISTS (SELECT 1 FROM user_sessions us2 WHERE (us2.session_id = ? OR us2.phone = ?) AND us2.session_id = CAST(u.id AS CHAR))
+                                     )
+                                     LIMIT 1`,
+                                    [socket.userId, sidStr, sidStr, sidStr, sidStr]
+                                );
+                                if (agentRows.length > 0) {
+                                    isOwner = true;
+                                }
+                            }
+                        } finally {
+                            conn.release();
                         }
-                    });
+                    }
+                } catch (dbErr) {
+                    console.error(`[JOIN-SESSION] Error verificando propiedad:`, dbErr.message);
+                    // En caso de error de DB, permitir por seguridad operacional
+                    isOwner = true;
+                }
 
-                    console.log(`[${sid}] ✅ Token JWT enviado a cliente ${socket.id} para sesión existente`);
-                } catch (tokenError) {
-                    console.error(`[${sid}] ❌ Error generando token JWT para sesión existente:`, tokenError);
+                if (!isOwner) {
+                    console.warn(`🚫 [JOIN-SESSION] RECHAZADO: usuario ${socket.userId} (${socket.userEmail}) intentó unirse a session-${sid} que no le pertenece`);
+                    socket.emit('joined-session', { sessionId: sid, success: false, error: 'No autorizado para esta sesión' });
+                    return;
                 }
             }
-        } else {
-            console.error(`❌ [JOIN-SESSION] sessionId vacío o inválido para ${socket.id}`, {
-                data: data,
-                sid: sid
-            });
+        }
+        // Si no está autenticado, permitir por compatibilidad con flujo QR (pero logear)
+        else if (!socket.isAuthenticated) {
+            console.log(`[JOIN-SESSION] ℹ️ Socket ${socket.id} sin autenticación JWT, permitiendo join a session-${sid} (QR flow)`);
+        }
+
+        // Cancelar timeout de desconexión si existe
+        if (disconnectTimeout) {
+            clearTimeout(disconnectTimeout);
+            disconnectTimeout = null;
+            console.log(`✅ Timeout cancelado para ${socket.id} - sessionId recibido via join-session`);
+        }
+
+        // Agregar a mapa de conexiones
+        if (!sessionConnectionsMap.has(sidStr)) {
+            sessionConnectionsMap.set(sidStr, new Set());
+        }
+        sessionConnectionsMap.get(sidStr).add(socket.id);
+
+        socket.join(`session-${sidStr}`);
+
+        // Asegurar que admins se unan a sala global
+        if (socket.userRole === 'admin' || socket.userRole === 'supervisor') {
+            socket.join('global-admin');
+        }
+
+        console.log(`🔌 [JOIN-SESSION] ✅ ${socket.id} (user:${socket.userId || 'anon'}) unido a session-${sidStr}`);
+        socket.emit('joined-session', { sessionId: sidStr, success: true });
+
+        // Generar token JWT si la sesión WhatsApp ya está conectada (flujo QR)
+        const existingSession = sessions.get(sidStr);
+        if (existingSession && existingSession.sock && existingSession.phoneNumber) {
+            try {
+                const adminToken = jwt.sign(
+                    {
+                        phone: existingSession.phoneNumber,
+                        role: 'admin',
+                        sessionId: sidStr,
+                        type: 'qr_login_existing',
+                        iat: Math.floor(Date.now() / 1000)
+                    },
+                    process.env.JWT_SECRET,
+                    { expiresIn: '30d' }
+                );
+                socket.emit('auth_token', {
+                    token: adminToken,
+                    user: {
+                        phone: existingSession.phoneNumber,
+                        role: 'admin',
+                        sessionId: sidStr
+                    }
+                });
+                console.log(`[${sidStr}] ✅ Token JWT enviado a ${socket.id} para sesión existente`);
+            } catch (tokenError) {
+                console.error(`[${sidStr}] ❌ Error generando token JWT:`, tokenError);
+            }
         }
     });
 
@@ -27333,6 +27542,30 @@ server.listen(PORT, '0.0.0.0', async () => {
         console.log(`[BOOT] 📂 Buscando sesiones en: ${BASE_AUTH_DIR}`);
         const authDirs = fs.readdirSync(BASE_AUTH_DIR);
         console.log(`[BOOT] 📂 Encontrados ${authDirs.length} directorios en ${BASE_AUTH_DIR}`);
+
+        // ✅ PRE-POPULAR hexSessionPhoneMap leyendo creds.json de cada sesión
+        for (const dirName of authDirs) {
+            if (/^[a-f0-9]{16}$/.test(dirName)) {
+                const credsPath = path.join(BASE_AUTH_DIR, dirName, 'creds.json');
+                try {
+                    if (fs.existsSync(credsPath)) {
+                        const creds = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+                        const meId = creds?.me?.id;
+                        if (meId) {
+                            const phone = meId.split(':')[0].replace(/\D/g, '');
+                            if (/^\d{10,15}$/.test(phone)) {
+                                hexSessionPhoneMap.set(dirName, phone);
+                                console.log(`[BOOT] 📱 Mapeo hex→phone: ${dirName} → ${phone}`);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // Ignorar errores de lectura de creds
+                }
+            }
+        }
+        console.log(`[BOOT] 📱 ${hexSessionPhoneMap.size} mapeos hex→phone pre-cargados`);
+
         let restoredCount = 0;
 
         // 🔥 RESTAURACIÓN AUTOMÁTICA DESACTIVADA

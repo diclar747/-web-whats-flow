@@ -1505,25 +1505,22 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
   return (
     <Box sx={{
       display: 'flex',
-      height: 'calc(100vh - 64px)',
-      maxHeight: 'calc(100vh - 64px)', // Forzar altura máxima
+      height: 'calc(100vh - 80px)',
+      maxHeight: 'calc(100vh - 80px)',
       bgcolor: colors.background,
-      overflow: 'hidden' // Evitar scroll en el contenedor principal
+      overflow: 'hidden'
     }}>
       {/* ============ SIDEBAR DE CHATS ============ */}
       <Box sx={{
-        width: chatListCollapsed ? 80 : 420,
+        width: chatListCollapsed ? 72 : 380,
         display: 'flex',
         flexDirection: 'column',
         bgcolor: colors.sidebar,
         borderRight: `1px solid ${colors.divider}`,
-        boxShadow: '2px 0 8px rgba(0,0,0,0.04)',
-        transition: 'width 0.3s ease'
       }}>
         {/* Header del sidebar */}
         <Box sx={{
-          height: 60,
-          bgcolor: colors.header, // Tema oscuro
+          height: 56,
           display: 'flex',
           alignItems: 'center',
           px: 2,
@@ -1531,21 +1528,15 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
           borderBottom: `1px solid ${colors.divider}`,
           justifyContent: chatListCollapsed ? 'center' : 'space-between'
         }}>
-          {/* Botón minimizar/maximizar solo */}
-          <Tooltip title={chatListCollapsed ? "Expandir lista" : "Minimizar lista"}>
-            <IconButton
-              onClick={() => setChatListCollapsed(!chatListCollapsed)}
-              sx={{
-                color: colors.textSecondary,
-                transition: 'all 0.2s ease',
-                '&:hover': { color: colors.text, bgcolor: colors.hover }
-              }}
-            >
-              {chatListCollapsed ? <ChevronRight /> : <ChevronLeft />}
-            </IconButton>
-          </Tooltip>
+          <IconButton
+            onClick={() => setChatListCollapsed(!chatListCollapsed)}
+            size="small"
+            sx={{ color: colors.textSecondary, '&:hover': { color: colors.text } }}
+          >
+            {chatListCollapsed ? <ChevronRight /> : <ChevronLeft />}
+          </IconButton>
           {!chatListCollapsed && (
-            <Typography variant="h6" sx={{ fontWeight: 600, color: colors.text, ml: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: colors.text, flex: 1 }}>
               Chats
             </Typography>
           )}
@@ -1646,7 +1637,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
         {/* Buscador - Ocultar si está colapsado */}
         {!chatListCollapsed && (
-          <Box sx={{ p: 2, bgcolor: colors.sidebar }}>
+          <Box sx={{ px: 1.5, py: 1 }}>
             <TextField
               fullWidth
               size="small"
@@ -1656,34 +1647,17 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
               sx={{
                 '& .MuiOutlinedInput-root': {
                   bgcolor: colors.background,
-                  borderRadius: '10px',
-                  fontSize: '14px',
-                  transition: 'all 0.2s ease',
-                  '& fieldset': {
-                    border: `1px solid ${colors.divider}`
-                  },
-                  '&:hover': {
-                    bgcolor: colors.hover,
-                    '& fieldset': {
-                      borderColor: colors.primary
-                    }
-                  },
-                  '&.Mui-focused': {
-                    bgcolor: colors.inputBg,
-                    boxShadow: `0 0 0 2px ${colors.primary}25`,
-                    '& fieldset': {
-                      borderColor: colors.primary
-                    }
-                  },
-                  '& input': {
-                    padding: '10px 12px'
-                  }
+                  borderRadius: '20px',
+                  fontSize: '13px',
+                  '& fieldset': { border: `1px solid ${colors.divider}` },
+                  '&.Mui-focused fieldset': { borderColor: colors.primary, borderWidth: '1px' },
+                  '& input': { padding: '8px 12px' }
                 }
               }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Search sx={{ color: colors.textSecondary, fontSize: 20 }} />
+                    <Search sx={{ color: colors.textSecondary, fontSize: 18 }} />
                   </InputAdornment>
                 )
               }}
@@ -1702,78 +1676,59 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
               minHeight: 40,
               bgcolor: colors.sidebar,
               '& .MuiTabs-flexContainer': {
-                gap: 1,
-                px: 2,
-                pb: 1
+                gap: 0.5,
+                px: 1.5,
+                py: 0.5
               },
               '& .MuiTab-root': {
-                minHeight: 36,
+                minHeight: 30,
                 textTransform: 'none',
                 color: colors.textSecondary,
-                fontSize: '0.85rem',
+                fontSize: '0.75rem',
                 minWidth: 'auto',
-                px: 2,
-                borderRadius: '18px', // Pill shape
+                px: 1.5,
+                py: 0.5,
+                borderRadius: '16px !important',
                 border: `1px solid ${colors.divider}`,
-                transition: 'all 0.2s',
                 '&:hover': {
-                  bgcolor: `${colors.primary}15`,
-                  borderColor: colors.primary
+                  bgcolor: `${colors.primary}10`,
+                  borderColor: `${colors.primary}40`
                 }
               },
               '& .Mui-selected': {
-                color: '#0b141a !important', // WhatsApp dark text for contrast on green
-                bgcolor: '#00a884 !important', // WhatsApp Green
-                borderColor: '#00a884 !important',
+                color: 'white !important',
+                bgcolor: `${colors.primary} !important`,
+                borderColor: `${colors.primary} !important`,
                 fontWeight: 600
               },
-              '& .MuiTabs-indicator': {
-                display: 'none' // Hide underline
-              }
+              '& .MuiTabs-indicator': { display: 'none' }
             }}
           >
-            <Tab label={`Todas (${chatStats.total})`} icon={<Chat style={{ width: 18, height: 18 }} />} iconPosition="start" />
-            <Tab label={`Recibidos (${chatStats.received})`} icon={<CallReceived style={{ width: 18, height: 18 }} />} iconPosition="start" />
-            <Tab label={`Enviados (${chatStats.sent})`} icon={<CallMade style={{ width: 18, height: 18 }} />} iconPosition="start" />
-            <Tab label={`Sin leer (${chatStats.pending})`} icon={<MarkEmailUnread style={{ width: 18, height: 18 }} />} iconPosition="start" />
-            <Tab label={`Grupos (${chatStats.groups})`} icon={<Group style={{ width: 18, height: 18 }} />} iconPosition="start" />
+            <Tab label={`Todas (${chatStats.total})`} icon={<Chat style={{ width: 15, height: 15 }} />} iconPosition="start" />
+            <Tab label={`Recibidos (${chatStats.received})`} icon={<CallReceived style={{ width: 15, height: 15 }} />} iconPosition="start" />
+            <Tab label={`Enviados`} icon={<CallMade style={{ width: 15, height: 15 }} />} iconPosition="start" />
+            <Tab label={`Sin leer (${chatStats.pending})`} icon={<MarkEmailUnread style={{ width: 15, height: 15 }} />} iconPosition="start" />
+            <Tab label={`Grupos (${chatStats.groups})`} icon={<Group style={{ width: 15, height: 15 }} />} iconPosition="start" />
           </Tabs>
         )}
 
-        {/* 🔄 BARRA DE PROGRESO VERDE - Visible durante carga */}
+        {/* Barra de progreso */}
         {!chatListCollapsed && isLoading && (
-          <Box sx={{ width: '100%', px: 0 }}>
+          <Box sx={{
+            height: 2,
+            bgcolor: colors.divider,
+            overflow: 'hidden'
+          }}>
             <Box sx={{
-              height: 3,
-              backgroundColor: colors.divider,
-              overflow: 'hidden'
-            }}>
-              <Box
-                sx={{
-                  height: '100%',
-                  width: '30%',
-                  backgroundColor: '#25D366', // WhatsApp green
-                  animation: 'loadingSlide 1.2s ease-in-out infinite',
-                  '@keyframes loadingSlide': {
-                    '0%': { marginLeft: '-30%' },
-                    '100%': { marginLeft: '100%' }
-                  }
-                }}
-              />
-            </Box>
-            <Typography
-              variant="caption"
-              sx={{
-                display: 'block',
-                textAlign: 'center',
-                color: '#25D366',
-                py: 0.5,
-                fontSize: '0.7rem',
-                fontWeight: 500
-              }}
-            >
-              ⏳ Cargando chats...
-            </Typography>
+              height: '100%',
+              width: '30%',
+              bgcolor: colors.primary,
+              animation: 'loadingSlide 1.2s ease-in-out infinite',
+              '@keyframes loadingSlide': {
+                '0%': { marginLeft: '-30%' },
+                '100%': { marginLeft: '100%' }
+              }
+            }} />
           </Box>
         )}
 
@@ -1879,28 +1834,23 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
       }}>
         {activeChat ? (
           <Box sx={{
-            display: 'grid',
-            gridTemplateRows: '70px auto 1fr auto', // Header, Filtros, Mensajes, Input
+            display: 'flex',
+            flexDirection: 'column',
             height: '100%',
             width: '100%',
-            maxHeight: '100%',
-            overflow: 'hidden',
-            position: 'relative',
-            boxSizing: 'border-box'
+            overflow: 'hidden'
           }}>
             {/* Header del chat */}
             <Box sx={{
-              // Grid row 1: altura fija de 70px
-              gridRow: 1,
-              height: 70,
-              bgcolor: colors.header,
+              flexShrink: 0,
+              height: 56,
+              bgcolor: colors.sidebar,
               display: 'flex',
               alignItems: 'center',
-              px: 3,
-              gap: 2,
+              px: 2,
+              gap: 1.5,
               borderBottom: `1px solid ${colors.divider}`,
-              position: 'relative',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
+              position: 'relative'
             }}>
               <Avatar
                 src={activeChat.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${activeChat.id}`}
@@ -1911,15 +1861,11 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                   }
                 }}
                 sx={{
-                  bgcolor: activeChat.isGroup ? '#9c27b0' : colors.primary,
-                  width: 45,
-                  height: 45,
-                  border: `2px solid ${colors.divider}`,
-                  transition: 'transform 0.2s ease',
-                  '&:hover': {
-                    transform: 'scale(1.05)',
-                    cursor: 'pointer'
-                  }
+                  bgcolor: activeChat.isGroup ? '#7c3aed' : colors.primary,
+                  width: 40,
+                  height: 40,
+                  fontSize: '1rem',
+                  fontWeight: 600
                 }}
               >
                 {activeChat.name ? activeChat.name.charAt(0).toUpperCase() : activeChat.id.split('@')[0].charAt(0)}
@@ -1981,20 +1927,6 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                 </IconButton>
               </Tooltip>
 
-              {/* Botón Imprimir - TEST */}
-              <Tooltip title="Imprimir conversación">
-                <IconButton
-                  onClick={() => window.print()}
-                  disabled={!activeChat}
-                  sx={{
-                    color: colors.textSecondary,
-                    transition: 'all 0.2s ease',
-                    '&:hover': { color: colors.text, bgcolor: colors.hover }
-                  }}
-                >
-                  <Print />
-                </IconButton>
-              </Tooltip>
               <Tooltip title="Más opciones">
                 <IconButton
                   onClick={(e) => setChatMenuAnchor(e.currentTarget)}
@@ -2022,6 +1954,38 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                 <People sx={{ mr: 2, color: '#2196f3' }} /> Enviar a agente
               </MenuItem>
               <Divider />
+              <MenuItem onClick={async () => {
+                setChatMenuAnchor(null);
+                if (!activeChat) return;
+                const { jsPDF } = await import('jspdf');
+                const doc = new jsPDF();
+                doc.setFontSize(16);
+                doc.text(`Chat con ${activeChat.name}`, 20, 20);
+                doc.setFontSize(10);
+                doc.text(`Exportado: ${new Date().toLocaleString('es')}`, 20, 30);
+                let y = 40;
+                const pdfMessages = messages.filter(msg => {
+                  if (!dateFilter) return true;
+                  const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
+                  return msgDate >= dateFilter;
+                });
+                pdfMessages.forEach((msg) => {
+                  if (y > 270) { doc.addPage(); y = 20; }
+                  const time = new Date(msg.timestamp).toLocaleString('es');
+                  const sender = msg.isFromMe ? 'Yo' : activeChat.name;
+                  doc.setFontSize(8); doc.setTextColor(100);
+                  doc.text(`[${time}] ${sender}:`, 20, y); y += 5;
+                  doc.setFontSize(10); doc.setTextColor(0);
+                  const lines = doc.splitTextToSize(msg.message || 'Media', 170);
+                  doc.text(lines, 20, y); y += lines.length * 5 + 3;
+                });
+                doc.save(`chat-${activeChat.name}-${new Date().toISOString().split('T')[0]}.pdf`);
+              }}>
+                <PictureAsPdf sx={{ mr: 2, color: '#e53935' }} /> Exportar PDF
+              </MenuItem>
+              <MenuItem onClick={() => { window.print(); setChatMenuAnchor(null); }}>
+                <Print sx={{ mr: 2, color: '#1976d2' }} /> Imprimir
+              </MenuItem>
               <MenuItem onClick={() => setChatMenuAnchor(null)}>
                 <Archive sx={{ mr: 2 }} /> Archivar chat
               </MenuItem>
@@ -2034,14 +1998,15 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
             {/* Barra de búsqueda por fecha */}
             {showSearchBar && (
               <Box sx={{
-                gridRow: 2, // Segunda fila del grid
-                p: 2,
-                bgcolor: colors.header,
+                flexShrink: 0,
+                px: 2,
+                py: 1,
+                bgcolor: colors.sidebar,
                 borderBottom: `1px solid ${colors.divider}`,
                 display: 'flex',
-                gap: 2,
+                gap: 1.5,
                 alignItems: 'center',
-                flexWrap: 'wrap'
+                overflow: 'hidden'
               }}>
                 <FormControl size="small" sx={{ minWidth: 200 }}>
                   <InputLabel>Filtro rápido</InputLabel>
@@ -2136,80 +2101,6 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                   </Button>
                 )}
 
-                <Button
-                  onClick={async () => {
-                    if (!activeChat) return;
-
-                    // Generar PDF con jsPDF
-                    const { jsPDF } = await import('jspdf');
-                    const doc = new jsPDF();
-
-                    // Título
-                    doc.setFontSize(16);
-                    doc.text(`Chat con ${activeChat.name}`, 20, 20);
-                    doc.setFontSize(10);
-                    doc.text(`Exportado: ${new Date().toLocaleString('es')}`, 20, 30);
-
-                    let y = 40;
-                    const filteredMessages = messages.filter(msg => {
-                      if (!dateFilter) return true;
-                      const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
-                      return msgDate >= dateFilter;
-                    });
-
-                    filteredMessages.forEach((msg, index) => {
-                      if (y > 270) {
-                        doc.addPage();
-                        y = 20;
-                      }
-
-                      const time = new Date(msg.timestamp).toLocaleString('es');
-                      const sender = msg.isFromMe ? 'Yo' : activeChat.name;
-                      const text = msg.message || 'Media';
-
-                      doc.setFontSize(8);
-                      doc.setTextColor(100);
-                      doc.text(`[${time}] ${sender}:`, 20, y);
-                      y += 5;
-
-                      doc.setFontSize(10);
-                      doc.setTextColor(0);
-                      const lines = doc.splitTextToSize(text, 170);
-                      doc.text(lines, 20, y);
-                      y += lines.length * 5 + 3;
-                    });
-
-                    doc.save(`chat-${activeChat.name}-${new Date().toISOString().split('T')[0]}.pdf`);
-                  }}
-                  variant="contained"
-                  size="small"
-                  startIcon={<PictureAsPdf />}
-                  disabled={!activeChat || messages.length === 0}
-                  sx={{ ml: 'auto' }}
-                >
-                  Exportar PDF
-                </Button>
-
-                {/* Botón Imprimir */}
-                <Button
-                  onClick={() => window.print()}
-                  variant="outlined"
-                  size="small"
-                  startIcon={<Print />}
-                  disabled={!activeChat || messages.length === 0}
-                  sx={{
-                    textTransform: 'none',
-                    fontWeight: 600,
-                    borderColor: colors.primary,
-                    color: colors.primary,
-                    '&:hover': {
-                      borderColor: colors.primary,
-                      bgcolor: `${colors.primary}10`
-                    }
-                  }}
-                >
-                  Imprimir
-                </Button>
               </Box>
             )}
 
@@ -2217,20 +2108,15 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
             <Box
               data-messages-container
               sx={{
-                // Grid row 3: ocupa el espacio flexible (1fr)
-                gridRow: 3,
+                flex: 1,
                 overflowY: 'auto',
                 overflowX: 'hidden',
-                minHeight: 0, // ✅ CRÍTICO: Permite que grid controle la altura
-                height: '100%',
-                maxHeight: '100%',
-                // Dark mode background - sin imagen de fondo
-                backgroundColor: '#0b141a', // Color WhatsApp Web dark
+                minHeight: 0,
+                backgroundColor: colors.chatBg,
                 backgroundImage: 'none',
-                p: 2,
+                px: 2,
+                py: 1.5,
                 position: 'relative',
-                boxSizing: 'border-box',
-                width: '100%', // Asegurar ancho completo
                 // Custom scrollbar
                 '&::-webkit-scrollbar': {
                   width: '6px'
@@ -2324,20 +2210,17 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                       <Paper
                         elevation={0}
                         sx={{
-                          maxWidth: '65%',
+                          maxWidth: '70%',
+                          minWidth: '80px',
                           bgcolor: msg.isFromMe ? colors.myMessage : colors.theirMessage,
-                          p: '10px 12px 10px 12px',
+                          p: '8px 12px 6px 12px',
                           borderRadius: msg.isFromMe
-                            ? '12px 12px 4px 12px'  // Esquina inferior derecha más pequeña
-                            : '12px 12px 12px 4px', // Esquina inferior izquierda más pequeña
+                            ? '16px 16px 4px 16px'
+                            : '16px 16px 16px 4px',
                           position: 'relative',
-                          boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                          // 🎨 Hover effect mejorado
-                          transition: 'all 0.2s ease-in-out',
+                          boxShadow: '0 1px 1px rgba(0,0,0,0.06)',
                           '&:hover': {
-                            bgcolor: msg.isFromMe ? colors.myMessageHover : colors.theirMessageHover,
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                            transform: 'translateY(-2px)'
+                            bgcolor: msg.isFromMe ? colors.myMessageHover : colors.theirMessageHover
                           }
                         }}
                         onContextMenu={(e) => {
@@ -2346,19 +2229,16 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                           setMessageMenuAnchor(e.currentTarget);
                         }}
                       >
-                        {/* Nombre del remitente - Siempre visible */}
+                        {/* Nombre del remitente */}
                         <Typography
                           variant="caption"
                           sx={{
-                            fontWeight: 700,
-                            fontSize: '0.75rem',
-                            color: msg.isFromMe
-                              ? '#e9edef'  // Blanco suave para mensajes propios (buen contraste con verde)
-                              : '#00897B', // Teal para mensajes recibidos
+                            fontWeight: 600,
+                            fontSize: '0.8rem',
+                            color: msg.isFromMe ? '#a5b4fc' : '#34d399',
                             display: 'block',
-                            mb: 0.5,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.5px'
+                            mb: 0.3,
+                            lineHeight: 1.3
                           }}
                         >
                           {getSenderName(msg)}
@@ -2547,12 +2427,10 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
             {/* ============ ZONA INFERIOR: Reply + Preview + Input ============ */}
             <Box sx={{
-              gridRow: 4,
+              flexShrink: 0,
               display: 'flex',
               flexDirection: 'column',
-              flexShrink: 0,
-              width: '100%',
-              boxSizing: 'border-box'
+              width: '100%'
             }}>
             {/* Barra de respuesta */}
             {replyMessage && (
@@ -2625,49 +2503,39 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
               zIndex: 10,
               width: '100%',
               boxSizing: 'border-box',
-              bgcolor: isDarkMode ? '#202c33' : '#f0f2f5',
-              p: '12px 16px',
+              bgcolor: colors.sidebar,
+              px: 2,
+              py: 1,
               display: 'flex',
-              alignItems: 'center',
-              gap: 1.5,
-              borderTop: `1px solid ${isDarkMode ? '#2a3942' : '#e0e0e0'}`,
-              minHeight: '62px',
-              maxHeight: '150px',
-              boxShadow: '0 -2px 10px rgba(0,0,0,0.1)'
+              alignItems: 'flex-end',
+              gap: 1,
+              borderTop: `1px solid ${colors.divider}`,
+              minHeight: '56px',
+              maxHeight: '140px'
             }}>
-              <Tooltip title="Emojis">
-                <IconButton
-                  size="small"
-                  onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  sx={{
-                    color: isDarkMode ? '#8696a0' : '#54656f',
-                    p: '6px',
-                    '&:hover': {
-                      color: colors.primary,
-                      bgcolor: 'transparent'
-                    }
-                  }}
-                >
-                  <InsertEmoticon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+              <IconButton
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                sx={{
+                  color: showEmojiPicker ? colors.primary : colors.textSecondary,
+                  width: 36,
+                  height: 36,
+                  '&:hover': { color: colors.primary, bgcolor: `${colors.primary}10` }
+                }}
+              >
+                <InsertEmoticon sx={{ fontSize: 22 }} />
+              </IconButton>
 
-              <Tooltip title="Adjuntar">
-                <IconButton
-                  size="small"
-                  onClick={() => fileInputRef.current?.click()}
-                  sx={{
-                    color: isDarkMode ? '#8696a0' : '#54656f',
-                    p: '6px',
-                    '&:hover': {
-                      color: colors.primary,
-                      bgcolor: 'transparent'
-                    }
-                  }}
-                >
-                  <AttachFile fontSize="small" />
-                </IconButton>
-              </Tooltip>
+              <IconButton
+                onClick={() => fileInputRef.current?.click()}
+                sx={{
+                  color: colors.textSecondary,
+                  width: 36,
+                  height: 36,
+                  '&:hover': { color: colors.primary, bgcolor: `${colors.primary}10` }
+                }}
+              >
+                <AttachFile sx={{ fontSize: 22, transform: 'rotate(45deg)' }} />
+              </IconButton>
 
               <input
                 ref={fileInputRef}
@@ -2700,68 +2568,64 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                 }}
                 sx={{
                   '& .MuiOutlinedInput-root': {
-                    bgcolor: isDarkMode ? '#2a3942' : '#ffffff',
-                    borderRadius: '8px',
-                    minHeight: '40px',
-                    py: '4px',
-                    px: '12px',
+                    bgcolor: colors.inputBg,
+                    borderRadius: '24px',
+                    minHeight: '42px',
+                    py: '6px',
+                    px: '16px',
                     '& fieldset': {
-                      border: 'none'
+                      border: `1px solid ${colors.divider}`,
                     },
-                    '&:hover': {
-                      bgcolor: isDarkMode ? '#374248' : '#f5f5f5'
+                    '&:hover fieldset': {
+                      borderColor: `${colors.primary}40`,
                     },
-                    '&.Mui-focused': {
-                      bgcolor: isDarkMode ? '#374248' : '#f5f5f5'
+                    '&.Mui-focused fieldset': {
+                      borderColor: colors.primary,
+                      borderWidth: '1px',
                     }
                   },
                   '& .MuiInputBase-input': {
-                    fontSize: '15px',
+                    fontSize: '14px',
                     lineHeight: '20px',
-                    color: isDarkMode ? '#e9edef' : '#111b21',
-                    padding: 0
+                    color: colors.text,
+                    padding: 0,
+                    '&::placeholder': {
+                      color: colors.textSecondary,
+                      opacity: 0.7
+                    }
                   }
                 }}
               />
 
               {(hasMessageText || selectedFile) ? (
-                <Tooltip title="Enviar">
-                  <IconButton
-                    onClick={handleSendMessage}
-                    size="small"
-                    sx={{
-                      bgcolor: '#00a884',
-                      color: 'white',
-                      p: '8px',
-                      transition: 'all 0.2s ease',
-                      '&:hover': {
-                        bgcolor: '#008f6f',
-                        transform: 'scale(1.05)'
-                      },
-                      '&:active': {
-                        transform: 'scale(0.95)'
-                      }
-                    }}
-                  >
-                    <Send fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                <IconButton
+                  onClick={handleSendMessage}
+                  sx={{
+                    bgcolor: colors.primary,
+                    color: 'white',
+                    width: 40,
+                    height: 40,
+                    '&:hover': {
+                      bgcolor: colors.primaryDark,
+                    }
+                  }}
+                >
+                  <Send sx={{ fontSize: 20 }} />
+                </IconButton>
               ) : (
-                <Tooltip title="Grabar audio">
-                  <IconButton
-                    size="small"
-                    sx={{
-                      color: isDarkMode ? '#8696a0' : '#54656f',
-                      p: '8px',
-                      '&:hover': {
-                        color: colors.primary,
-                        bgcolor: 'transparent'
-                      }
-                    }}
-                  >
-                    <Mic fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                <IconButton
+                  sx={{
+                    color: colors.textSecondary,
+                    width: 40,
+                    height: 40,
+                    '&:hover': {
+                      color: colors.primary,
+                      bgcolor: `${colors.primary}10`
+                    }
+                  }}
+                >
+                  <Mic sx={{ fontSize: 22 }} />
+                </IconButton>
               )}
             </Box>
             </Box>{/* Cierre ZONA INFERIOR wrapper */}
@@ -3222,84 +3086,154 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
 
 
 
-      {/* 🟢 Dialogo de Detalles del Agente - Mockup de Teléfono */}
+      {/* 📱 Monitor de Agente - Simulación Premium de Teléfono */}
       <Dialog
         open={agentDetailsDialog.open}
         onClose={() => setAgentDetailsDialog({ ...agentDetailsDialog, open: false, selectedChat: null, messages: [] })}
-        maxWidth="xs"
+        maxWidth={false}
         PaperProps={{
           sx: {
-            borderRadius: '24px',
+            borderRadius: '44px',
             overflow: 'hidden',
-            bgcolor: colors.background,
-            border: `1px solid ${colors.divider}`,
-            boxShadow: '0 24px 70px rgba(0,0,0,0.7)',
-            width: '420px',
+            bgcolor: '#000',
+            border: '3px solid #1c1c1e',
+            boxShadow: '0 0 0 1px rgba(255,255,255,0.06), 0 40px 80px rgba(0,0,0,0.85), 0 0 60px rgba(99,102,241,0.08)',
+            width: '380px',
             maxWidth: '95vw',
-            height: '800px',
+            height: '760px',
+            maxHeight: '90vh',
             margin: 0,
-            backgroundImage: 'none'
+            backgroundImage: 'none',
+            position: 'relative'
           }
         }}
       >
-        {/* Header Premium estilo Winsap - Dark Mode Consistent */}
+        {/* 📱 Dynamic Island */}
         <Box sx={{
-          bgcolor: '#202c33', // WhatsApp Web header dark color
-          color: '#e9edef',
-          p: 2,
+          position: 'absolute',
+          top: 8,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '120px',
+          height: '32px',
+          bgcolor: '#000',
+          borderRadius: '20px',
+          zIndex: 200,
           display: 'flex',
           alignItems: 'center',
-          gap: 2,
-          borderBottom: '1px solid rgba(134, 150, 160, 0.15)',
+          justifyContent: 'center',
+          gap: 1.5,
+          border: '1px solid #1c1c1e'
+        }}>
+          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#1a1a2e', border: '1px solid #333' }} />
+          <Box sx={{ width: 28, height: 28, borderRadius: '50%', bgcolor: '#0a0a12', border: '1px solid #222' }} />
+        </Box>
+
+        {/* 📊 Barra de estado del teléfono */}
+        <Box sx={{
+          bgcolor: colors.header,
+          px: 2.5,
+          pt: '44px',
+          pb: 0.5,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          zIndex: 50
+        }}>
+          <Typography sx={{ fontSize: '12px', fontWeight: 600, color: colors.text, letterSpacing: '0.5px' }}>
+            {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+            <Box sx={{ display: 'flex', gap: '1.5px', alignItems: 'flex-end' }}>
+              {[5, 7, 9, 11].map((h, i) => (
+                <Box key={i} sx={{ width: 3, height: h, bgcolor: colors.text, borderRadius: '1px', opacity: i < 3 ? 1 : 0.3 }} />
+              ))}
+            </Box>
+            <Typography sx={{ fontSize: '10px', fontWeight: 600, color: colors.text, ml: 0.3 }}>5G</Typography>
+            <Box sx={{
+              width: 22, height: 11,
+              border: `1.5px solid ${colors.textSecondary}`,
+              borderRadius: '3px', ml: 0.5,
+              position: 'relative',
+              display: 'flex', alignItems: 'center', p: '1.5px',
+              '&::after': { content: '""', position: 'absolute', right: -4, top: '50%', transform: 'translateY(-50%)', width: 2, height: 5, bgcolor: colors.textSecondary, borderRadius: '0 1px 1px 0' }
+            }}>
+              <Box sx={{ width: '75%', height: '100%', bgcolor: colors.success, borderRadius: '1px' }} />
+            </Box>
+          </Box>
+        </Box>
+
+        {/* 💬 Header del Chat */}
+        <Box sx={{
+          bgcolor: colors.header,
+          color: colors.text,
+          px: 1.5,
+          py: 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.5,
+          borderBottom: `1px solid ${colors.divider}`,
           zIndex: 10
         }}>
           {agentDetailsDialog.selectedChat && (
             <IconButton
-              size="medium"
-              sx={{ color: 'white', bgcolor: 'rgba(255,255,255,0.1)', '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' } }}
+              size="small"
+              sx={{ color: colors.textSecondary, '&:hover': { bgcolor: colors.hover } }}
               onClick={handleBackToChats}
             >
-              <ChevronLeft />
+              <ChevronLeft sx={{ fontSize: 22 }} />
             </IconButton>
           )}
-          <Avatar
-            src={agentDetailsDialog.selectedChat ? `${getAPIBaseURL()}/api/avatar/${sessionId}/${agentDetailsDialog.selectedChat.chat_jid}` : undefined}
-            sx={{ bgcolor: 'rgba(255,255,255,0.2)', width: 48, height: 48, border: '2px solid rgba(255,255,255,0.5)' }}
+          <Badge
+            overlap="circular"
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            badgeContent={
+              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: colors.success, border: `2px solid ${colors.header}` }} />
+            }
           >
-            {agentDetailsDialog.selectedChat ? agentDetailsDialog.selectedChat.chat_name?.[0] : agentDetailsDialog.agent?.name?.[0]}
-          </Avatar>
-          <Box sx={{ flex: 1 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700, lineHeight: 1.2 }}>
-              {agentDetailsDialog.selectedChat ? agentDetailsDialog.selectedChat.chat_name : (agentDetailsDialog.agent?.name || 'Gestión')}
+            <Avatar
+              src={agentDetailsDialog.selectedChat ? `${getAPIBaseURL()}/api/avatar/${sessionId}/${agentDetailsDialog.selectedChat.chat_jid}` : undefined}
+              sx={{
+                width: 40,
+                height: 40,
+                bgcolor: `${colors.primary}25`,
+                color: colors.primaryLight,
+                fontSize: '0.95rem',
+                fontWeight: 700
+              }}
+            >
+              {agentDetailsDialog.selectedChat ? agentDetailsDialog.selectedChat.chat_name?.[0] : agentDetailsDialog.agent?.name?.[0]}
+            </Avatar>
+          </Badge>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="body2" noWrap sx={{ fontWeight: 600, color: colors.text, fontSize: '0.9rem', lineHeight: 1.3 }}>
+              {agentDetailsDialog.selectedChat ? agentDetailsDialog.selectedChat.chat_name : (agentDetailsDialog.agent?.name || 'Monitor')}
             </Typography>
-            <Typography variant="caption" sx={{ opacity: 0.8, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Box component="span" sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#4caf50' }} />
-              {agentDetailsDialog.selectedChat ? 'Visualizando chat' : `${agentDetailsDialog.activeChats.length} sesión(es) activa(s)`}
+            <Typography variant="caption" noWrap sx={{ color: colors.success, fontSize: '0.7rem', fontWeight: 500 }}>
+              {agentDetailsDialog.selectedChat ? 'en línea' : `${agentDetailsDialog.activeChats.length} chat(s) activo(s)`}
             </Typography>
           </Box>
           <IconButton
+            size="small"
             onClick={() => setAgentDetailsDialog({ ...agentDetailsDialog, open: false, selectedChat: null, messages: [] })}
-            sx={{ color: 'white', bgcolor: 'rgba(255,255,255,0.1)', '&:hover': { bgcolor: 'rgba(244, 67, 54, 0.2)', color: '#ff5252' } }}
+            sx={{ color: colors.textSecondary, '&:hover': { bgcolor: 'rgba(239,68,68,0.1)', color: colors.error } }}
           >
-            <Close />
+            <Close sx={{ fontSize: 20 }} />
           </IconButton>
         </Box>
 
-        {/* Contenido Moderno */}
+        {/* 📨 Contenido del Monitor */}
         <DialogContent sx={{
           p: 0,
-          bgcolor: '#0b141a', // WhatsApp Web dark background
-          height: 'calc(800px - 80px)',
+          bgcolor: colors.chatBg,
+          flex: 1,
           overflowY: 'auto',
           overflowX: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")',
-          backgroundRepeat: 'repeat',
-          backgroundSize: '400px',
-          backgroundBlendMode: 'overlay',
-          '&::-webkit-scrollbar': { width: '6px' },
-          '&::-webkit-scrollbar-thumb': { bgcolor: '#374045', borderRadius: '3px' },
+          backgroundImage: `radial-gradient(circle at 15% 50%, rgba(99,102,241,0.04) 0%, transparent 50%), radial-gradient(circle at 85% 20%, rgba(16,185,129,0.03) 0%, transparent 40%)`,
+          '&::-webkit-scrollbar': { width: '4px' },
+          '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(255,255,255,0.08)', borderRadius: '4px' },
           '&::-webkit-scrollbar-track': { bgcolor: 'transparent' }
         }}>
           {agentDetailsDialog.selectedChat ? (
@@ -3312,9 +3246,15 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
             ) : (
               <Box sx={{ p: 2.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 {agentDetailsDialog.messages.length === 0 ? (
-                  <Box sx={{ textAlign: 'center', mt: 10, opacity: 0.5 }}>
-                    <Message sx={{ fontSize: 60, mb: 2, color: colors.textSecondary }} />
-                    <Typography sx={{ color: colors.textSecondary }}>No hay historial disponible</Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, pt: 8 }}>
+                    <Box sx={{
+                      width: 64, height: 64, borderRadius: '50%',
+                      bgcolor: `${colors.primary}10`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 2
+                    }}>
+                      <Message sx={{ fontSize: 28, color: `${colors.primary}40` }} />
+                    </Box>
+                    <Typography sx={{ color: colors.textTertiary, fontSize: '0.85rem' }}>No hay historial disponible</Typography>
                   </Box>
                 ) : (
                   <>
@@ -3323,47 +3263,50 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                         key={msg.id}
                         sx={{
                           display: 'flex',
-                          justifyContent: msg.from_me ? 'flex-end' : 'flex-start',
-                          mb: 1,
-                          px: 2
+                          justifyContent: msg.type === 'system' ? 'center' : (msg.from_me ? 'flex-end' : 'flex-start'),
+                          mb: 0.5,
+                          px: 1.5
                         }}
                       >
                         <Box
                           sx={{
-                            maxWidth: '75%',
+                            maxWidth: '80%',
                             bgcolor: msg.type === 'system'
-                              ? 'rgba(32, 44, 51, 0.95)'
-                              : (msg.from_me ? '#005c4b' : '#202c33'),
-                            color: '#e9edef',
-                            borderRadius: '8px',
-                            p: '2px', // Minimal padding here, component handles it
-                            boxShadow: '0 1px 0.5px rgba(0,0,0,0.13)',
+                              ? `${colors.primary}12`
+                              : (msg.from_me ? colors.myMessage : colors.theirMessage),
+                            color: colors.text,
+                            borderRadius: '12px',
+                            p: '2px',
+                            boxShadow: msg.type === 'system' ? 'none' : '0 1px 2px rgba(0,0,0,0.15)',
                             position: 'relative',
-                            borderTopLeftRadius: msg.from_me ? '8px' : '0px',
-                            borderTopRightRadius: msg.from_me ? '0px' : '8px',
+                            borderTopLeftRadius: msg.type === 'system' ? '12px' : (msg.from_me ? '12px' : '4px'),
+                            borderTopRightRadius: msg.type === 'system' ? '12px' : (msg.from_me ? '4px' : '12px'),
                             alignSelf: msg.type === 'system' ? 'center' : 'auto',
                             width: msg.type === 'system' ? 'auto' : 'fit-content',
                             mx: msg.type === 'system' ? 'auto' : 0,
                             mt: msg.type === 'system' ? 1 : 0,
-                            mb: msg.type === 'system' ? 1 : 0
+                            mb: msg.type === 'system' ? 1 : 0,
+                            border: msg.type === 'system' ? `1px solid ${colors.divider}` : 'none'
                           }}
                         >
                           {msg.type === 'system' ? (
-                            <Typography variant="caption" sx={{ display: 'block', p: 1, color: '#8696a0', textAlign: 'center' }}>
+                            <Typography variant="caption" sx={{ display: 'block', px: 1.5, py: 0.5, color: colors.textTertiary, textAlign: 'center', fontSize: '0.7rem' }}>
                               {msg.text_content || msg.message}
                             </Typography>
                           ) : (
                             <>
-                              {/* 🏷️ ETIQUETA DE AGENTE: Mostrar nombre de quien responde */}
+                              {/* 🏷️ Etiqueta de quien responde */}
                               {msg.from_me && (
                                 <Typography variant="caption" sx={{
-                                  color: '#25d366', // Was '#65d6bd', changed to WhatsApp green-ish or custom
-                                  fontWeight: 'bold',
-                                  fontSize: '10.5px', // Slightly smaller
+                                  color: msg.agent_name ? colors.primaryLight : colors.success,
+                                  fontWeight: 700,
+                                  fontSize: '0.68rem',
                                   display: 'block',
-                                  mb: 0.2, // Small gap before message
-                                  lineHeight: 1.1,
-                                  textTransform: 'capitalize'
+                                  mb: 0.2,
+                                  px: 1,
+                                  pt: 0.5,
+                                  lineHeight: 1.2,
+                                  letterSpacing: '0.3px'
                                 }}>
                                   {msg.agent_name || msg.sender_name || 'Admin'}
                                 </Typography>
@@ -3393,7 +3336,7 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
                             pb: 0.5,
                             mt: -0.5 // overlap slightly with content if possible or close gap
                           }}>
-                            <Typography variant="caption" sx={{ fontSize: '10px', color: '#8696a0', mr: 0.5 }}>
+                            <Typography variant="caption" sx={{ fontSize: '10px', color: colors.textTertiary, mr: 0.5 }}>
                               {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </Typography>
                             {msg.from_me && getMessageStatusIcon(msg)}
@@ -3416,109 +3359,103 @@ const WhatsAppWebChat: React.FC<WhatsAppWebChatProps> = ({ sessionId, allSession
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              height: '400px',
+              flex: 1,
               gap: 2,
               p: 4,
               textAlign: 'center'
             }}>
-              <Box sx={{ fontSize: '80px', opacity: 0.1 }}>💬</Box>
-              <Typography sx={{ color: colors.textSecondary, fontWeight: 500 }}>
-                El agente no tiene conversaciones asignadas actualmente
+              <Box sx={{
+                width: 80, height: 80, borderRadius: '50%',
+                bgcolor: `${colors.primary}10`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}>
+                <Message sx={{ fontSize: 36, color: `${colors.primary}40` }} />
+              </Box>
+              <Typography sx={{ color: colors.textTertiary, fontWeight: 500, fontSize: '0.85rem' }}>
+                Sin conversaciones activas
               </Typography>
             </Box>
           ) : (
-            // Vista de Lista de Chats Moderna (Sin pestañas innecesarias)
-            <List sx={{ p: 1 }}>
-              {agentDetailsDialog.activeChats.map((chat: any, index: number) => (
-                <Card
+            // Vista de Lista de Chats - Estilo WhatsApp
+            <List sx={{ p: 0.5 }}>
+              {agentDetailsDialog.activeChats.map((chat: any) => (
+                <ListItemButton
                   key={chat.assignment_id}
+                  onClick={() => handleChatClick(chat)}
                   sx={{
-                    mb: 1.5,
-                    bgcolor: colors.sidebar,
-                    borderRadius: '16px',
-                    border: `1px solid ${colors.divider}`,
-                    transition: 'all 0.2s ease',
-                    '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 8px 16px rgba(0,0,0,0.3)', borderColor: colors.primary }
+                    px: 1.5,
+                    py: 1.5,
+                    borderRadius: '12px',
+                    mb: 0.5,
+                    '&:hover': { bgcolor: colors.hover }
                   }}
                 >
-                  <ListItemButton
-                    onClick={() => handleChatClick(chat)}
-                    sx={{ p: 2, flexDirection: 'column', alignItems: 'stretch' }}
-                  >
-                    <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                  <ListItemAvatar sx={{ minWidth: 52 }}>
+                    <Badge
+                      overlap="circular"
+                      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                      badgeContent={
+                        chat.unread_count > 0 ? (
+                          <Box sx={{
+                            minWidth: 18, height: 18, borderRadius: 9,
+                            bgcolor: colors.success,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            border: `2px solid ${colors.chatBg}`,
+                            fontSize: '0.6rem', fontWeight: 700, color: 'white'
+                          }}>
+                            {chat.unread_count}
+                          </Box>
+                        ) : null
+                      }
+                    >
                       <Avatar
                         src={chat.avatar || `${getAPIBaseURL()}/api/avatar/${sessionId}/${chat.chat_jid}`}
-                        sx={{ width: 56, height: 56, border: `2px solid ${colors.divider}` }}
+                        sx={{
+                          width: 44, height: 44,
+                          bgcolor: `${colors.primary}25`,
+                          color: colors.primaryLight,
+                          fontSize: '1rem',
+                          fontWeight: 700
+                        }}
                       >
                         {chat.chat_name?.[0]}
                       </Avatar>
-                      <Box sx={{ flex: 1 }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <Typography variant="subtitle1" sx={{ fontWeight: 700, color: colors.text }}>
-                            {chat.chat_name || chat.chat_jid.split('@')[0]}
-                          </Typography>
-                          <Typography variant="caption" sx={{ color: colors.textTertiary }}>
-                            {new Date(chat.assigned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </Typography>
-                        </Box>
-                        <Typography variant="caption" sx={{ color: colors.textTertiary, display: 'block' }}>
-                          Asignado: {new Date(chat.assigned_at).toLocaleDateString()}
+                    </Badge>
+                  </ListItemAvatar>
+                  <ListItemText
+                    sx={{ my: 0 }}
+                    primary={
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="body2" noWrap sx={{ fontWeight: 600, color: colors.text, fontSize: '0.875rem' }}>
+                          {chat.chat_name || chat.chat_jid.split('@')[0]}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: colors.textTertiary, fontSize: '0.7rem', flexShrink: 0, ml: 1 }}>
+                          {new Date(chat.assigned_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </Typography>
                       </Box>
-                    </Box>
-
-                    {/* Estadísticas en cuadrícula limpia */}
-                    <Box sx={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(3, 1fr)',
-                      gap: 1,
-                      mb: 2,
-                      bgcolor: 'rgba(0,0,0,0.2)',
-                      p: 1.5,
-                      borderRadius: '12px'
-                    }}>
-                      <Box sx={{ textAlign: 'center' }}>
-                        <Typography variant="caption" sx={{ color: colors.success, fontWeight: 700, display: 'block' }}>{chat.unread_count || 0}</Typography>
-                        <Typography sx={{ fontSize: '10px', color: colors.textTertiary }}>No leídos</Typography>
+                    }
+                    secondary={
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.3 }}>
+                        <Typography variant="caption" sx={{ color: colors.textTertiary, fontSize: '0.75rem' }}>
+                          {chat.sent_count || 0} env · {chat.received_count || 0} rec
+                        </Typography>
+                        <Chip
+                          label="Revocar"
+                          size="small"
+                          onClick={(e: any) => { e.stopPropagation(); handleRevokeAssignment(chat.assignment_id, chat.chat_jid); }}
+                          sx={{
+                            height: 20, fontSize: '0.65rem',
+                            bgcolor: 'rgba(239,68,68,0.1)',
+                            color: colors.error,
+                            fontWeight: 600,
+                            '&:hover': { bgcolor: 'rgba(239,68,68,0.2)' },
+                            '& .MuiChip-label': { px: 1 }
+                          }}
+                        />
                       </Box>
-                      <Box sx={{ textAlign: 'center', borderLeft: `1px solid ${colors.divider}`, borderRight: `1px solid ${colors.divider}` }}>
-                        <Typography variant="caption" sx={{ color: colors.primary, fontWeight: 700, display: 'block' }}>{chat.sent_count || 0}</Typography>
-                        <Typography sx={{ fontSize: '10px', color: colors.textTertiary }}>Enviados</Typography>
-                      </Box>
-                      <Box sx={{ textAlign: 'center' }}>
-                        <Typography variant="caption" sx={{ color: '#3b82f6', fontWeight: 700, display: 'block' }}>{chat.received_count || 0}</Typography>
-                        <Typography sx={{ fontSize: '10px', color: colors.textTertiary }}>Recibidos</Typography>
-                      </Box>
-                    </Box>
-
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Tooltip title="Entregados">
-                          <Chip label={`✓ ${chat.delivered_count || 0}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '10px', color: colors.success, borderColor: colors.success }} />
-                        </Tooltip>
-                        <Tooltip title="Leídos">
-                          <Chip label={`✓✓ ${chat.read_count || 0}`} size="small" variant="outlined" sx={{ height: 20, fontSize: '10px', color: '#3b82f6', borderColor: '#3b82f6' }} />
-                        </Tooltip>
-                      </Box>
-                      <Button
-                        variant="contained"
-                        color="error"
-                        size="small"
-                        sx={{
-                          borderRadius: '8px',
-                          fontSize: '11px',
-                          textTransform: 'none',
-                          minWidth: '80px',
-                          boxShadow: '0 4px 8px rgba(244, 67, 54, 0.3)',
-                          '&:hover': { bgcolor: '#d32f2f' }
-                        }}
-                        onClick={(e) => { e.stopPropagation(); handleRevokeAssignment(chat.assignment_id, chat.chat_jid); }}
-                      >
-                        Revocar
-                      </Button>
-                    </Box>
-                  </ListItemButton>
-                </Card>
+                    }
+                  />
+                </ListItemButton>
               ))}
             </List>
           )}

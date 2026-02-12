@@ -1824,9 +1824,15 @@ const AgentDashboardPro: React.FC<AgentDashboardProProps> = ({ onLogout }) => {
 
             {/* Contenido de media */}
             {isMedia && msg.media_url && (() => {
-              const mediaUrl = msg.media_url.startsWith('http')
-                ? msg.media_url
-                : `${apiUrl}${msg.media_url}`;
+              // Proxy URLs de WhatsApp CDN para evitar 403/CORS
+              let mediaUrl: string;
+              if (msg.media_url.startsWith('http') && (msg.media_url.includes('whatsapp.net') || msg.media_url.includes('whatsapp.com'))) {
+                mediaUrl = `/api/proxy/media?url=${encodeURIComponent(msg.media_url)}`;
+              } else if (msg.media_url.startsWith('http')) {
+                mediaUrl = msg.media_url;
+              } else {
+                mediaUrl = `${apiUrl}${msg.media_url}`;
+              }
 
               return (
                 <Box sx={{ mb: 1 }}>

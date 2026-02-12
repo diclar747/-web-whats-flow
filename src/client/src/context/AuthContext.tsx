@@ -236,16 +236,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     setUser(null);
-    // Limpiar sessionStorage y localStorage
+    // Limpiar sessionStorage completamente
     sessionStorage.clear();
+    // Limpiar TODOS los datos de sesión de localStorage
     localStorage.removeItem('token');
     localStorage.removeItem('whinsap_token');
     localStorage.removeItem('userRole');
     localStorage.removeItem('userName');
     localStorage.removeItem('userId');
     localStorage.removeItem('whinsap_session');
+    localStorage.removeItem('whinsap_active_session');
+    localStorage.removeItem('whatsappPhone');
+    localStorage.removeItem('userPhone');
+    localStorage.removeItem('adminPhoneNumber');
+    localStorage.removeItem('adminSessionId');
+    localStorage.removeItem('activeSessionId');
+    localStorage.removeItem('sessionToken');
+    localStorage.removeItem('user');
+    localStorage.removeItem('userPermissions');
+    localStorage.removeItem('permissionsByModule');
+    localStorage.removeItem('agent_token_backup');
+    localStorage.removeItem('agent_userId_backup');
+    localStorage.removeItem('agent_userName_backup');
+    localStorage.removeItem('agent_userRole_backup');
 
-    console.log('👋 Sesión cerrada correctamente');
+    console.log('👋 Sesión cerrada correctamente - storage limpiado completamente');
 
     // ✅ Redireccionar a la página principal después del logout
     navigate('/');

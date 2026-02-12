@@ -160,7 +160,7 @@ class CreditReminderService {
         try {
             // Buscar cuotas vencidas que no tienen notificación de vencimiento
             const [installments] = await this.pool.execute(
-                `SELECT 
+                `SELECT
                     ci.id as installment_id,
                     ci.credit_id,
                     ci.installment_number,
@@ -171,7 +171,9 @@ class CreditReminderService {
                     c.contact_name,
                     c.installment_count as total_installments,
                     c.reminder_template_id,
-                    DATEDIFF(CURDATE(), ci.due_date) as days_overdue
+                    COALESCE(c.interest_rate, 0) as interest_rate,
+                    DATEDIFF(CURDATE(), ci.due_date) as days_overdue,
+                    ROUND(ci.amount * (COALESCE(c.interest_rate, 0) / 100) * DATEDIFF(CURDATE(), ci.due_date), 0) as interest_amount
                  FROM credit_installments ci
                  JOIN credits c ON ci.credit_id = c.id
                  WHERE ci.status = 'overdue'
@@ -224,17 +226,29 @@ class CreditReminderService {
             const template = await this.getTemplate(installment, reminderType);
             
             // Preparar variables
+            const interestAmt = Number(installment.interest_amount) || 0;
+            const daysOverdue = Number(installment.days_overdue) || 0;
+            const totalWithInterest = installment.amount + interestAmt;
+
             const variables = {
                 nombre: installment.contact_name?.split(' ')[0] || 'Cliente',
                 monto: this.formatCurrency(installment.amount),
                 cuota_numero: installment.installment_number,
                 total_cuotas: installment.total_installments || installment.installment_count,
                 fecha_vencimiento: this.formatDate(installment.due_date),
-                credito_descripcion: ''
+                credito_descripcion: '',
+                interes: this.formatCurrency(interestAmt),
+                total_con_interes: this.formatCurrency(totalWithInterest),
+                dias_mora: daysOverdue
             };
-            
+
             // Generar mensaje
-            const message = this.replaceVariables(template.message_text, variables);
+            let message = this.replaceVariables(template.message_text, variables);
+
+            // Si hay interés por mora, agregar detalle al final
+            if (interestAmt > 0 && Number(installment.interest_rate) > 0) {
+                message += `\n\n📊 *Detalle de mora:*\n💰 Cuota: Gs. ${this.formatCurrency(installment.amount)}\n📈 Interés (${daysOverdue} días × ${installment.interest_rate}%): Gs. ${this.formatCurrency(interestAmt)}\n💵 *Total a pagar: Gs. ${this.formatCurrency(totalWithInterest)}*`;
+            }
             
             // Enviar por WhatsApp
             const sendResult = await this.sendWhatsAppMessage(

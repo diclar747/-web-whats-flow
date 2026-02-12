@@ -65,6 +65,21 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       if (data.success) {
         console.log('✅ Login exitoso:', data);
 
+        // LIMPIAR datos de sesión anterior antes de guardar los nuevos
+        // Esto previene que datos de otro usuario contaminen la sesión
+        sessionStorage.clear();
+        localStorage.removeItem('whinsap_session');
+        localStorage.removeItem('whinsap_active_session');
+        localStorage.removeItem('whatsappPhone');
+        localStorage.removeItem('userPhone');
+        localStorage.removeItem('adminPhoneNumber');
+        localStorage.removeItem('adminSessionId');
+        localStorage.removeItem('activeSessionId');
+        // Regenerar deviceId para la nueva sesión
+        const newDeviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        sessionStorage.setItem('device_id', newDeviceId);
+        console.log('🧹 Datos de sesión anterior limpiados');
+
         // SIEMPRE usar sessionStorage para sesiones únicas por pestaña
         // (ignorar rememberMe por seguridad)
         sessionStorage.setItem('token', data.token);

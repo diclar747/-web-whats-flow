@@ -200,7 +200,7 @@ const ChatMessage: React.FC<ChatMessageProps> = memo(({
             className="message-bubble"
             onContextMenu={handleContextMenu}
             sx={{
-              padding: (msg.type !== 'document' && msg.type !== 'image' && msg.type !== 'video' && msg.type !== 'audio') ? '8px 14px' : '4px',
+              padding: (msg.type !== 'document' && msg.type !== 'image' && msg.type !== 'video' && msg.type !== 'audio' && msg.type !== 'sticker' && msg.type !== 'stickerMessage') ? '8px 14px' : '4px',
               borderRadius: isFromMe ? '12px 0px 12px 12px' : '0px 12px 12px 12px',
               backgroundColor: isFromMe
                 ? isDarkMode ? '#0d47a1' : '#e3f2fd'
@@ -246,16 +246,31 @@ const ChatMessage: React.FC<ChatMessageProps> = memo(({
             )}
 
             {/* Media content */}
-            {msg.media_url && (
-              <ModernMessageMedia 
-                message={msg} 
+            {(msg.media_url || msg.mediaUrl) && (
+              <ModernMessageMedia
+                type={
+                  ['audio', 'audioMessage', 'ptt'].includes(msg.type || msg.message_type || '') ? 'audioMessage' :
+                  ['image', 'imageMessage'].includes(msg.type || msg.message_type || '') ? 'imageMessage' :
+                  ['video', 'videoMessage'].includes(msg.type || msg.message_type || '') ? 'videoMessage' :
+                  ['document', 'documentMessage'].includes(msg.type || msg.message_type || '') ? 'documentMessage' :
+                  ['sticker', 'stickerMessage'].includes(msg.type || msg.message_type || '') ? 'stickerMessage' :
+                  msg.type || msg.message_type || 'chat'
+                }
+                mediaUrl={msg.media_url || msg.mediaUrl}
+                mediaMimeType={msg.media_mime_type || msg.mediaMimeType}
+                message={msg.caption || ''}
                 isFromMe={isFromMe}
                 isDarkMode={isDarkMode}
+                fileName={msg.file_name || msg.fileName}
               />
             )}
 
-            {/* Text content */}
-            {(msg.message || msg.text_content) && (
+            {/* Text content - hide placeholder text for media types that have mediaUrl */}
+            {(msg.message || msg.text_content) && !(
+              (msg.media_url || msg.mediaUrl) &&
+              ['sticker', 'stickerMessage', 'image', 'imageMessage', 'video', 'videoMessage', 'audio', 'audioMessage', 'ptt'].includes(msg.type || msg.message_type || '') &&
+              !msg.caption
+            ) && (
               <Typography
                 variant="body2"
                 sx={{

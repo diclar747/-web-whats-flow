@@ -93,6 +93,11 @@ interface Installment {
   reminder_sent_at: string | null;
   overdue_notification_sent: boolean;
   notes: string | null;
+  notification_count: number;
+  last_notification_at: string | null;
+  days_overdue: number;
+  interest_amount: number;
+  total_with_interest: number;
 }
 
 interface Credit {
@@ -106,6 +111,7 @@ interface Credit {
   installment_amount: number;
   start_date: string;
   due_day: number;
+  interest_rate: number;
   status: 'active' | 'completed' | 'cancelled' | 'defaulted';
   reminder_days_before: number;
   description?: string;
@@ -220,6 +226,9 @@ const CreditManagement: React.FC<{ sessionId: string; userId?: string; apiUrl: s
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [sendReminderDialogOpen, setSendReminderDialogOpen] = useState(false);
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null);
+  const [editInstallmentDialogOpen, setEditInstallmentDialogOpen] = useState(false);
+  const [deleteInstallmentDialogOpen, setDeleteInstallmentDialogOpen] = useState(false);
+  const [editInstallmentForm, setEditInstallmentForm] = useState({ amount: '', dueDate: '', notes: '' });
 
   // Snackbar
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
@@ -231,6 +240,7 @@ const CreditManagement: React.FC<{ sessionId: string; userId?: string; apiUrl: s
     installmentCount: 6,
     startDate: new Date(),
     dueDay: 5,
+    interestRate: 0,
     reminderDaysBefore: 2,
     reminderTemplateId: '',
     description: ''
@@ -397,6 +407,7 @@ const CreditManagement: React.FC<{ sessionId: string; userId?: string; apiUrl: s
           installmentAmount,
           startDate: format(createForm.startDate, 'yyyy-MM-dd'),
           dueDay: createForm.dueDay,
+          interestRate: createForm.interestRate,
           reminderDaysBefore: createForm.reminderDaysBefore,
           reminderTemplateId: createForm.reminderTemplateId || null,
           description: createForm.description
@@ -414,6 +425,7 @@ const CreditManagement: React.FC<{ sessionId: string; userId?: string; apiUrl: s
           installmentCount: 6,
           startDate: new Date(),
           dueDay: 5,
+          interestRate: 0,
           reminderDaysBefore: 2,
           reminderTemplateId: '',
           description: ''
@@ -549,6 +561,80 @@ const CreditManagement: React.FC<{ sessionId: string; userId?: string; apiUrl: s
     }
   };
 
+  // Recargar detalles del crédito seleccionado
+  const reloadCreditDetails = async () => {
+    if (!selectedCredit) return;
+    try {
+      const response = await fetch(`${apiUrl}/api/credits/${creditSessionId}/${selectedCredit.id}`, {
+        headers: { 'Authorization': `Bearer ${getToken()}` }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setCreditDetails(data.data);
+      }
+    } catch (error) {
+      console.error('Error reloading credit details:', error);
+    }
+  };
+
+  // Editar cuota
+  const handleEditInstallment = async () => {
+    if (!selectedInstallment) return;
+
+    try {
+      const body: any = {};
+      if (editInstallmentForm.amount) body.amount = parseFloat(editInstallmentForm.amount);
+      if (editInstallmentForm.dueDate) body.dueDate = editInstallmentForm.dueDate;
+      if (editInstallmentForm.notes !== undefined) body.notes = editInstallmentForm.notes;
+
+      const response = await fetch(`${apiUrl}/api/credits/${creditSessionId}/installments/${selectedInstallment.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getToken()}`
+        },
+        body: JSON.stringify(body)
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setSnackbar({ open: true, message: 'Cuota actualizada exitosamente', severity: 'success' });
+        setEditInstallmentDialogOpen(false);
+        reloadCreditDetails();
+      } else {
+        setSnackbar({ open: true, message: data.error || 'Error al actualizar cuota', severity: 'error' });
+      }
+    } catch (error) {
+      setSnackbar({ open: true, message: 'Error al actualizar cuota', severity: 'error' });
+    }
+  };
+
+  // Eliminar cuota
+  const handleDeleteInstallment = async () => {
+    if (!selectedInstallment) return;
+
+    try {
+      const response = await fetch(`${apiUrl}/api/credits/${creditSessionId}/installments/${selectedInstallment.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${getToken()}`
+        }
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setSnackbar({ open: true, message: 'Cuota eliminada exitosamente', severity: 'success' });
+        setDeleteInstallmentDialogOpen(false);
+        reloadCreditDetails();
+        loadCredits();
+      } else {
+        setSnackbar({ open: true, message: data.error || 'Error al eliminar cuota', severity: 'error' });
+      }
+    } catch (error) {
+      setSnackbar({ open: true, message: 'Error al eliminar cuota', severity: 'error' });
+    }
+  };
+
   // Calcular preview de cuotas
   const calculateInstallmentsPreview = () => {
     if (!createForm.totalAmount || !createForm.installmentCount) return [];
@@ -658,6 +744,20 @@ const CreditManagement: React.FC<{ sessionId: string; userId?: string; apiUrl: s
                   onChange={(e) => setCreateForm({ ...createForm, dueDay: parseInt(e.target.value) || 5 })}
                   inputProps={{ min: 1, max: 31 }}
                   helperText="Día del mes para vencimiento"
+                />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label="Interés por mora (%)"
+                  type="number"
+                  value={createForm.interestRate}
+                  onChange={(e) => setCreateForm({ ...createForm, interestRate: parseFloat(e.target.value) || 0 })}
+                  inputProps={{ min: 0, max: 100, step: 0.5 }}
+                  helperText="% diario aplicado desde el vencimiento"
+                  InputProps={{
+                    endAdornment: <InputAdornment position="end">%</InputAdornment>
+                  }}
                 />
               </Grid>
               <Grid item xs={12}>
@@ -1043,7 +1143,7 @@ const CreditManagement: React.FC<{ sessionId: string; userId?: string; apiUrl: s
         </Dialog>
 
         {/* Dialog Detalles */}
-        <Dialog open={detailsDialogOpen} onClose={() => setDetailsDialogOpen(false)} maxWidth="lg" fullWidth>
+        <Dialog open={detailsDialogOpen} onClose={() => setDetailsDialogOpen(false)} maxWidth="xl" fullWidth>
           <DialogTitle>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               Detalles del Crédito
@@ -1054,49 +1154,61 @@ const CreditManagement: React.FC<{ sessionId: string; userId?: string; apiUrl: s
           </DialogTitle>
           <DialogContent>
             {creditDetails && (
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={4}>
-                  <Card variant="outlined">
-                    <CardContent>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                        <Avatar src={creditDetails.contact_avatar} sx={{ width: 56, height: 56 }}>
-                          <PersonIcon />
-                        </Avatar>
-                        <Box>
-                          <Typography variant="h6">{creditDetails.contact_name}</Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {cleanPhoneNumber(creditDetails.contact_jid)}
-                          </Typography>
-                        </Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                {/* Info del contacto - fila horizontal compacta */}
+                <Card variant="outlined">
+                  <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2, py: 2, '&:last-child': { pb: 2 } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Avatar src={creditDetails.contact_avatar} sx={{ width: 48, height: 48 }}>
+                        <PersonIcon />
+                      </Avatar>
+                      <Box>
+                        <Typography variant="h6" sx={{ lineHeight: 1.2 }}>{creditDetails.contact_name}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {cleanPhoneNumber(creditDetails.contact_jid)}
+                        </Typography>
                       </Box>
-                      <Divider sx={{ my: 2 }} />
-                      <Typography variant="body2" color="text.secondary" gutterBottom>
-                        Monto Total
-                      </Typography>
-                      <Typography variant="h5" fontWeight="bold" gutterBottom>
-                        {formatCurrency(creditDetails.total_amount)}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {creditDetails.installment_count} cuotas de {formatCurrency(creditDetails.installment_amount)}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
+                    </Box>
+                    <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">Monto Total</Typography>
+                      <Typography variant="h5" fontWeight="bold">{formatCurrency(creditDetails.total_amount)}</Typography>
+                    </Box>
+                    <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary">Cuotas</Typography>
+                      <Typography variant="h6" fontWeight="bold">{creditDetails.installment_count} x {formatCurrency(creditDetails.installment_amount)}</Typography>
+                    </Box>
+                    {creditDetails.interest_rate > 0 && (
+                      <>
+                        <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
+                        <Box sx={{ textAlign: 'center' }}>
+                          <Typography variant="body2" color="text.secondary">Interes Mora</Typography>
+                          <Typography variant="h6" fontWeight="bold" color="warning.main">{creditDetails.interest_rate}%</Typography>
+                        </Box>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
 
-                <Grid item xs={12} md={8}>
+                {/* Tabla de cuotas - ancho completo */}
+                <Box>
                   <Typography variant="h6" gutterBottom>
                     Cuotas
                   </Typography>
-                  <TableContainer component={Paper} variant="outlined">
-                    <Table size="small">
+                  <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
+                    <Table size="small" sx={{ minWidth: creditDetails.interest_rate > 0 ? 1100 : 850 }}>
                       <TableHead>
-                        <TableRow>
+                        <TableRow sx={{ '& th': { fontWeight: 700, whiteSpace: 'nowrap' } }}>
                           <TableCell>#</TableCell>
                           <TableCell>Monto</TableCell>
                           <TableCell>Vencimiento</TableCell>
                           <TableCell>Estado</TableCell>
+                          {creditDetails.interest_rate > 0 && <TableCell>Interés</TableCell>}
+                          {creditDetails.interest_rate > 0 && <TableCell>Total</TableCell>}
                           <TableCell>Recordatorio</TableCell>
-                          <TableCell align="center">Acciones</TableCell>
+                          <TableCell align="center">Notif.</TableCell>
+                          <TableCell align="center" sx={{ minWidth: 160 }}>Acciones</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -1128,6 +1240,30 @@ const CreditManagement: React.FC<{ sessionId: string; userId?: string; apiUrl: s
                                 color={getStatusColor(inst.status) as any}
                               />
                             </TableCell>
+                            {creditDetails.interest_rate > 0 && (
+                              <TableCell>
+                                {inst.interest_amount > 0 ? (
+                                  <Tooltip title={`${inst.days_overdue} día(s) de mora × ${creditDetails.interest_rate}%`}>
+                                    <Typography variant="body2" color="error" fontWeight={600}>
+                                      {formatCurrency(inst.interest_amount)}
+                                    </Typography>
+                                  </Tooltip>
+                                ) : (
+                                  <Typography variant="body2" color="text.secondary">-</Typography>
+                                )}
+                              </TableCell>
+                            )}
+                            {creditDetails.interest_rate > 0 && (
+                              <TableCell>
+                                {inst.interest_amount > 0 ? (
+                                  <Typography variant="body2" fontWeight={700} color="warning.main">
+                                    {formatCurrency(inst.total_with_interest)}
+                                  </Typography>
+                                ) : (
+                                  <Typography variant="body2">{formatCurrency(inst.amount)}</Typography>
+                                )}
+                              </TableCell>
+                            )}
                             <TableCell>
                               {inst.reminder_sent ? (
                                 <Tooltip title={`Enviado el ${formatDate(inst.reminder_sent_at || '')}`}>
@@ -1138,41 +1274,86 @@ const CreditManagement: React.FC<{ sessionId: string; userId?: string; apiUrl: s
                               )}
                             </TableCell>
                             <TableCell align="center">
-                              {inst.status === 'pending' && (
-                                <Tooltip title="Marcar como pagado">
+                              <Tooltip title={inst.notification_count > 0
+                                ? `Última: ${inst.last_notification_at ? formatDate(inst.last_notification_at) : 'N/A'}`
+                                : 'Sin notificaciones enviadas'
+                              }>
+                                <Chip
+                                  size="small"
+                                  label={inst.notification_count || 0}
+                                  color={inst.notification_count > 0 ? 'primary' : 'default'}
+                                  variant={inst.notification_count > 0 ? 'filled' : 'outlined'}
+                                  sx={{ minWidth: 32, fontWeight: 700 }}
+                                />
+                              </Tooltip>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Box sx={{ display: 'flex', gap: 0.25, justifyContent: 'center', flexWrap: 'nowrap' }}>
+                                {inst.status !== 'paid' && inst.status !== 'cancelled' && (
+                                  <Tooltip title="Marcar como pagado">
+                                    <IconButton
+                                      size="small"
+                                      color="success"
+                                      onClick={() => {
+                                        setSelectedInstallment(inst);
+                                        setSelectedCredit(selectedCredit);
+                                        setPaymentDialogOpen(true);
+                                      }}
+                                    >
+                                      <PaymentIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+                                <Tooltip title="Enviar recordatorio">
                                   <IconButton
                                     size="small"
-                                    color="success"
+                                    color="primary"
                                     onClick={() => {
                                       setSelectedInstallment(inst);
-                                      setSelectedCredit(selectedCredit);
-                                      setPaymentDialogOpen(true);
+                                      setSendReminderDialogOpen(true);
                                     }}
                                   >
-                                    <PaymentIcon />
+                                    <SendIcon fontSize="small" />
                                   </IconButton>
                                 </Tooltip>
-                              )}
-                              <Tooltip title="Enviar recordatorio">
-                                <IconButton
-                                  size="small"
-                                  color="primary"
-                                  onClick={() => {
-                                    setSelectedInstallment(inst);
-                                    setSendReminderDialogOpen(true);
-                                  }}
-                                >
-                                  <SendIcon />
-                                </IconButton>
-                              </Tooltip>
+                                <Tooltip title="Editar cuota">
+                                  <IconButton
+                                    size="small"
+                                    color="info"
+                                    onClick={() => {
+                                      setSelectedInstallment(inst);
+                                      setEditInstallmentForm({
+                                        amount: inst.amount.toString(),
+                                        dueDate: inst.due_date.split('T')[0],
+                                        notes: inst.notes || ''
+                                      });
+                                      setEditInstallmentDialogOpen(true);
+                                    }}
+                                  >
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Eliminar cuota">
+                                  <IconButton
+                                    size="small"
+                                    color="error"
+                                    onClick={() => {
+                                      setSelectedInstallment(inst);
+                                      setDeleteInstallmentDialogOpen(true);
+                                    }}
+                                  >
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
                             </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   </TableContainer>
-                </Grid>
-              </Grid>
+                </Box>
+              </Box>
             )}
           </DialogContent>
         </Dialog>
@@ -1396,6 +1577,84 @@ const CreditManagement: React.FC<{ sessionId: string; userId?: string; apiUrl: s
         </Dialog>
 
 
+
+        {/* Dialog Editar Cuota */}
+        <Dialog open={editInstallmentDialogOpen} onClose={() => setEditInstallmentDialogOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <EditIcon color="info" /> Editar Cuota #{selectedInstallment?.installment_number}
+          </DialogTitle>
+          <DialogContent>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+              <TextField
+                fullWidth
+                label="Monto"
+                type="number"
+                value={editInstallmentForm.amount}
+                onChange={(e) => setEditInstallmentForm({ ...editInstallmentForm, amount: e.target.value })}
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">Gs.</InputAdornment>
+                }}
+              />
+              <TextField
+                fullWidth
+                label="Fecha de Vencimiento"
+                type="date"
+                value={editInstallmentForm.dueDate}
+                onChange={(e) => setEditInstallmentForm({ ...editInstallmentForm, dueDate: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+              />
+              <TextField
+                fullWidth
+                label="Notas"
+                multiline
+                rows={2}
+                value={editInstallmentForm.notes}
+                onChange={(e) => setEditInstallmentForm({ ...editInstallmentForm, notes: e.target.value })}
+              />
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setEditInstallmentDialogOpen(false)} variant="outlined" color="inherit">
+              Cancelar
+            </Button>
+            <Button onClick={handleEditInstallment} variant="contained" color="primary" startIcon={<EditIcon />}>
+              Guardar Cambios
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Dialog Confirmar Eliminacion de Cuota */}
+        <Dialog open={deleteInstallmentDialogOpen} onClose={() => setDeleteInstallmentDialogOpen(false)} maxWidth="sm" fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 2,
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              backgroundImage: 'linear-gradient(rgba(239, 68, 68, 0.03), rgba(239, 68, 68, 0.03))'
+            }
+          }}
+        >
+          <DialogTitle sx={{ color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+            <WarningIcon color="error" /> Eliminar Cuota
+          </DialogTitle>
+          <DialogContent>
+            <Typography variant="body1" sx={{ mt: 1 }}>
+              ¿Eliminar la cuota <strong>#{selectedInstallment?.installment_number}</strong> por{' '}
+              <strong>{selectedInstallment && formatCurrency(selectedInstallment.amount)}</strong>?
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Se eliminaran los recordatorios asociados y se renumeraran las cuotas restantes.
+              <strong> Esta accion no se puede deshacer.</strong>
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button onClick={() => setDeleteInstallmentDialogOpen(false)} variant="outlined" color="inherit">
+              Cancelar
+            </Button>
+            <Button onClick={handleDeleteInstallment} variant="contained" color="error" startIcon={<DeleteIcon />}>
+              Eliminar Cuota
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Dialog WhatsApp Desconectado */}
         <Dialog

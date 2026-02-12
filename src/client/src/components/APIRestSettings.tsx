@@ -44,7 +44,8 @@ import {
   ExpandMore,
   Visibility,
   VisibilityOff,
-  CheckCircle
+  CheckCircle,
+  Lock
 } from '@mui/icons-material';
 
 interface APIRestSettingsProps {
@@ -60,7 +61,12 @@ interface APIKey {
   created_at: string;
   last_used_at: string | null;
   request_count: number;
+  is_auto_generated: number;
+  phone_number: string | null;
+  connection_status: 'connected' | 'disconnected';
 }
+
+const PUBLIC_DOMAIN = 'https://winsap.com.py';
 
 const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
   const [selectedTab, setSelectedTab] = useState(0);
@@ -72,6 +78,8 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
   const [generatedKey, setGeneratedKey] = useState('');
   const [showKey, setShowKey] = useState<{ [key: number]: boolean }>({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' | 'info' });
+  const [maxKeys, setMaxKeys] = useState<number | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; keyId: number | null }>({ open: false, keyId: null });
 
   // Estados para probar API
   const [testEndpoint, setTestEndpoint] = useState('text');
@@ -151,6 +159,9 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
 
       if (data.success) {
         setApiKeys(data.keys);
+        if (data.maxKeys !== undefined) {
+          setMaxKeys(data.maxKeys);
+        }
         if (data.keys.length > 0 && !selectedApiKey) {
           setSelectedApiKey(data.keys[0].api_key);
         }
@@ -184,7 +195,11 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
         setNewKeyDescription('');
         await loadAPIKeys();
       } else {
-        setSnackbar({ open: true, message: 'Error: ' + data.error, severity: 'error' });
+        setShowNewKeyDialog(false);
+        setSnackbar({ open: true, message: data.error || 'Error al generar API Key', severity: 'error' });
+        if (data.limit) {
+          await loadAPIKeys();
+        }
       }
     } catch (error) {
       console.error('Error generating key:', error);
@@ -192,10 +207,16 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
     }
   };
 
-  const handleDeleteKey = async (keyId: number) => {
-    if (!window.confirm('¿Estás seguro de desactivar esta API Key?')) {
-      return;
-    }
+  const handleDeleteKey = (keyId: number) => {
+    const key = apiKeys.find(k => k.id === keyId);
+    if (key && key.is_auto_generated === 1) return;
+    setDeleteConfirm({ open: true, keyId });
+  };
+
+  const confirmDeleteKey = async () => {
+    const keyId = deleteConfirm.keyId;
+    setDeleteConfirm({ open: false, keyId: null });
+    if (!keyId) return;
 
     try {
       const response = await fetch(`${getAPIBaseURL()}/api/rest/keys/${keyId}`, {
@@ -206,7 +227,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
 
       if (data.success) {
         await loadAPIKeys();
-        setSnackbar({ open: true, message: 'API Key desactivada correctamente', severity: 'success' });
+        setSnackbar({ open: true, message: 'API Key eliminada correctamente', severity: 'success' });
       } else {
         setSnackbar({ open: true, message: 'Error: ' + data.error, severity: 'error' });
       }
@@ -375,21 +396,21 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
   };
 
   const codeExamples = {
-    curl_text: `curl -X POST "${getAPIBaseURL()}/api/rest/send/text" \\
+    curl_text: `curl -X POST "${PUBLIC_DOMAIN}/api/rest/send/text" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "to": "595981234567",
     "message": "Hola desde la API!"
   }'`,
-    curl_sms: `curl -X POST "${getAPIBaseURL()}/api/rest/sms/send" \\
+    curl_sms: `curl -X POST "${PUBLIC_DOMAIN}/api/rest/sms/send" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "to": "595981234567",
     "message": "Mensaje SMS Premium"
   }'`,
-    curl_image: `curl -X POST "${getAPIBaseURL()}/api/rest/send/image" \\
+    curl_image: `curl -X POST "${PUBLIC_DOMAIN}/api/rest/send/image" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -397,7 +418,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
     "image": "https://example.com/image.jpg",
     "caption": "Mira esta imagen"
   }'`,
-    curl_document: `curl -X POST "${getAPIBaseURL()}/api/rest/send/document" \\
+    curl_document: `curl -X POST "${PUBLIC_DOMAIN}/api/rest/send/document" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -406,7 +427,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
     "filename": "documento.pdf",
     "mimetype": "application/pdf"
   }'`,
-    curl_location: `curl -X POST "${getAPIBaseURL()}/api/rest/send/location" \\
+    curl_location: `curl -X POST "${PUBLIC_DOMAIN}/api/rest/send/location" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -416,7 +437,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
     "name": "Palacio de López",
     "address": "Asunción, Paraguay"
   }'`,
-    curl_contact: `curl -X POST "${getAPIBaseURL()}/api/rest/send/contact" \\
+    curl_contact: `curl -X POST "${PUBLIC_DOMAIN}/api/rest/send/contact" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -424,14 +445,14 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
     "contactName": "Juan Pérez",
     "vcard": "BEGIN:VCARD\\nVERSION:3.0\\nFN:Juan Pérez\\nTEL;TYPE=CELL:595981234567\\nEND:VCARD"
   }'`,
-    curl_sticker: `curl -X POST "${getAPIBaseURL()}/api/rest/send/sticker" \\
+    curl_sticker: `curl -X POST "${PUBLIC_DOMAIN}/api/rest/send/sticker" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "to": "595981234567",
     "sticker": "https://www.gstatic.com/webp/gallery/1.webp"
   }'`,
-    curl_buttons: `curl -X POST "${getAPIBaseURL()}/api/rest/send/buttons" \\
+    curl_buttons: `curl -X POST "${PUBLIC_DOMAIN}/api/rest/send/buttons" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -442,7 +463,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
       {"id": "btn2", "text": "Rechazar"}
     ]
   }'`,
-    curl_list: `curl -X POST "${getAPIBaseURL()}/api/rest/send/list" \\
+    curl_list: `curl -X POST "${PUBLIC_DOMAIN}/api/rest/send/list" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -460,7 +481,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
       }
     ]
   }'`,
-    curl_template: `curl -X POST "${getAPIBaseURL()}/api/rest/send/template" \\
+    curl_template: `curl -X POST "${PUBLIC_DOMAIN}/api/rest/send/template" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -469,7 +490,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
     "language": "en_US",
     "components": []
   }'`,
-    curl_webhook_reg: `curl -X POST "${getAPIBaseURL()}/api/rest/webhooks/register" \\
+    curl_webhook_reg: `curl -X POST "${PUBLIC_DOMAIN}/api/rest/webhooks/register" \\
   -H "X-API-Key: YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -478,7 +499,7 @@ const APIRestSettings: React.FC<APIRestSettingsProps> = ({ userId }) => {
   }'`,
 
     javascript: `const apiKey = 'YOUR_API_KEY';
-const apiUrl = '${getAPIBaseURL()}/api/rest';
+const apiUrl = '${PUBLIC_DOMAIN}/api/rest';
 
 // Enviar mensaje de texto
 async function sendMessage(to, message) {
@@ -499,7 +520,7 @@ const result = await sendMessage('595981234567', 'Hola!');
 console.log(result);`,
     php: `<?php
 $apiKey = 'YOUR_API_KEY';
-$apiUrl = '${getAPIBaseURL()}/api/rest';
+$apiUrl = '${PUBLIC_DOMAIN}/api/rest';
 
 // ============================================
 // ENVIAR MENSAJE DE TEXTO
@@ -665,7 +686,7 @@ if ($status['connected']) {
 from pathlib import Path
 
 api_key = 'YOUR_API_KEY'
-api_url = '${getAPIBaseURL()}/api/rest'
+api_url = '${PUBLIC_DOMAIN}/api/rest'
 
 # ============================================
 # ENVIAR MENSAJE DE TEXTO
@@ -810,12 +831,26 @@ if __name__ == '__main__':
             <Card sx={{ bgcolor: '#1a2332', color: '#e3e8ef' }}>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                  <Typography variant="h6">🔑 Gestión de API Keys</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Typography variant="h6">🔑 Gestión de API Keys</Typography>
+                    {maxKeys !== null && (
+                      <Chip
+                        label={`${apiKeys.length}/${maxKeys} keys`}
+                        size="small"
+                        sx={{
+                          bgcolor: apiKeys.length >= maxKeys ? 'rgba(244, 67, 54, 0.2)' : 'rgba(37, 211, 102, 0.2)',
+                          color: apiKeys.length >= maxKeys ? '#f44336' : '#25d366',
+                          fontWeight: 'bold'
+                        }}
+                      />
+                    )}
+                  </Box>
                   <Button
                     variant="contained"
                     startIcon={<Add />}
                     onClick={() => setShowNewKeyDialog(true)}
-                    sx={{ bgcolor: '#25d366', '&:hover': { bgcolor: '#1da851' } }}
+                    disabled={maxKeys !== null && apiKeys.length >= maxKeys}
+                    sx={{ bgcolor: '#25d366', '&:hover': { bgcolor: '#1da851' }, '&.Mui-disabled': { bgcolor: '#333', color: '#666' } }}
                   >
                     Generar Nueva API Key
                   </Button>
@@ -848,12 +883,33 @@ if __name__ == '__main__':
                         {apiKeys.map((key) => (
                           <TableRow key={key.id} sx={{ '&:hover': { bgcolor: '#161b22' } }}>
                             <TableCell sx={{ color: '#e3e8ef', borderBottom: '1px solid #30363d' }}>
-                              <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                {key.name}
-                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                  {key.name}
+                                </Typography>
+                                {key.is_auto_generated === 1 && (
+                                  <Chip
+                                    icon={<Lock sx={{ fontSize: 14 }} />}
+                                    label="Principal"
+                                    size="small"
+                                    sx={{
+                                      bgcolor: 'rgba(88, 166, 255, 0.15)',
+                                      color: '#58a6ff',
+                                      fontWeight: 'bold',
+                                      fontSize: '10px',
+                                      height: '22px'
+                                    }}
+                                  />
+                                )}
+                              </Box>
                               {key.description && (
                                 <Typography variant="caption" sx={{ color: '#8b949e' }}>
                                   {key.description}
+                                </Typography>
+                              )}
+                              {key.phone_number && (
+                                <Typography variant="caption" sx={{ color: '#25d366', display: 'block' }}>
+                                  {key.phone_number}
                                 </Typography>
                               )}
                             </TableCell>
@@ -886,9 +942,14 @@ if __name__ == '__main__':
                             </TableCell>
                             <TableCell sx={{ borderBottom: '1px solid #30363d' }}>
                               <Chip
-                                label={key.is_active ? 'Activa' : 'Inactiva'}
+                                label={key.connection_status === 'connected' ? 'Conectado' : 'Sin conexión'}
                                 size="small"
-                                color={key.is_active ? 'success' : 'default'}
+                                sx={{
+                                  bgcolor: key.connection_status === 'connected' ? 'rgba(37, 211, 102, 0.15)' : 'rgba(139, 148, 158, 0.15)',
+                                  color: key.connection_status === 'connected' ? '#25d366' : '#8b949e',
+                                  fontWeight: 'bold',
+                                  fontSize: '11px'
+                                }}
                               />
                             </TableCell>
                             <TableCell sx={{ color: '#e3e8ef', borderBottom: '1px solid #30363d' }}>{key.request_count}</TableCell>
@@ -906,31 +967,44 @@ if __name__ == '__main__':
                               </Typography>
                             </TableCell>
                             <TableCell sx={{ borderBottom: '1px solid #30363d' }}>
-                              <Button
-                                size="small"
-                                variant="outlined"
-                                startIcon={<PlayArrow />}
-                                onClick={() => window.open(`${getAPIBaseURL()}/api/rest/connect?api_key=${key.api_key}`, '_blank')}
-                                sx={{
-                                  color: '#25d366',
-                                  borderColor: '#25d366',
-                                  fontSize: '11px',
-                                  '&:hover': { borderColor: '#1da851', bgcolor: 'rgba(37, 211, 102, 0.1)' }
-                                }}
-                              >
-                                Conectar QR
-                              </Button>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  startIcon={<PlayArrow />}
+                                  onClick={() => window.open(`${PUBLIC_DOMAIN}/api/rest/connect?api_key=${key.api_key}`, '_blank')}
+                                  sx={{
+                                    color: '#25d366',
+                                    borderColor: '#25d366',
+                                    fontSize: '11px',
+                                    '&:hover': { borderColor: '#1da851', bgcolor: 'rgba(37, 211, 102, 0.1)' }
+                                  }}
+                                >
+                                  Conectar QR
+                                </Button>
+                                <Tooltip title="Copiar URL de conexión">
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => copyToClipboard(`${PUBLIC_DOMAIN}/api/rest/connect?api_key=${key.api_key}`)}
+                                    sx={{ color: '#8b949e' }}
+                                  >
+                                    <ContentCopy sx={{ fontSize: 14 }} />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
                             </TableCell>
                             <TableCell sx={{ borderBottom: '1px solid #30363d' }}>
-                              <Tooltip title="Desactivar">
-                                <IconButton
-                                  size="small"
-                                  color="error"
-                                  onClick={() => handleDeleteKey(key.id)}
-                                  disabled={!key.is_active}
-                                >
-                                  <Delete />
-                                </IconButton>
+                              <Tooltip title={key.is_auto_generated === 1 ? "No se puede eliminar la key principal" : "Eliminar"}>
+                                <span>
+                                  <IconButton
+                                    size="small"
+                                    color="error"
+                                    onClick={() => handleDeleteKey(key.id)}
+                                    disabled={key.is_auto_generated === 1}
+                                  >
+                                    {key.is_auto_generated === 1 ? <Lock /> : <Delete />}
+                                  </IconButton>
+                                </span>
                               </Tooltip>
                             </TableCell>
                           </TableRow>
@@ -993,7 +1067,7 @@ if __name__ == '__main__':
                     <Typography variant="subtitle2" gutterBottom>URL de Conexión:</Typography>
                     <Box sx={{ bgcolor: '#161b22', p: 2, borderRadius: 2, mb: 2, border: '1px solid #30363d' }}>
                       <code style={{ fontSize: '12px', color: '#79c0ff', wordBreak: 'break-all' }}>
-                        {`${getAPIBaseURL()}/api/rest/connect?api_key=wf_tu_api_key`}
+                        {`${PUBLIC_DOMAIN}/api/rest/connect?api_key=wf_tu_api_key`}
                       </code>
                     </Box>
                     <Typography variant="body2" paragraph sx={{ color: '#8b949e', fontSize: '12px' }}>
@@ -1226,15 +1300,15 @@ if __name__ == '__main__':
                 <Typography variant="h6" sx={{ mt: 4, mb: 2 }}>🚀 Extended API</Typography>
                 <Typography variant="body2" sx={{ mb: 2, color: '#8b949e' }}>
                   Endpoints para gestionar todos los módulos del sistema (Grupos, Chatbot, Campañas, etc).
-                  Formato: <code style={{ color: '#58a6ff' }}>/api/rest/extended/:module/:action</code>
+                  Formato: <code style={{ color: '#58a6ff' }}>{PUBLIC_DOMAIN}/api/rest/extended/:module/:action</code>
                 </Typography>
                 <Box sx={{ bgcolor: '#0d1117', p: 2, borderRadius: 2, border: '1px solid #30363d', mb: 3 }}>
                   <Typography variant="caption" display="block" color="#8b949e">Ejemplos:</Typography>
                   <code style={{ fontSize: '12px', color: '#79c0ff' }}>
-                    GET /api/rest/extended/account/info<br />
-                    GET /api/rest/extended/groups<br />
-                    POST /api/rest/extended/chatbot/flows (create)<br />
-                    GET /api/rest/extended/analytics/dashboard
+                    GET {PUBLIC_DOMAIN}/api/rest/extended/account/info<br />
+                    GET {PUBLIC_DOMAIN}/api/rest/extended/groups<br />
+                    POST {PUBLIC_DOMAIN}/api/rest/extended/chatbot/flows (create)<br />
+                    GET {PUBLIC_DOMAIN}/api/rest/extended/analytics/dashboard
                   </code>
                 </Box>
 
@@ -1617,6 +1691,54 @@ if __name__ == '__main__':
               </Button>
             </>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog de confirmación para eliminar API Key */}
+      <Dialog
+        open={deleteConfirm.open}
+        onClose={() => setDeleteConfirm({ open: false, keyId: null })}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: '#1a2332',
+            color: '#e3e8ef',
+            backgroundImage: 'none',
+            border: '1px solid #f4433640'
+          }
+        }}
+      >
+        <DialogTitle sx={{ borderBottom: '1px solid #30363d', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Delete sx={{ color: '#f44336' }} />
+          Eliminar API Key
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Alert severity="warning" sx={{ bgcolor: '#4d3a1a', color: '#e3e8ef', mb: 2 }}>
+            <Typography variant="body2">
+              ¿Estás seguro de eliminar esta API Key? <strong>Esta acción no se puede deshacer.</strong>
+            </Typography>
+          </Alert>
+          <Typography variant="body2" sx={{ color: '#8b949e' }}>
+            Todas las integraciones que usen esta key dejarán de funcionar inmediatamente.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid #30363d', p: 2, gap: 1 }}>
+          <Button
+            onClick={() => setDeleteConfirm({ open: false, keyId: null })}
+            sx={{ color: '#8b949e' }}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={<Delete />}
+            onClick={confirmDeleteKey}
+            sx={{ bgcolor: '#f44336', '&:hover': { bgcolor: '#d32f2f' } }}
+          >
+            Eliminar
+          </Button>
         </DialogActions>
       </Dialog>
 
